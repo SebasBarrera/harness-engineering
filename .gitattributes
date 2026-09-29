@@ -1,0 +1,14 @@
+# Normalize text to LF in the index and working tree. Files imported from the
+# v0.8.0 cut are LF-only, so this keeps them byte-identical on every platform.
+* text=auto eol=lf
+
+# Binary formats
+*.whl binary
+*.gz binary
+*.zip binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.sqlite binary
+*.db binary
