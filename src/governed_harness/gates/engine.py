@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from governed_harness.domain.enums import FindingSeverity, ResultStatus
 from governed_harness.domain.ids import new_id

@@ -8,7 +8,6 @@ import pytest
 
 from governed_harness.application import HarnessApplication
 
-
 # Fixture repositories must not inherit the developer's Git configuration: global commit
 # signing or a global core.hooksPath would make the baseline commit fail or prompt.
 GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}

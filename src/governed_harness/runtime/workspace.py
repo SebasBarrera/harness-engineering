@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import difflib
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
-from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.evidence.hashing import sha256_bytes, sha256_file, sha256_json
-
 
 DEFAULT_EXCLUDES = {
     ".git",

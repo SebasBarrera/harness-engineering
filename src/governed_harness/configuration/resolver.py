@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Iterable
 
 from governed_harness.configuration.loader import (
     find_project_config,
@@ -18,7 +17,6 @@ from governed_harness.configuration.models import (
 )
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.profiles.detectors import detect_profiles
-
 
 CORE_POLICIES = {
     "requireHumanDecision": True,

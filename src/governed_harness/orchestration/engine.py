@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from governed_harness import __version__
 from governed_harness.agents import (
@@ -25,13 +25,12 @@ from governed_harness.domain.enums import (
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
-    ExecutionBlockedError,
-    GatePendingError,
     NotFoundError,
     PolicyViolationError,
 )
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
+    HARNESS_ACTOR,
     Actor,
     Artifact,
     ChangedFile,
@@ -41,20 +40,18 @@ from governed_harness.domain.models import (
     Execution,
     Finding,
     GateEvaluation,
-    HARNESS_ACTOR,
     HumanDecision,
     PhaseExecution,
     Plan,
     PlanStep,
     Provenance,
-    Retrospective,
     Task,
     ToolInvocation,
     ValidationResult,
     utc_now,
 )
-from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.events import SQLiteEventStore
+from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.state_machine import NormativeStateMachine
@@ -86,7 +83,7 @@ class EnginePaths:
     artifact_dir: Path
 
     @classmethod
-    def from_workspace(cls, workspace: Path) -> "EnginePaths":
+    def from_workspace(cls, workspace: Path) -> EnginePaths:
         root = workspace.resolve(strict=True)
         harness_dir = root / ".harness"
         harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -102,7 +99,7 @@ class EngineServices:
     artifacts: LocalArtifactStore
 
     @classmethod
-    def open(cls, resolved: ResolvedConfiguration) -> "EngineServices":
+    def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
         paths = EnginePaths.from_workspace(resolved.workspace_root)
         return cls(
             resolved=resolved,

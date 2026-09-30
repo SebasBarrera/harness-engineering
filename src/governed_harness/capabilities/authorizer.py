@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import fnmatch
 import os
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.ids import new_id
@@ -96,10 +96,7 @@ def grants_from_rules(
 
 def contained_path(root: Path, candidate: Path, *, allow_missing: bool = True) -> Path:
     resolved_root = root.resolve(strict=True)
-    if candidate.is_absolute():
-        unresolved = candidate
-    else:
-        unresolved = resolved_root / candidate
+    unresolved = candidate if candidate.is_absolute() else resolved_root / candidate
     resolved_candidate = unresolved.resolve(strict=not allow_missing)
     if resolved_candidate != resolved_root and resolved_root not in resolved_candidate.parents:
         raise CapabilityDenied(f"path escapes workspace: {candidate}")

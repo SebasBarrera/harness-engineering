@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from governed_harness.domain.ids import new_id
-from governed_harness.domain.models import AcceptanceCriterion, FilePatch, Task
+from governed_harness.domain.models import FilePatch, Task
 
 
 def test_new_id_has_prefix_and_unique_value() -> None:

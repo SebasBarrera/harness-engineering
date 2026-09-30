@@ -38,8 +38,7 @@ class GitAdapter:
             ["git", *args],
             cwd=self.workspace,
             stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             check=False,
             timeout=30,
         )

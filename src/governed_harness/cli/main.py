@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TypeVar
 
 import typer
 
@@ -30,7 +30,6 @@ app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 
-T = TypeVar("T")
 
 
 def _emit(value: object, json_output: bool = True) -> None:
@@ -44,7 +43,7 @@ def _emit(value: object, json_output: bool = True) -> None:
         typer.echo(value)
 
 
-def _call(operation: Callable[[], T]) -> T:
+def _call[T](operation: Callable[[], T]) -> T:
     try:
         return operation()
     except HarnessError as error:
@@ -76,7 +75,7 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
 
 @app.command()
 def init(
-    path: Path = typer.Option(Path.cwd(), "--path", help="Project directory"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
     force: bool = typer.Option(False, "--force", help="Replace an existing project configuration"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().init(path, force=force)))
@@ -84,7 +83,7 @@ def init(
 
 @app.command()
 def inspect(
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().inspect(path)), json_output)
@@ -103,7 +102,7 @@ def doctor(
 
 @config_app.command("validate")
 def config_validate(
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().validate_config(path)), json_output)
@@ -112,7 +111,7 @@ def config_validate(
 @task_app.command("create")
 def task_create(
     file: Path = typer.Option(..., "--file", exists=True, dir_okay=False),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().create_task(path, file)), json_output)
@@ -120,7 +119,7 @@ def task_create(
 
 @task_app.command("list")
 def task_list(
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output)
@@ -129,7 +128,7 @@ def task_list(
 @task_app.command("show")
 def task_show(
     task: str = typer.Option(..., "--task"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().get_task(path, task)))
 
@@ -138,7 +137,7 @@ def task_show(
 def run_start(
     task: str = typer.Option(..., "--task"),
     provider: str | None = typer.Option(None, "--provider"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     execution = _call(lambda: HarnessApplication().start_run(path, task, provider))
@@ -149,7 +148,7 @@ def run_start(
 @run_app.command("continue")
 def run_continue(
     run: str = typer.Option(..., "--run"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     execution = _call(lambda: HarnessApplication().continue_run(path, run))
@@ -161,21 +160,21 @@ def run_continue(
 def run_cancel(
     run: str = typer.Option(..., "--run"),
     actor: str = typer.Option("human.local", "--actor"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     execution = _call(lambda: HarnessApplication().cancel_run(path, run, actor))
     _emit(execution)
 
 
 @run_app.command("list")
-def run_list(path: Path = typer.Option(Path.cwd(), "--path")) -> None:
+def run_list(path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory")) -> None:
     _emit(_call(lambda: HarnessApplication().list_runs(path)))
 
 
 @app.command()
 def status(
     run: str = typer.Option(..., "--run"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     json_output: bool = typer.Option(True, "--json/--no-json"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().status(path, run)), json_output)
@@ -186,7 +185,7 @@ def trace(
     run: str = typer.Option(..., "--run"),
     format: str = typer.Option("markdown", "--format"),
     output: Path | None = typer.Option(None, "--output"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     data = _call(lambda: HarnessApplication().trace(path, run, format))
     if output:
@@ -200,7 +199,7 @@ def trace(
 @evidence_app.command("list")
 def evidence_list(
     run: str = typer.Option(..., "--run"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().list_evidence(path, run)))
 
@@ -208,7 +207,7 @@ def evidence_list(
 @findings_app.command("list")
 def findings_list(
     run: str = typer.Option(..., "--run"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().list_findings(path, run)))
 
@@ -221,7 +220,7 @@ def gate_decide(
     rationale: str = typer.Option(..., "--rationale"),
     actor: str = typer.Option("human.local", "--actor"),
     continue_after: bool = typer.Option(True, "--continue/--no-continue"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     record, execution = _call(
         lambda: HarnessApplication().decide_gate(
@@ -246,7 +245,7 @@ def gate_decide(
 @app.command()
 def retrospect(
     run: str = typer.Option(..., "--run"),
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
 ) -> None:
     _emit(_call(lambda: HarnessApplication().retrospect(path, run)))
 
@@ -302,11 +301,12 @@ def benchmark_scenarios(
 
 @api_app.command("serve")
 def api_serve(
-    path: Path = typer.Option(Path.cwd(), "--path"),
+    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory"),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(8765, "--port", min=1, max=65535),
 ) -> None:
     import uvicorn
+
     from governed_harness.api import create_app
 
     uvicorn.run(create_app(path), host=host, port=port, log_level="info")
