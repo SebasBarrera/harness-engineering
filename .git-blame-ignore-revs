@@ -1,0 +1,5 @@
+# Formatting-only commits, skipped by `git blame --ignore-revs-file .git-blame-ignore-revs`
+# and automatically by GitHub's blame view.
+
+# style: apply ruff format to src, tests and scripts
+966a221cfeeafb2480436f9e08f28cf50d2b76bd
