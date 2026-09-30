@@ -1,0 +1,79 @@
+# Metrics
+
+Two different families of metrics appear in this repository. Keep them apart:
+
+1. **Harness telemetry**: process metrics that the harness computes for every governed run (this
+   page). They describe what a run did and what evidence it produced.
+2. **Repository health**: CI results, coverage, static analysis, benchmarks and supply-chain
+   signals about this code base. See [monitoring](monitoring.md) and [benchmarks](benchmarks.md).
+
+## Principles
+
+- **Per run, never per person.** The harness produces no individual indicators. Actor identifiers
+  are recorded for traceability of decisions, but no metric aggregates by actor. During the design
+  research, participants anticipated changing their behavior if an individual indicator fed a
+  performance evaluation; the design responds by not computing one (requirement RD-16 of the
+  thesis). `scripts/metrics_report.py` keeps that property.
+- **Every value declares its quality.** A metric is `OBSERVED` (counted from persisted records or
+  events), `DERIVED` (computed from observed values), `REPORTED` (supplied by a provider),
+  `ESTIMATED` or `NOT_AVAILABLE`. `ESTIMATED` exists in the model but no metric currently uses it.
+- **Nothing is invented.** Token and cost values are `NOT_AVAILABLE` unless a provider reports them;
+  cost is never inferred from tokens.
+
+## Catalogue
+
+The list below is the complete set computed by `MetricsProjector.project` in
+`src/governed_harness/telemetry/metrics.py`.
+
+| Key | Unit | Quality | Definition (as implemented) | Source | Limitations |
+|---|---|---|---|---|---|
+| `duration.total_ms` | ms | OBSERVED | Wall-clock time between the first and last persisted execution event. | event store | Includes human waiting time. |
+| `duration.phase_ms` | ms | DERIVED | Sum of completed phase wall-clock durations; parallel phases would be double-counted. | phase records | Not equal to total wall time when phases overlap. |
+| `duration.agent_ms` | ms | DERIVED | Sum of persisted agent invocation durations. | agent invocation records | |
+| `duration.tool_ms` | ms | DERIVED | Sum of persisted tool invocation durations. | tool invocation records | |
+| `duration.human_wait_ms` | ms | DERIVED, or NOT_AVAILABLE | Elapsed time from the latest gate evaluation to the latest human decision. | gate and decision events | NOT_AVAILABLE until a decision follows a gate evaluation. |
+| `agent.invocations` | count | OBSERVED | Number of persisted agent invocation records. | agent invocation records | |
+| `tool.invocations` | count | OBSERVED | Number of persisted tool invocation records. | tool invocation records | |
+| `implementation.attempts` | count | DERIVED | Count of `IMPLEMENTATION` phase-start events. | event store | |
+| `correction.cycles` | count | OBSERVED | Count of human-authorized transitions from `DECISION` back to `IMPLEMENTATION` (`REQUEST_CHANGES`). | event store | |
+| `review.cycles` | count | DERIVED | Count of `INDEPENDENT_REVIEW` phase-start events. | event store | |
+| `replanning.count` | count | OBSERVED | Count of plan replacement events after the first accepted plan. | event store | No component emits the `plan.replaced` event yet, so the value is always 0. |
+| `validation.non_passed` | count | DERIVED | Validation results whose normalized status is not `PASSED` (includes `NOT_APPLICABLE`). | validation records | Counts optional validators that did not apply. |
+| `changesets.count` | count | OBSERVED | Number of distinct persisted ChangeSet records. | ChangeSet records | |
+| `changeset.files` | count | DERIVED | Unique paths appearing in persisted ChangeSets. | ChangeSet records | |
+| `human.decisions` | count | OBSERVED | Number of persisted human decisions. | decision records | |
+| `tokens.input` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported input tokens; no estimation. | resource usage records | See below. |
+| `tokens.output` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported output tokens; no estimation. | resource usage records | See below. |
+| `tokens.reasoning` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported reasoning tokens; no estimation. | resource usage records | See below. |
+| `cost.usd` | USD | REPORTED, or NOT_AVAILABLE | Sum of provider-reported costs; never inferred from tokens. | resource usage records | See below. |
+
+**Why tokens and cost are `NOT_AVAILABLE`.** They are read from `ResourceUsage` records, and no
+built-in provider creates one: the simulated provider does not call a model and the command
+provider protocol has no usage field. Until a provider reports usage, the harness shows the gap
+instead of estimating it.
+
+## Reading the metrics
+
+| Where | How |
+|---|---|
+| CLI | `harness status --path P --run R` (`metrics` object, one entry per key with value, unit, quality, definition, source and limitations) |
+| Trace | `harness trace --run R --format json` (also `jsonl`, `markdown`, `sarif` for findings) |
+| Retrospective | `harness retrospect --run R` derives observations from these metrics; nothing is applied (`appliedAutomatically: false`) |
+| API | `GET /api/runs/{run}` returns the same status projection as the CLI |
+
+Example from the later-change flow (`scripts/demo_flows.py later-change`): `implementation.attempts`
+2, `correction.cycles` 1, `changesets.count` 3, `human.decisions` 2.
+
+## HTML report
+
+`scripts/metrics_report.py` reads one or more governed projects through the application layer (no
+SQL) and renders a self-contained HTML page: gate and run states, median duration per phase,
+attempts and cycles per run, human wait, authorized exceptions with their rationale, and the quality
+of every metric. It aggregates per run and per project only.
+
+```bash
+python scripts/metrics_report.py path/to/project [more projects] --output metrics.html --json metrics.json
+```
+
+The documentation site publishes a sample report generated from the demonstration flows of the
+thesis (quickstart, later change, broken baseline, Node.js) with the simulated provider.
