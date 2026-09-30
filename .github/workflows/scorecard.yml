@@ -1,10 +1,10 @@
 # OpenSSF Scorecard: supply-chain posture of the repository, published to code scanning and to
-# the public Scorecard API (badge in the README).
+# the public Scorecard API (badge in the README). Publishing requires the default branch (develop).
 name: scorecard
 
 on:
   push:
-    branches: [main]
+    branches: [develop]
   schedule:
     - cron: "23 4 * * 3"
   workflow_dispatch:
