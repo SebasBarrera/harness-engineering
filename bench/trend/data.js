@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790780434105,
+  "lastUpdate": 1790780483127,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -893,6 +893,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 6.445,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "7371884b4b8d7b286e1f156a380d82d36cfce5f3",
+          "message": "Merge branch 'fix/windows-artifact-store' into develop\n\n- fix(evidence): write artifacts on platforms without os.fchmod\n- fix(runtime): resolve .cmd executables such as npm on Windows\n\nVerification on the branch head b6e3106be8fa: 21 CI job(s) succeeded, no blocking job failed.\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490390\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490460\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490589\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490641\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490673\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36729490747\nFiles of the v0.8.0 cut in the tree: matched: 131/232  mismatched: 77  missing: 24",
+          "timestamp": "2026-09-30T10:00:43-05:00",
+          "tree_id": "af97ab3d20fbbd2ce8d202bb6f62ed41aedf4cb5",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/7371884b4b8d7b286e1f156a380d82d36cfce5f3"
+        },
+        "date": 1790780480766,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001223,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001904,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011291,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.074609,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.25087,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.957076,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.537014,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 4.94,
             "unit": "%"
           }
         ]
