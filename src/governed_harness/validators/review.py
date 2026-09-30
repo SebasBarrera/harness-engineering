@@ -26,7 +26,9 @@ RULES = (
         "review.possible-secret",
         "security",
         FindingSeverity.CRITICAL,
-        re.compile(r"(?i)(github_pat_|gh[pousr]_|AKIA[A-Z0-9]{16}|password\s*[:=]\s*['\"][^'\"]{4,})"),
+        re.compile(
+            r"(?i)(github_pat_|gh[pousr]_|AKIA[A-Z0-9]{16}|password\s*[:=]\s*['\"][^'\"]{4,})"
+        ),
         "The added content appears to contain a credential or secret.",
         "Remove the secret, rotate it when applicable, and use an approved secret handle.",
     ),
@@ -61,7 +63,9 @@ class IndependentReviewValidator:
     validator_id = "review.independent"
 
     def execute(self, context: ValidationContext) -> ValidatorOutput:
-        actor = Actor(actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1")
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1"
+        )
         started = datetime.now(UTC)
         if context.raw_diff is not None:
             diff = context.raw_diff
@@ -76,7 +80,9 @@ class IndependentReviewValidator:
             change.path.startswith(("src/", "lib/", "app/")) for change in context.change_set.files
         )
         tests_changed = any(
-            change.path.startswith(("test/", "tests/")) or "/test/" in change.path or "/tests/" in change.path
+            change.path.startswith(("test/", "tests/"))
+            or "/test/" in change.path
+            or "/tests/" in change.path
             for change in context.change_set.files
         )
         if source_changed and not tests_changed:

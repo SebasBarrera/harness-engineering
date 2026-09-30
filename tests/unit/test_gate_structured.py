@@ -13,7 +13,9 @@ from governed_harness.gates import GateEngine, GatePolicy
 
 
 def provenance() -> Provenance:
-    return Provenance(actor=Actor(actor_type=ActorType.HARNESS, actor_id="harness.core"), core_version="test")
+    return Provenance(
+        actor=Actor(actor_type=ActorType.HARNESS, actor_id="harness.core"), core_version="test"
+    )
 
 
 def validation(status: ResultStatus, *, mandatory: bool = True) -> ValidationResult:
@@ -24,7 +26,9 @@ def validation(status: ResultStatus, *, mandatory: bool = True) -> ValidationRes
         validator_id="validator.test",
         change_set_digest="sha256:" + "a" * 64,
         status=status,
-        kind=ValidationKind.SUCCESS if status is ResultStatus.PASSED else ValidationKind.VALIDATION_FAILURE,
+        kind=ValidationKind.SUCCESS
+        if status is ResultStatus.PASSED
+        else ValidationKind.VALIDATION_FAILURE,
         mandatory=mandatory,
         summary="x",
         evidence_refs=("artifact://sha256/" + "b" * 64,),
@@ -48,7 +52,9 @@ def evaluate(validations, findings=()):
 
 
 def test_optional_not_applicable_does_not_block() -> None:
-    gate = evaluate([validation(ResultStatus.PASSED), validation(ResultStatus.NOT_APPLICABLE, mandatory=False)])
+    gate = evaluate(
+        [validation(ResultStatus.PASSED), validation(ResultStatus.NOT_APPLICABLE, mandatory=False)]
+    )
     assert gate.status is ResultStatus.PASSED
 
 

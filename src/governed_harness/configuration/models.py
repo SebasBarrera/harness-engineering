@@ -42,8 +42,6 @@ class RuntimeConfig(ConfigModel):
     allow_network: bool = Field(default=False, alias="allowNetwork")
 
 
-
-
 class AgentProviderConfiguration(ConfigModel):
     kind: Literal["command"] = "command"
     command: tuple[str, ...]
@@ -100,7 +98,9 @@ class TechnologyProfileDefinition(ConfigModel):
     profile_id: str = Field(alias="profileId")
     technology: str
     detectors: tuple[DetectorMarker, ...]
-    default_commands: dict[str, tuple[str, ...]] = Field(default_factory=dict, alias="defaultCommands")
+    default_commands: dict[str, tuple[str, ...]] = Field(
+        default_factory=dict, alias="defaultCommands"
+    )
     default_validators: tuple[str, ...] = Field(default=(), alias="defaultValidators")
     validators: tuple[ValidatorDefinition, ...] = ()
     policies: dict[str, Any] = Field(default_factory=dict)

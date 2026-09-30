@@ -52,7 +52,9 @@ def context(tmp_path: Path, diff: bytes) -> ValidationContext:
 
 def test_review_detects_possible_secret(tmp_path: Path) -> None:
     output = IndependentReviewValidator().execute(
-        context(tmp_path, b"--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n+password = \"supersecret\"\n")
+        context(
+            tmp_path, b'--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n+password = "supersecret"\n'
+        )
     )
     assert any(finding.rule_id == "review.possible-secret" for finding in output.findings)
 
@@ -61,4 +63,6 @@ def test_review_detects_source_without_tests(tmp_path: Path) -> None:
     output = IndependentReviewValidator().execute(
         context(tmp_path, b"--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n+x = 2\n")
     )
-    assert any(finding.rule_id == "review.source-without-test-change" for finding in output.findings)
+    assert any(
+        finding.rule_id == "review.source-without-test-change" for finding in output.findings
+    )

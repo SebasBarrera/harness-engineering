@@ -31,7 +31,11 @@ class PatchApplier:
         ):
             raise CapabilityDenied(f"precondition digest mismatch for {patch.path}")
         if patch.operation == "delete":
-            if not any(grant.conditions.get("allowDelete") for grant in grants if grant.capability == "filesystem.write"):
+            if not any(
+                grant.conditions.get("allowDelete")
+                for grant in grants
+                if grant.capability == "filesystem.write"
+            ):
                 raise CapabilityDenied("delete requires an explicit allowDelete grant condition")
             path.unlink(missing_ok=False)
             return path

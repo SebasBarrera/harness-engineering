@@ -31,12 +31,14 @@ app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 
 
-
 def _emit(value: object, json_output: bool = True) -> None:
     if hasattr(value, "model_dump"):
         value = value.model_dump(mode="json", by_alias=True)
     elif isinstance(value, list):
-        value = [item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item for item in value]
+        value = [
+            item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item
+            for item in value
+        ]
     if json_output:
         typer.echo(json.dumps(value, indent=2, ensure_ascii=False, default=str))
     else:
@@ -67,7 +69,12 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
         raise typer.Exit(code=130)
     if status is ResultStatus.BLOCKED and phase == "DECISION":
         raise typer.Exit(code=4)
-    if status in {ResultStatus.BLOCKED, ResultStatus.FAILED, ResultStatus.INCONCLUSIVE, ResultStatus.TIMED_OUT}:
+    if status in {
+        ResultStatus.BLOCKED,
+        ResultStatus.FAILED,
+        ResultStatus.INCONCLUSIVE,
+        ResultStatus.TIMED_OUT,
+    }:
         raise typer.Exit(code=6)
     if status is ResultStatus.ERROR:
         raise typer.Exit(code=1)
@@ -75,7 +82,9 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
 
 @app.command()
 def init(
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
     force: bool = typer.Option(False, "--force", help="Replace an existing project configuration"),
 ) -> None:
     """Create .harness/project.yaml for a repository, using the detected technology profiles."""
@@ -84,8 +93,12 @@ def init(
 
 @app.command()
 def inspect(
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Detect the technology profiles of a repository (read-only), with confidence and
     evidence."""
@@ -94,8 +107,12 @@ def inspect(
 
 @app.command()
 def doctor(
-    path: Path | None = typer.Option(None, "--path", help="Also validate the project in this directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path | None = typer.Option(
+        None, "--path", help="Also validate the project in this directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Check the local environment (Python and Git required; Node.js and npm reported as
     NOT_APPLICABLE when absent) and, with --path, the project configuration. Exit code 2 when a
@@ -108,8 +125,12 @@ def doctor(
 
 @config_app.command("validate")
 def config_validate(
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Validate the project configuration and print the resolved profiles, workflow,
     validators, capabilities and policies."""
@@ -118,9 +139,15 @@ def config_validate(
 
 @task_app.command("create")
 def task_create(
-    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False, help="Task file (YAML or JSON)"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    file: Path = typer.Option(
+        ..., "--file", exists=True, dir_okay=False, help="Task file (YAML or JSON)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Validate a task file (YAML or JSON) and persist it as a versioned task."""
     _emit(_call(lambda: HarnessApplication().create_task(path, file)), json_output)
@@ -128,8 +155,12 @@ def task_create(
 
 @task_app.command("list")
 def task_list(
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """List the tasks persisted in the project."""
     _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output)
@@ -138,7 +169,9 @@ def task_list(
 @task_app.command("show")
 def task_show(
     task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """Show one persisted task."""
     _emit(_call(lambda: HarnessApplication().get_task(path, task)))
@@ -147,9 +180,15 @@ def task_show(
 @run_app.command("start")
 def run_start(
     task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
-    provider: str | None = typer.Option(None, "--provider", help="Agent provider id; defaults to the project agentProvider"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    provider: str | None = typer.Option(
+        None, "--provider", help="Agent provider id; defaults to the project agentProvider"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Create a run for a task and execute the normative phases until a stop condition. Exit
     code 4 means the automated phases finished and a human decision is pending; 6 means a
@@ -162,8 +201,12 @@ def run_start(
 @run_app.command("continue")
 def run_continue(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Resume a run from its persisted state, for example after fixing the environment or after
     REQUEST_CHANGES."""
@@ -175,8 +218,14 @@ def run_continue(
 @run_app.command("cancel")
 def run_cancel(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    actor: str = typer.Option("human.local", "--actor", help="Identifier of the person acting (recorded, not authenticated)"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
     event."""
@@ -185,7 +234,11 @@ def run_cancel(
 
 
 @run_app.command("list")
-def run_list(path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory")) -> None:
+def run_list(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
     """List the runs of the project, newest first."""
     _emit(_call(lambda: HarnessApplication().list_runs(path)))
 
@@ -193,8 +246,12 @@ def run_list(path: Path = typer.Option(default_factory=Path.cwd, show_default="c
 @app.command()
 def status(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
-    json_output: bool = typer.Option(True, "--json/--no-json", help="Print JSON (default) or a plain representation"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool = typer.Option(
+        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
+    ),
 ) -> None:
     """Show the full status projection of a run: phases, validations, findings, gate, human
     decision, event-chain check and metrics."""
@@ -205,8 +262,12 @@ def status(
 def trace(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
     format: str = typer.Option("markdown", "--format", help="markdown, json, jsonl or sarif"),
-    output: Path | None = typer.Option(None, "--output", help="Write to this file instead of standard output"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write to this file instead of standard output"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """Export the trace of a run as Markdown, JSON, JSONL or SARIF."""
     data = _call(lambda: HarnessApplication().trace(path, run, format))
@@ -221,7 +282,9 @@ def trace(
 @evidence_app.command("list")
 def evidence_list(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """List the evidence records of a run with their artifact references and digests."""
     _emit(_call(lambda: HarnessApplication().list_evidence(path, run)))
@@ -230,7 +293,9 @@ def evidence_list(
 @findings_app.command("list")
 def findings_list(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """List the structured findings of a run with severity, rule and location."""
     _emit(_call(lambda: HarnessApplication().list_findings(path, run)))
@@ -239,12 +304,26 @@ def findings_list(
 @gate_app.command("decide")
 def gate_decide(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    decision: DecisionKind = typer.Option(..., "--decision", case_sensitive=False, help="Human decision"),
-    change_set_digest: str = typer.Option(..., "--change-set-digest", help="Current ChangeSet digest shown by status (sha256:...)"),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded with the decision"),
-    actor: str = typer.Option("human.local", "--actor", help="Identifier of the person acting (recorded, not authenticated)"),
-    continue_after: bool = typer.Option(True, "--continue/--no-continue", help="Resume the run after recording the decision"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    decision: DecisionKind = typer.Option(
+        ..., "--decision", case_sensitive=False, help="Human decision"
+    ),
+    change_set_digest: str = typer.Option(
+        ..., "--change-set-digest", help="Current ChangeSet digest shown by status (sha256:...)"
+    ),
+    rationale: str = typer.Option(
+        ..., "--rationale", help="Justification recorded with the decision"
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """Record a human decision bound to the current ChangeSet digest. A decision for a stale
     digest, or APPROVE over a gate that did not pass, is rejected with exit code 5."""
@@ -271,7 +350,9 @@ def gate_decide(
 @app.command()
 def retrospect(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
 ) -> None:
     """Derive non-mutating observations and recommendations from a closed run. Nothing is
     applied automatically."""
@@ -296,8 +377,12 @@ def plugins_list() -> None:
 
 @benchmark_app.command("run")
 def benchmark_run(
-    output: Path | None = typer.Option(None, "--output", help="Write to this file instead of standard output"),
-    iterations: int = typer.Option(1000, "--iterations", min=10, max=100000, help="Iterations per in-process operation"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write to this file instead of standard output"
+    ),
+    iterations: int = typer.Option(
+        1000, "--iterations", min=10, max=100000, help="Iterations per in-process operation"
+    ),
 ) -> None:
     """Run the synthetic microbenchmarks (hashing, transitions, gates, events, artifacts,
     process launch)."""
@@ -315,8 +400,12 @@ def benchmark_run(
 
 @benchmark_app.command("scenarios")
 def benchmark_scenarios(
-    output: Path | None = typer.Option(None, "--output", help="Write to this file instead of standard output"),
-    iterations: int = typer.Option(3, "--iterations", min=1, max=100, help="Repetitions per scenario"),
+    output: Path | None = typer.Option(
+        None, "--output", help="Write to this file instead of standard output"
+    ),
+    iterations: int = typer.Option(
+        3, "--iterations", min=1, max=100, help="Repetitions per scenario"
+    ),
 ) -> None:
     """Compare a direct patch-and-test path with the complete governed path on generated Python
     and Node.js projects."""
@@ -334,7 +423,9 @@ def benchmark_scenarios(
 
 @api_app.command("serve")
 def api_serve(
-    path: Path = typer.Option(default_factory=Path.cwd, show_default="current directory", help="Project directory"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address; keep the loopback default"),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="TCP port"),
 ) -> None:
