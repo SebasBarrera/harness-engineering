@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import shutil
 from datetime import UTC, datetime
@@ -25,6 +24,17 @@ from governed_harness.domain.models import (
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators.base import ValidationContext, ValidatorOutput
 
+# Exits with _MODULE_MISSING_EXIT_CODE when the module named in argv[1] cannot be found.
+_MODULE_MISSING_EXIT_CODE = 3
+_MODULE_PROBE = (
+    "import importlib.util, sys\n"
+    "try:\n"
+    "    found = importlib.util.find_spec(sys.argv[1]) is not None\n"
+    "except Exception:\n"
+    "    found = False\n"
+    "sys.exit(0 if found else 3)\n"
+)
+
 
 class CommandValidator:
     def __init__(self, validator_id: str) -> None:
@@ -35,7 +45,7 @@ class CommandValidator:
             actor_type=ActorType.TOOL, actor_id=f"validator.{self.validator_id}", version="1"
         )
         started = datetime.now(UTC)
-        availability = self._availability(context)
+        availability = self._availability(context, actor)
         if availability is not None:
             status, reason = availability
             evidence = context.artifact_store.put_json(
@@ -175,7 +185,9 @@ class CommandValidator:
         )
         return ValidatorOutput(result, findings, (tool,))
 
-    def _availability(self, context: ValidationContext) -> tuple[ResultStatus, str] | None:
+    def _availability(
+        self, context: ValidationContext, actor: Actor
+    ) -> tuple[ResultStatus, str] | None:
         definition = context.definition
         if definition.command is None:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
@@ -196,15 +208,32 @@ class CommandValidator:
         if shutil.which(argv0) is None:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
-        if (
-            definition.when_available
-            and len(definition.command) >= 3
-            and definition.command[1] == "-m"
-        ):
+        if len(definition.command) >= 3 and definition.command[1] == "-m":
             module = definition.command[2]
-            if importlib.util.find_spec(module) is None:
-                return (
-                    ResultStatus.NOT_APPLICABLE,
-                    f"optional Python module {module!r} is not installed",
+            if not self._module_available(context, actor, argv0, module):
+                status = (
+                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
                 )
+                kind = "mandatory" if definition.mandatory else "optional"
+                return status, f"{kind} Python module {module!r} is not installed for {argv0!r}"
         return None
+
+    @staticmethod
+    def _module_available(
+        context: ValidationContext, actor: Actor, interpreter: str, module: str
+    ) -> bool:
+        """Ask the interpreter that will run the command, not the harness's own, whether the
+        module can be imported. The probe goes through the governed runner, so it needs the same
+        process capability as the validator itself."""
+        probe = context.process_runner.run(
+            CommandSpec(
+                argv=(interpreter, "-c", _MODULE_PROBE, module),
+                cwd=context.workspace,
+                timeout_seconds=60.0,
+                max_output_bytes=4096,
+            ),
+            actor=actor,
+            grants=context.grants,
+            cancellation=context.cancellation,
+        )
+        return probe.exit_code != _MODULE_MISSING_EXIT_CODE
