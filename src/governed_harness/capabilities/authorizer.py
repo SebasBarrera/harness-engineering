@@ -113,12 +113,22 @@ def contained_path(root: Path, candidate: Path, *, allow_missing: bool = True) -
     resolved_candidate = unresolved.resolve(strict=not allow_missing)
     if resolved_candidate != resolved_root and resolved_root not in resolved_candidate.parents:
         raise CapabilityDenied(f"path escapes workspace: {candidate}")
-    # Reject any existing symlink in the path from the workspace root to the candidate.
+    # Reject any existing symlink in the path from the workspace root to the candidate. The
+    # candidate may reach the workspace through a symlinked ancestor outside it (macOS: /var ->
+    # /private/var), so the workspace part is taken after the first ancestor, from the top, that
+    # resolves to the workspace root; links inside the workspace are still checked below.
+    workspace_prefix = next(
+        (
+            ancestor
+            for ancestor in reversed((unresolved, *unresolved.parents))
+            if ancestor.resolve() == resolved_root
+        ),
+        None,
+    )
+    if workspace_prefix is None:
+        raise CapabilityDenied(f"path escapes workspace: {candidate}")
+    relative = unresolved.relative_to(workspace_prefix)
     current = resolved_root
-    try:
-        relative = unresolved.relative_to(resolved_root)
-    except ValueError as error:
-        raise CapabilityDenied(f"path escapes workspace: {candidate}") from error
     for part in relative.parts:
         current = current / part
         if current.exists() and current.is_symlink():
