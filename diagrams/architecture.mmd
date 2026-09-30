@@ -1,6 +1,6 @@
 flowchart TB
   CLI[CLI] --> APP[Application use cases]
-  API[Future API/Web] --> APP
+  API[Local API and dashboard] --> APP
   APP --> ORCH[Workflow orchestrator]
   ORCH --> DOMAIN[Domain + state machine]
   ORCH --> GATES[Gate and policy engines]
