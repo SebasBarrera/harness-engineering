@@ -16,7 +16,7 @@ the process metrics of governed runs, see [metrics](metrics.md).
 | Static security analysis | Security → Code scanning (categories `bandit`, `trivy`, CodeQL, `scorecard`) | `security.yml`, `docker.yml`, `codeql.yml`, `scorecard.yml` | Triage each alert: fix, or dismiss with a written reason in the alert. Bandit medium+ and fixable critical image vulnerabilities fail the build. |
 | Provenance of v0.8.0 | Actions → `security` (`provenance (v0.8.0 tag)`) | `scripts/verify_provenance.py` | The tag no longer matches the thesis cut: stop and investigate; the tag must never move. |
 | Privacy denylist | Actions → `security` (`privacy`) | `scripts/check_denylist.py` | A denylisted path was committed: remove it and, if it contained personal data, treat it as an incident. |
-| Supply-chain posture | OpenSSF Scorecard badge and code scanning | `scorecard.yml` (main, weekly) | Review the failing checks; most are addressed by branch protection, pinned actions and token permissions. |
+| Supply-chain posture | OpenSSF Scorecard badge and code scanning | `scorecard.yml` (develop, weekly) | Review the failing checks; most are addressed by branch protection, pinned actions and token permissions. |
 | Code quality gate | SonarQube Cloud project dashboard | `sonarcloud.yml` (needs `SONAR_TOKEN`) | New issues on changed code should be fixed before release. |
 | Benchmarks | Pages `/benchmarks/` (report) and `/benchmarks/trend/` (history on `gh-pages`) | `benchmarks.yml` | A >150 % regression comments on the commit; rerun before acting, runners are noisy. |
 | Links | Actions → `links` (weekly) | lychee | Update or remove the broken link. |
