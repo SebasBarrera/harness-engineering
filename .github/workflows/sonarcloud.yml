@@ -1,6 +1,6 @@
 # SonarQube Cloud analysis with coverage. Requires the SONAR_TOKEN secret and automatic analysis
-# disabled in SonarQube Cloud (docs/maintainer-setup.md). Without the secret the analysis is
-# skipped with a visible notice; it never reports a fake success.
+# disabled in SonarQube Cloud. Without the secret the analysis is skipped with a visible notice;
+# it never reports a fake success.
 name: sonarcloud
 
 on:
@@ -32,8 +32,8 @@ jobs:
             echo "present=true" >> "$GITHUB_OUTPUT"
           else
             echo "present=false" >> "$GITHUB_OUTPUT"
-            echo "::notice title=SonarQube Cloud skipped::SONAR_TOKEN is not configured; see docs/maintainer-setup.md."
-            echo "### SonarQube Cloud: SKIPPED (SONAR_TOKEN not configured, see docs/maintainer-setup.md)" >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=SonarQube Cloud skipped::SONAR_TOKEN is not configured."
+            echo "### SonarQube Cloud: SKIPPED (SONAR_TOKEN not configured)" >> "$GITHUB_STEP_SUMMARY"
           fi
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         if: steps.token.outputs.present == 'true'
