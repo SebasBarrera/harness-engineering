@@ -1,0 +1,15 @@
+stateDiagram-v2
+  [*] --> PENDING
+  PENDING --> RUNNING
+  RUNNING --> PASSED
+  RUNNING --> FAILED
+  RUNNING --> BLOCKED
+  RUNNING --> ERROR
+  RUNNING --> INCONCLUSIVE
+  RUNNING --> TIMED_OUT
+  RUNNING --> CANCELLED
+  FAILED --> PENDING: authorized retry
+  BLOCKED --> PENDING: blocker resolved
+  INCONCLUSIVE --> PENDING: evidence supplied
+  PASSED --> INVALIDATED: input digest changed
+  INVALIDATED --> PENDING

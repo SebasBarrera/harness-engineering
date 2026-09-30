@@ -1,0 +1,20 @@
+sequenceDiagram
+  actor Human
+  participant CLI
+  participant App
+  participant Core
+  participant Agent
+  participant Tools
+  participant Store
+  Human->>CLI: task + acceptance criteria
+  CLI->>App: create task/run
+  App->>Store: configuration snapshot + run.started
+  App->>Core: advance normative phases
+  Core->>Agent: implementation request + grants
+  Agent->>Tools: authorized actions
+  Tools-->>Store: invocations + evidence
+  Core->>Tools: verification checks
+  Core->>Agent: independent review request
+  Core->>Human: gate request bound to ChangeSet digest
+  Human-->>Core: approve/reject/request changes
+  Core->>Store: decision + closure + trace
