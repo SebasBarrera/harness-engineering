@@ -5,7 +5,8 @@ import sqlite3
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypeVar
+from types import TracebackType
+from typing import Any, Self, TypeVar
 
 from pydantic import BaseModel
 
@@ -90,7 +91,8 @@ class SQLiteStateStore:
         ).fetchone()
         if row is None:
             raise NotFoundError(f"{record_type} not found: {record_id}")
-        return json.loads(row["payload_json"])
+        payload: dict[str, Any] = json.loads(row["payload_json"])
+        return payload
 
     def get(self, record_type: str, record_id: str, model: type[T]) -> T:
         return model.model_validate(self.get_dict(record_type, record_id))
@@ -161,8 +163,13 @@ class SQLiteStateStore:
     def close(self) -> None:
         self.connection.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()

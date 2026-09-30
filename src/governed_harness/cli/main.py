@@ -34,7 +34,7 @@ app.add_typer(api_app, name="api")
 
 def _emit(value: object, json_output: bool = True) -> None:
     if hasattr(value, "model_dump"):
-        value = value.model_dump(mode="json", by_alias=True)  # type: ignore[union-attr]
+        value = value.model_dump(mode="json", by_alias=True)
     elif isinstance(value, list):
         value = [item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item for item in value]
     if json_output:

@@ -5,7 +5,7 @@ from governed_harness.validators.review import IndependentReviewValidator
 
 
 class ValidatorRegistry:
-    def create(self, validator_id: str):
+    def create(self, validator_id: str) -> CommandValidator | IndependentReviewValidator:
         if validator_id == "review.independent":
             return IndependentReviewValidator()
         return CommandValidator(validator_id)

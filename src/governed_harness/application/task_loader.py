@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml
 
@@ -62,7 +62,10 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
                     criterion_id=_first(item, "criterionId", "criterion_id", "id", default=new_id("ac")),
                     text=str(_first(item, "text")),
                     verification_hint=_first(item, "verificationHint", "verification_hint"),
-                    priority=str(_first(item, "priority", default="MUST")).upper(),
+                    priority=cast(
+                        Literal["MUST", "SHOULD", "COULD"],
+                        str(_first(item, "priority", default="MUST")).upper(),
+                    ),
                 )
             )
         else:
@@ -73,13 +76,17 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
         patches.append(
             FilePatch(
                 path=str(_first(patch, "path")),
-                operation=str(_first(patch, "operation")),
+                operation=cast(
+                    Literal["create", "replace", "append", "delete"], str(_first(patch, "operation"))
+                ),
                 content=_first(patch, "content"),
                 expected_sha256=_first(patch, "expectedSha256", "expected_sha256"),
             )
         )
     implementation = ImplementationInstruction(
-        mode=str(_first(implementation_raw, "mode", default="none")),
+        mode=cast(
+            Literal["none", "patch", "command"], str(_first(implementation_raw, "mode", default="none"))
+        ),
         patches=tuple(patches),
         argv=tuple(str(item) for item in (_first(implementation_raw, "argv", default=[]) or [])),
         cwd=str(_first(implementation_raw, "cwd", default=".")),

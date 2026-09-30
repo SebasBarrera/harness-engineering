@@ -50,11 +50,12 @@ class LocalArtifactStore:
         meta = dict(metadata or {})
         if redaction and redaction.redacted:
             meta["redactionRuleIds"] = list(redaction.rule_ids)
+        redacted = bool(redaction and redaction.redacted)
         descriptor = {
             "digest": digest,
             "sizeBytes": len(stored),
             "mediaType": media_type,
-            "redacted": bool(redaction and redaction.redacted),
+            "redacted": redacted,
             "metadata": meta,
         }
         self._atomic_write(
@@ -66,7 +67,7 @@ class LocalArtifactStore:
             digest=digest,
             size_bytes=len(stored),
             media_type=media_type,
-            redacted=descriptor["redacted"],
+            redacted=redacted,
             metadata=meta,
         )
 
