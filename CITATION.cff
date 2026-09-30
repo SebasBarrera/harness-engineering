@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software, please cite it using these metadata. To cite the version evaluated in
+  the thesis, cite v0.8.0.
+type: software
+title: "Governed Agent Harness"
+abstract: >-
+  Local control plane that governs AI-assisted software development with nine normative phases,
+  deny-by-default capabilities, shell-free validators, task-owned ChangeSets, hash-chained events,
+  fail-closed gates and human decisions bound to the ChangeSet digest. Research artifact of a
+  master's thesis.
+authors:
+  - family-names: "Barrera Pulido"
+    given-names: "Juan Sebastián"
+    affiliation: "Escuela Colombiana de Ingeniería Julio Garavito"
+version: "0.8.1"
+date-released: "2026-09-30"
+license: Apache-2.0
+repository-code: "https://github.com/SebasBarrera/harness-engineering"
+url: "https://sebasbarrera.github.io/harness-engineering/"
+keywords:
+  - harness engineering
+  - ai agents
+  - software engineering
+  - governance
+  - human-in-the-loop
+  - traceability
+references:
+  - type: thesis
+    title: >-
+      Diseño y evaluación de una arquitectura de harness engineering para el desarrollo de
+      software asistido por inteligencia artificial, con supervisión humana y retrospectiva
+      basada en evidencia
+    authors:
+      - family-names: "Barrera Pulido"
+        given-names: "Juan Sebastián"
+    thesis-type: "Master's thesis (Maestría en Informática)"
+    institution:
+      name: "Escuela Colombiana de Ingeniería Julio Garavito"
+      city: "Bogotá"
+      country: CO

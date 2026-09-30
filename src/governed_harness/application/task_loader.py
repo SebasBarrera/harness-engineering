@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 import yaml
 
@@ -43,7 +43,9 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
         elif isinstance(item, dict):
             requirements.append(
                 Requirement(
-                    requirement_id=_first(item, "requirementId", "requirement_id", "id", default=new_id("req")),
+                    requirement_id=_first(
+                        item, "requirementId", "requirement_id", "id", default=new_id("req")
+                    ),
                     text=str(_first(item, "text")),
                     source=str(_first(item, "source", default="human")),
                 )
@@ -53,16 +55,19 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
     criteria = []
     for item in _first(raw, "acceptanceCriteria", "acceptance_criteria", default=[]) or []:
         if isinstance(item, str):
-            criteria.append(
-                AcceptanceCriterion(criterion_id=new_id("ac"), text=item)
-            )
+            criteria.append(AcceptanceCriterion(criterion_id=new_id("ac"), text=item))
         elif isinstance(item, dict):
             criteria.append(
                 AcceptanceCriterion(
-                    criterion_id=_first(item, "criterionId", "criterion_id", "id", default=new_id("ac")),
+                    criterion_id=_first(
+                        item, "criterionId", "criterion_id", "id", default=new_id("ac")
+                    ),
                     text=str(_first(item, "text")),
                     verification_hint=_first(item, "verificationHint", "verification_hint"),
-                    priority=str(_first(item, "priority", default="MUST")).upper(),
+                    priority=cast(
+                        Literal["MUST", "SHOULD", "COULD"],
+                        str(_first(item, "priority", default="MUST")).upper(),
+                    ),
                 )
             )
         else:
@@ -73,13 +78,19 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
         patches.append(
             FilePatch(
                 path=str(_first(patch, "path")),
-                operation=str(_first(patch, "operation")),
+                operation=cast(
+                    Literal["create", "replace", "append", "delete"],
+                    str(_first(patch, "operation")),
+                ),
                 content=_first(patch, "content"),
                 expected_sha256=_first(patch, "expectedSha256", "expected_sha256"),
             )
         )
     implementation = ImplementationInstruction(
-        mode=str(_first(implementation_raw, "mode", default="none")),
+        mode=cast(
+            Literal["none", "patch", "command"],
+            str(_first(implementation_raw, "mode", default="none")),
+        ),
         patches=tuple(patches),
         argv=tuple(str(item) for item in (_first(implementation_raw, "argv", default=[]) or [])),
         cwd=str(_first(implementation_raw, "cwd", default=".")),

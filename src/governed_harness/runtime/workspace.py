@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import difflib
 import os
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
-from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.evidence.hashing import sha256_bytes, sha256_file, sha256_json
-
 
 DEFAULT_EXCLUDES = {
     ".git",
@@ -107,9 +105,12 @@ class WorkspaceSnapshotter:
             else:
                 status = "MODIFIED"
             additions = deletions = 0
-            if (old is None or old.text is not None) and (new is None or new.text is not None):
-                old_lines = [] if old is None else old.text.splitlines(keepends=True)  # type: ignore[union-attr]
-                new_lines = [] if new is None else new.text.splitlines(keepends=True)  # type: ignore[union-attr]
+            # A missing side diffs as empty text; a present binary side (text None) is not diffed.
+            old_text = "" if old is None else old.text
+            new_text = "" if new is None else new.text
+            if old_text is not None and new_text is not None:
+                old_lines = old_text.splitlines(keepends=True)
+                new_lines = new_text.splitlines(keepends=True)
                 chunk = list(
                     difflib.unified_diff(
                         old_lines,

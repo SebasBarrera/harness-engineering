@@ -4,16 +4,16 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from governed_harness import __version__
 from governed_harness.configuration import ConfigurationResolver, initialize_project
 from governed_harness.domain.enums import DecisionKind
-from governed_harness.domain.errors import ConfigurationError, NotFoundError
+from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.models import (
-    Artifact,
     Execution,
     Finding,
     GateEvaluation,
@@ -63,7 +63,10 @@ class HarnessApplication:
             "profiles": [item.profile_id for item in resolved.profiles],
             "workflow": resolved.workflow.workflow_id,
             "validators": [item.validator_id for item in resolved.effective_validators],
-            "capabilities": [item.model_dump(mode="json", by_alias=True) for item in resolved.effective_capabilities],
+            "capabilities": [
+                item.model_dump(mode="json", by_alias=True)
+                for item in resolved.effective_capabilities
+            ],
             "policies": resolved.effective_policies,
         }
 
@@ -125,7 +128,8 @@ class HarnessApplication:
             )
             execution = (
                 engine.continue_execution(execution_id)
-                if continue_after and decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}
+                if continue_after
+                and decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}
                 else engine.get_execution(execution_id)
             )
             return record, execution
@@ -134,7 +138,9 @@ class HarnessApplication:
         with self._services(path) as services:
             execution = services.state.get("execution", execution_id, Execution)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
-            validations = services.state.list("validation", ValidationResult, execution_id=execution_id)
+            validations = services.state.list(
+                "validation", ValidationResult, execution_id=execution_id
+            )
             findings = services.state.list("finding", Finding, execution_id=execution_id)
             gate = (
                 services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
@@ -160,7 +166,9 @@ class HarnessApplication:
                     "bySeverity": self._count_by(findings, "severity"),
                 },
                 "gate": gate.model_dump(mode="json", by_alias=True) if gate else None,
-                "humanDecision": decision.model_dump(mode="json", by_alias=True) if decision else None,
+                "humanDecision": decision.model_dump(mode="json", by_alias=True)
+                if decision
+                else None,
                 "eventCount": len(events),
                 "eventChainValid": services.events.verify_chain(execution_id),
                 "metrics": {key: value.as_dict() for key, value in metrics.items()},
@@ -180,7 +188,9 @@ class HarnessApplication:
             execution = services.state.get("execution", execution_id, Execution)
             task = services.state.get("task", execution.task_id, Task)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
-            validations = services.state.list("validation", ValidationResult, execution_id=execution_id)
+            validations = services.state.list(
+                "validation", ValidationResult, execution_id=execution_id
+            )
             findings = services.state.list("finding", Finding, execution_id=execution_id)
             gate = (
                 services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
@@ -280,7 +290,11 @@ class HarnessApplication:
                 }
             except Exception as error:
                 checks["configuration"] = {"status": "FAILED", "message": str(error)}
-        status = "PASSED" if all(item["status"] not in {"FAILED", "ERROR"} for item in checks.values()) else "FAILED"
+        status = (
+            "PASSED"
+            if all(item["status"] not in {"FAILED", "ERROR"} for item in checks.values())
+            else "FAILED"
+        )
         return {"status": status, "version": __version__, "checks": checks}
 
     @contextmanager
@@ -306,5 +320,8 @@ class HarnessApplication:
         if hasattr(value, "model_dump"):
             value = value.model_dump(mode="json", by_alias=True)
         elif isinstance(value, list):
-            value = [item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item for item in value]
+            value = [
+                item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item
+                for item in value
+            ]
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)

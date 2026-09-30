@@ -1,0 +1,62 @@
+# SonarQube Cloud analysis with coverage. Requires the SONAR_TOKEN secret and automatic analysis
+# disabled in SonarQube Cloud. Without the secret the analysis is skipped with a visible notice;
+# it never reports a fake success.
+name: sonarcloud
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analysis:
+    name: sonarcloud
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check that SONAR_TOKEN is configured
+        id: token
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          if [ -n "${SONAR_TOKEN}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=SonarQube Cloud skipped::SONAR_TOKEN is not configured."
+            echo "### SonarQube Cloud: SKIPPED (SONAR_TOKEN not configured)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.token.outputs.present == 'true'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        if: steps.token.outputs.present == 'true'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.token.outputs.present == 'true'
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Run the test suite with coverage
+        if: steps.token.outputs.present == 'true'
+        run: |
+          python -m pip install -e ".[dev,api]"
+          mkdir -p reports/ci
+          python -m pytest -W error::ResourceWarning --cov=governed_harness --cov-branch \
+            --cov-report=xml:coverage.xml --junitxml=reports/ci/junit-all.xml
+      - uses: SonarSource/sonarqube-scan-action@ba9859eae8dd6bd29e412f25ddbbef3d032000f4 # v8.2.2
+        if: steps.token.outputs.present == 'true'
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

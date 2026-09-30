@@ -34,8 +34,10 @@ def main() -> int:
     ]
     for path, rule in violations:
         print(f"DENYLISTED {path} (rule {rule!r})")
-    print(f"checked {len(tracked_files())} tracked files against {len(rules)} rules: "
-          f"{len(violations)} violation(s)")
+    print(
+        f"checked {len(tracked_files())} tracked files against {len(rules)} rules: "
+        f"{len(violations)} violation(s)"
+    )
     return 1 if violations else 0
 
 

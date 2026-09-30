@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TypeVar
 
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import BaseModel
@@ -27,8 +26,6 @@ from governed_harness.domain.models import (
 )
 from governed_harness.orchestration.engine import EngineServices
 
-
-T = TypeVar("T", bound=BaseModel)
 SCHEMA_DIR = Path(__file__).parents[2] / "schemas" / "v1"
 
 
@@ -37,7 +34,9 @@ def _validate(schema_name: str, value: dict[str, object]) -> None:
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(value)
 
 
-def _first(services: EngineServices, record_type: str, model: type[T], execution_id: str) -> T:
+def _first[T: BaseModel](
+    services: EngineServices, record_type: str, model: type[T], execution_id: str
+) -> T:
     records = services.state.list(record_type, model, execution_id=execution_id)
     assert records, f"missing {record_type} record"
     return records[0]
@@ -91,14 +90,29 @@ def test_persisted_vertical_slice_records_match_public_schemas(
             ("phase-result.schema.json", _first(services, "phase", PhaseExecution, execution_id)),
             ("plan.schema.json", _first(services, "plan", Plan, execution_id)),
             ("change-set.schema.json", _first(services, "change_set", ChangeSet, execution_id)),
-            ("validation-result.schema.json", _first(services, "validation", ValidationResult, execution_id)),
+            (
+                "validation-result.schema.json",
+                _first(services, "validation", ValidationResult, execution_id),
+            ),
             ("gate-evaluation.schema.json", _first(services, "gate", GateEvaluation, execution_id)),
-            ("human-decision.schema.json", _first(services, "decision", HumanDecision, execution_id)),
-            ("agent-invocation.schema.json", _first(services, "agent_invocation", AgentInvocation, execution_id)),
-            ("tool-invocation.schema.json", _first(services, "tool_invocation", ToolInvocation, execution_id)),
+            (
+                "human-decision.schema.json",
+                _first(services, "decision", HumanDecision, execution_id),
+            ),
+            (
+                "agent-invocation.schema.json",
+                _first(services, "agent_invocation", AgentInvocation, execution_id),
+            ),
+            (
+                "tool-invocation.schema.json",
+                _first(services, "tool_invocation", ToolInvocation, execution_id),
+            ),
             ("evidence.schema.json", _first(services, "evidence", Evidence, execution_id)),
             ("artifact.schema.json", _first(services, "artifact", Artifact, execution_id)),
-            ("retrospective.schema.json", _first(services, "retrospective", Retrospective, execution_id)),
+            (
+                "retrospective.schema.json",
+                _first(services, "retrospective", Retrospective, execution_id),
+            ),
         ]
         for schema_name, record in records:
             _validate(schema_name, record.model_dump(mode="json", by_alias=True))

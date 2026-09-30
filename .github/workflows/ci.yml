@@ -1,30 +1,111 @@
+# Test workflow. Replaces the original ci.yml of the v0.8.0 cut (kept byte-identical in the
+# v0.8.0 tag; see issue #15): filtered triggers, pinned actions, least privilege, no caches,
+# per-family JUnit reports, coverage, schema-drift check and a step summary. Windows runs in the
+# separate, informational windows.yml workflow (not supported yet, issue #31).
 name: ci
 
 on:
   push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+      - "style/**"
   pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PYTHONDONTWRITEBYTECODE: "1"
+  FORCE_COLOR: "0"
+
 jobs:
-  test:
+  tests:
+    name: tests (py${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}-latest
+    timeout-minutes: 25
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        python: ['3.12', '3.13']
-    runs-on: ${{ matrix.os }}
+        os: [ubuntu]
+        python: ["3.12", "3.13", "3.14"]
+        include:
+          - os: macos
+            python: "3.12"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '22'
-      - run: python -m pip install -e '.[dev,api]'
-      - run: python scripts/generate_schemas.py
-      - run: git diff --exit-code -- schemas src/governed_harness/resources/schemas
-      - run: pytest -W error::ResourceWarning --junitxml=reports/junit.xml
-      - run: python -m compileall -q src tests
-      - run: python setup.py sdist bdist_wheel
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Install package with dev and api extras
+        run: python -m pip install -e ".[dev,api]"
+      - name: Use a symlink-free temporary directory on macOS (known defect, issue #19)
+        if: runner.os == 'macOS'
+        run: echo "TMPDIR=${RUNNER_TEMP}" >> "$GITHUB_ENV"
+      - name: Run test families
+        shell: bash
+        env:
+          MATRIX_LABEL: py${{ matrix.python }}, ${{ matrix.os }}
+        run: |
+          set -euo pipefail
+          mkdir -p reports/ci
+          status=0
+          {
+            echo "### Tests (${MATRIX_LABEL})"
+            echo "| family | tests | result |"
+            echo "|---|---:|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for family in unit contract integration security e2e performance; do
+            echo "::group::pytest tests/${family}"
+            set +e
+            python -m pytest "tests/${family}" -W error::ResourceWarning \
+              --junitxml="reports/ci/junit-${family}.xml" \
+              --cov=governed_harness --cov-branch --cov-append --cov-report=
+            rc=$?
+            set -e
+            echo "::endgroup::"
+            count=$(python -c "import xml.etree.ElementTree as E,sys;r=E.parse(sys.argv[1]).getroot();s=r if r.tag=='testsuite' else r[0];print(s.get('tests'))" "reports/ci/junit-${family}.xml")
+            result=$([ "$rc" -eq 0 ] && echo passed || echo "failed (exit ${rc})")
+            echo "| ${family} | ${count} | ${result} |" >> "$GITHUB_STEP_SUMMARY"
+            [ "$rc" -eq 0 ] || status=1
+          done
+          python -m coverage xml -o reports/ci/coverage.xml
+          python -m coverage html -d reports/ci/htmlcov
+          python -m coverage report --format=markdown | tail -n 1 | sed 's/^/Coverage: /' >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - name: Verify generated schemas are up to date
+        shell: bash
+        run: |
+          python scripts/generate_schemas.py
+          git diff --exit-code -- schemas src/governed_harness/resources/schemas
+      - name: Upload test and coverage reports
+        if: matrix.os == 'ubuntu' && matrix.python == '3.12'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-reports
+          path: reports/ci/
+          retention-days: 14

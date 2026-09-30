@@ -52,7 +52,9 @@ def task_file(tmp_path: Path, *, secret: bool = False, wrong: bool = False) -> P
 
 
 @pytest.mark.e2e
-def test_python_execution_closes_after_digest_bound_approval(python_workspace: Path, tmp_path: Path) -> None:
+def test_python_execution_closes_after_digest_bound_approval(
+    python_workspace: Path, tmp_path: Path
+) -> None:
     app = HarnessApplication()
     task = app.create_task(python_workspace, task_file(tmp_path))
     pending = app.start_run(python_workspace, task.task_id)
@@ -78,7 +80,9 @@ def test_python_execution_closes_after_digest_bound_approval(python_workspace: P
 
 
 @pytest.mark.e2e
-def test_stale_approval_is_rejected_before_decision_record(python_workspace: Path, tmp_path: Path) -> None:
+def test_stale_approval_is_rejected_before_decision_record(
+    python_workspace: Path, tmp_path: Path
+) -> None:
     app = HarnessApplication()
     task = app.create_task(python_workspace, task_file(tmp_path))
     pending = app.start_run(python_workspace, task.task_id)
@@ -98,7 +102,9 @@ def test_stale_approval_is_rejected_before_decision_record(python_workspace: Pat
 
 
 @pytest.mark.e2e
-def test_failed_verification_can_resume_after_manual_correction(python_workspace: Path, tmp_path: Path) -> None:
+def test_failed_verification_can_resume_after_manual_correction(
+    python_workspace: Path, tmp_path: Path
+) -> None:
     app = HarnessApplication()
     task = app.create_task(python_workspace, task_file(tmp_path, wrong=True))
     failed = app.start_run(python_workspace, task.task_id)
@@ -114,7 +120,9 @@ def test_failed_verification_can_resume_after_manual_correction(python_workspace
 
 
 @pytest.mark.e2e
-def test_blocking_review_requires_exception_or_changes(python_workspace: Path, tmp_path: Path) -> None:
+def test_blocking_review_requires_exception_or_changes(
+    python_workspace: Path, tmp_path: Path
+) -> None:
     app = HarnessApplication()
     task = app.create_task(python_workspace, task_file(tmp_path, secret=True))
     pending = app.start_run(python_workspace, task.task_id)

@@ -6,11 +6,11 @@ SQLite event representation is deliberately not a Pydantic domain entity.  Every
 other generated schema is deterministic and copied into package resources so source
 checkouts and installed wheels expose the same contracts.
 """
+
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TypeAlias
 
 from pydantic import BaseModel
 
@@ -37,11 +37,10 @@ from governed_harness.domain.models import (
 )
 from governed_harness.plugins.protocol import PluginDescriptor, PluginRequest, PluginResponse
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "schemas" / "v1"
 RESOURCE_ROOT = ROOT / "src" / "governed_harness" / "resources" / "schemas" / "v1"
-SchemaModel: TypeAlias = type[BaseModel]
+type SchemaModel = type[BaseModel]
 
 MODELS: dict[str, SchemaModel] = {
     "agent-invocation.schema.json": AgentInvocation,
@@ -77,7 +76,9 @@ def generate() -> None:
         schema = model.model_json_schema(by_alias=True, ref_template="#/$defs/{model}")
         schema["$schema"] = "https://json-schema.org/draft/2020-12/schema"
         schema["$id"] = f"https://example.org/governed-harness/schemas/v1/{filename}"
-        data = (json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+        data = (json.dumps(schema, indent=2, sort_keys=True, ensure_ascii=False) + "\n").encode(
+            "utf-8"
+        )
         (SCHEMA_ROOT / filename).write_bytes(data)
         (RESOURCE_ROOT / filename).write_bytes(data)
     for filename in ("common.schema.json", "event.schema.json"):

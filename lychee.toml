@@ -1,0 +1,13 @@
+# lychee link checker configuration (https://lychee.cli.rs)
+max_redirects = 5
+max_retries = 3
+retry_wait_time = 5
+timeout = 30
+accept = ["200..=204", "206", "429"]
+exclude_path = ["reports", "site", "tests/fixtures"]
+exclude = [
+  "^https://example\\.invalid",
+  "^http://127\\.0\\.0\\.1",
+  "^http://localhost",
+  "^https://github\\.com/SebasBarrera/harness-engineering/(compare|commit)/",
+]

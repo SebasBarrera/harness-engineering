@@ -9,7 +9,10 @@ def test_pass_advances_to_next_phase() -> None:
     assert decision.target is PhaseId.DISCOVERY
 
 
-@pytest.mark.parametrize("status", [ResultStatus.BLOCKED, ResultStatus.ERROR, ResultStatus.SKIPPED, ResultStatus.INCONCLUSIVE])
+@pytest.mark.parametrize(
+    "status",
+    [ResultStatus.BLOCKED, ResultStatus.ERROR, ResultStatus.SKIPPED, ResultStatus.INCONCLUSIVE],
+)
 def test_non_success_does_not_advance(status: ResultStatus) -> None:
     with pytest.raises(InvalidTransition):
         NormativeStateMachine().advance(PhaseId.VERIFICATION, status)

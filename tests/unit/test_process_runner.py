@@ -38,7 +38,9 @@ def test_process_pass(tmp_path: Path) -> None:
 def test_process_failure_is_structured(tmp_path: Path) -> None:
     actor, grants, runner = authorized(tmp_path)
     result = runner.run(
-        CommandSpec(argv=(sys.executable, "-c", "raise SystemExit(7)"), cwd=tmp_path, timeout_seconds=5),
+        CommandSpec(
+            argv=(sys.executable, "-c", "raise SystemExit(7)"), cwd=tmp_path, timeout_seconds=5
+        ),
         actor=actor,
         grants=grants,
     )
@@ -49,7 +51,11 @@ def test_process_failure_is_structured(tmp_path: Path) -> None:
 def test_process_timeout(tmp_path: Path) -> None:
     actor, grants, runner = authorized(tmp_path)
     result = runner.run(
-        CommandSpec(argv=(sys.executable, "-c", "import time; time.sleep(2)"), cwd=tmp_path, timeout_seconds=0.1),
+        CommandSpec(
+            argv=(sys.executable, "-c", "import time; time.sleep(2)"),
+            cwd=tmp_path,
+            timeout_seconds=0.1,
+        ),
         actor=actor,
         grants=grants,
     )
@@ -60,7 +66,12 @@ def test_process_timeout(tmp_path: Path) -> None:
 def test_output_is_truncated(tmp_path: Path) -> None:
     actor, grants, runner = authorized(tmp_path)
     result = runner.run(
-        CommandSpec(argv=(sys.executable, "-c", "print('x'*1000)"), cwd=tmp_path, timeout_seconds=5, max_output_bytes=20),
+        CommandSpec(
+            argv=(sys.executable, "-c", "print('x'*1000)"),
+            cwd=tmp_path,
+            timeout_seconds=5,
+            max_output_bytes=20,
+        ),
         actor=actor,
         grants=grants,
     )

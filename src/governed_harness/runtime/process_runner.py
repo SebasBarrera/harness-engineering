@@ -4,9 +4,9 @@ import os
 import signal
 import subprocess
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping
 
 from governed_harness.capabilities.authorizer import (
     CapabilityAuthorizer,
@@ -41,7 +41,9 @@ class ProcessResult:
 
 
 class SafeProcessRunner:
-    def __init__(self, workspace_root: Path, authorizer: CapabilityAuthorizer | None = None) -> None:
+    def __init__(
+        self, workspace_root: Path, authorizer: CapabilityAuthorizer | None = None
+    ) -> None:
         self.workspace_root = workspace_root.resolve(strict=True)
         self.authorizer = authorizer or CapabilityAuthorizer()
 
@@ -138,7 +140,9 @@ class SafeProcessRunner:
 
     @staticmethod
     def _environment(spec: CommandSpec, extra_env: Mapping[str, str] | None) -> dict[str, str]:
-        environment = {name: os.environ[name] for name in spec.allowed_environment if name in os.environ}
+        environment = {
+            name: os.environ[name] for name in spec.allowed_environment if name in os.environ
+        }
         # Preserve only minimal executable lookup and locale by default.
         for name in ("PATH", "HOME", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG", "LC_ALL"):
             if name in os.environ:

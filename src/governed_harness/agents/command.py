@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from governed_harness.agents.base import AgentExecutionResult
+from governed_harness.agents.base import AgentContext, AgentExecutionResult
 from governed_harness.domain.enums import ActorType, ErrorKind, PhaseId, ResultStatus
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -41,7 +41,7 @@ class CommandAgentProvider:
     def capabilities(self) -> tuple[str, ...]:
         return ("external_cli", "structured_json")
 
-    def implement(self, task: Task, plan: Plan, context: object) -> AgentExecutionResult:
+    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
         actor = context.provenance.actor
         if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
             actor = Actor(
@@ -95,7 +95,11 @@ class CommandAgentProvider:
         if result.status is ResultStatus.PASSED:
             try:
                 response = json.loads(result.stdout)
-                if not isinstance(response, dict) or response.get("status") not in {"PASSED", "FAILED", "BLOCKED"}:
+                if not isinstance(response, dict) or response.get("status") not in {
+                    "PASSED",
+                    "FAILED",
+                    "BLOCKED",
+                }:
                     raise ValueError("agent response does not satisfy the minimal protocol")
                 status = ResultStatus(response["status"])
                 summary = str(response.get("summary", summary))

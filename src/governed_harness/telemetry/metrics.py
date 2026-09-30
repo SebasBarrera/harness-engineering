@@ -53,7 +53,11 @@ class MetricsProjector:
         decisions = self.state.list("decision", HumanDecision, execution_id=execution_id)
         usages = self.state.list("resource_usage", ResourceUsage, execution_id=execution_id)
         timestamps = [datetime.fromisoformat(event.occurred_at) for event in events]
-        total_ms = int((max(timestamps) - min(timestamps)).total_seconds() * 1000) if len(timestamps) >= 2 else 0
+        total_ms = (
+            int((max(timestamps) - min(timestamps)).total_seconds() * 1000)
+            if len(timestamps) >= 2
+            else 0
+        )
         phase_ms = sum(
             int((phase.finished_at - phase.started_at).total_seconds() * 1000)
             for phase in phases
@@ -67,7 +71,9 @@ class MetricsProjector:
         )
         human_wait_ms: int | None = None
         gate_events = [event for event in events if event.event_type == "gate.evaluated"]
-        decision_events = [event for event in events if event.event_type == "human.decision.recorded"]
+        decision_events = [
+            event for event in events if event.event_type == "human.decision.recorded"
+        ]
         if gate_events and decision_events:
             decision_time = datetime.fromisoformat(decision_events[-1].occurred_at)
             eligible_gates = [
@@ -77,45 +83,180 @@ class MetricsProjector:
             ]
             if eligible_gates:
                 human_wait_ms = int(
-                    (decision_time - datetime.fromisoformat(eligible_gates[-1].occurred_at)).total_seconds()
+                    (
+                        decision_time - datetime.fromisoformat(eligible_gates[-1].occurred_at)
+                    ).total_seconds()
                     * 1000
                 )
-        correction_cycles = sum(1 for event in events if event.event_type == "correction.authorized")
-        implementation_attempts = sum(1 for event in events if event.event_type == "phase.started" and event.payload.get("phaseId") == "IMPLEMENTATION")
-        review_cycles = sum(1 for event in events if event.event_type == "phase.started" and event.payload.get("phaseId") == "INDEPENDENT_REVIEW")
+        correction_cycles = sum(
+            1 for event in events if event.event_type == "correction.authorized"
+        )
+        implementation_attempts = sum(
+            1
+            for event in events
+            if event.event_type == "phase.started"
+            and event.payload.get("phaseId") == "IMPLEMENTATION"
+        )
+        review_cycles = sum(
+            1
+            for event in events
+            if event.event_type == "phase.started"
+            and event.payload.get("phaseId") == "INDEPENDENT_REVIEW"
+        )
         replans = sum(1 for event in events if event.event_type == "plan.replaced")
-        failed_validations = sum(1 for item in validations if item.status is not ResultStatus.PASSED)
+        failed_validations = sum(
+            1 for item in validations if item.status is not ResultStatus.PASSED
+        )
         files_changed = len({file.path for change in changes for file in change.files})
         input_tokens = self._sum_optional(usages, "input_tokens")
         output_tokens = self._sum_optional(usages, "output_tokens")
         reasoning_tokens = self._sum_optional(usages, "reasoning_tokens")
         cost = self._sum_optional(usages, "cost_usd")
         common = {
-            "duration.total_ms": MetricValue("duration.total_ms", total_ms, "ms", MetricQuality.OBSERVED, "Wall-clock time between the first and last persisted execution event.", "event store"),
-            "duration.phase_ms": MetricValue("duration.phase_ms", phase_ms, "ms", MetricQuality.DERIVED, "Sum of completed phase wall-clock durations; parallel phases would be double-counted.", "phase records", ("Not equal to total wall time when phases overlap.",)),
-            "duration.agent_ms": MetricValue("duration.agent_ms", agent_ms, "ms", MetricQuality.DERIVED, "Sum of persisted agent invocation durations.", "agent invocation records"),
-            "duration.tool_ms": MetricValue("duration.tool_ms", tool_ms, "ms", MetricQuality.DERIVED, "Sum of persisted tool invocation durations.", "tool invocation records"),
-            "duration.human_wait_ms": MetricValue("duration.human_wait_ms", human_wait_ms, "ms", MetricQuality.DERIVED if human_wait_ms is not None else MetricQuality.NOT_AVAILABLE, "Elapsed time from the latest gate evaluation to the latest human decision.", "gate and decision events", () if human_wait_ms is not None else ("No completed human-decision interval.",)),
-            "agent.invocations": MetricValue("agent.invocations", len(agents), "count", MetricQuality.OBSERVED, "Number of persisted agent invocation records.", "agent invocation records"),
-            "tool.invocations": MetricValue("tool.invocations", len(tools), "count", MetricQuality.OBSERVED, "Number of persisted tool invocation records.", "tool invocation records"),
-            "implementation.attempts": MetricValue("implementation.attempts", implementation_attempts, "count", MetricQuality.DERIVED, "Count of IMPLEMENTATION phase-start events.", "event store"),
-            "correction.cycles": MetricValue("correction.cycles", correction_cycles, "count", MetricQuality.OBSERVED, "Count of human-authorized transitions from DECISION back to IMPLEMENTATION.", "event store"),
-            "review.cycles": MetricValue("review.cycles", review_cycles, "count", MetricQuality.DERIVED, "Count of INDEPENDENT_REVIEW phase-start events.", "event store"),
-            "replanning.count": MetricValue("replanning.count", replans, "count", MetricQuality.OBSERVED, "Count of plan replacement events after the first accepted plan.", "event store"),
-            "validation.non_passed": MetricValue("validation.non_passed", failed_validations, "count", MetricQuality.DERIVED, "Validation results whose normalized status is not PASSED.", "validation records"),
-            "changesets.count": MetricValue("changesets.count", len(changes), "count", MetricQuality.OBSERVED, "Number of distinct persisted ChangeSet records.", "ChangeSet records"),
-            "changeset.files": MetricValue("changeset.files", files_changed, "count", MetricQuality.DERIVED, "Unique paths appearing in persisted ChangeSets.", "ChangeSet records"),
-            "human.decisions": MetricValue("human.decisions", len(decisions), "count", MetricQuality.OBSERVED, "Number of persisted human decisions.", "decision records"),
+            "duration.total_ms": MetricValue(
+                "duration.total_ms",
+                total_ms,
+                "ms",
+                MetricQuality.OBSERVED,
+                "Wall-clock time between the first and last persisted execution event.",
+                "event store",
+            ),
+            "duration.phase_ms": MetricValue(
+                "duration.phase_ms",
+                phase_ms,
+                "ms",
+                MetricQuality.DERIVED,
+                "Sum of completed phase wall-clock durations; parallel phases would be double-counted.",
+                "phase records",
+                ("Not equal to total wall time when phases overlap.",),
+            ),
+            "duration.agent_ms": MetricValue(
+                "duration.agent_ms",
+                agent_ms,
+                "ms",
+                MetricQuality.DERIVED,
+                "Sum of persisted agent invocation durations.",
+                "agent invocation records",
+            ),
+            "duration.tool_ms": MetricValue(
+                "duration.tool_ms",
+                tool_ms,
+                "ms",
+                MetricQuality.DERIVED,
+                "Sum of persisted tool invocation durations.",
+                "tool invocation records",
+            ),
+            "duration.human_wait_ms": MetricValue(
+                "duration.human_wait_ms",
+                human_wait_ms,
+                "ms",
+                MetricQuality.DERIVED if human_wait_ms is not None else MetricQuality.NOT_AVAILABLE,
+                "Elapsed time from the latest gate evaluation to the latest human decision.",
+                "gate and decision events",
+                () if human_wait_ms is not None else ("No completed human-decision interval.",),
+            ),
+            "agent.invocations": MetricValue(
+                "agent.invocations",
+                len(agents),
+                "count",
+                MetricQuality.OBSERVED,
+                "Number of persisted agent invocation records.",
+                "agent invocation records",
+            ),
+            "tool.invocations": MetricValue(
+                "tool.invocations",
+                len(tools),
+                "count",
+                MetricQuality.OBSERVED,
+                "Number of persisted tool invocation records.",
+                "tool invocation records",
+            ),
+            "implementation.attempts": MetricValue(
+                "implementation.attempts",
+                implementation_attempts,
+                "count",
+                MetricQuality.DERIVED,
+                "Count of IMPLEMENTATION phase-start events.",
+                "event store",
+            ),
+            "correction.cycles": MetricValue(
+                "correction.cycles",
+                correction_cycles,
+                "count",
+                MetricQuality.OBSERVED,
+                "Count of human-authorized transitions from DECISION back to IMPLEMENTATION.",
+                "event store",
+            ),
+            "review.cycles": MetricValue(
+                "review.cycles",
+                review_cycles,
+                "count",
+                MetricQuality.DERIVED,
+                "Count of INDEPENDENT_REVIEW phase-start events.",
+                "event store",
+            ),
+            "replanning.count": MetricValue(
+                "replanning.count",
+                replans,
+                "count",
+                MetricQuality.OBSERVED,
+                "Count of plan replacement events after the first accepted plan.",
+                "event store",
+            ),
+            "validation.non_passed": MetricValue(
+                "validation.non_passed",
+                failed_validations,
+                "count",
+                MetricQuality.DERIVED,
+                "Validation results whose normalized status is not PASSED.",
+                "validation records",
+            ),
+            "changesets.count": MetricValue(
+                "changesets.count",
+                len(changes),
+                "count",
+                MetricQuality.OBSERVED,
+                "Number of distinct persisted ChangeSet records.",
+                "ChangeSet records",
+            ),
+            "changeset.files": MetricValue(
+                "changeset.files",
+                files_changed,
+                "count",
+                MetricQuality.DERIVED,
+                "Unique paths appearing in persisted ChangeSets.",
+                "ChangeSet records",
+            ),
+            "human.decisions": MetricValue(
+                "human.decisions",
+                len(decisions),
+                "count",
+                MetricQuality.OBSERVED,
+                "Number of persisted human decisions.",
+                "decision records",
+            ),
             "tokens.input": self._token_metric("tokens.input", input_tokens, "input_tokens"),
             "tokens.output": self._token_metric("tokens.output", output_tokens, "output_tokens"),
-            "tokens.reasoning": self._token_metric("tokens.reasoning", reasoning_tokens, "reasoning_tokens"),
-            "cost.usd": MetricValue("cost.usd", cost, "USD", MetricQuality.REPORTED if cost is not None else MetricQuality.NOT_AVAILABLE, "Sum of provider-reported costs; never inferred from tokens.", "resource usage records", () if cost is not None else ("The provider did not report cost.",)),
+            "tokens.reasoning": self._token_metric(
+                "tokens.reasoning", reasoning_tokens, "reasoning_tokens"
+            ),
+            "cost.usd": MetricValue(
+                "cost.usd",
+                cost,
+                "USD",
+                MetricQuality.REPORTED if cost is not None else MetricQuality.NOT_AVAILABLE,
+                "Sum of provider-reported costs; never inferred from tokens.",
+                "resource usage records",
+                () if cost is not None else ("The provider did not report cost.",),
+            ),
         }
         return common
 
     @staticmethod
     def _sum_optional(records: list[ResourceUsage], field: str) -> int | float | None:
-        values = [getattr(record, field) for record in records if getattr(record, field) is not None]
+        values = [
+            getattr(record, field) for record in records if getattr(record, field) is not None
+        ]
         return sum(values) if values else None
 
     @staticmethod

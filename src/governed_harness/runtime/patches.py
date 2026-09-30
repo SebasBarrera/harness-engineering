@@ -4,7 +4,11 @@ import os
 import tempfile
 from pathlib import Path
 
-from governed_harness.capabilities.authorizer import CapabilityAuthorizer, CapabilityDenied, contained_path
+from governed_harness.capabilities.authorizer import (
+    CapabilityAuthorizer,
+    CapabilityDenied,
+    contained_path,
+)
 from governed_harness.domain.models import Actor, CapabilityGrant, FilePatch
 from governed_harness.evidence.hashing import sha256_file
 
@@ -22,11 +26,16 @@ class PatchApplier:
             grants=grants,
         )
         path = contained_path(self.workspace, Path(patch.path))
-        if patch.expected_sha256 is not None:
-            if not path.exists() or sha256_file(path) != patch.expected_sha256:
-                raise CapabilityDenied(f"precondition digest mismatch for {patch.path}")
+        if patch.expected_sha256 is not None and (
+            not path.exists() or sha256_file(path) != patch.expected_sha256
+        ):
+            raise CapabilityDenied(f"precondition digest mismatch for {patch.path}")
         if patch.operation == "delete":
-            if not any(grant.conditions.get("allowDelete") for grant in grants if grant.capability == "filesystem.write"):
+            if not any(
+                grant.conditions.get("allowDelete")
+                for grant in grants
+                if grant.capability == "filesystem.write"
+            ):
                 raise CapabilityDenied("delete requires an explicit allowDelete grant condition")
             path.unlink(missing_ok=False)
             return path

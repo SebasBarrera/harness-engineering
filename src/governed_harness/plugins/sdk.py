@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable
-from typing import Any
 
 from governed_harness.domain.enums import ResultStatus
 from governed_harness.plugins.protocol import (

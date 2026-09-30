@@ -45,16 +45,16 @@ class ExternalPluginClient:
         # not depend on this, but the additional path remains harmless.
         package_root = str(Path(__file__).resolve().parents[2])
         existing_pythonpath = os.environ.get("PYTHONPATH")
-        pythonpath = os.pathsep.join(
-            part for part in (package_root, existing_pythonpath) if part
-        )
+        pythonpath = os.pathsep.join(part for part in (package_root, existing_pythonpath) if part)
         result = self.runner.run(
             CommandSpec(
                 argv=self.command,
                 cwd=self.workspace,
                 timeout_seconds=timeout_seconds,
                 allowed_environment=("PYTHONPATH",),
-                stdin=(json.dumps(request.model_dump(mode="json", by_alias=True)) + "\n").encode("utf-8"),
+                stdin=(json.dumps(request.model_dump(mode="json", by_alias=True)) + "\n").encode(
+                    "utf-8"
+                ),
             ),
             actor=actor,
             grants=grants,
@@ -70,7 +70,9 @@ class ExternalPluginClient:
                 f"plugin process failed with exit code {result.exit_code}: "
                 f"{result.stderr.decode('utf-8', 'replace')[:500]}"
             )
-        lines = [line for line in result.stdout.decode("utf-8", "replace").splitlines() if line.strip()]
+        lines = [
+            line for line in result.stdout.decode("utf-8", "replace").splitlines() if line.strip()
+        ]
         if len(lines) != 1:
             raise PluginProtocolError("plugin stdout must contain exactly one JSON response line")
         try:

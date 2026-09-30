@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal, cast
 
 from governed_harness import __version__
 from governed_harness.agents import (
+    AgentProvider,
     CommandAgentConfiguration,
     CommandAgentProvider,
     SimulatedAgentContext,
@@ -25,13 +26,12 @@ from governed_harness.domain.enums import (
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
-    ExecutionBlockedError,
-    GatePendingError,
     NotFoundError,
     PolicyViolationError,
 )
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
+    HARNESS_ACTOR,
     Actor,
     Artifact,
     ChangedFile,
@@ -41,20 +41,18 @@ from governed_harness.domain.models import (
     Execution,
     Finding,
     GateEvaluation,
-    HARNESS_ACTOR,
     HumanDecision,
     PhaseExecution,
     Plan,
     PlanStep,
     Provenance,
-    Retrospective,
     Task,
     ToolInvocation,
     ValidationResult,
     utc_now,
 )
-from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.events import SQLiteEventStore
+from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.state_machine import NormativeStateMachine
@@ -86,7 +84,7 @@ class EnginePaths:
     artifact_dir: Path
 
     @classmethod
-    def from_workspace(cls, workspace: Path) -> "EnginePaths":
+    def from_workspace(cls, workspace: Path) -> EnginePaths:
         root = workspace.resolve(strict=True)
         harness_dir = root / ".harness"
         harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -102,7 +100,7 @@ class EngineServices:
     artifacts: LocalArtifactStore
 
     @classmethod
-    def open(cls, resolved: ResolvedConfiguration) -> "EngineServices":
+    def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
         paths = EnginePaths.from_workspace(resolved.workspace_root)
         return cls(
             resolved=resolved,
@@ -186,7 +184,9 @@ class RunEngine:
             execution_id=execution_id,
             project_id=execution.project_id,
         )
-        self.s.state.set_flag(f"provider:{execution_id}", provider or self.s.resolved.project.agent_provider)
+        self.s.state.set_flag(
+            f"provider:{execution_id}", provider or self.s.resolved.project.agent_provider
+        )
         self.s.events.append(
             execution_id,
             "run.created",
@@ -243,7 +243,11 @@ class RunEngine:
                 execution = self.get_execution(execution_id)
                 if outcome.status is not ResultStatus.PASSED:
                     return execution
-            if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED, ResultStatus.ERROR}:
+            if execution.status in {
+                ResultStatus.PASSED,
+                ResultStatus.CANCELLED,
+                ResultStatus.ERROR,
+            }:
                 return execution
 
     def cancel(self, execution_id: str, actor_id: str = "human.local") -> Execution:
@@ -344,7 +348,9 @@ class RunEngine:
                 }
             )
         else:
-            updated = updated.model_copy(update={"status": ResultStatus.PENDING, "updated_at": utc_now()})
+            updated = updated.model_copy(
+                update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
+            )
         self._save_execution(updated)
         return record
 
@@ -356,7 +362,9 @@ class RunEngine:
         attempt = 1 + len(
             [
                 phase
-                for phase in self.s.state.list("phase", PhaseExecution, execution_id=execution.execution_id)
+                for phase in self.s.state.list(
+                    "phase", PhaseExecution, execution_id=execution.execution_id
+                )
                 if phase.phase_id is phase_id
             ]
         )
@@ -452,7 +460,9 @@ class RunEngine:
             updated = latest.model_copy(
                 update={
                     "status": outcome.status,
-                    "terminal_reason": outcome.summary if outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED} else None,
+                    "terminal_reason": outcome.summary
+                    if outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED}
+                    else None,
                     "updated_at": utc_now(),
                 }
             )
@@ -472,13 +482,17 @@ class RunEngine:
             "Structured intent and acceptance criteria",
             supports=(task.task_id,),
         )
-        return PhaseOutcome(ResultStatus.PASSED, "Intent is structured and identifiable", (evidence.artifact_ref,))
+        return PhaseOutcome(
+            ResultStatus.PASSED, "Intent is structured and identifiable", (evidence.artifact_ref,)
+        )
 
     def _phase_discovery(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         detections = detect_profiles(self.s.paths.workspace)
         selected = {profile.profile_id for profile in self.s.resolved.profiles}
         if not any(item.profile_id in selected and item.confidence > 0 for item in detections):
-            return PhaseOutcome(ResultStatus.BLOCKED, "Configured profile was not detected in workspace")
+            return PhaseOutcome(
+                ResultStatus.BLOCKED, "Configured profile was not detected in workspace"
+            )
         git = GitAdapter(self.s.paths.workspace).state()
         snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
         snapshot_ref = self.s.artifacts.put_json(
@@ -505,19 +519,27 @@ class RunEngine:
             update={"baseline_revision": git.head or snapshot.digest, "updated_at": utc_now()}
         )
         self._save_execution(updated)
-        return PhaseOutcome(ResultStatus.PASSED, "Workspace and baseline discovered", (evidence.artifact_ref, snapshot_ref.uri))
+        return PhaseOutcome(
+            ResultStatus.PASSED,
+            "Workspace and baseline discovered",
+            (evidence.artifact_ref, snapshot_ref.uri),
+        )
 
     def _phase_specification(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.get_task(execution.task_id)
         contract = {
             "taskId": task.task_id,
             "requirements": [item.model_dump(mode="json") for item in task.requirements],
-            "acceptanceCriteria": [item.model_dump(mode="json") for item in task.acceptance_criteria],
+            "acceptanceCriteria": [
+                item.model_dump(mode="json") for item in task.acceptance_criteria
+            ],
             "constraints": list(task.constraints),
             "digest": sha256_json(
                 {
                     "requirements": [item.model_dump(mode="json") for item in task.requirements],
-                    "acceptance": [item.model_dump(mode="json") for item in task.acceptance_criteria],
+                    "acceptance": [
+                        item.model_dump(mode="json") for item in task.acceptance_criteria
+                    ],
                     "constraints": list(task.constraints),
                 }
             ),
@@ -531,7 +553,9 @@ class RunEngine:
             "Versioned acceptance contract",
             supports=tuple(item.criterion_id for item in task.acceptance_criteria),
         )
-        return PhaseOutcome(ResultStatus.PASSED, "Acceptance contract frozen", (evidence.artifact_ref,))
+        return PhaseOutcome(
+            ResultStatus.PASSED, "Acceptance contract frozen", (evidence.artifact_ref,)
+        )
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.get_task(execution.task_id)
@@ -553,7 +577,9 @@ class RunEngine:
                 step_id=new_id("step"),
                 description="Execute technology-profile validators",
                 capabilities=("filesystem.read", "process.execute"),
-                expected_evidence=tuple(item.validator_id for item in self.s.resolved.effective_validators),
+                expected_evidence=tuple(
+                    item.validator_id for item in self.s.resolved.effective_validators
+                ),
             ),
             PlanStep(
                 step_id=new_id("step"),
@@ -572,7 +598,9 @@ class RunEngine:
             + ("review.independent",),
             provenance=self._provenance(execution),
         )
-        plan_ref = self.s.artifacts.put_json(plan.model_dump(mode="json"), metadata={"kind": "plan"})
+        plan_ref = self.s.artifacts.put_json(
+            plan.model_dump(mode="json"), metadata={"kind": "plan"}
+        )
         self.s.state.put(
             "plan",
             plan.plan_id,
@@ -589,7 +617,11 @@ class RunEngine:
             "Plan, capabilities, validators and risks",
             supports=(task.task_id,),
         )
-        return PhaseOutcome(ResultStatus.PASSED, "Plan and context manifest recorded", (evidence.artifact_ref, context_ref.uri))
+        return PhaseOutcome(
+            ResultStatus.PASSED,
+            "Plan and context manifest recorded",
+            (evidence.artifact_ref, context_ref.uri),
+        )
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.get_task(execution.task_id)
@@ -599,7 +631,7 @@ class RunEngine:
         plan = self.s.state.get("plan", plan_id, Plan)
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
         if provider_id == "simulated":
-            provider = SimulatedAgentProvider()
+            provider: AgentProvider = SimulatedAgentProvider()
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
         else:
             provider_config = self.s.resolved.project.agent_providers.get(provider_id)
@@ -616,7 +648,9 @@ class RunEngine:
                 )
             )
             actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
-        grants = grants_from_rules(execution.execution_id, actor, self.s.resolved.effective_capabilities)
+        grants = grants_from_rules(
+            execution.execution_id, actor, self.s.resolved.effective_capabilities
+        )
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
         runner = SafeProcessRunner(self.s.paths.workspace)
         result = provider.implement(
@@ -652,9 +686,13 @@ class RunEngine:
             phase_execution_id=phase.phase_execution_id,
         )
         if result.status is not ResultStatus.PASSED:
-            return PhaseOutcome(result.status, result.summary, (result.output_ref,) if result.output_ref else ())
+            return PhaseOutcome(
+                result.status, result.summary, (result.output_ref,) if result.output_ref else ()
+            )
         change_set = self._refresh_changeset(execution)
-        if not change_set.files and not bool(self.s.resolved.effective_policies.get("allowEmptyChangeSet", False)):
+        if not change_set.files and not bool(
+            self.s.resolved.effective_policies.get("allowEmptyChangeSet", False)
+        ):
             return PhaseOutcome(ResultStatus.FAILED, "Implementation produced no ChangeSet")
         return PhaseOutcome(
             ResultStatus.PASSED,
@@ -668,8 +706,14 @@ class RunEngine:
             return PhaseOutcome(ResultStatus.FAILED, "Current ChangeSet is empty")
         outputs = []
         for definition in self.s.resolved.effective_validators:
-            actor = Actor(actor_type=ActorType.TOOL, actor_id=f"validator.{definition.validator_id}", version="1")
-            grants = grants_from_rules(execution.execution_id, actor, self.s.resolved.effective_capabilities)
+            actor = Actor(
+                actor_type=ActorType.TOOL,
+                actor_id=f"validator.{definition.validator_id}",
+                version="1",
+            )
+            grants = grants_from_rules(
+                execution.execution_id, actor, self.s.resolved.effective_capabilities
+            )
             output = self.validators.create(definition.validator_id).execute(
                 ValidationContext(
                     execution_id=execution.execution_id,
@@ -681,7 +725,9 @@ class RunEngine:
                     artifact_store=self.s.artifacts,
                     process_runner=SafeProcessRunner(self.s.paths.workspace),
                     provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-                    cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+                    cancellation=CancellationToken(
+                        lambda: self.is_cancelled(execution.execution_id)
+                    ),
                     max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
                 )
             )
@@ -702,11 +748,17 @@ class RunEngine:
             )
         return PhaseOutcome(ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence)
 
-    def _phase_independent_review(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
+    def _phase_independent_review(
+        self, execution: Execution, phase: PhaseExecution
+    ) -> PhaseOutcome:
         change_set = self.current_change_set(execution.execution_id)
-        actor = Actor(actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1")
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1"
+        )
         definition = ValidatorDefinition(id="review.independent", mandatory=True)
-        grants = grants_from_rules(execution.execution_id, actor, self.s.resolved.effective_capabilities)
+        grants = grants_from_rules(
+            execution.execution_id, actor, self.s.resolved.effective_capabilities
+        )
         output = IndependentReviewValidator().execute(
             ValidationContext(
                 execution_id=execution.execution_id,
@@ -720,7 +772,9 @@ class RunEngine:
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                raw_diff=self._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace"),
+                raw_diff=self._compute_owned_diff(execution).unified_diff.decode(
+                    "utf-8", "replace"
+                ),
             )
         )
         self._save_validator_output(execution, output)
@@ -737,7 +791,11 @@ class RunEngine:
         # A later change to an owned path invalidates previous gate/approval.
         if previous_digest and previous_digest != change_set.digest:
             execution = execution.model_copy(
-                update={"gate_evaluation_id": None, "human_decision_id": None, "updated_at": utc_now()}
+                update={
+                    "gate_evaluation_id": None,
+                    "human_decision_id": None,
+                    "updated_at": utc_now(),
+                }
             )
             self._save_execution(execution)
             self.s.events.append(
@@ -757,7 +815,9 @@ class RunEngine:
         execution = self.get_execution(execution.execution_id)
         if current_decision:
             if current_decision.change_set_digest != change_set.digest:
-                return PhaseOutcome(ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification")
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
+                )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
                 return PhaseOutcome(
                     ResultStatus.PASSED,
@@ -863,8 +923,12 @@ class RunEngine:
         elif task.metadata.get("ownedPaths"):
             owned_paths = {str(path) for path in task.metadata["ownedPaths"]}
         if owned_paths is not None:
-            before_files = {path: state for path, state in before.files.items() if path in owned_paths}
-            after_files = {path: state for path, state in after.files.items() if path in owned_paths}
+            before_files = {
+                path: state for path, state in before.files.items() if path in owned_paths
+            }
+            after_files = {
+                path: state for path, state in after.files.items() if path in owned_paths
+            }
             before = WorkspaceSnapshot(
                 files=before_files,
                 digest=sha256_json({path: state.digest for path, state in before_files.items()}),
@@ -890,7 +954,9 @@ class RunEngine:
             files=tuple(
                 ChangedFile(
                     path=item.path,
-                    status=item.status,
+                    status=cast(
+                        Literal["ADDED", "MODIFIED", "DELETED", "RENAMED", "UNTRACKED"], item.status
+                    ),
                     additions=item.additions,
                     deletions=item.deletions,
                     before_digest=item.before_digest,
@@ -903,7 +969,9 @@ class RunEngine:
         )
         existing = [
             item
-            for item in self.s.state.list("change_set", ChangeSet, execution_id=execution.execution_id)
+            for item in self.s.state.list(
+                "change_set", ChangeSet, execution_id=execution.execution_id
+            )
             if item.digest == changeset.digest
         ]
         if existing:
@@ -941,14 +1009,18 @@ class RunEngine:
         self._save_execution(updated)
         return changeset
 
-    def _current_or_evaluate_gate(self, execution: Execution, change_set: ChangeSet) -> GateEvaluation:
+    def _current_or_evaluate_gate(
+        self, execution: Execution, change_set: ChangeSet
+    ) -> GateEvaluation:
         if execution.gate_evaluation_id:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
             if gate.change_set_digest == change_set.digest:
                 return gate
         validations = [
             item
-            for item in self.s.state.list("validation", ValidationResult, execution_id=execution.execution_id)
+            for item in self.s.state.list(
+                "validation", ValidationResult, execution_id=execution.execution_id
+            )
             if item.change_set_digest == change_set.digest
         ]
         findings = [
@@ -960,20 +1032,25 @@ class RunEngine:
             "findingBlockSeverities", ["HIGH", "CRITICAL"]
         )
         severities = tuple(FindingSeverity(str(name)) for name in severity_names)
-        gate = self.gate_engine.evaluate(
-            execution_id=execution.execution_id,
-            gate_id="delivery_candidate",
-            change_set_digest=change_set.digest,
-            policy_digest=execution.policy_digest,
-            validations=validations,
-            findings=findings,
-            policy=GatePolicy(
-                require_human_decision=bool(
-                    self.s.resolved.effective_policies.get("requireHumanDecision", True)
+        # Structured evaluation (keyword arguments) always returns a GateEvaluation; the
+        # LegacyGateDecision branch only serves the positional `inputs` form.
+        gate = cast(
+            GateEvaluation,
+            self.gate_engine.evaluate(
+                execution_id=execution.execution_id,
+                gate_id="delivery_candidate",
+                change_set_digest=change_set.digest,
+                policy_digest=execution.policy_digest,
+                validations=validations,
+                findings=findings,
+                policy=GatePolicy(
+                    require_human_decision=bool(
+                        self.s.resolved.effective_policies.get("requireHumanDecision", True)
+                    ),
+                    blocking_severities=severities,
                 ),
-                blocking_severities=severities,
+                provenance=self._provenance(execution),
             ),
-            provenance=self._provenance(execution),
         )
         self.s.state.put(
             "gate",

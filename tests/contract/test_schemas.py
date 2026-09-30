@@ -5,7 +5,6 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-
 SCHEMA_DIR = Path(__file__).parents[2] / "schemas" / "v1"
 
 
@@ -19,6 +18,15 @@ def test_all_schemas_are_valid_draft_2020_12() -> None:
 def test_normalized_status_enum_is_closed() -> None:
     common = json.loads((SCHEMA_DIR / "common.schema.json").read_text(encoding="utf-8"))
     assert common["$defs"]["status"]["enum"] == [
-        "PENDING", "RUNNING", "PASSED", "FAILED", "BLOCKED", "SKIPPED",
-        "NOT_APPLICABLE", "CANCELLED", "TIMED_OUT", "ERROR", "INCONCLUSIVE",
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE",
     ]

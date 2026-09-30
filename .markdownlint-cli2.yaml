@@ -1,0 +1,14 @@
+# markdownlint configuration (https://github.com/DavidAnson/markdownlint)
+config:
+  default: true
+  MD013: false          # line length: prose is wrapped by editors, tables and URLs are long
+  MD024:
+    siblings_only: true # repeated headings are fine in different sections (CLI reference)
+  MD033:
+    allowed_elements: [a, img, p, br, details, summary, picture, source, sub, sup, kbd]
+  MD041: false          # generated pages may start with a comment
+  MD060: false          # table column style: compact |---| separator rows are the GitHub norm
+ignores:
+  - "**/node_modules/**"
+  - "site/**"
+  - "reports/**"

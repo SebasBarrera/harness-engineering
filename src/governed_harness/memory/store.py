@@ -40,12 +40,19 @@ class MemoryStore:
                 continue
             if record.supersedes and any(item.memory_id == record.supersedes for item in eligible):
                 eligible = [item for item in eligible if item.memory_id != record.supersedes]
-            if record.level in {MemoryLevel.NORMATIVE, MemoryLevel.PROJECT, MemoryLevel.RETROSPECTIVE}:
+            if record.level in {
+                MemoryLevel.NORMATIVE,
+                MemoryLevel.PROJECT,
+                MemoryLevel.RETROSPECTIVE,
+            }:
                 if not record.approved:
                     continue
-            elif record.level is MemoryLevel.TASK and record.task_id != task_id:
-                continue
-            elif record.level is MemoryLevel.EPHEMERAL and record.execution_id != execution_id:
+            elif (
+                record.level is MemoryLevel.TASK
+                and record.task_id != task_id
+                or record.level is MemoryLevel.EPHEMERAL
+                and record.execution_id != execution_id
+            ):
                 continue
             eligible.append(record)
         order = {
@@ -55,5 +62,7 @@ class MemoryStore:
             MemoryLevel.RETROSPECTIVE: 3,
             MemoryLevel.EPHEMERAL: 4,
         }
-        eligible.sort(key=lambda item: (order[item.level], item.key, item.created_at, item.memory_id))
+        eligible.sort(
+            key=lambda item: (order[item.level], item.key, item.created_at, item.memory_id)
+        )
         return tuple(eligible[:max_records])

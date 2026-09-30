@@ -33,7 +33,9 @@ def test_cli_task_create_and_list(python_workspace: Path, tmp_path: Path) -> Non
         encoding="utf-8",
     )
     runner = CliRunner()
-    created = runner.invoke(app, ["task", "create", "--path", str(python_workspace), "--file", str(task)])
+    created = runner.invoke(
+        app, ["task", "create", "--path", str(python_workspace), "--file", str(task)]
+    )
     assert created.exit_code == 0
     task_id = json.loads(created.stdout)["taskId"]
     listed = runner.invoke(app, ["task", "list", "--path", str(python_workspace)])

@@ -1,0 +1,37 @@
+# pre-commit hooks (https://pre-commit.com). Install with: pip install pre-commit && pre-commit install
+# Introduced in v0.8.1: its automatic fixes would have altered files of the frozen v0.8.0 cut.
+# Generated files are excluded from the fixers: regenerate them instead of editing them.
+exclude: ^(schemas/|src/governed_harness/resources/schemas/|docs/reference/(cli|task-file)\.md$)
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: a56c0b927e6465d37cae3e97d35d4d18ab2b96cd  # frozen: v0.16.9
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c  # frozen: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: [--unsafe]  # syntax only: mkdocs.yml uses a !!python/name tag
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+  - repo: local
+    hooks:
+      - id: privacy-denylist
+        name: privacy denylist
+        entry: python3 scripts/check_denylist.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: gitleaks
+        name: gitleaks (staged changes; requires the gitleaks binary on PATH)
+        entry: gitleaks git --pre-commit --staged --redact --no-banner
+        language: system
+        pass_filenames: false

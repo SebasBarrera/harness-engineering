@@ -37,7 +37,9 @@ def create_app(workspace: Path) -> FastAPI:
     @api.get("/api/runs")
     def runs() -> list[dict[str, object]]:
         try:
-            return [item.model_dump(mode="json", by_alias=True) for item in application.list_runs(root)]
+            return [
+                item.model_dump(mode="json", by_alias=True) for item in application.list_runs(root)
+            ]
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
@@ -49,7 +51,9 @@ def create_app(workspace: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @api.get("/api/runs/{execution_id}/trace")
-    def run_trace(execution_id: str, format: Literal["json", "markdown", "jsonl", "sarif"] = "json") -> Response:
+    def run_trace(
+        execution_id: str, format: Literal["json", "markdown", "jsonl", "sarif"] = "json"
+    ) -> Response:
         try:
             data = application.trace(root, execution_id, format)
         except Exception as error:
@@ -72,9 +76,7 @@ def create_app(workspace: Path) -> FastAPI:
     @api.get("/api/runs/{execution_id}/retrospective")
     def run_retrospective(execution_id: str) -> dict[str, object]:
         try:
-            return application.retrospect(root, execution_id).model_dump(
-                mode="json", by_alias=True
-            )
+            return application.retrospect(root, execution_id).model_dump(mode="json", by_alias=True)
         except Exception as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
 

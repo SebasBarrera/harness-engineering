@@ -26,7 +26,7 @@ benchmark-scenarios:
 		--output reports/benchmark-scenarios.json
 
 build:
-	python setup.py sdist bdist_wheel
+	python -m build
 
 verify: schemas test coverage benchmark benchmark-scenarios build
 

@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from governed_harness.domain.ids import new_id
-from governed_harness.domain.models import AcceptanceCriterion, FilePatch, Task
+from governed_harness.domain.models import FilePatch, Task
 
 
 def test_new_id_has_prefix_and_unique_value() -> None:
@@ -33,7 +33,13 @@ def test_patch_requires_content_for_write_operation() -> None:
 
 def test_task_requires_acceptance_criterion() -> None:
     with pytest.raises(ValidationError):
-        Task(task_id="task_001", project_id="project_001", title="x", intent="y", acceptance_criteria=())
+        Task(
+            task_id="task_001",
+            project_id="project_001",
+            title="x",
+            intent="y",
+            acceptance_criteria=(),
+        )
 
 
 def test_model_accepts_camel_case_aliases() -> None:

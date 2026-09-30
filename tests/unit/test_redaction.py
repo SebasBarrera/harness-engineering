@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from governed_harness.evidence.redaction import SecretRedactor
 
 
@@ -9,10 +11,14 @@ def test_redacts_authorization_header() -> None:
     assert result.redacted
 
 
-def test_redacts_github_token() -> None:
-    token = b"ghp_abcdefghijklmnopqrstuvwxyz123456"
+@pytest.mark.parametrize("length", [32, 36])
+def test_redacts_github_token(length: int) -> None:
+    # Built at runtime so that no token-shaped literal lives in the repository and secret
+    # scanners cannot flag this fixture. 36 characters is the length of a real classic token.
+    token = b"ghp_" + (b"abcdefghijklmnopqrstuvwxyz0123456789" * 2)[:length]
     result = SecretRedactor().redact(token)
     assert token not in result.data
+    assert result.redacted
 
 
 def test_non_secret_is_unchanged() -> None:
