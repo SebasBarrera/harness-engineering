@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790740356253,
+  "lastUpdate": 1790740514002,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -125,6 +125,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 0.423,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "18c93ae57b3024d354df167ee1c35b476ff7f9b8",
+          "message": "Merge branch 'release/0.8.1' into main\n\nRelease 0.8.1: repository infrastructure, documentation and quality release on\ntop of the v0.8.0 thesis cut, with no change to the behavior evaluated in the\nthesis. See CHANGELOG.md.\n\nCloses the milestone \"v0.8.1 - repository infrastructure and quality\".\n\nVerification on the branch head ba4fe33e639e: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328774\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328783\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328795\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328798\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328841\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36666328854\nFiles of the v0.8.0 cut in the tree: matched: 133/232  mismatched: 75  missing: 24",
+          "timestamp": "2026-09-29T22:54:29-05:00",
+          "tree_id": "e0e169aaac6c6722f73fd61d9fd2628159657be0",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/18c93ae57b3024d354df167ee1c35b476ff7f9b8"
+        },
+        "date": 1790740513514,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001222,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001903,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011321,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.073808,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.264392,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.857204,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 10.927495,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 0.597,
             "unit": "%"
           }
         ]
