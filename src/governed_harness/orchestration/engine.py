@@ -4,10 +4,11 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, cast
 
 from governed_harness import __version__
 from governed_harness.agents import (
+    AgentProvider,
     CommandAgentConfiguration,
     CommandAgentProvider,
     SimulatedAgentContext,
@@ -596,7 +597,7 @@ class RunEngine:
         plan = self.s.state.get("plan", plan_id, Plan)
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
         if provider_id == "simulated":
-            provider = SimulatedAgentProvider()
+            provider: AgentProvider = SimulatedAgentProvider()
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
         else:
             provider_config = self.s.resolved.project.agent_providers.get(provider_id)
@@ -887,7 +888,9 @@ class RunEngine:
             files=tuple(
                 ChangedFile(
                     path=item.path,
-                    status=item.status,
+                    status=cast(
+                        Literal["ADDED", "MODIFIED", "DELETED", "RENAMED", "UNTRACKED"], item.status
+                    ),
                     additions=item.additions,
                     deletions=item.deletions,
                     before_digest=item.before_digest,
@@ -957,7 +960,9 @@ class RunEngine:
             "findingBlockSeverities", ["HIGH", "CRITICAL"]
         )
         severities = tuple(FindingSeverity(str(name)) for name in severity_names)
-        gate = self.gate_engine.evaluate(
+        # Structured evaluation (keyword arguments) always returns a GateEvaluation; the
+        # LegacyGateDecision branch only serves the positional `inputs` form.
+        gate = cast(GateEvaluation, self.gate_engine.evaluate(
             execution_id=execution.execution_id,
             gate_id="delivery_candidate",
             change_set_digest=change_set.digest,
@@ -971,7 +976,7 @@ class RunEngine:
                 blocking_severities=severities,
             ),
             provenance=self._provenance(execution),
-        )
+        ))
         self.s.state.put(
             "gate",
             gate.gate_evaluation_id,

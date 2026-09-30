@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from governed_harness.agents.base import AgentExecutionResult
+from governed_harness.agents.base import AgentContext, AgentExecutionResult
 from governed_harness.domain.enums import ActorType, ErrorKind, PhaseId, ResultStatus
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -46,7 +46,7 @@ class SimulatedAgentProvider:
     def capabilities(self) -> tuple[str, ...]:
         return ("structured_patch", "command", "deterministic", "offline")
 
-    def implement(self, task: Task, plan: Plan, context: SimulatedAgentContext) -> AgentExecutionResult:
+    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
         actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
         started = datetime.now(UTC)
         prompt_digest = sha256_json(

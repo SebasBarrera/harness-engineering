@@ -62,7 +62,14 @@ class GateEngine:
             else:
                 status = ResultStatus.FAILED
             return LegacyGateDecision(status, tuple(f"{item.check_id}_{item.status}" for item in non_passed))
-        if None in {execution_id, gate_id, change_set_digest, policy_digest, policy, provenance}:
+        if (
+            execution_id is None
+            or gate_id is None
+            or change_set_digest is None
+            or policy_digest is None
+            or policy is None
+            or provenance is None
+        ):
             raise TypeError("structured gate evaluation requires execution, gate, digests, policy and provenance")
         validation_list = list(validations)
         finding_list = list(findings)

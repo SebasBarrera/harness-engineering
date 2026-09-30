@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -121,7 +122,7 @@ class IndependentReviewValidator:
         )
         return ValidatorOutput(result, tuple(findings))
 
-    def _scan(self, diff: str, context: ValidationContext, actor: Actor):
+    def _scan(self, diff: str, context: ValidationContext, actor: Actor) -> Iterator[Finding]:
         current_path: str | None = None
         current_line = 0
         for raw_line in diff.splitlines():

@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 
 from governed_harness.domain.models import HARNESS_ACTOR, Actor
 from governed_harness.evidence.hashing import sha256_json
@@ -177,7 +179,7 @@ class SQLiteEventStore:
         ).fetchall()
         return [self._from_row(row) for row in rows]
 
-    def list_all(self, *, limit: int | None = None) -> list[StoredEvent]:
+    def list_all(self, *, limit: int | None = None) -> builtins.list[StoredEvent]:
         query = "SELECT * FROM events ORDER BY global_sequence"
         params: tuple[Any, ...] = ()
         if limit is not None:
@@ -221,10 +223,15 @@ class SQLiteEventStore:
     def close(self) -> None:
         self.connection.close()
 
-    def __enter__(self):
+    def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, exc_type, exc, traceback) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         self.close()
 
     @staticmethod
