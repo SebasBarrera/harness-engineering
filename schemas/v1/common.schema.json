@@ -1,0 +1,171 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/governed-harness/schemas/v1/common.schema.json",
+  "title": "Common governed harness definitions",
+  "type": "object",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,127}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ]
+    },
+    "terminalStatus": {
+      "type": "string",
+      "enum": [
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ]
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "properties": {
+        "actorType": {
+          "type": "string",
+          "enum": [
+            "HUMAN",
+            "AGENT",
+            "TOOL",
+            "PLUGIN",
+            "HARNESS",
+            "CI"
+          ]
+        },
+        "actorId": {
+          "$ref": "#/$defs/id"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 100
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "category",
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "HARNESS_ERROR",
+            "CONFIGURATION_ERROR",
+            "PROVIDER_ERROR",
+            "TOOL_ERROR",
+            "PROJECT_ERROR",
+            "PREEXISTING_ERROR",
+            "INTRODUCED_ERROR",
+            "POLICY_VIOLATION",
+            "MISSING_EVIDENCE",
+            "PROTOCOL_ERROR"
+          ]
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9_.-]{3,100}$"
+        },
+        "message": {
+          "type": "string",
+          "maxLength": 4000
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "detailsRef": {
+          "type": "string",
+          "format": "uri-reference"
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "producer",
+        "configurationDigest",
+        "workflowDigest",
+        "createdAt"
+      ],
+      "properties": {
+        "producer": {
+          "$ref": "#/$defs/actor"
+        },
+        "configurationDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "workflowDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "policyDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "pluginDigest": {
+          "$ref": "#/$defs/digest"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "maxLength": 200
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "createdAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    }
+  }
+}

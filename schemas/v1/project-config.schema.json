@@ -1,0 +1,249 @@
+{
+  "$defs": {
+    "AgentProviderConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        },
+        "kind": {
+          "const": "command",
+          "default": "command",
+          "title": "Kind",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "AgentProviderConfiguration",
+      "type": "object"
+    },
+    "CapabilitiesConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "const": "deny",
+          "default": "deny",
+          "title": "Default",
+          "type": "string"
+        },
+        "grants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/CapabilityRule"
+          },
+          "title": "Grants",
+          "type": "array"
+        }
+      },
+      "title": "CapabilitiesConfig",
+      "type": "object"
+    },
+    "CapabilityRule": {
+      "additionalProperties": false,
+      "properties": {
+        "approvalRequired": {
+          "default": false,
+          "title": "Approvalrequired",
+          "type": "boolean"
+        },
+        "capability": {
+          "title": "Capability",
+          "type": "string"
+        },
+        "conditions": {
+          "additionalProperties": true,
+          "title": "Conditions",
+          "type": "object"
+        },
+        "scope": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        }
+      },
+      "required": [
+        "capability",
+        "scope"
+      ],
+      "title": "CapabilityRule",
+      "type": "object"
+    },
+    "RuntimeConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "allowNetwork": {
+          "default": false,
+          "title": "Allownetwork",
+          "type": "boolean"
+        },
+        "commandTimeoutSeconds": {
+          "default": 900,
+          "minimum": 1,
+          "title": "Commandtimeoutseconds",
+          "type": "integer"
+        },
+        "maxOutputBytes": {
+          "default": 1000000,
+          "minimum": 1024,
+          "title": "Maxoutputbytes",
+          "type": "integer"
+        },
+        "maxParallel": {
+          "default": 2,
+          "maximum": 32,
+          "minimum": 1,
+          "title": "Maxparallel",
+          "type": "integer"
+        }
+      },
+      "title": "RuntimeConfig",
+      "type": "object"
+    },
+    "WorkspaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "root": {
+          "default": "..",
+          "title": "Root",
+          "type": "string"
+        },
+        "units": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WorkspaceUnitConfig"
+          },
+          "title": "Units",
+          "type": "array"
+        }
+      },
+      "title": "WorkspaceConfig",
+      "type": "object"
+    },
+    "WorkspaceUnitConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profile"
+        },
+        "root": {
+          "title": "Root",
+          "type": "string"
+        },
+        "unitId": {
+          "title": "Unitid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "unitId",
+        "root"
+      ],
+      "title": "WorkspaceUnitConfig",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/project-config.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "agentProvider": {
+      "default": "simulated",
+      "title": "Agentprovider",
+      "type": "string"
+    },
+    "agentProviders": {
+      "additionalProperties": {
+        "$ref": "#/$defs/AgentProviderConfiguration"
+      },
+      "title": "Agentproviders",
+      "type": "object"
+    },
+    "capabilities": {
+      "$ref": "#/$defs/CapabilitiesConfig"
+    },
+    "configVersion": {
+      "const": "1.0",
+      "title": "Configversion",
+      "type": "string"
+    },
+    "policies": {
+      "additionalProperties": true,
+      "title": "Policies",
+      "type": "object"
+    },
+    "profiles": {
+      "default": [
+        "auto"
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Profiles",
+      "type": "array"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "retention": {
+      "additionalProperties": true,
+      "title": "Retention",
+      "type": "object"
+    },
+    "runtime": {
+      "$ref": "#/$defs/RuntimeConfig"
+    },
+    "validators": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Validators",
+      "type": "array"
+    },
+    "workflow": {
+      "default": "default_development",
+      "title": "Workflow",
+      "type": "string"
+    },
+    "workspace": {
+      "$ref": "#/$defs/WorkspaceConfig"
+    }
+  },
+  "required": [
+    "configVersion",
+    "projectId",
+    "workspace"
+  ],
+  "title": "ProjectConfiguration",
+  "type": "object"
+}
