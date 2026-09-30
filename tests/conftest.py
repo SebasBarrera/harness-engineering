@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -8,12 +9,21 @@ import pytest
 from governed_harness.application import HarnessApplication
 
 
+# Fixture repositories must not inherit the developer's Git configuration: global commit
+# signing or a global core.hooksPath would make the baseline commit fail or prompt.
+GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnull}")
+
+
 def git_init(path: Path) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.email", "fixture@example.com"], cwd=path, check=True)
-    subprocess.run(["git", "config", "user.name", "Fixture"], cwd=path, check=True)
-    subprocess.run(["git", "add", "."], cwd=path, check=True)
-    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=path, check=True)
+    def git(*args: str) -> None:
+        subprocess.run(["git", *GIT_ISOLATION, *args], cwd=path, check=True, env=GIT_ENV)
+
+    git("init", "-q")
+    git("config", "user.email", "fixture@example.com")
+    git("config", "user.name", "Fixture")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
 
 
 @pytest.fixture
