@@ -1,0 +1,28 @@
+name: Feature request
+description: Propose a new capability or an improvement.
+title: "feat: "
+labels: ["type:feature"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What governance or usability problem does this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Which phase, validator, profile, adapter or interface would change?
+    validations:
+      required: true
+  - type: textarea
+    id: invariants
+    attributes:
+      label: Affected invariants
+      description: Which architectural rules or locked policies does it touch (see CONTRIBUTING.md)?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
