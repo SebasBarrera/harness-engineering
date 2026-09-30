@@ -1,0 +1,73 @@
+# Microbenchmarks: five repetitions, an HTML report (published with the docs site) and a
+# per-commit trend history on the gh-pages branch. Shared runners are noisy, so regressions
+# raise a commit comment but never fail the workflow.
+name: benchmarks
+
+on:
+  push:
+    branches: [develop, main]
+  schedule:
+    - cron: "5 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    name: benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Install the package and pytest (the scenario benchmark runs the fixture's tests)
+        run: python -m pip install ".[api]" pytest
+      - name: Run the microbenchmark five times and the scenario benchmark once
+        run: |
+          mkdir -p bench
+          for i in 1 2 3 4 5; do
+            harness benchmark run --iterations 1000 --output "bench/micro-${i}.json"
+          done
+          harness benchmark scenarios --iterations 3 --output bench/scenarios.json
+      - name: Render the HTML report and the trend data
+        run: |
+          python scripts/benchmark_report.py --micro bench/micro-*.json \
+            --scenarios bench/scenarios.json \
+            --reference docs/benchmarks/thesis-reference.json \
+            --output bench/report.html --trend bench/trend.json
+          cp bench/report.html "$RUNNER_TEMP/report.html"
+          echo "Benchmark report generated from 5 repetitions (artifact: benchmark-report)." >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: benchmark-report
+          path: bench/
+          retention-days: 30
+      - name: Store the trend on gh-pages (alert without failing)
+        if: github.event_name != 'pull_request'
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Governed Agent Harness microbenchmarks
+          tool: customSmallerIsBetter
+          output-file-path: bench/trend.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: bench/trend
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: false

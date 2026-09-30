@@ -1,0 +1,17 @@
+{
+  "source": "Transcribed from the thesis, chapter 6 (implementation and demonstration), for the v0.8.0 cut: 1,000 iterations per operation, no warm-up, 20 samples for process launches. The raw evidence file is not part of this repository.",
+  "harnessVersion": "0.8.0",
+  "iterations": 1000,
+  "medianMs": {
+    "stateTransition": 0.00096,
+    "gateEvaluation": 0.00153,
+    "canonicalHash": 0.0228,
+    "eventAppend": 0.281,
+    "artifactPutDeduplicated": 0.0549
+  },
+  "processGovernanceOverhead": {
+    "absoluteMedianMs": 1.21,
+    "relativeMedianPercent": [10.09, 11.23],
+    "note": "Two runs reported by the author (10.09 % in the thesis text; 11.23 % in a second run), about 1.2 ms."
+  }
+}

@@ -1,0 +1,107 @@
+site_name: Governed Agent Harness
+site_description: Local control plane that governs AI-assisted software development with normative phases, fail-closed gates and digest-bound human decisions.
+site_url: https://sebasbarrera.github.io/harness-engineering/
+repo_url: https://github.com/SebasBarrera/harness-engineering
+repo_name: SebasBarrera/harness-engineering
+edit_uri: edit/develop/docs/
+copyright: Apache-2.0 · Research artifact of a master's thesis (Escuela Colombiana de Ingeniería Julio Garavito)
+strict: true
+
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.highlight
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      toggle:
+        icon: material/weather-night
+        name: Dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Light mode
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: false
+            show_root_heading: true
+            members_order: source
+            docstring_style: google
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc:
+      permalink: true
+  - github-callouts
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+validation:
+  omitted_files: warn
+  absolute_links: info
+  unrecognized_links: warn
+
+exclude_docs: |
+  requirements.txt
+
+not_in_nav: |
+  /benchmarks/thesis-reference.json
+
+nav:
+  - Home: index.md
+  - Guides:
+      - Greenfield project: guides/greenfield.md
+      - Brownfield repository: guides/brownfield.md
+      - External agents: guides/external-agents.md
+      - CI integration: guides/ci-integration.md
+  - Reference:
+      - CLI: reference/cli.md
+      - Task file: reference/task-file.md
+      - Configuration: reference/configuration.md
+      - Local API: reference/api.md
+      - Exit codes: reference/exit-codes.md
+      - Python API: reference/python-api.md
+  - Operations:
+      - Metrics: metrics.md
+      - Monitoring: monitoring.md
+      - Benchmarks: benchmarks.md
+  - Architecture:
+      - Phases: architecture/phases.md
+      - Traceability: architecture/traceability.md
+      - Trust model: architecture/trust-model.md
+      - ADR 0001 System boundaries: adr/0001-system-boundaries.md
+      - ADR 0002 Architecture style: adr/0002-architecture-style.md
+      - ADR 0003 Normative phases: adr/0003-normative-phases.md
+      - ADR 0004 Trust and capabilities: adr/0004-trust-and-capabilities.md
+      - ADR 0005 Technology extension model: adr/0005-technology-extension-model.md
+      - ADR 0006 Repository topology: adr/0006-repository-topology.md
+  - Thesis:
+      - Context: thesis.md
+      - Provenance: provenance.md
+      - Documents of the v0.8.0 cut:
+          - Implementation status: implementation-status.md
+          - Validation report: validation-report.md
+          - Vertical slice: vertical-slice.md
+          - Evaluation plan: evaluation/plan.md
+          - Research assumptions: research/assumptions.md
+          - Backlog: backlog.md
+          - Guía rápida (ES): GUIA_RAPIDA_ES.md

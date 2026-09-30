@@ -1,9 +1,9 @@
-.git
-.harness
-.venv
-__pycache__
-.pytest_cache
-build
-dist
-reports
-*.pyc
+# Build context: only pyproject.toml, setup.py, README.md, LICENSE and src/ are copied.
+*
+!pyproject.toml
+!setup.py
+!README.md
+!LICENSE
+!src/
+**/__pycache__
+**/*.pyc

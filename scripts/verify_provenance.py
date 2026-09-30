@@ -68,7 +68,9 @@ def verify_tree(manifest: dict[str, str], root: Path, *, full: bool) -> int:
         else:
             mismatched.append(rel)
     required = len(manifest) - len(EXCLUDED & manifest.keys())
-    print(f"manifest entries: {len(manifest)} (excluded binaries: {len(EXCLUDED & manifest.keys())})")
+    print(
+        f"manifest entries: {len(manifest)} (excluded binaries: {len(EXCLUDED & manifest.keys())})"
+    )
     print(f"matched: {matched}/{required}  mismatched: {len(mismatched)}  missing: {len(missing)}")
     for rel in mismatched:
         print(f"MISMATCH {rel}")
@@ -93,9 +95,13 @@ def verify_assets(manifest: dict[str, str], directory: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument("mode", choices=("full", "partial", "release-assets"))
-    parser.add_argument("directory", nargs="?", type=Path, help="asset directory for release-assets")
+    parser.add_argument(
+        "directory", nargs="?", type=Path, help="asset directory for release-assets"
+    )
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)

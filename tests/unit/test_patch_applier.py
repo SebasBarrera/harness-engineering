@@ -22,9 +22,15 @@ def context(tmp_path: Path, *, scope: tuple[str, ...] = ("src/**",), conditions=
 def test_create_replace_and_append(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     actor, grants, applier = context(tmp_path)
-    path = applier.apply(FilePatch(path="src/a.py", operation="create", content="a=1\n"), actor=actor, grants=grants)
-    applier.apply(FilePatch(path="src/a.py", operation="replace", content="a=2\n"), actor=actor, grants=grants)
-    applier.apply(FilePatch(path="src/a.py", operation="append", content="b=3\n"), actor=actor, grants=grants)
+    path = applier.apply(
+        FilePatch(path="src/a.py", operation="create", content="a=1\n"), actor=actor, grants=grants
+    )
+    applier.apply(
+        FilePatch(path="src/a.py", operation="replace", content="a=2\n"), actor=actor, grants=grants
+    )
+    applier.apply(
+        FilePatch(path="src/a.py", operation="append", content="b=3\n"), actor=actor, grants=grants
+    )
     assert path.read_text() == "a=2\nb=3\n"
 
 
@@ -32,7 +38,9 @@ def test_idempotent_create_with_identical_content(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "a.py").write_text("same")
     actor, grants, applier = context(tmp_path)
-    applier.apply(FilePatch(path="src/a.py", operation="create", content="same"), actor=actor, grants=grants)
+    applier.apply(
+        FilePatch(path="src/a.py", operation="create", content="same"), actor=actor, grants=grants
+    )
 
 
 def test_delete_is_denied_without_explicit_condition(tmp_path: Path) -> None:
@@ -51,4 +59,6 @@ def test_symlink_write_is_denied(tmp_path: Path) -> None:
     (root / "src").symlink_to(outside, target_is_directory=True)
     actor, grants, applier = context(root)
     with pytest.raises(CapabilityDenied):
-        applier.apply(FilePatch(path="src/a.py", operation="create", content="x"), actor=actor, grants=grants)
+        applier.apply(
+            FilePatch(path="src/a.py", operation="create", content="x"), actor=actor, grants=grants
+        )

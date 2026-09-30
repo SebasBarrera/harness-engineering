@@ -1,0 +1,31 @@
+name: Thesis-impact decision
+description: A change that would alter behavior evaluated in the thesis on v0.8.0.
+title: "decision: "
+labels: ["thesis-impact", "needs-decision"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The v0.8.0 cut is frozen for the thesis evaluation. Behavior changes are decided
+        explicitly and tracked in the milestone "backlog — thesis-impact".
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Current behavior on v0.8.0
+      description: Location in the code and a reproduction.
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options
+      description: Keep and document, change, or change behind a configuration flag; pros and cons of each.
+    validations:
+      required: true
+  - type: textarea
+    id: evaluation
+    attributes:
+      label: Effect on the thesis evaluation
+      description: Which measurements or demonstrations of the thesis would change?
+    validations:
+      required: true

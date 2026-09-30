@@ -1,0 +1,3 @@
+# Code owners: every path is owned by the maintainer.
+# With a second maintainer, pull requests will require a CODEOWNERS review.
+* @SebasBarrera

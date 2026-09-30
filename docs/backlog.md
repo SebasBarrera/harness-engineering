@@ -14,6 +14,7 @@
 **Objetivo:** Convertir el límite harness/agente/modelo/tool/CI en una decisión aceptada.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -34,6 +35,7 @@
 **Objetivo:** Fijar core, perfiles, extensiones, configuración y políticas bloqueadas.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -54,6 +56,7 @@
 **Objetivo:** Fijar fases, estados, loops, invalidaciones y retrospectiva separada.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -74,6 +77,7 @@
 **Objetivo:** Definir default deny, scopes, expiración y acciones privilegiadas.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -94,6 +98,7 @@
 **Objetivo:** Definir detector, profile, plugin, package y contract test kit.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -114,6 +119,7 @@
 **Objetivo:** Implementar enumeraciones cerradas y tipos de identidad.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -134,6 +140,7 @@
 **Objetivo:** Implementar Task, Requirement y AcceptanceCriterion versionados.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -154,6 +161,7 @@
 **Objetivo:** Implementar agregados mínimos y reglas de ciclo de vida.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -174,6 +182,7 @@
 **Objetivo:** Crear contratos JSON Schema para IDs, estados y ejecución.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -194,6 +203,7 @@
 **Objetivo:** Crear provenance, digests y hash-chain fields.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -214,6 +224,7 @@
 **Objetivo:** Normalizar validadores y decisiones fail-closed.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -234,6 +245,7 @@
 **Objetivo:** Completar contratos del vertical slice.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -254,6 +266,7 @@
 **Objetivo:** Implementar guardas y tabla explícita de transiciones.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -274,6 +287,7 @@
 **Objetivo:** Invalidar evidencia/aprobación stale y reanudar idempotentemente.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -294,6 +308,7 @@
 **Objetivo:** Persistir eventos atómicos con secuencia y hash previo.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -314,6 +329,7 @@
 **Objetivo:** Reconstruir estado, timeline y causalidad desde eventos.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -334,6 +350,7 @@
 **Objetivo:** Put/get/verify con SHA-256, media type, redacción y retención.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -354,6 +371,7 @@
 **Objetivo:** Crear use cases sin lógica de presentación.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -374,6 +392,7 @@
 **Objetivo:** Soportar modo humano y JSON no interactivo.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -394,6 +413,7 @@
 **Objetivo:** Completar comandos del vertical slice y códigos de salida.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -414,6 +434,7 @@
 **Objetivo:** argv, shell false, cwd contenido, env allowlist, timeout y output bounds.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -434,6 +455,7 @@
 **Objetivo:** Cancelar árbol de procesos y registrar cleanup incompleto.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -454,6 +476,7 @@
 **Objetivo:** Snapshot base/head, ownership de paths y digest estable.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -474,6 +497,7 @@
 **Objetivo:** Autorizar actor, scope, duración, condiciones y revocación.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -494,6 +518,7 @@
 **Objetivo:** Bloquear escapes y escribir security fixtures.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -514,6 +539,7 @@
 **Objetivo:** Injection, secrets, stale approval, output bomb y malicious plugin.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -534,6 +560,7 @@
 **Objetivo:** detect/execute/parse/normalize y errores diferenciados.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -554,6 +581,7 @@
 **Objetivo:** pytest y checks opcionales detrás del profile.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -574,6 +602,7 @@
 **Objetivo:** test/lint/typecheck detrás del profile.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -594,6 +623,7 @@
 **Objetivo:** Consolidar resultados y políticas sin ejecutar tools.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -614,6 +644,7 @@
 **Objetivo:** Aprobar/rechazar/solicitar cambios y detectar staleness.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -634,6 +665,7 @@
 **Objetivo:** start/resume/cancel/events/usage con schema y capability manifest.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -654,6 +686,7 @@
 **Objetivo:** Patcher determinista para vertical slice y fault injection.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -674,6 +707,7 @@
 **Objetivo:** Integración escogida después de aprobar retención y permisos.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -694,6 +728,7 @@
 **Objetivo:** Markers, commands, validators y safe defaults.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -714,6 +749,7 @@
 **Objetivo:** Segundo stack sin cambios al core.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -734,6 +770,7 @@
 **Objetivo:** Seleccionar normativa, task y project records por relación, vigencia y presupuesto.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -754,6 +791,7 @@
 **Objetivo:** Provenance, contradicción, promoción y olvido revisado.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -774,6 +812,7 @@
 **Objetivo:** Duraciones, intentos, ciclos, waits, gates y trace completeness.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -794,6 +833,7 @@
 **Objetivo:** Registrar solo datos observables; cost derived con pricing snapshot.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -814,6 +854,7 @@
 **Objetivo:** Observación a recomendación sin mutación automática.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -834,6 +875,7 @@
 **Objetivo:** Vista complementaria después del vertical slice; no lógica nueva.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -854,6 +896,7 @@
 **Objetivo:** Validar schema, capabilities y audit; sin meter runtime en MVP.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -874,6 +917,7 @@
 **Objetivo:** Repo reseteable con hidden tests y task pairs.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -894,6 +938,7 @@
 **Objetivo:** Baseline conocido, architecture rule y hidden regression.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -914,6 +959,7 @@
 **Objetivo:** Variables, ground truth, reset, instrumentos y analysis plan.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -934,6 +980,7 @@
 **Objetivo:** Control de deuda preexistente, location correctness y review effort.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -954,6 +1001,7 @@
 **Objetivo:** Mantener generated diagrams y contract examples.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -974,6 +1022,7 @@
 **Objetivo:** Onboarding reproducible y límites declarados.  
 **Descripción:** Implementar el alcance indicado respetando contratos versionados, provenance, fail-closed y la regla de dependencias del core.  
 **Criterios de aceptación:**
+
 - Existe contrato o ADR versionado cuando aplica.
 - El caso feliz y al menos un caso de error/bloqueo están automatizados.
 - No se introduce lógica tecnológica en dominio u orquestación.
@@ -986,18 +1035,18 @@
 **Artefactos:** código, schemas, fixtures, eventos y documentación del issue.  
 **Objetivo académico relacionado:** OE4/OE5
 
-# Primer issue
+## Primer issue
 
 ADR-001.
 
-# Primeros cinco issues
+## Primeros cinco issues
 
 ADR-001, ADR-002, ADR-003, ADR-004 y ADR-005.
 
-# Primer milestone
+## Primer milestone
 
 ADRs aceptados, schemas comunes, state machine, event/artifact stores, CLI shell, provider simulado y una ejecución Python end-to-end con gate humano ligado al digest.
 
-# No iniciar todavía
+## No iniciar todavía
 
 WEB-001, MCP-001, MEM-002 y cualquier marketplace, ejecución distribuida, GraphRAG, DAST genérico, multiusuario o auto-optimización.

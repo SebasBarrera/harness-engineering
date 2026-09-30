@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Fail if any tracked YAML or JSON file does not parse.
 
-YAML files are loaded with ``yaml.safe_load_all`` (multi-document aware); JSON files with the
-standard library. Used by the lint workflow.
+YAML files are loaded with a safe loader (multi-document aware) that accepts ``python/*`` tags
+without constructing them, as used by mkdocs.yml; JSON files with the standard library. Used by
+the lint workflow.
 """
 
 from __future__ import annotations
@@ -24,13 +25,22 @@ def tracked(*patterns: str) -> list[Path]:
     return [ROOT / name for name in output.split("\0") if name]
 
 
+class _SyntaxOnlyLoader(yaml.SafeLoader):
+    """Safe loader that accepts python/* tags (used by mkdocs.yml) without constructing them."""
+
+
+_SyntaxOnlyLoader.add_multi_constructor(
+    "tag:yaml.org,2002:python/", lambda loader, suffix, node: None
+)
+
+
 def main() -> int:
     errors: list[str] = []
     yaml_files = tracked("*.yml", "*.yaml")
     json_files = tracked("*.json")
     for path in yaml_files:
         try:
-            list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+            list(yaml.load_all(path.read_text(encoding="utf-8"), Loader=_SyntaxOnlyLoader))
         except yaml.YAMLError as error:
             errors.append(f"{path.relative_to(ROOT)}: {error}")
     for path in json_files:

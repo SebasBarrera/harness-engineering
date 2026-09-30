@@ -216,7 +216,10 @@ class SQLiteEventStore:
 
     def export_jsonl(self, execution_id: str) -> bytes:
         return (
-            "\n".join(json.dumps(event.as_dict(), sort_keys=True, ensure_ascii=False) for event in self.list(execution_id))
+            "\n".join(
+                json.dumps(event.as_dict(), sort_keys=True, ensure_ascii=False)
+                for event in self.list(execution_id)
+            )
             + "\n"
         ).encode("utf-8")
 

@@ -50,18 +50,26 @@ class GateEngine:
             mandatory_inputs = [item for item in inputs if item.mandatory]
             if not mandatory_inputs:
                 return LegacyGateDecision(ResultStatus.INCONCLUSIVE, ("NO_MANDATORY_INPUTS",))
-            non_passed = [item for item in mandatory_inputs if item.status is not ResultStatus.PASSED]
+            non_passed = [
+                item for item in mandatory_inputs if item.status is not ResultStatus.PASSED
+            ]
             if not non_passed:
                 return LegacyGateDecision(ResultStatus.PASSED, ("ALL_MANDATORY_PASSED",))
             if any(item.status is ResultStatus.ERROR for item in non_passed):
                 status = ResultStatus.ERROR
-            elif any(item.status in {ResultStatus.BLOCKED, ResultStatus.TIMED_OUT, ResultStatus.CANCELLED} for item in non_passed):
+            elif any(
+                item.status
+                in {ResultStatus.BLOCKED, ResultStatus.TIMED_OUT, ResultStatus.CANCELLED}
+                for item in non_passed
+            ):
                 status = ResultStatus.BLOCKED
             elif any(item.status is ResultStatus.INCONCLUSIVE for item in non_passed):
                 status = ResultStatus.INCONCLUSIVE
             else:
                 status = ResultStatus.FAILED
-            return LegacyGateDecision(status, tuple(f"{item.check_id}_{item.status}" for item in non_passed))
+            return LegacyGateDecision(
+                status, tuple(f"{item.check_id}_{item.status}" for item in non_passed)
+            )
         if (
             execution_id is None
             or gate_id is None
@@ -70,7 +78,9 @@ class GateEngine:
             or policy is None
             or provenance is None
         ):
-            raise TypeError("structured gate evaluation requires execution, gate, digests, policy and provenance")
+            raise TypeError(
+                "structured gate evaluation requires execution, gate, digests, policy and provenance"
+            )
         validation_list = list(validations)
         finding_list = list(findings)
         mandatory = [item for item in validation_list if item.mandatory]
@@ -93,7 +103,14 @@ class GateEngine:
             reasons.append(f"BLOCKING_FINDING_{finding.finding_id}")
         if not reasons and status is ResultStatus.PASSED:
             reasons.append("ALL_MANDATORY_VALIDATIONS_PASSED")
-        assert execution_id is not None and gate_id is not None and change_set_digest is not None and policy_digest is not None and policy is not None and provenance is not None
+        assert (
+            execution_id is not None
+            and gate_id is not None
+            and change_set_digest is not None
+            and policy_digest is not None
+            and policy is not None
+            and provenance is not None
+        )
         return GateEvaluation(
             gate_evaluation_id=new_id("gateeval"),
             execution_id=execution_id,

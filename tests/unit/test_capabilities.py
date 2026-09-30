@@ -10,7 +10,9 @@ from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import Actor, CapabilityGrant
 
 
-def grant(actor: Actor, capability: str, scope: tuple[str, ...], *, approval: bool = False) -> CapabilityGrant:
+def grant(
+    actor: Actor, capability: str, scope: tuple[str, ...], *, approval: bool = False
+) -> CapabilityGrant:
     now = datetime.now(UTC)
     return CapabilityGrant(
         grant_id="grant_001",

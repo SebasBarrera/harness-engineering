@@ -60,7 +60,9 @@ class SQLiteStateStore:
         execution_id: str | None = None,
         project_id: str | None = None,
     ) -> None:
-        payload = value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else value
+        payload = (
+            value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else value
+        )
         now = datetime.now(UTC).isoformat()
         with self._lock, self.connection:
             self.connection.execute(

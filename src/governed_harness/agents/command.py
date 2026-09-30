@@ -95,7 +95,11 @@ class CommandAgentProvider:
         if result.status is ResultStatus.PASSED:
             try:
                 response = json.loads(result.stdout)
-                if not isinstance(response, dict) or response.get("status") not in {"PASSED", "FAILED", "BLOCKED"}:
+                if not isinstance(response, dict) or response.get("status") not in {
+                    "PASSED",
+                    "FAILED",
+                    "BLOCKED",
+                }:
                     raise ValueError("agent response does not satisfy the minimal protocol")
                 status = ResultStatus(response["status"])
                 summary = str(response.get("summary", summary))
