@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from governed_harness.agents.base import AgentExecutionResult
+from governed_harness.agents.base import AgentContext, AgentExecutionResult
 from governed_harness.domain.enums import ActorType, ErrorKind, PhaseId, ResultStatus
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -41,7 +41,7 @@ class CommandAgentProvider:
     def capabilities(self) -> tuple[str, ...]:
         return ("external_cli", "structured_json")
 
-    def implement(self, task: Task, plan: Plan, context: object) -> AgentExecutionResult:
+    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
         actor = context.provenance.actor
         if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
             actor = Actor(
