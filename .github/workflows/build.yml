@@ -1,0 +1,104 @@
+# Package build and clean-environment smoke test of the built wheel.
+name: build
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+      - "style/**"
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  package:
+    name: package
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build sdist and wheel (PEP 517)
+        run: |
+          python -m pip install build twine
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Check wheel contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import zipfile, glob
+          wheel = glob.glob("dist/*.whl")[0]
+          names = set(zipfile.ZipFile(wheel).namelist())
+          required = [
+              "governed_harness/py.typed",
+              "governed_harness/resources/workflows/default.yaml",
+              "governed_harness/resources/profiles/python.yaml",
+              "governed_harness/resources/profiles/node.yaml",
+          ]
+          schemas = [n for n in names if n.startswith("governed_harness/resources/schemas/v1/")]
+          missing = [n for n in required if n not in names]
+          print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas")
+          assert not missing, f"missing from wheel: {missing}"
+          assert len(schemas) == 25, f"expected 25 schemas, found {len(schemas)}"
+          PY
+      - name: Install the wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/clean"
+          "$RUNNER_TEMP/clean/bin/python" -m pip install dist/*.whl
+          "$RUNNER_TEMP/clean/bin/python" -m pip list --format=freeze | tee "$RUNNER_TEMP/freeze.txt"
+      - name: Smoke test the installed CLI on a temporary project
+        shell: bash
+        run: |
+          set -euo pipefail
+          harness="$RUNNER_TEMP/clean/bin/harness"
+          project="$RUNNER_TEMP/smoke-project"
+          mkdir -p "$project/src/sample" "$project/tests"
+          printf 'def ok() -> bool:\n    return True\n' > "$project/src/sample/__init__.py"
+          printf 'from sample import ok\n\ndef test_ok() -> None:\n    assert ok()\n' > "$project/tests/test_ok.py"
+          printf '[project]\nname = "smoke"\nversion = "0.1.0"\n\n[tool.pytest.ini_options]\npythonpath = ["src"]\n' > "$project/pyproject.toml"
+          git -C "$project" init -q
+          git -C "$project" add .
+          git -C "$project" -c user.name=ci -c user.email=ci@example.invalid commit -qm baseline
+          "$harness" --help > /dev/null
+          "$harness" doctor --json
+          "$harness" init --path "$project"
+          "$harness" inspect --path "$project"
+          "$harness" config validate --path "$project"
+          {
+            echo "### Wheel smoke test"
+            echo "- dependencies installed in a clean venv: $(( $(wc -l < "$RUNNER_TEMP/freeze.txt") - 1 )) (plus the harness itself)"
+            echo "- \`harness --help\`, \`doctor\`, \`init\`, \`inspect\` and \`config validate\` exited 0"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dist
+          path: dist/
+          retention-days: 14
