@@ -87,8 +87,7 @@ def run_benchmarks(*, iterations: int = 1000) -> dict[str, object]:
             return subprocess.run(
                 [sys.executable, "-c", "pass"],
                 cwd=root,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                capture_output=True,
                 check=False,
             )
 

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TypeVar
 
 from jsonschema import Draft202012Validator, FormatChecker
 from pydantic import BaseModel
@@ -27,7 +26,6 @@ from governed_harness.domain.models import (
 )
 from governed_harness.orchestration.engine import EngineServices
 
-T = TypeVar("T", bound=BaseModel)
 SCHEMA_DIR = Path(__file__).parents[2] / "schemas" / "v1"
 
 
@@ -36,7 +34,7 @@ def _validate(schema_name: str, value: dict[str, object]) -> None:
     Draft202012Validator(schema, format_checker=FormatChecker()).validate(value)
 
 
-def _first(services: EngineServices, record_type: str, model: type[T], execution_id: str) -> T:
+def _first[T: BaseModel](services: EngineServices, record_type: str, model: type[T], execution_id: str) -> T:
     records = services.state.list(record_type, model, execution_id=execution_id)
     assert records, f"missing {record_type} record"
     return records[0]

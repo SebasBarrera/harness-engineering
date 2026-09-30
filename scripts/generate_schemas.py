@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TypeAlias
 
 from pydantic import BaseModel
 
@@ -40,7 +39,7 @@ from governed_harness.plugins.protocol import PluginDescriptor, PluginRequest, P
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "schemas" / "v1"
 RESOURCE_ROOT = ROOT / "src" / "governed_harness" / "resources" / "schemas" / "v1"
-SchemaModel: TypeAlias = type[BaseModel]
+type SchemaModel = type[BaseModel]
 
 MODELS: dict[str, SchemaModel] = {
     "agent-invocation.schema.json": AgentInvocation,

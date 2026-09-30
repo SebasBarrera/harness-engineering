@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 import typer
 
@@ -31,7 +30,6 @@ app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 
-T = TypeVar("T")
 
 
 def _emit(value: object, json_output: bool = True) -> None:
@@ -45,7 +43,7 @@ def _emit(value: object, json_output: bool = True) -> None:
         typer.echo(value)
 
 
-def _call(operation: Callable[[], T]) -> T:
+def _call[T](operation: Callable[[], T]) -> T:
     try:
         return operation()
     except HarnessError as error:
