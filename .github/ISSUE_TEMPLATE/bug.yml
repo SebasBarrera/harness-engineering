@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the harness does not behave as documented.
+title: "bug: "
+labels: ["type:fix"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For vulnerabilities or leaked secrets, do not use this form:
+        report privately (see SECURITY.md).
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `pip show governed-agent-harness | grep Version`, or the commit.
+      placeholder: 0.8.1
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Commands in order, the task file if relevant, and the project type (Python, Node.js).
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include the exit code and the relevant part of `harness status --run <id>`.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: macOS 15, Python 3.12.11, Node.js 24
+  - type: dropdown
+    id: thesis
+    attributes:
+      label: Does it concern behavior evaluated in the thesis (v0.8.0)?
+      options: ["I don't know", "Yes", "No"]
