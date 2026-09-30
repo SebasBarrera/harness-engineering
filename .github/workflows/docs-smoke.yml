@@ -1,0 +1,97 @@
+# Keeps the documentation honest: reproduces the README quickstart and the demonstration flows
+# with their documented exit codes, checks that the generated references are up to date and
+# builds the documentation site in strict mode.
+name: docs-smoke
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+      - "style/**"
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  flows:
+    name: quickstart and exit codes
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Install the package with pytest (as a user would)
+        run: python -m pip install . pytest
+      - name: Run the quickstart and the demonstration flows
+        run: |
+          python scripts/demo_flows.py all --transcript transcript.json
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          steps = json.load(open("transcript.json"))
+          print("### Documented flows\n\n| Flow | Command | Expected | Actual |\n|---|---|---:|---:|")
+          for s in steps:
+              print(f"| {s['flow']} | `{s['command'][:80]}` | {s['expected']} | {s['actual']} |")
+          PY
+
+  references:
+    name: generated references
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check that the CLI and task-file references are up to date
+        run: |
+          python -m pip install -e .
+          python scripts/gen_cli_docs.py --check
+          python scripts/gen_schema_docs.py --check
+
+  site:
+    name: docs build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Build the site in strict mode
+        run: |
+          python -m pip install -r docs/requirements.txt
+          python -m mkdocs build --strict --site-dir site
