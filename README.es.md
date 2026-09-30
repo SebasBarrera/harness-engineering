@@ -129,7 +129,7 @@ código de salida que aparece aquí.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.8.1/governed_agent_harness-0.8.1-py3-none-any.whl" pytest
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.9.0/governed_agent_harness-0.9.0-py3-none-any.whl" pytest
 
 # un proyecto Python mínimo con un commit de baseline
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -158,7 +158,7 @@ La tarea usada es [`docs/guides/task.yaml`](docs/guides/task.yaml); la
 |---|---|
 | Un wheel del release (recomendado) | `pip install <URL del wheel en la página del release>`; verifícalo con `sha256sum -c SHA256SUMS` y `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | Código fuente | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.8.1 --help` (publicada desde `v0.8.1`; corre con un usuario sin privilegios) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.9.0 --help` (publicada desde `v0.9.0`; corre con un usuario sin privilegios) |
 
 Requisitos: **Python ≥ 3.12** y **Git** (los baselines y ChangeSets salen del repositorio). Para
 proyectos Node.js, **Node.js LTS y npm**. El extra opcional `api` instala FastAPI y Uvicorn para el
