@@ -4,10 +4,25 @@
 # The original .github/workflows/ci.yml of the cut is imported unchanged and disabled (issue #15).
 name: import-ci
 
+# Single-maintainer flow: work branches are merged into develop without pull requests, so CI
+# runs on every push to a work branch (must be green before the merge) and again on develop/main.
 on:
-  pull_request:
-    branches: [develop, main]
   push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+  pull_request:
     branches: [develop, main]
   workflow_dispatch:
 
