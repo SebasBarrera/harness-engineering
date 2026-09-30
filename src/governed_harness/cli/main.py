@@ -340,8 +340,8 @@ def gate_decide(
     )
     _emit(
         {
-            "decision": record.model_dump(mode="json"),
-            "execution": execution.model_dump(mode="json"),
+            "decision": record.model_dump(mode="json", by_alias=True),
+            "execution": execution.model_dump(mode="json", by_alias=True),
         }
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
