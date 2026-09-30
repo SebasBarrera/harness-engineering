@@ -9,7 +9,7 @@ description = "Technology-neutral research prototype for governing AI-assisted s
 readme = "README.md"
 requires-python = ">=3.12"
 license = {text = "Apache-2.0"}
-authors = [{name = "Research prototype contributors"}]
+authors = [{name = "Juan Sebastián Barrera Pulido"}]
 keywords = ["ai-agents", "software-engineering", "human-in-the-loop", "governance", "harness"]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -20,6 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
@@ -55,8 +56,11 @@ harness = "governed_harness.cli.main:main"
 harness-plugin-echo = "governed_harness.plugins.sdk:main"
 
 [project.urls]
-Documentation = "https://example.invalid/governed-agent-harness"
-Repository = "https://example.invalid/governed-agent-harness"
+Homepage = "https://github.com/SebasBarrera/harness-engineering"
+Documentation = "https://sebasbarrera.github.io/harness-engineering/"
+Repository = "https://github.com/SebasBarrera/harness-engineering"
+Issues = "https://github.com/SebasBarrera/harness-engineering/issues"
+Changelog = "https://github.com/SebasBarrera/harness-engineering/blob/develop/CHANGELOG.md"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
