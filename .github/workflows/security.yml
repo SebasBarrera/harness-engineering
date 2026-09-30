@@ -1,0 +1,139 @@
+# Supply-chain and privacy controls: secret scanning, dependency audit, static security
+# analysis, privacy denylist and provenance of the v0.8.0 thesis cut.
+name: security
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+      - "style/**"
+  pull_request:
+    branches: [develop, main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GITLEAKS_VERSION: "8.30.1"
+      GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+    steps:
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install gitleaks (pinned version and checksum)
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tgz \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  /tmp/gitleaks.tgz" | sha256sum -c -
+          tar -xzf /tmp/gitleaks.tgz -C /tmp gitleaks
+      - name: Scan the full Git history
+        run: /tmp/gitleaks git --redact --no-banner -v .
+
+  privacy:
+    name: privacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check tracked files against the privacy denylist
+        run: python3 scripts/check_denylist.py
+
+  provenance:
+    name: provenance (v0.8.0 tag)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify the v0.8.0 tag byte-for-byte against the cut manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          tree="$RUNNER_TEMP/v0.8.0"
+          mkdir -p "$tree"
+          git archive v0.8.0 | tar -x -C "$tree"
+          python3 "$tree/scripts/verify_provenance.py" full --root "$tree" | tee "$RUNNER_TEMP/provenance.txt"
+          { echo "### Provenance of v0.8.0"; echo '```'; cat "$RUNNER_TEMP/provenance.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+  dependency-audit:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Audit the runtime dependency set (package + api extra)
+        run: |
+          python -m venv /tmp/audit
+          # The venv's bundled pip is tooling, not a dependency of the harness; upgrade it so the
+          # audit reflects the runtime dependency set rather than a stale installer.
+          /tmp/audit/bin/python -m pip install --upgrade pip
+          /tmp/audit/bin/python -m pip install ".[api]" pip-audit
+          /tmp/audit/bin/python -m pip_audit --skip-editable --desc on --progress-spinner off
+
+  bandit:
+    name: bandit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Bandit
+        run: python -m pip install "bandit[sarif]"
+      # --exit-zero only here: this step produces the complete report for code scanning.
+      # The blocking decision is the next step, which fails on medium+ findings.
+      - name: Full report as SARIF (all severities, uploaded to code scanning)
+        run: python -m bandit -r src -f sarif -o bandit.sarif --exit-zero
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
+        with:
+          sarif_file: bandit.sarif
+          category: bandit
+      - name: Fail on medium or higher severity and confidence
+        run: python -m bandit -r src -ll -ii
