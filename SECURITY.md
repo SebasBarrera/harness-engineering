@@ -1,4 +1,42 @@
-# Security model
+# Security policy
+
+## Reporting a vulnerability
+
+Report vulnerabilities **privately** through GitHub:
+[Security → Report a vulnerability](https://github.com/SebasBarrera/harness-engineering/security/advisories/new).
+Do not open a public issue for a vulnerability. Include the affected version or commit, the steps to
+reproduce and the impact. The maintainer acknowledges reports as soon as possible; this is a
+single-maintainer research project, so there is no guaranteed response time.
+
+Credentials or personal data committed by mistake are handled the same way: report them privately
+so they can be rotated or removed before they are discussed publicly.
+
+## Supported versions
+
+| Version | Status |
+|---|---|
+| `develop` and the latest `v0.8.x` release | Security fixes |
+| `v0.8.0` | Frozen thesis cut: vulnerabilities are documented and fixed in later releases, never in the tag |
+
+## This is not a sandbox
+
+The harness enforces **application-level** controls: capabilities, path containment, shell-free
+process execution, bounded output, redaction, digest-bound decisions. It does not isolate the
+processes it launches. An authorized command runs with the file-system, network, CPU and memory
+permissions of the operating-system user. The local API and dashboard have no authentication and
+must stay on loopback. Run untrusted repositories, agents or plugins only inside a container, VM or
+comparable OS-level sandbox. The model below details what is and is not enforced.
+
+## Repository supply chain
+
+- GitHub Actions are pinned by commit SHA and run with least-privilege tokens; workflows are
+  checked by actionlint and zizmor.
+- Secret scanning with push protection, gitleaks over the full history, CodeQL, Bandit, pip-audit,
+  Trivy (container image), dependency review for pull requests, Dependabot and OpenSSF Scorecard.
+- Releases from `v0.8.1` are built by CI with an SPDX SBOM and a build-provenance attestation:
+  `gh attestation verify <file> --repo SebasBarrera/harness-engineering`.
+
+# Security model of the harness
 
 ## Trust assumptions
 
