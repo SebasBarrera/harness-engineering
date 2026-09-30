@@ -1,0 +1,149 @@
+# Static checks. actionlint, zizmor and data-file validation block. Ruff, Mypy, markdownlint and
+# hadolint run as "(report)" jobs until the v0.8.1 quality fixes land; then they become blocking.
+name: lint
+
+on:
+  push:
+    branches:
+      - develop
+      - main
+      - "release/**"
+      - "hotfix/**"
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "ci/**"
+      - "chore/**"
+      - "test/**"
+      - "build/**"
+      - "security/**"
+      - "refactor/**"
+      - "style/**"
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  FORCE_COLOR: "0"
+
+jobs:
+  ruff:
+    name: ruff (report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install Ruff (version range from pyproject dev extra)
+        run: python -m pip install "ruff>=0.6,<1"
+      - name: Ruff check and format check
+        shell: bash
+        run: |
+          set +e
+          python -m ruff check src tests scripts --output-format=github
+          check=$?
+          python -m ruff format --check src tests scripts
+          format=$?
+          echo "ruff $(python -m ruff --version): check exit ${check}, format exit ${format}" >> "$GITHUB_STEP_SUMMARY"
+          exit $(( check | format ))
+
+  mypy:
+    name: mypy (report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install package with dev and api extras
+        run: python -m pip install -e ".[dev,api]"
+      - name: Mypy strict (package mode, configured in pyproject.toml)
+        run: python -m mypy
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      ACTIONLINT_VERSION: "1.7.12"
+      ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install actionlint (pinned version and checksum)
+        run: |
+          curl -sSfL -o /tmp/actionlint.tgz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  /tmp/actionlint.tgz" | sha256sum -c -
+          tar -xzf /tmp/actionlint.tgz -C /tmp actionlint
+      - name: Lint workflows
+        run: /tmp/actionlint -color
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Audit workflows with zizmor (offline audits)
+        run: |
+          python -m pip install "zizmor==1.30.1"
+          zizmor --offline --format github .github/workflows/
+
+  data-files:
+    name: yaml and json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Parse every tracked YAML and JSON file
+        run: |
+          python3 -m pip install --user pyyaml
+          python3 scripts/check_data_files.py
+
+  markdownlint:
+    name: markdownlint (report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: DavidAnson/markdownlint-cli2-action@21c1be1b93ad9ed58fa840aacc3f279cde2a72ff # v24.2.0
+        with:
+          globs: "**/*.md"
+
+  hadolint:
+    name: hadolint (report)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
+        with:
+          dockerfile: Dockerfile

@@ -76,9 +76,11 @@ jobs:
           set -euo pipefail
           mkdir -p reports/ci
           status=0
-          echo "### Tests (${MATRIX_LABEL})" >> "$GITHUB_STEP_SUMMARY"
-          echo "| family | tests | result |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---:|---|" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "### Tests (${MATRIX_LABEL})"
+            echo "| family | tests | result |"
+            echo "|---|---:|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
           for family in unit contract integration security e2e performance; do
             echo "::group::pytest tests/${family}"
             set +e
