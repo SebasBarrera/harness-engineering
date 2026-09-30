@@ -158,4 +158,6 @@ class SimulatedAgentProvider:
             output_ref=output_ref.uri,
             error=error_record,
         )
-        return AgentExecutionResult(status, summary, invocation, tuple(tool_invocations), output_ref.uri)
+        return AgentExecutionResult(
+            status, summary, invocation, tuple(tool_invocations), output_ref.uri
+        )

@@ -43,7 +43,9 @@ class TraceReporter:
             "humanDecision": decision.model_dump(mode="json", by_alias=True) if decision else None,
             "events": [event.as_dict() for event in events],
             "metrics": {key: value.as_dict() for key, value in metrics.items()},
-            "retrospective": retrospective.model_dump(mode="json", by_alias=True) if retrospective else None,
+            "retrospective": retrospective.model_dump(mode="json", by_alias=True)
+            if retrospective
+            else None,
         }
 
     def render_json(self, **kwargs: Any) -> bytes:
@@ -76,7 +78,15 @@ class TraceReporter:
             lines.append(
                 f"| `{phase['phaseId']}` | {phase['attempt']} | `{phase['status']}` | {summary} |"
             )
-        lines.extend(["", "## Validation results", "", "| Validator | Mandatory | Status | Kind | Summary |", "|---|:---:|---|---|---|"])
+        lines.extend(
+            [
+                "",
+                "## Validation results",
+                "",
+                "| Validator | Mandatory | Status | Kind | Summary |",
+                "|---|:---:|---|---|---|",
+            ]
+        )
         for result in data["validations"]:
             summary = str(result["summary"]).replace("|", "\\|")
             lines.append(
@@ -111,7 +121,15 @@ class TraceReporter:
             )
         else:
             lines.append("No human decision has been recorded.")
-        lines.extend(["", "## Operational metrics", "", "| Metric | Value | Unit | Quality |", "|---|---:|---|---|"])
+        lines.extend(
+            [
+                "",
+                "## Operational metrics",
+                "",
+                "| Metric | Value | Unit | Quality |",
+                "|---|---:|---|---|",
+            ]
+        )
         for key, metric in sorted(data["metrics"].items()):
             value = "N/A" if metric["value"] is None else metric["value"]
             lines.append(f"| `{key}` | {value} | {metric['unit']} | `{metric['quality']}` |")
@@ -127,9 +145,7 @@ class TraceReporter:
             lines.append("No retrospective has been generated yet.")
         lines.extend(["", "## Event chain", ""])
         for event in data["events"]:
-            lines.append(
-                f"{event['sequence']}. `{event['eventType']}` — `{event['eventDigest']}`"
-            )
+            lines.append(f"{event['sequence']}. `{event['eventType']}` — `{event['eventDigest']}`")
         return ("\n".join(lines) + "\n").encode("utf-8")
 
     def render_sarif(self, findings: list[Finding]) -> bytes:
@@ -164,7 +180,9 @@ class TraceReporter:
                             "artifactLocation": {"uri": finding.location.path},
                             "region": {
                                 "startLine": finding.location.start_line or 1,
-                                "endLine": finding.location.end_line or finding.location.start_line or 1,
+                                "endLine": finding.location.end_line
+                                or finding.location.start_line
+                                or 1,
                             },
                         }
                     }
@@ -175,7 +193,9 @@ class TraceReporter:
             "version": "2.1.0",
             "runs": [
                 {
-                    "tool": {"driver": {"name": "Governed Agent Harness", "rules": list(rules.values())}},
+                    "tool": {
+                        "driver": {"name": "Governed Agent Harness", "rules": list(rules.values())}
+                    },
                     "results": results,
                 }
             ],

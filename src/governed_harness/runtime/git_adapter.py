@@ -24,7 +24,9 @@ class GitAdapter:
         head_result = self._run("rev-parse", "HEAD")
         branch_result = self._run("branch", "--show-current")
         status_result = self._run("status", "--porcelain=v1", "--untracked-files=all")
-        lines = tuple(line for line in status_result.stdout.decode("utf-8", "replace").splitlines() if line)
+        lines = tuple(
+            line for line in status_result.stdout.decode("utf-8", "replace").splitlines() if line
+        )
         return GitState(
             True,
             head_result.stdout.decode().strip() if head_result.returncode == 0 else None,

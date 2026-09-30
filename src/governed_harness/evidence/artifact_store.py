@@ -72,11 +72,17 @@ class LocalArtifactStore:
         )
 
     def put_json(self, value: Any, *, metadata: dict[str, Any] | None = None) -> ArtifactRef:
-        data = json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, default=str).encode("utf-8")
+        data = json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False, default=str).encode(
+            "utf-8"
+        )
         return self.put(data, media_type="application/json", metadata=metadata)
 
     def get(self, reference: ArtifactRef | str) -> bytes:
-        digest = reference.digest if isinstance(reference, ArtifactRef) else self._digest_from_uri(reference)
+        digest = (
+            reference.digest
+            if isinstance(reference, ArtifactRef)
+            else self._digest_from_uri(reference)
+        )
         hex_digest = digest.split(":", 1)[1]
         path = self._blob_path(hex_digest)
         data = path.read_bytes()
@@ -121,7 +127,7 @@ class LocalArtifactStore:
         prefix = "artifact://sha256/"
         if not uri.startswith(prefix):
             raise ValueError(f"unsupported artifact URI: {uri}")
-        return f"sha256:{uri[len(prefix):]}"
+        return f"sha256:{uri[len(prefix) :]}"
 
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:

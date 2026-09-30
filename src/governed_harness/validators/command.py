@@ -31,7 +31,9 @@ class CommandValidator:
         self.validator_id = validator_id
 
     def execute(self, context: ValidationContext) -> ValidatorOutput:
-        actor = Actor(actor_type=ActorType.TOOL, actor_id=f"validator.{self.validator_id}", version="1")
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id=f"validator.{self.validator_id}", version="1"
+        )
         started = datetime.now(UTC)
         availability = self._availability(context)
         if availability is not None:
@@ -143,7 +145,9 @@ class CommandValidator:
                 validator_id=self.validator_id,
                 rule_id=f"{self.validator_id}.failed",
                 category="validation",
-                severity=FindingSeverity.HIGH if context.definition.mandatory else FindingSeverity.MEDIUM,
+                severity=FindingSeverity.HIGH
+                if context.definition.mandatory
+                else FindingSeverity.MEDIUM,
                 message=summary,
                 location=FindingLocation(),
                 evidence_refs=(report.uri, stdout.uri, stderr.uri),
@@ -184,14 +188,23 @@ class CommandValidator:
             except (OSError, json.JSONDecodeError):
                 scripts = {}
             if definition.script not in scripts:
-                status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
+                status = (
+                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
+                )
                 return status, f"package script {definition.script!r} is not defined"
         argv0 = definition.command[0]
         if shutil.which(argv0) is None:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
-        if definition.when_available and len(definition.command) >= 3 and definition.command[1] == "-m":
+        if (
+            definition.when_available
+            and len(definition.command) >= 3
+            and definition.command[1] == "-m"
+        ):
             module = definition.command[2]
             if importlib.util.find_spec(module) is None:
-                return ResultStatus.NOT_APPLICABLE, f"optional Python module {module!r} is not installed"
+                return (
+                    ResultStatus.NOT_APPLICABLE,
+                    f"optional Python module {module!r} is not installed",
+                )
         return None

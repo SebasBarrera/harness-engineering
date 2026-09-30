@@ -17,7 +17,9 @@ from governed_harness.domain.enums import DecisionKind, ResultStatus
 
 def _git_init(root: Path) -> None:
     subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-    subprocess.run(["git", "config", "user.email", "benchmark@example.invalid"], cwd=root, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "benchmark@example.invalid"], cwd=root, check=True
+    )
     subprocess.run(["git", "config", "user.name", "Benchmark Fixture"], cwd=root, check=True)
     subprocess.run(["git", "add", "."], cwd=root, check=True)
     subprocess.run(["git", "commit", "-qm", "baseline"], cwd=root, check=True)
@@ -174,7 +176,9 @@ def _summarize(samples: list[float]) -> dict[str, float]:
     }
 
 
-def _run_direct(stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, ...]]]) -> tuple[float, dict[str, object]]:
+def _run_direct(
+    stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, ...]]]
+) -> tuple[float, dict[str, object]]:
     with tempfile.TemporaryDirectory(prefix=f"harness-direct-{stack}-") as directory:
         root = Path(directory)
         _, command = fixture(root)
@@ -189,7 +193,9 @@ def _run_direct(stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, ...
         return elapsed_ms, {"exitCode": result.returncode}
 
 
-def _run_governed(stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, ...]]]) -> tuple[float, dict[str, object]]:
+def _run_governed(
+    stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, ...]]]
+) -> tuple[float, dict[str, object]]:
     with tempfile.TemporaryDirectory(prefix=f"harness-governed-{stack}-") as directory:
         root = Path(directory)
         task_file, _ = fixture(root)
@@ -199,7 +205,9 @@ def _run_governed(stack: str, fixture: Callable[[Path], tuple[Path, tuple[str, .
         task = app.create_task(root, task_file)
         pending = app.start_run(root, task.task_id)
         if pending.status is not ResultStatus.BLOCKED or not pending.change_set_digest:
-            raise RuntimeError(f"governed {stack} fixture did not reach the human gate: {pending.status}")
+            raise RuntimeError(
+                f"governed {stack} fixture did not reach the human gate: {pending.status}"
+            )
         _, final = app.decide_gate(
             root,
             execution_id=pending.execution_id,
@@ -227,7 +235,11 @@ def run_scenario_benchmarks(*, iterations: int = 3) -> dict[str, object]:
     scenarios: dict[str, object] = {}
     for stack, fixture, available in (
         ("python", _python_fixture, True),
-        ("node", _node_fixture, shutil.which("node") is not None and shutil.which("npm") is not None),
+        (
+            "node",
+            _node_fixture,
+            shutil.which("node") is not None and shutil.which("npm") is not None,
+        ),
     ):
         if not available:
             scenarios[stack] = {"status": "NOT_AVAILABLE", "reason": "required runtime not found"}
@@ -262,7 +274,9 @@ def run_scenario_benchmarks(*, iterations: int = 3) -> dict[str, object]:
         "generatedAt": datetime.now(UTC).isoformat(),
         "environment": {
             "python": sys.version.split()[0],
-            "node": subprocess.run(["node", "--version"], capture_output=True, text=True).stdout.strip()
+            "node": subprocess.run(
+                ["node", "--version"], capture_output=True, text=True
+            ).stdout.strip()
             if shutil.which("node")
             else None,
             "platform": platform.platform(),

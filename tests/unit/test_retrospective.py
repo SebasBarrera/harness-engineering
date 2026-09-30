@@ -22,7 +22,9 @@ def test_retrospective_never_auto_applies() -> None:
         execution_id="run_1",
         metrics=metrics,
         evidence_refs=("artifact://sha256/abc",),
-        provenance=Provenance(actor=Actor(actor_type=ActorType.HARNESS, actor_id="harness.core"), core_version="test"),
+        provenance=Provenance(
+            actor=Actor(actor_type=ActorType.HARNESS, actor_id="harness.core"), core_version="test"
+        ),
     )
     assert retrospective.applied_automatically is False
     assert len(retrospective.recommendations) >= 3

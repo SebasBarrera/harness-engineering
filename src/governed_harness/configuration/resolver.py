@@ -36,7 +36,9 @@ class ConfigurationResolver:
         workspace_root = (config_path.parent / project.workspace.root).resolve(strict=True)
         requested = list(project.profiles)
         if requested == ["auto"] or "auto" in requested:
-            detections = [result for result in detect_profiles(workspace_root) if result.confidence > 0]
+            detections = [
+                result for result in detect_profiles(workspace_root) if result.confidence > 0
+            ]
             if not detections:
                 raise ConfigurationError("no supported technology profile detected")
             best = detections[0]
@@ -54,7 +56,11 @@ class ConfigurationResolver:
             effective_capabilities=capabilities,
             effective_validators=validators,
             effective_policies=policies,
-            source_files=(str(config_path), "builtin:workflow/default", *(f"builtin:profile/{p.profile_id}" for p in profiles)),
+            source_files=(
+                str(config_path),
+                "builtin:workflow/default",
+                *(f"builtin:profile/{p.profile_id}" for p in profiles),
+            ),
         )
 
     @staticmethod
@@ -68,7 +74,9 @@ class ConfigurationResolver:
         for rule in explicit:
             merged.setdefault((rule.capability, rule.approval_required), set()).update(rule.scope)
         return tuple(
-            CapabilityRule(capability=capability, scope=tuple(sorted(scopes)), approvalRequired=approval)
+            CapabilityRule(
+                capability=capability, scope=tuple(sorted(scopes)), approvalRequired=approval
+            )
             for (capability, approval), scopes in sorted(merged.items())
         )
 
@@ -80,7 +88,9 @@ class ConfigurationResolver:
         defaults: list[str] = []
         for profile in profiles:
             defaults.extend(profile.default_validators)
-            available.update({validator.validator_id: validator for validator in profile.validators})
+            available.update(
+                {validator.validator_id: validator for validator in profile.validators}
+            )
         selected = list(requested) if requested else defaults
         missing = [validator_id for validator_id in selected if validator_id not in available]
         if missing:
@@ -96,8 +106,14 @@ class ConfigurationResolver:
             resolved.update(profile.policies)
         # Locked core policies may only remain true/deny. Other values are project-configurable.
         for key, value in project_policies.items():
-            if key in {"requireHumanDecision", "approvalDigestBinding", "mandatoryNonSuccessBlocks"} and value is not True:
-                raise ConfigurationError(f"project configuration may not weaken locked policy {key}")
+            if (
+                key
+                in {"requireHumanDecision", "approvalDigestBinding", "mandatoryNonSuccessBlocks"}
+                and value is not True
+            ):
+                raise ConfigurationError(
+                    f"project configuration may not weaken locked policy {key}"
+                )
             if key == "retrospectiveAutoApply" and value is not False:
                 raise ConfigurationError("retrospectiveAutoApply is a locked false policy")
             resolved[key] = value

@@ -135,7 +135,9 @@ class Task(StrictModel):
 
     @field_validator("acceptance_criteria")
     @classmethod
-    def require_acceptance(cls, value: tuple[AcceptanceCriterion, ...]) -> tuple[AcceptanceCriterion, ...]:
+    def require_acceptance(
+        cls, value: tuple[AcceptanceCriterion, ...]
+    ) -> tuple[AcceptanceCriterion, ...]:
         if not value:
             raise ValueError("at least one acceptance criterion is required")
         return value

@@ -28,7 +28,11 @@ class CapabilityAuthorizer:
     ) -> CapabilityGrant:
         instant = now or datetime.now(UTC)
         for grant in grants:
-            if grant.actor != actor or grant.capability != capability or not grant.active_at(instant):
+            if (
+                grant.actor != actor
+                or grant.capability != capability
+                or not grant.active_at(instant)
+            ):
                 continue
             if grant.approval_required and not allow_approval_required:
                 continue
@@ -49,10 +53,19 @@ class CapabilityAuthorizer:
         resource = " ".join(argv)
         instant = now or datetime.now(UTC)
         for grant in grants:
-            if grant.actor != actor or grant.capability != "process.execute" or not grant.active_at(instant):
+            if (
+                grant.actor != actor
+                or grant.capability != "process.execute"
+                or not grant.active_at(instant)
+            ):
                 continue
             for scope in grant.scope:
-                if scope == "**" or argv[0] == scope or resource == scope or resource.startswith(f"{scope} "):
+                if (
+                    scope == "**"
+                    or argv[0] == scope
+                    or resource == scope
+                    or resource.startswith(f"{scope} ")
+                ):
                     return grant
         raise CapabilityDenied(f"{actor.actor_id} lacks process.execute for {resource}")
 

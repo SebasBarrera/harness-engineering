@@ -58,7 +58,11 @@ class NodeDetector(MarkerDetector):
 
     def detect(self, workspace: Path) -> DetectionResult:
         result = super().detect(workspace)
-        locks = [name for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock") if (workspace / name).exists()]
+        locks = [
+            name
+            for name in ("package-lock.json", "pnpm-lock.yaml", "yarn.lock")
+            if (workspace / name).exists()
+        ]
         warnings = (f"ambiguous package managers: {', '.join(locks)}",) if len(locks) > 1 else ()
         return DetectionResult(
             profile_id=result.profile_id,
