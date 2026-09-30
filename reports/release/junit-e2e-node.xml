@@ -1,1 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="0.697" timestamp="2026-08-31T01:50:05.902710+00:00" hostname="localhost"><testcase classname="tests.e2e.test_node_vertical_slice" name="test_node_profile_runs_test_lint_and_typecheck" time="0.684" /></testsuite></testsuites>
