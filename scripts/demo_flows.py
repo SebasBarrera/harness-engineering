@@ -6,7 +6,8 @@ provider, and every command's exit code is checked against the documented expect
 The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
-* ``all``: quickstart plus the later-change, broken-baseline and Node.js flows, leaving
+* ``all``: quickstart plus the later-change, broken-baseline, review-exception and Node.js
+  flows, leaving
   the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
@@ -355,9 +356,9 @@ def flow_later_change(t: Transcript, root: Path) -> None:
 
 def flow_broken_baseline(t: Transcript, root: Path) -> None:
     """Brownfield-style flow (thesis flow 3): the baseline already has a failing test outside the
-    ChangeSet. Verification fails; after the baseline is repaired the ChangeSet digest is
-    unchanged, the earlier HIGH finding still counts (issue #2), APPROVE is refused with exit 5
-    and the run closes only with a justified APPROVE_EXCEPTION."""
+    ChangeSet. Verification fails; the baseline is repaired without touching the owned files, so
+    the ChangeSet digest does not change; the retry passes, the gate counts the latest attempt of
+    each validator and the run closes with an ordinary APPROVE (issue #2, fixed in 0.9.0)."""
     flow = "broken-baseline"
     python_project(root)
     legacy = root / "tests" / "test_legacy.py"
@@ -367,20 +368,67 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     (root / "task.yaml").write_text(PY_TASK)
     t.run(flow, root, ["init", "--path", "."], 0)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
-    run_id = t.json(
+    started = t.json(
         flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 6
-    )["executionId"]
+    )
+    run_id = started["executionId"]
     t.run(flow, root, ["findings", "list", "--path", ".", "--run", run_id], 0)
     before = current_digest(t, flow, root, run_id)
     legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2\n")
     t.run(flow, root, ["run", "continue", "--path", ".", "--run", run_id], 4)
     status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
     digest = status["execution"]["changeSetDigest"]
-    if digest != before or status["gate"]["status"] != "FAILED":
+    if digest != before or status["gate"]["status"] != "PASSED":
         t.ok = False
         print(
-            f"[BAD] {flow}: expected unchanged digest and FAILED gate, got {status['gate']['status']}"
+            f"[BAD] {flow}: expected unchanged digest and PASSED gate, got {status['gate']['status']}"
         )
+    t.run(
+        flow,
+        root,
+        [
+            "gate",
+            "decide",
+            "--path",
+            ".",
+            "--run",
+            run_id,
+            "--decision",
+            "APPROVE",
+            "--change-set-digest",
+            digest,
+            "--actor",
+            "human.reviewer",
+            "--rationale",
+            "Baseline repaired outside the ChangeSet; the retry passed",
+        ],
+        0,
+    )
+
+
+def flow_review_exception(t: Transcript, root: Path) -> None:
+    """A blocking finding of the independent review (a hard-coded secret, CRITICAL) keeps the gate
+    FAILED: APPROVE is refused with exit 5 and only a justified APPROVE_EXCEPTION closes the run."""
+    flow = "review-exception"
+    python_project(root)
+    (root / "task.yaml").write_text(
+        PY_TASK.replace("task_python_add_discount", "task_python_secret").replace(
+            "            return subtotal * (1 - rate) if subtotal >= threshold else subtotal",
+            '            password = "supersecret123"\n'
+            "            _ = password\n"
+            "            return subtotal * (1 - rate) if subtotal >= threshold else subtotal",
+        )
+    )
+    t.run(flow, root, ["init", "--path", "."], 0)
+    t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", "--path", ".", "--task", "task_python_secret"], 4)[
+        "executionId"
+    ]
+    status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
+    if status["gate"]["status"] != "FAILED":
+        t.ok = False
+        print(f"[BAD] {flow}: expected a FAILED gate, got {status['gate']['status']}")
+    digest = status["execution"]["changeSetDigest"]
     t.run(
         flow,
         root,
@@ -417,9 +465,9 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
             "--change-set-digest",
             digest,
             "--actor",
-            "human.reviewer",
+            "human.security",
             "--rationale",
-            "Failure came from a pre-existing test outside the ChangeSet; repaired and re-verified",
+            "Demonstration fixture: the value is not a real credential",
         ],
         0,
     )
@@ -464,6 +512,7 @@ FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
     "broken-baseline": flow_broken_baseline,
+    "review-exception": flow_review_exception,
     "node": flow_node,
 }
 
