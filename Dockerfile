@@ -30,7 +30,7 @@ RUN apt-get update \
 COPY --from=build /dist/ /tmp/dist/
 RUN python -m pip install "$(find /tmp/dist -name 'governed_agent_harness-*.whl')[api]" \
     && rm -rf /tmp/dist
-USER harness
+USER 10001:10001
 WORKDIR /workspace
 # No HEALTHCHECK: the default command is a one-shot CLI, not a long-running service.
 ENTRYPOINT ["harness"]
