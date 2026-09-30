@@ -21,7 +21,6 @@
 "area:cli": [{changed-files: [{any-glob-to-any-file: ["src/governed_harness/cli/**"]}]}]
 "area:api": [{changed-files: [{any-glob-to-any-file: ["src/governed_harness/api/**"]}]}]
 "area:benchmark": [{changed-files: [{any-glob-to-any-file: ["src/governed_harness/benchmark/**"]}]}]
-"area:web": [{changed-files: [{any-glob-to-any-file: ["web/**"]}]}]
 "area:ci": [{changed-files: [{any-glob-to-any-file: [".github/**"]}]}]
 "area:packaging": [{changed-files: [{any-glob-to-any-file: ["pyproject.toml", "setup.py", "Makefile"]}]}]
 "area:docs": [{changed-files: [{any-glob-to-any-file: ["docs/**", "*.md", "mkdocs.yml", "diagrams/**"]}]}]
