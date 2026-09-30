@@ -7,8 +7,7 @@ The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception and Node.js
-  flows, leaving
-  the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
+  flows, leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
