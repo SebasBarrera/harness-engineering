@@ -205,8 +205,10 @@ jobs:
       - name: Ruff and Mypy (report; required from v0.8.1)
         shell: bash
         run: |
-          set -uo pipefail
-          targets=$(for d in src tests; do [ -d "$d" ] && echo "$d"; done)
+          # The linters' exit codes are captured explicitly below, so errexit is disabled here.
+          set +e -uo pipefail
+          targets=""
+          for d in src tests; do if [ -d "$d" ]; then targets="$targets $d"; fi; done
           python -m ruff check $targets --output-format=concise > "$RUNNER_TEMP/ruff.txt"; ruff_rc=$?
           python -m mypy --strict src > "$RUNNER_TEMP/mypy.txt"; mypy_rc=$?
           {
