@@ -13,7 +13,7 @@ authors:
   - family-names: "Barrera Pulido"
     given-names: "Juan Sebastián"
     affiliation: "Escuela Colombiana de Ingeniería Julio Garavito"
-version: "0.8.0"
+version: "0.8.1"
 date-released: "2026-09-30"
 license: Apache-2.0
 repository-code: "https://github.com/SebasBarrera/harness-engineering"
