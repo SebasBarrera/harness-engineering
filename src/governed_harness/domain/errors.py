@@ -1,0 +1,31 @@
+from __future__ import annotations
+
+
+class HarnessError(Exception):
+    """Base error with a stable exit code for CLI/API translation."""
+
+    exit_code = 1
+
+
+class ConfigurationError(HarnessError):
+    exit_code = 2
+
+
+class NotFoundError(HarnessError):
+    exit_code = 3
+
+
+class GatePendingError(HarnessError):
+    exit_code = 4
+
+
+class PolicyViolationError(HarnessError):
+    exit_code = 5
+
+
+class ExecutionBlockedError(HarnessError):
+    exit_code = 6
+
+
+class CancelledError(HarnessError):
+    exit_code = 130
