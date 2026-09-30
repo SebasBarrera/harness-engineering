@@ -1,7 +1,7 @@
 from .cancellation import CancellationToken
 from .git_adapter import GitAdapter, GitState
 from .patches import PatchApplier
-from .process_runner import CommandSpec, ProcessResult, SafeProcessRunner
+from .process_runner import CommandSpec, ProcessResult, SafeProcessRunner, resolve_executable
 from .workspace import (
     FileState,
     WorkspaceChange,
@@ -23,4 +23,5 @@ __all__ = [
     "WorkspaceDiff",
     "WorkspaceSnapshot",
     "WorkspaceSnapshotter",
+    "resolve_executable",
 ]
