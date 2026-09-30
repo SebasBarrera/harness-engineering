@@ -1,0 +1,22 @@
+taskId: task_eval_greenfield_shipping
+title: Implement the shipping cost library
+intent: >-
+  Implement the Python package `shipping` in src/shipping/ exactly as specified in SPEC.md,
+  including the function shipping_cost and tests for it in tests/.
+requirements:
+  - requirementId: req_spec
+    text: shipping_cost implements every rule of SPEC.md (validation, base cost, express, free shipping, coupons, rounding).
+    source: SPEC.md
+  - requirementId: req_tests
+    text: The repository contains pytest tests in tests/ that exercise the rules of SPEC.md.
+    source: SPEC.md
+acceptanceCriteria:
+  - criterionId: ac_rules
+    text: Every rule and boundary of SPEC.md holds for shipping_cost.
+  - criterionId: ac_decimal
+    text: shipping_cost returns a Decimal with exactly two decimal places, rounded half up once at the end.
+  - criterionId: ac_tests
+    text: python -m pytest -q passes.
+constraints:
+  - Use only the Python standard library.
+  - Keep the public signature shipping_cost(weight_kg, zone, subtotal, *, express=False, coupon=None).

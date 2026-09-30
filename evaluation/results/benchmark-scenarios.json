@@ -1,0 +1,78 @@
+{
+ "environment": {
+  "node": "v26.10.0",
+  "platform": "macOS-15.7.9-arm64-arm-64bit",
+  "python": "3.12.11"
+ },
+ "generatedAt": "2026-09-30T17:22:55.268675+00:00",
+ "methodology": {
+  "directPath": "Apply the same deterministic patch and execute the mandatory test command.",
+  "governedPath": "Initialize, persist task, execute all normative phases, validate, review, evaluate the gate, apply a programmatic benchmark approval, close, and project status.",
+  "humanWait": "Excluded: the benchmark approval is immediate and programmatic.",
+  "network": "No network access required.",
+  "scope": "Synthetic local fixtures; not a productivity or quality claim."
+ },
+ "scenarios": {
+  "node": {
+   "directImplementationAndTests": {
+    "iterations": 3.0,
+    "maxMs": 516.184333,
+    "meanMs": 372.436986,
+    "medianMs": 323.214208,
+    "minMs": 277.912417,
+    "p95Ms": 516.184333
+   },
+   "governanceOverhead": {
+    "absoluteMedianMs": 664.721459,
+    "relativeMedianPercent": 205.65972737188582
+   },
+   "governedEndToEnd": {
+    "iterations": 3.0,
+    "maxMs": 989.153166,
+    "meanMs": 981.9217359999999,
+    "medianMs": 987.935667,
+    "minMs": 968.676375,
+    "p95Ms": 989.153166
+   },
+   "lastRun": {
+    "eventChainValid": true,
+    "events": 41,
+    "executionId": "run_782c02398d6542aca28192980dae323a",
+    "findings": 0,
+    "validations": 4
+   },
+   "status": "PASSED"
+  },
+  "python": {
+   "directImplementationAndTests": {
+    "iterations": 3.0,
+    "maxMs": 140.838791,
+    "meanMs": 127.428083,
+    "medianMs": 124.79375,
+    "minMs": 116.651708,
+    "p95Ms": 140.838791
+   },
+   "governanceOverhead": {
+    "absoluteMedianMs": 884.279417,
+    "relativeMedianPercent": 708.5927115740972
+   },
+   "governedEndToEnd": {
+    "iterations": 3.0,
+    "maxMs": 1073.274,
+    "meanMs": 1018.8712223333332,
+    "medianMs": 1009.073167,
+    "minMs": 974.2665,
+    "p95Ms": 1073.274
+   },
+   "lastRun": {
+    "eventChainValid": true,
+    "events": 42,
+    "executionId": "run_49e99380602242c3bdf13ef1dcb8b65b",
+    "findings": 1,
+    "validations": 4
+   },
+   "status": "PASSED"
+  }
+ },
+ "schemaVersion": "1.0"
+}

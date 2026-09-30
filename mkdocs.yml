@@ -97,6 +97,7 @@ nav:
   - Thesis:
       - Context: thesis.md
       - Provenance: provenance.md
+      - Controlled evaluation of v0.9.0: evaluation/results.md
       - Documents of the v0.8.0 cut:
           - Implementation status: implementation-status.md
           - Validation report: validation-report.md
