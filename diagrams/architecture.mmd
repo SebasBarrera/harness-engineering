@@ -1,0 +1,15 @@
+flowchart TB
+  CLI[CLI] --> APP[Application use cases]
+  API[Future API/Web] --> APP
+  APP --> ORCH[Workflow orchestrator]
+  ORCH --> DOMAIN[Domain + state machine]
+  ORCH --> GATES[Gate and policy engines]
+  ORCH --> PORTS[Ports]
+  PORTS --> RUNTIME[Trusted runtime adapters]
+  PORTS --> STORES[Event and artifact stores]
+  PORTS --> EXT[Extension client/SDK]
+  CONFIG[Workflow + profiles + project config + locked policy] --> APP
+  EXT --> PY[Python profile/extensions]
+  EXT --> NODE[Node profile/extensions]
+  EXT --> AGENT[Agent provider]
+  EXT --> REPORT[Reporter]
