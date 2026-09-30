@@ -1,0 +1,14 @@
+erDiagram
+  TASK ||--o{ REQUIREMENT : contains
+  REQUIREMENT ||--o{ ACCEPTANCE_CRITERION : verified_by
+  TASK ||--o{ EXECUTION : initiates
+  EXECUTION ||--o{ PHASE_EXECUTION : contains
+  EXECUTION ||--o{ CONFIGURATION_SNAPSHOT : uses
+  EXECUTION ||--o{ AGENT_INVOCATION : records
+  EXECUTION ||--o{ TOOL_INVOCATION : records
+  EXECUTION ||--o{ CHANGE_SET : produces
+  CHANGE_SET ||--o{ EVIDENCE : evaluated_by
+  EVIDENCE ||--o{ FINDING : supports
+  CHANGE_SET ||--o{ GATE_EVALUATION : judged_by
+  GATE_EVALUATION ||--o{ HUMAN_DECISION : resolved_by
+  EXECUTION ||--o{ RETROSPECTIVE : informs

@@ -1,0 +1,48 @@
+profileVersion: '1.0'
+profileId: node_default
+technology: node
+detectors:
+  - marker: package.json
+    weight: 0.80
+  - marker: package-lock.json
+    weight: 0.35
+  - marker: pnpm-lock.yaml
+    weight: 0.35
+  - marker: yarn.lock
+    weight: 0.35
+defaultCommands:
+  test: [npm, test, --silent]
+  lint: [npm, run, lint, --silent]
+  typecheck: [npm, run, typecheck, --silent]
+defaultValidators:
+  - node.test
+  - node.lint
+  - node.typecheck
+validators:
+  - id: node.test
+    script: test
+    command: [npm, test, --silent]
+    mandatory: true
+    timeoutSeconds: 900
+  - id: node.lint
+    script: lint
+    command: [npm, run, lint, --silent]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 300
+  - id: node.typecheck
+    script: typecheck
+    command: [npm, run, typecheck, --silent]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 600
+policies:
+  ambiguousPackageManager: BLOCKED
+  missingTestScript: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['src/**', 'test/**', 'tests/**', '*.js', '*.mjs', '*.cjs', '*.ts', 'package.json', '.harness/**']
+  process.execute: [npm, node]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

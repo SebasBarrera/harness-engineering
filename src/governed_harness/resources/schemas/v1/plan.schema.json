@@ -1,0 +1,273 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "PlanStep": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Capabilities",
+          "type": "array"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "expectedEvidence": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Expectedevidence",
+          "type": "array"
+        },
+        "stepId": {
+          "title": "Stepid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stepId",
+        "description"
+      ],
+      "title": "PlanStep",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "coreVersion": {
+          "title": "Coreversion",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginid"
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginversion"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promptdigest"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "sourceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "workflowDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflowdigest"
+        }
+      },
+      "required": [
+        "actor",
+        "coreVersion"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "planId": {
+      "title": "Planid",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "risks": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Risks",
+      "type": "array"
+    },
+    "steps": {
+      "items": {
+        "$ref": "#/$defs/PlanStep"
+      },
+      "title": "Steps",
+      "type": "array"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "validatorIds": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Validatorids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "planId",
+    "executionId",
+    "taskId",
+    "steps",
+    "provenance"
+  ],
+  "title": "Plan",
+  "type": "object"
+}

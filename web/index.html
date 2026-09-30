@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Governed Harness Console</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header>
+    <div>
+      <p class="eyebrow">LOCAL CONTROL PLANE</p>
+      <h1>Governed Harness Console</h1>
+      <p class="subtitle">Read traces, inspect evidence, and bind human decisions to an exact ChangeSet digest.</p>
+    </div>
+    <div id="health" class="status neutral">Not connected</div>
+  </header>
+
+  <main>
+    <section class="panel connection">
+      <h2>Connection</h2>
+      <div class="grid three">
+        <label>API base URL<input id="baseUrl" value="http://127.0.0.1:8765" spellcheck="false"></label>
+        <label>Bearer token<input id="token" type="password" autocomplete="off" placeholder="Optional on loopback"></label>
+        <label>Execution ID<input id="executionId" spellcheck="false" placeholder="exec_..."></label>
+      </div>
+      <div class="actions">
+        <button id="connect">Check health</button>
+        <button id="loadExecution" class="secondary">Load execution</button>
+        <button id="loadTrace" class="secondary">Load trace</button>
+      </div>
+    </section>
+
+    <section class="grid two">
+      <article class="panel">
+        <div class="panel-title"><h2>Execution</h2><span id="executionStatus" class="badge">—</span></div>
+        <dl id="executionSummary" class="summary"><dt>State</dt><dd>No execution loaded</dd></dl>
+      </article>
+      <article class="panel">
+        <h2>Exact-digest decision</h2>
+        <label>ChangeSet digest<input id="digest" spellcheck="false" placeholder="sha256:..."></label>
+        <label>Decision
+          <select id="decision"><option value="APPROVE">APPROVE</option><option value="REJECT">REJECT</option><option value="REQUEST_CHANGES">REQUEST_CHANGES</option></select>
+        </label>
+        <label>Rationale<textarea id="rationale" rows="3" placeholder="Human rationale; required by policy"></textarea></label>
+        <button id="submitDecision" class="danger">Submit bound decision</button>
+        <p class="hint">A later ChangeSet invalidates this decision. The server is authoritative.</p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-title"><h2>Trace and evidence</h2><button id="copy" class="secondary small">Copy JSON</button></div>
+      <pre id="output">No data loaded.</pre>
+    </section>
+  </main>
+
+  <footer>Offline-first UI. No analytics, CDNs, or third-party scripts.</footer>
+  <script src="app.js"></script>
+</body>
+</html>

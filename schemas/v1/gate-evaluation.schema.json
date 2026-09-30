@@ -1,0 +1,272 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "coreVersion": {
+          "title": "Coreversion",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginid"
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginversion"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promptdigest"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "sourceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "workflowDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflowdigest"
+        }
+      },
+      "required": [
+        "actor",
+        "coreVersion"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/gate-evaluation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "evaluatedAt": {
+      "format": "date-time",
+      "title": "Evaluatedat",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "gateEvaluationId": {
+      "title": "Gateevaluationid",
+      "type": "string"
+    },
+    "gateId": {
+      "title": "Gateid",
+      "type": "string"
+    },
+    "inputRefs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inputrefs",
+      "type": "array"
+    },
+    "policyDigest": {
+      "title": "Policydigest",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "reasonCodes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Reasoncodes",
+      "type": "array"
+    },
+    "requiresHumanDecision": {
+      "title": "Requireshumandecision",
+      "type": "boolean"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus"
+    }
+  },
+  "required": [
+    "gateEvaluationId",
+    "executionId",
+    "gateId",
+    "status",
+    "changeSetDigest",
+    "policyDigest",
+    "inputRefs",
+    "reasonCodes",
+    "requiresHumanDecision",
+    "provenance"
+  ],
+  "title": "GateEvaluation",
+  "type": "object"
+}

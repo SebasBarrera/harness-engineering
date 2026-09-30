@@ -1,0 +1,17 @@
+flowchart LR
+  T[Task] --> AC[Acceptance criteria]
+  AC --> SP[Specification version]
+  SP --> PL[Plan version]
+  PL --> IA[Implementation attempt]
+  IA --> AI[Agent invocation]
+  IA --> TI[Tool invocation]
+  AI --> CS[ChangeSet digest]
+  TI --> EV[Evidence]
+  CS --> EV
+  EV --> VR[Validation result]
+  EV --> F[Finding]
+  VR --> GE[Gate evaluation]
+  F --> GE
+  GE --> HD[Human decision]
+  HD --> CL[Closure]
+  CL --> RR[Retrospective recommendation]

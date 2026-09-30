@@ -1,0 +1,54 @@
+{
+  "$id": "https://example.org/governed-harness/schemas/v1/plugin-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilityGrant": {
+      "additionalProperties": true,
+      "title": "Capabilitygrant",
+      "type": "object"
+    },
+    "context": {
+      "additionalProperties": true,
+      "title": "Context",
+      "type": "object"
+    },
+    "deadline": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Deadline"
+    },
+    "operation": {
+      "title": "Operation",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": true,
+      "title": "Payload",
+      "type": "object"
+    },
+    "protocolVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Protocolversion",
+      "type": "string"
+    },
+    "requestId": {
+      "title": "Requestid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "operation"
+  ],
+  "title": "PluginRequest",
+  "type": "object"
+}

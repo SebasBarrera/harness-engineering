@@ -1,0 +1,11 @@
+flowchart LR
+  I[INTENT] --> D[DISCOVERY]
+  D --> S[SPECIFICATION]
+  S --> P[PLANNING]
+  P --> M[IMPLEMENTATION]
+  M --> V[VERIFICATION]
+  V --> R[INDEPENDENT_REVIEW]
+  R --> C[DECISION]
+  C -->|approve| X[CLOSURE]
+  C -->|authorized correction| M
+  X -. post-run .-> T[RETROSPECTIVE]

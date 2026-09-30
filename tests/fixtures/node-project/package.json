@@ -1,0 +1,11 @@
+{
+  "name": "fixture-config-precedence",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "test": "node --test",
+    "lint": "node --check src/resolve-config.js",
+    "typecheck": "node --check src/resolve-config.js"
+  },
+  "type": "module"
+}

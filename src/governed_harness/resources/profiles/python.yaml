@@ -1,0 +1,43 @@
+profileVersion: '1.0'
+profileId: python_default
+technology: python
+detectors:
+  - marker: pyproject.toml
+    weight: 0.80
+  - marker: requirements.txt
+    weight: 0.45
+  - marker: pytest.ini
+    weight: 0.35
+defaultCommands:
+  test: [python, -m, pytest, -q]
+  lint: [python, -m, ruff, check, .]
+  typecheck: [python, -m, mypy, .]
+defaultValidators:
+  - python.pytest
+  - python.ruff
+  - python.mypy
+validators:
+  - id: python.pytest
+    command: [python, -m, pytest, -q]
+    mandatory: true
+    timeoutSeconds: 900
+  - id: python.ruff
+    command: [python, -m, ruff, check, .]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 300
+  - id: python.mypy
+    command: [python, -m, mypy, .]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 600
+policies:
+  missingTestCommand: BLOCKED
+  coverage: optional_for_research_prototype
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['src/**', 'tests/**', 'test/**', '*.py', 'pyproject.toml', '.harness/**']
+  process.execute: [python]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']
