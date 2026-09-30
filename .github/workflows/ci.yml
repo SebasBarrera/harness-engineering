@@ -1,6 +1,7 @@
 # Test workflow. Replaces the original ci.yml of the v0.8.0 cut (kept byte-identical in the
 # v0.8.0 tag; see issue #15): filtered triggers, pinned actions, least privilege, no caches,
-# per-family JUnit reports, coverage, schema-drift check and a step summary.
+# per-family JUnit reports, coverage, schema-drift check and a step summary. Windows runs in the
+# separate, informational windows.yml workflow (not supported yet, issue #31).
 name: ci
 
 on:
@@ -38,7 +39,7 @@ env:
 
 jobs:
   tests:
-    name: tests (py${{ matrix.python }}, ${{ matrix.os }})${{ matrix.os == 'windows' && ' (non-blocking)' || '' }}
+    name: tests (py${{ matrix.python }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}-latest
     timeout-minutes: 25
     strategy:
@@ -48,9 +49,6 @@ jobs:
         python: ["3.12", "3.13", "3.14"]
         include:
           - os: macos
-            python: "3.12"
-          # Not verified by the thesis: process groups are POSIX-specific. Informational only.
-          - os: windows
             python: "3.12"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
