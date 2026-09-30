@@ -112,8 +112,10 @@ class SQLiteStateStore:
             clauses.append("project_id=?")
             params.append(project_id)
         direction = "DESC" if newest_first else "ASC"
+        # Only code-defined literals are interpolated (the clause list and the direction);
+        # every value is bound as a parameter, so Bandit B608 is a false positive here.
         rows = self.connection.execute(
-            f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",
+            f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",  # nosec B608
             tuple(params),
         ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
