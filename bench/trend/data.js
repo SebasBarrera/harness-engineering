@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790781429159,
+  "lastUpdate": 1790789905673,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -1213,6 +1213,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.499,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "1cb019f12b71528325cb1ad1382e151d0428b6db",
+          "message": "Merge branch 'test/controlled-evaluation' into develop\n\n- chore(security): allow the fictitious password of an evaluation test\n- test(evaluation): add the evaluation scenarios, tasks and hidden tests\n- test(evaluation): add the agent adapter, orchestrator and measurement\n- test(evaluation): add fault-injection probes and the post-hoc review\n- test(evaluation): add the report and the results of the v0.9.0 evaluation\n- docs(evaluation): summarize the controlled evaluation of v0.9.0\n\nVerification on the branch head 5645b58639c9: 21 CI job(s) succeeded, no blocking job failed.\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513313\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513343\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513384\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513573\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513780\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36752513808\nFiles of the v0.8.0 cut in the tree: matched: 131/232  mismatched: 77  missing: 24",
+          "timestamp": "2026-09-30T12:37:40-05:00",
+          "tree_id": "4b409bc7279b94d8c90dc8ce9a310cf595708cfe",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/1cb019f12b71528325cb1ad1382e151d0428b6db"
+        },
+        "date": 1790789904816,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001191,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001783,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011126,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.058176,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.210004,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 12.254524,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 12.660452,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.296,
             "unit": "%"
           }
         ]
