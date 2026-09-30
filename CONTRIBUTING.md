@@ -7,9 +7,10 @@ context:
 1. **The evaluated cut is frozen.** `v0.8.0` reproduces the cut evaluated in the thesis byte for
    byte ([provenance](docs/provenance.md)). Tags never move.
 2. **Behavior measured in the thesis does not change silently.** Defects whose fix would change
-   behavior evaluated on `v0.8.0` are labeled `thesis-impact` and kept in the milestone
-   *backlog — thesis-impact* until the evaluation chapter is closed. Quality, infrastructure and
-   documentation work that does not change behavior is welcome at any time.
+   behavior evaluated on `v0.8.0` are labeled `thesis-impact`. A fix ships in a new minor version,
+   with a regression test that fails before the fix, and the changelog states how the results
+   differ from the thesis. Quality, infrastructure and documentation work that does not change
+   behavior is welcome at any time.
 
 ## Development setup
 
@@ -21,9 +22,6 @@ pre-commit install                  # optional, see below
 ```
 
 Node.js LTS and npm are needed only for the Node.js end-to-end test.
-
-On macOS, run tests with a symlink-free temporary directory (issue #19):
-`export TMPDIR=$(cd "$TMPDIR" && pwd -P)`.
 
 ## Verification commands
 

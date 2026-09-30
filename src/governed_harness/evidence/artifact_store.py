@@ -137,8 +137,11 @@ class LocalArtifactStore:
         descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         temporary = Path(temporary_name)
         try:
-            os.fchmod(descriptor, 0o600)
+            # Wrap the descriptor first so that it is always closed. mkstemp already creates the
+            # file readable only by its owner; fchmod restates 0600 where it exists (POSIX).
             with os.fdopen(descriptor, "wb") as handle:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(handle.fileno(), 0o600)
                 handle.write(data)
                 handle.flush()
                 os.fsync(handle.fileno())

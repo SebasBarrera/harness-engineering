@@ -13,6 +13,7 @@ from pathlib import Path
 
 from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import DecisionKind, ResultStatus
+from governed_harness.runtime import resolve_executable
 
 
 def _git_init(root: Path) -> None:
@@ -184,7 +185,8 @@ def _run_direct(
         _, command = fixture(root)
         start = time.perf_counter_ns()
         _apply_direct_change(stack, root)
-        result = subprocess.run(command, cwd=root, capture_output=True, check=False)
+        argv = [resolve_executable(command[0]), *command[1:]]
+        result = subprocess.run(argv, cwd=root, capture_output=True, check=False)
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
         if result.returncode != 0:
             raise RuntimeError(

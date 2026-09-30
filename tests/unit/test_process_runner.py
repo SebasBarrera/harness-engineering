@@ -87,3 +87,32 @@ def test_unauthorized_command_is_not_spawned(tmp_path: Path) -> None:
             actor=actor,
             grants=grants,
         )
+
+
+def test_output_bound_is_applied_while_reading(tmp_path: Path) -> None:
+    """The runner must not buffer the whole output before truncating it (#9)."""
+    import tracemalloc
+
+    actor, grants, runner = authorized(tmp_path)
+    produce_32_mib = (
+        "import sys; chunk = b'x' * 65536; [sys.stdout.buffer.write(chunk) for _ in range(512)]"
+    )
+    tracemalloc.start()
+    try:
+        result = runner.run(
+            CommandSpec(
+                argv=(sys.executable, "-c", produce_32_mib),
+                cwd=tmp_path,
+                timeout_seconds=30,
+                max_output_bytes=1024,
+            ),
+            actor=actor,
+            grants=grants,
+        )
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert result.status is ResultStatus.PASSED
+    assert result.stdout == b"x" * 1024
+    assert result.stdout_truncated is True
+    assert peak < 4 * 1024 * 1024, f"peak traced memory {peak} bytes for a 1 KiB bound"

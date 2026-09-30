@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import contextlib
 import os
+import shutil
 import signal
 import subprocess
+import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
 from governed_harness.capabilities.authorizer import (
     CapabilityAuthorizer,
@@ -40,6 +44,58 @@ class ProcessResult:
     stderr_truncated: bool = False
 
 
+def resolve_executable(argv0: str) -> str:
+    """On Windows, resolve a bare command name through PATH and PATHEXT (``npm`` is
+    ``npm.cmd``), which CreateProcess does not do; elsewhere return it unchanged. Authorization
+    always applies to the name as written in the command."""
+    if os.name != "nt":
+        return argv0
+    return shutil.which(argv0) or argv0
+
+
+_READ_CHUNK_BYTES = 65536
+_POLL_SECONDS = 0.05
+_READER_JOIN_SECONDS = 5.0
+
+
+class _BoundedReader(threading.Thread):
+    """Drains a pipe, keeping only the first ``limit`` bytes."""
+
+    def __init__(self, stream: IO[bytes], limit: int) -> None:
+        super().__init__(daemon=True)
+        self._stream = stream
+        self._limit = limit
+        self._chunks: list[bytes] = []
+        self._kept = 0
+        self.truncated = False
+
+    def run(self) -> None:
+        try:
+            descriptor = self._stream.fileno()
+            while chunk := os.read(descriptor, _READ_CHUNK_BYTES):
+                room = self._limit - self._kept
+                if room > 0:
+                    self._chunks.append(chunk[:room])
+                    self._kept += min(len(chunk), room)
+                if len(chunk) > max(room, 0):
+                    self.truncated = True
+        except (OSError, ValueError):
+            pass  # the pipe was closed while reading; keep what was read
+        finally:
+            self._stream.close()
+
+    def data(self) -> bytes:
+        return b"".join(self._chunks)
+
+
+def _write_stdin(stream: IO[bytes], data: bytes) -> None:
+    # A child that exits without reading its input closes the pipe; that is not an error here.
+    with contextlib.suppress(OSError, ValueError):
+        stream.write(data)
+    with contextlib.suppress(OSError):
+        stream.close()
+
+
 class SafeProcessRunner:
     def __init__(
         self, workspace_root: Path, authorizer: CapabilityAuthorizer | None = None
@@ -63,7 +119,7 @@ class SafeProcessRunner:
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
         process = subprocess.Popen(
-            list(spec.argv),
+            [resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if spec.stdin is not None else subprocess.DEVNULL,
@@ -72,33 +128,52 @@ class SafeProcessRunner:
             shell=False,
             start_new_session=os.name != "nt",
         )
-        input_data = spec.stdin
-        stdout = b""
-        stderr = b""
+        assert process.stdout is not None and process.stderr is not None
+        # Read both streams while the process runs and keep at most max_output_bytes of each;
+        # the rest is drained and discarded, so memory stays bounded whatever the output size.
+        readers = [
+            _BoundedReader(process.stdout, spec.max_output_bytes),
+            _BoundedReader(process.stderr, spec.max_output_bytes),
+        ]
+        for reader in readers:
+            reader.start()
+        writer = None
+        if spec.stdin is not None:
+            assert process.stdin is not None
+            writer = threading.Thread(
+                target=_write_stdin, args=(process.stdin, spec.stdin), daemon=True
+            )
+            writer.start()
         timed_out = False
         cancelled = False
         deadline = start + spec.timeout_seconds
         while True:
-            try:
-                stdout, stderr = process.communicate(input=input_data, timeout=0.1)
+            # Joining the readers returns as soon as the child closes its output (normally when
+            # it exits), without the growing sleep intervals of Popen.wait(timeout=...).
+            for reader in readers:
+                reader.join(timeout=_POLL_SECONDS)
+            if not any(reader.is_alive() for reader in readers):
+                try:
+                    process.wait(timeout=_POLL_SECONDS)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass  # the streams are closed but the process still runs
+            if cancellation and cancellation.cancelled:
+                cancelled = True
+                self._terminate(process)
                 break
-            except subprocess.TimeoutExpired:
-                input_data = None
-                if cancellation and cancellation.cancelled:
-                    cancelled = True
-                    self._terminate(process)
-                    stdout, stderr = process.communicate()
-                    break
-                if time.perf_counter() >= deadline:
-                    timed_out = True
-                    self._terminate(process)
-                    stdout, stderr = process.communicate()
-                    break
+            if time.perf_counter() >= deadline:
+                timed_out = True
+                self._terminate(process)
+                break
+        process.wait()
+        if writer is not None:
+            writer.join(timeout=_READER_JOIN_SECONDS)
+        for reader in readers:
+            reader.join(timeout=_READER_JOIN_SECONDS)
         duration_ms = max(0, round((time.perf_counter() - start) * 1000))
-        stdout_truncated = len(stdout) > spec.max_output_bytes
-        stderr_truncated = len(stderr) > spec.max_output_bytes
-        stdout = stdout[: spec.max_output_bytes]
-        stderr = stderr[: spec.max_output_bytes]
+        stdout, stderr = readers[0].data(), readers[1].data()
+        stdout_truncated, stderr_truncated = readers[0].truncated, readers[1].truncated
         if cancelled:
             status = ResultStatus.CANCELLED
         elif timed_out:

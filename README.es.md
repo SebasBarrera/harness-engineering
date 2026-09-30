@@ -6,6 +6,10 @@
 [![codeql](https://github.com/SebasBarrera/harness-engineering/actions/workflows/codeql.yml/badge.svg?branch=develop)](https://github.com/SebasBarrera/harness-engineering/actions/workflows/codeql.yml)
 [![security](https://github.com/SebasBarrera/harness-engineering/actions/workflows/security.yml/badge.svg?branch=develop)](https://github.com/SebasBarrera/harness-engineering/actions/workflows/security.yml)
 [![docs-smoke](https://github.com/SebasBarrera/harness-engineering/actions/workflows/docs-smoke.yml/badge.svg?branch=develop)](https://github.com/SebasBarrera/harness-engineering/actions/workflows/docs-smoke.yml)
+[![Quality gate](https://sonarcloud.io/api/project_badges/measure?project=SebasBarrera_harness-engineering&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=SebasBarrera_harness-engineering)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=SebasBarrera_harness-engineering&metric=coverage)](https://sonarcloud.io/summary/new_code?id=SebasBarrera_harness-engineering)
+[![Maintainability](https://sonarcloud.io/api/project_badges/measure?project=SebasBarrera_harness-engineering&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=SebasBarrera_harness-engineering)
+[![Security](https://sonarcloud.io/api/project_badges/measure?project=SebasBarrera_harness-engineering&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=SebasBarrera_harness-engineering)
 [![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/SebasBarrera/harness-engineering/badge)](https://securityscorecards.dev/viewer/?uri=github.com/SebasBarrera/harness-engineering)
 [![release](https://img.shields.io/github/v/release/SebasBarrera/harness-engineering)](https://github.com/SebasBarrera/harness-engineering/releases)
 [![python](https://img.shields.io/badge/python-3.12%20%7C%203.13%20%7C%203.14-blue)](pyproject.toml)
@@ -125,7 +129,7 @@ código de salida que aparece aquí.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.8.1/governed_agent_harness-0.8.1-py3-none-any.whl" pytest
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.9.0/governed_agent_harness-0.9.0-py3-none-any.whl" pytest
 
 # un proyecto Python mínimo con un commit de baseline
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -154,7 +158,7 @@ La tarea usada es [`docs/guides/task.yaml`](docs/guides/task.yaml); la
 |---|---|
 | Un wheel del release (recomendado) | `pip install <URL del wheel en la página del release>`; verifícalo con `sha256sum -c SHA256SUMS` y `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | Código fuente | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.8.1 --help` (publicada desde `v0.8.1`; corre con un usuario sin privilegios) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.9.0 --help` (publicada desde `v0.9.0`; corre con un usuario sin privilegios) |
 
 Requisitos: **Python ≥ 3.12** y **Git** (los baselines y ChangeSets salen del repositorio). Para
 proyectos Node.js, **Node.js LTS y npm**. El extra opcional `api` instala FastAPI y Uvicorn para el
@@ -190,10 +194,11 @@ Qué cambia frente a un proyecto nuevo:
   `freezegun` (declarada en `requirements/tests.txt`): `run start` terminó con **6** y la salida de
   pytest guardada mostró dos módulos de prueba que no se recolectaban, fuera del ChangeSet.
 - **Dos salidas ante un baseline roto:** corregirlo y ejecutar `harness run continue` (el caso corrió
-  entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet), o cerrar con
-  `APPROVE_EXCEPTION` y una justificación escrita. Como el gate conserva el hallazgo del primer
-  intento (issue #2), un `APPROVE` simple se rechazó con **5** y la ejecución cerró por excepción
-  (46 eventos, cadena válida).
+  entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet; el gate cuenta
+  el último intento de cada validador, así que quedó en `PASSED` y un `APPROVE` simple cerró la
+  ejecución: 46 eventos, cadena válida), o cerrar con `APPROVE_EXCEPTION` y una justificación
+  escrita. En el corte evaluado 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
+  por excepción.
 - **Respeta las convenciones.** La detección es de solo lectura (en el caso: Python, confianza 1,0
   por `pyproject.toml` y `tox.ini`). Varios lockfiles elevan la confianza de Node.js, pero el perfil
   siempre ejecuta `npm`.
@@ -331,33 +336,25 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 
 | Síntoma | Causa y solución |
 |---|---|
-| `run start` termina con 6 y el hallazgo dice `python.pytest failed with exit code 1` aunque tus pruebas estén bien | `pytest` no está instalado en el entorno donde corre el harness. Instálalo y ejecuta `harness run continue`. (Debería ser `BLOCKED`, issue #1.) |
+| `run start` termina con 6 y estado `BLOCKED`; la validación `python.pytest` dice `mandatory Python module 'pytest' is not installed for 'python'` | `pytest` no está instalado en el entorno donde corre el harness. Instálalo y ejecuta `harness run continue`. |
 | Una ejecución brownfield falla con módulos de prueba que no se recolectan | Instala las dependencias de prueba del proyecto (por ejemplo `pip install -r requirements/tests.txt`) y ejecuta `run continue`. |
 | `gate decide` termina con 5: `prior approval is stale` | Un archivo propio cambió después del gate. Consulta el digest vigente con `harness status` o ejecuta `run continue` para reevaluar. |
 | `gate decide` termina con 5: `APPROVE is only valid for a passed automatic gate` | El gate no pasó. Usa `REQUEST_CHANGES`, `REJECT` o `APPROVE_EXCEPTION` con justificación. |
-| El gate sigue en `FAILED` después de que un reintento pasó | El gate conserva los resultados de todos los intentos para el mismo digest (issue #2). Decide con `APPROVE_EXCEPTION` y una justificación, o cambia el código. |
-| En macOS, `harness benchmark run` falla con `path escapes workspace` | `TMPDIR` pasa por el enlace simbólico `/var` (issue #19): `export TMPDIR=$(cd "$TMPDIR" && pwd -P)`. |
 | `harness init` termina con 2: `configuration already exists` | El proyecto ya está inicializado; usa `--force` para reemplazar la configuración. |
 
 ## Limitaciones y defectos conocidos
 
-Los defectos de comportamiento del corte evaluado se mantienen sin corregir mientras la evaluación de
-la tesis dependa de ellos (hito
-[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)):
+Defectos de comportamiento abiertos (hito
+[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); el tag
+`v0.8.0` conserva el comportamiento evaluado, y la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31
+([changelog](CHANGELOG.md)):
 
-- [#1](https://github.com/SebasBarrera/harness-engineering/issues/1) un validador obligatorio con un módulo de Python ausente produce `FAILED` en lugar de `BLOCKED`;
-- [#2](https://github.com/SebasBarrera/harness-engineering/issues/2) el gate conserva un `FAILED` anterior tras un reintento satisfactorio con el mismo digest (`needs-decision`);
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) la configuración de fases del workflow (capacidades, intentos, tiempos, gates de salida) se registra pero no se aplica;
 - [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) las capacidades se resuelven por ejecución y no por fase, y las concesiones del proyecto se suman a las del perfil;
 - [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` y otros ajustes declarados no se aplican;
 - [#6](https://github.com/SebasBarrera/harness-engineering/issues/6) ninguna ruta de producción crea registros de memoria;
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) no se distinguen errores preexistentes de errores introducidos;
-- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan;
-- [#9](https://github.com/SebasBarrera/harness-engineering/issues/9) la salida de los procesos se acota solo después de guardarla completa en memoria;
-- [#19](https://github.com/SebasBarrera/harness-engineering/issues/19) se rechazan rutas absolutas bajo un directorio con enlace simbólico (`TMPDIR` en macOS);
-- [#29](https://github.com/SebasBarrera/harness-engineering/issues/29) una tarea sin `title` o `intent` se acepta con el texto `None`;
-- [#30](https://github.com/SebasBarrera/harness-engineering/issues/30) `gate decide` imprime claves en snake_case.
-- [#31](https://github.com/SebasBarrera/harness-engineering/issues/31) Windows no está soportado (el almacén de artefactos usa `os.fchmod`); Linux y macOS sí.
+- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan.
 
 Limitaciones declaradas: sin aislamiento a nivel de sistema operativo
 ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), sin autenticación ni soporte
@@ -367,7 +364,7 @@ reporta.
 
 ## Hoja de ruta
 
-- Decidir y resolver el backlog `thesis-impact` cuando se cierre la evaluación de la tesis (#1–#9, #19, #29, #30).
+- Decidir y resolver el resto del backlog `thesis-impact` cuando se cierre la evaluación de la tesis (#3–#8).
 - Aplicar capacidades por fase y los ajustes del workflow que hoy solo se registran (#3, #4).
 - Un adaptador de sandbox a nivel de sistema operativo (contenedor) y una política de red aplicada (#5, #18).
 - Distinguir fallos preexistentes de fallos introducidos en repositorios brownfield (#7).

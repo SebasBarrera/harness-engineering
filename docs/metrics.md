@@ -75,5 +75,6 @@ of every metric. It aggregates per run and per project only.
 python scripts/metrics_report.py path/to/project [more projects] --output metrics.html --json metrics.json
 ```
 
-The documentation site publishes a sample report generated from the demonstration flows of the
-thesis (quickstart, later change, broken baseline, Node.js) with the simulated provider.
+The documentation site publishes a sample report generated from the demonstration flows
+(quickstart, later change, broken baseline, review exception, Node.js) with the simulated
+provider.

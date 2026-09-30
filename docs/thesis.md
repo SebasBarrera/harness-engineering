@@ -17,10 +17,12 @@ and its evaluation is formative and descriptive (no statistical generalization).
 ## Evaluated version
 
 The thesis evaluates the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
-which reproduces it byte for byte (see [provenance](provenance.md)). Later versions add
-infrastructure, documentation and quality fixes; behavioral defects that the evaluation measured
-are tracked in the milestone *backlog — thesis-impact* and not fixed while the evaluation depends on
-them.
+which reproduces it byte for byte (see [provenance](provenance.md)). `v0.8.1` adds
+infrastructure, documentation and quality fixes without behavior change. `v0.9.0` fixes seven
+behavioral defects; the only difference visible in the thesis cases is the brownfield closure, which
+is now a plain `APPROVE` instead of an `APPROVE_EXCEPTION` (see the
+[brownfield guide](guides/brownfield.md)). The remaining defects are tracked in the milestone
+*backlog — thesis-impact*.
 
 ## Snapshot reported for the evaluated cut
 

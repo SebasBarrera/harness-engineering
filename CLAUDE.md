@@ -14,7 +14,6 @@ evaluated cut, frozen byte for byte.
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -e ".[dev,api]"
-export TMPDIR=$(cd "$TMPDIR" && pwd -P)   # macOS only: /var is a symlink (issue #19)
 
 make test                                 # full suite
 python -m pytest tests/unit               # one family: unit contract integration security e2e performance

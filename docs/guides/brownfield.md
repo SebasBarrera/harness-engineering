@@ -128,30 +128,33 @@ $ echo $?
 The retry ran the project's suite: **`298 passed`**. The ChangeSet still has 2 files and the same
 digest (`sha256:e775aa2d…23d46`).
 
-However, the gate is **`FAILED`**, with reasons `python.pytest_FAILED` and the blocking HIGH
-finding of the first attempt. The gate consolidates every validation of the current digest across
-attempts, so a failure caused by the environment in attempt 1 keeps counting after attempt 2
-passes. This is issue #2 (`needs-decision`), kept unchanged because the thesis measured this
-behavior.
-
-**B. Decide with a justified exception.** An ordinary approval over a gate that did not pass is
-refused; an exception with a rationale is accepted and stays visible in the trace:
+The gate is **`PASSED`** with reason `ALL_MANDATORY_VALIDATIONS_PASSED`. For each validator, the
+gate counts the latest attempt on the current digest; the failed attempt 1 and its `HIGH` finding
+stay in the record (`validationSummary` shows 1 `FAILED`, `harness findings list` still returns the
+finding) but no longer block. Approve normally:
 
 ```console
 $ harness gate decide --path . --run <run> --decision APPROVE \
-    --change-set-digest sha256:e775aa2d…23d46 --actor human.reviewer --rationale "Plain approval"
-$ echo $?
-5
-$ harness gate decide --path . --run <run> --decision APPROVE_EXCEPTION \
     --change-set-digest sha256:e775aa2d…23d46 --actor human.reviewer \
-    --rationale "Attempt 1 failed only because freezegun was missing; all project tests pass with the same ChangeSet"
+    --rationale "Baseline repaired by installing freezegun; the latest verification passes with the same ChangeSet"
 $ echo $?
 0
 ```
 
-Final state: status `PASSED`, 46 events, event chain valid. These figures match the thesis
-(298 tests after installing the dependency, invariant ChangeSet digest, closure by justified
-exception, 46 events).
+Final state: status `PASSED`, 46 events, event chain valid.
+
+**B. Decide with a justified exception.** If the baseline cannot be repaired, the gate stays
+`FAILED`; an ordinary approval is refused (exit 5) and `APPROVE_EXCEPTION` with a rationale closes
+the run with the exception visible in the trace.
+
+### Difference with the thesis figures
+
+The thesis evaluated version 0.8.0. There the gate consolidated every validation of the digest
+across attempts, so the failure of attempt 1 kept counting after the retry passed (issue #2): the
+plain `APPROVE` was refused with exit 5 and the run was closed with `APPROVE_EXCEPTION` (46 events).
+Since 0.9.0 the latest attempt of each validator counts. The rest of the case is unchanged: the same
+exit codes for `run start` (6) and `run continue` (4), 298 tests, the same ChangeSet digest and the
+same number of events. The tag `v0.8.0` keeps the evaluated behavior.
 
 ## Checklist for your own repository
 
@@ -160,5 +163,5 @@ exception, 46 events).
       (`pip install -r requirements/tests.txt`, `npm ci`, …).
 - [ ] Run the project's test command once by hand to know whether the baseline passes.
 - [ ] Declare the files the task may change (`patch` paths or `metadata.ownedPaths`).
-- [ ] If the baseline is broken, fix it and `run continue`, then decide knowingly between
-      `APPROVE_EXCEPTION` (with the reason) and `REJECT`.
+- [ ] If the baseline is broken, fix it and `run continue`; if it cannot be fixed, decide knowingly
+      between `APPROVE_EXCEPTION` (with the reason) and `REJECT`.

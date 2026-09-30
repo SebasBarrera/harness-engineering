@@ -12,7 +12,7 @@ hierarchy in `src/governed_harness/domain/errors.py` and from the run status map
 | `2` | configuration error | `ConfigurationError`: no `.harness/project.yaml` in the directory, invalid configuration, a task file that cannot be parsed, an attempt to weaken a locked policy, or a failed `doctor` check. | `harness status` in a directory without a project |
 | `3` | not found | `NotFoundError`: unknown run, task or record. | `harness status --run run_missing` |
 | `4` | waiting for a human decision | The automated phases finished and the run stopped at `DECISION`: automation reached the limit of its authority. | `harness run start` in every demo flow |
-| `5` | policy violation | `PolicyViolationError` from `gate decide`: the digest is not the current ChangeSet digest (stale approval), `APPROVE` over a gate that did not pass (`FAILED`, `INCONCLUSIVE`, ...), the run is not in `DECISION`, or `APPROVE_EXCEPTION` without a rationale. | later-change and broken-baseline flows |
+| `5` | policy violation | `PolicyViolationError` from `gate decide`: the digest is not the current ChangeSet digest (stale approval), `APPROVE` over a gate that did not pass (`FAILED`, `INCONCLUSIVE`, ...), the run is not in `DECISION`, or `APPROVE_EXCEPTION` without a rationale. | later-change and review-exception flows |
 | `6` | blocked | The run stopped because a validation, policy, blocking, timeout or inconclusive condition held (`BLOCKED`, `FAILED`, `INCONCLUSIVE` or `TIMED_OUT` outside `DECISION`). | broken-baseline flow (`run start`) |
 | `130` | cancelled | The run status is `CANCELLED` (`harness run cancel`, or cancellation during execution). | code |
 

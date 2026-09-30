@@ -1016,13 +1016,19 @@ class RunEngine:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
             if gate.change_set_digest == change_set.digest:
                 return gate
-        validations = [
-            item
-            for item in self.s.state.list(
-                "validation", ValidationResult, execution_id=execution.execution_id
-            )
-            if item.change_set_digest == change_set.digest
-        ]
+        # Only the latest attempt of each validator for the current digest counts: a failure
+        # caused by the environment and fixed before a retry must not keep the gate closed.
+        # Earlier attempts stay in the record and in the trace as history.
+        latest: dict[str, ValidationResult] = {}
+        for item in self.s.state.list(
+            "validation", ValidationResult, execution_id=execution.execution_id
+        ):
+            if item.change_set_digest != change_set.digest:
+                continue
+            previous = latest.get(item.validator_id)
+            if previous is None or item.finished_at >= previous.finished_at:
+                latest[item.validator_id] = item
+        validations = list(latest.values())
         findings = [
             item
             for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
