@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790741382489,
+  "lastUpdate": 1790776143564,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -381,6 +381,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 0.376,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "82ae5f8d3a8c1fa52cd9540a9ca4a6506f2015c2",
+          "message": "Merge pull request #28 from SebasBarrera/dependabot/pip/develop/mypy-gte-1.11-and-lt-3\n\nbuild(deps-dev): update mypy requirement from <2,>=1.11 to >=1.11,<3",
+          "timestamp": "2026-09-30T08:48:34-05:00",
+          "tree_id": "f813d61d657d19ebd0c923653a5893ee9c6c0355",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/82ae5f8d3a8c1fa52cd9540a9ca4a6506f2015c2"
+        },
+        "date": 1790776142580,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000696,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001136,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.006976,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.030597,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.21812,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.191397,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 7.185875,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": -0.077,
             "unit": "%"
           }
         ]
