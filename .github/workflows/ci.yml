@@ -1,7 +1,7 @@
 # Test workflow. Replaces the original ci.yml of the v0.8.0 cut (kept byte-identical in the
 # v0.8.0 tag; see issue #15): filtered triggers, pinned actions, least privilege, no caches,
 # per-family JUnit reports, coverage, schema-drift check and a step summary. Windows runs in the
-# separate, informational windows.yml workflow (not supported yet, issue #31).
+# separate windows.yml workflow.
 name: ci
 
 on:
