@@ -346,6 +346,7 @@ Behavioral defects of the evaluated cut are kept unfixed while the thesis evalua
 - [#19](https://github.com/SebasBarrera/harness-engineering/issues/19) absolute paths under a symlinked directory are rejected (macOS `TMPDIR`);
 - [#29](https://github.com/SebasBarrera/harness-engineering/issues/29) a task without `title` or `intent` is accepted with the text `None`;
 - [#30](https://github.com/SebasBarrera/harness-engineering/issues/30) `gate decide` prints snake_case keys.
+- [#31](https://github.com/SebasBarrera/harness-engineering/issues/31) Windows is not supported (the artifact store uses `os.fchmod`); Linux and macOS are.
 
 Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), no
 authentication or multi-user support in the dashboard, no distributed execution, no external

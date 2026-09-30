@@ -357,6 +357,7 @@ la tesis dependa de ellos (hito
 - [#19](https://github.com/SebasBarrera/harness-engineering/issues/19) se rechazan rutas absolutas bajo un directorio con enlace simbólico (`TMPDIR` en macOS);
 - [#29](https://github.com/SebasBarrera/harness-engineering/issues/29) una tarea sin `title` o `intent` se acepta con el texto `None`;
 - [#30](https://github.com/SebasBarrera/harness-engineering/issues/30) `gate decide` imprime claves en snake_case.
+- [#31](https://github.com/SebasBarrera/harness-engineering/issues/31) Windows no está soportado (el almacén de artefactos usa `os.fchmod`); Linux y macOS sí.
 
 Limitaciones declaradas: sin aislamiento a nivel de sistema operativo
 ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), sin autenticación ni soporte
