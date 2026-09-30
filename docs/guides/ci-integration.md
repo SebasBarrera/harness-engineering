@@ -51,7 +51,7 @@ jobs:
           python-version: "3.12"
       - name: Install the harness and the project's test dependencies
         run: |
-          python -m pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.8.1/governed_agent_harness-0.8.1-py3-none-any.whl"
+          python -m pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.9.0/governed_agent_harness-0.9.0-py3-none-any.whl"
           python -m pip install -e ".[test]"
       - name: Run the governed task
         id: run
