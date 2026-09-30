@@ -94,7 +94,7 @@ jobs:
           "$harness" config validate --path "$project"
           {
             echo "### Wheel smoke test"
-            echo "- dependencies installed in a clean venv: $(( $(wc -l < "$RUNNER_TEMP/freeze.txt") - 1 )) (plus the harness itself)"
+            echo "- runtime dependencies installed in a clean venv: $(grep -c -v -E '^(pip|governed-agent-harness)==' "$RUNNER_TEMP/freeze.txt")"
             echo "- \`harness --help\`, \`doctor\`, \`init\`, \`inspect\` and \`config validate\` exited 0"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
