@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790779939592,
+  "lastUpdate": 1790780124622,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -701,6 +701,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.086,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "bf80ff0149aa65a3c5cbac1996b885b2aa1e925f",
+          "message": "Merge branch 'fix/contained-path-symlinked-ancestor' into develop\n\n- fix(capabilities): accept workspace paths reached through a symlinked ancestor\n\nCloses #19\n\nVerification on the branch head 69e0437e1b2c: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327633\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327636\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327654\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327807\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327825\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36732327832\nFiles of the v0.8.0 cut in the tree: matched: 131/232  mismatched: 77  missing: 24",
+          "timestamp": "2026-09-30T09:54:48-05:00",
+          "tree_id": "8a95dcf0943fb892b406d9bacc4a92462b6ce354",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/bf80ff0149aa65a3c5cbac1996b885b2aa1e925f"
+        },
+        "date": 1790780123639,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001125,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001929,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.01067,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.057632,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.15737,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.38389,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.840252,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 5.382,
             "unit": "%"
           }
         ]
