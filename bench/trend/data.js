@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790776143564,
+  "lastUpdate": 1790779239292,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -445,6 +445,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": -0.077,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "5c0a0bbcd7c27e0654f3ceeea911c8fd8e5e6fb3",
+          "message": "Merge branch 'docs/sonarcloud-badges' into develop\n\n- docs(readme): add SonarQube Cloud badges\n\nVerification on the branch head 3e89163183e0: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549307\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549315\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549377\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549386\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549416\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36730549453\nFiles of the v0.8.0 cut in the tree: matched: 132/232  mismatched: 76  missing: 24",
+          "timestamp": "2026-09-30T09:39:27-05:00",
+          "tree_id": "a04a884545f69c3ae88188ce96c7a66c5dc638e6",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/5c0a0bbcd7c27e0654f3ceeea911c8fd8e5e6fb3"
+        },
+        "date": 1790779238699,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001222,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001904,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011201,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.074579,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.257827,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 11.218502,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.273796,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 0.795,
             "unit": "%"
           }
         ]
