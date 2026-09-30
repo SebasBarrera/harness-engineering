@@ -1,0 +1,29 @@
+taskId: task_python_add_discount
+title: Add a percentage discount rule
+intent: Apply a percentage discount only when the subtotal meets the configured threshold.
+requirements:
+  - requirementId: req_discount
+    text: Apply a percentage discount only when the subtotal meets the configured threshold.
+    source: example
+acceptanceCriteria:
+  - criterionId: ac_threshold
+    text: A subtotal below the threshold is unchanged.
+  - criterionId: ac_discount
+    text: A subtotal at or above the threshold is reduced by the configured percentage.
+constraints:
+  - Do not change the public function signature.
+  - Do not access the network.
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            return subtotal * (1 - rate) if subtotal >= threshold else subtotal
+    - path: tests/test_pricing.py
+      operation: append
+      content: |
+
+        def test_at_threshold() -> None:
+            assert apply_discount(100, 100, 0.1) == 90

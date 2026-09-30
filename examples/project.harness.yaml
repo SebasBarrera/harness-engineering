@@ -1,0 +1,30 @@
+configVersion: "1.0"
+projectId: example_project
+workspace:
+  root: .
+  units:
+    - unitId: application
+      root: .
+      profile: python_default
+profiles:
+  - python_default
+workflow: default_development
+capabilities:
+  default: deny
+  grants:
+    - capability: filesystem.read
+      scope: ["**"]
+      approvalRequired: false
+    - capability: filesystem.write
+      scope: ["src/**", "tests/**", ".harness/**"]
+      approvalRequired: true
+    - capability: process.execute
+      scope: ["python"]
+      approvalRequired: true
+validators:
+  - python.pytest
+policies:
+  mandatoryEvidence: true
+  staleApproval: reject
+  missingMandatoryCheck: block
+agentProvider: simulated

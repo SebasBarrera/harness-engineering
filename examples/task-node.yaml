@@ -1,0 +1,27 @@
+taskId: task_node_precedence
+title: Correct configuration precedence
+intent: Task values must override repository values, which must override defaults.
+acceptanceCriteria:
+  - criterionId: ac_task
+    text: Task values have the highest precedence.
+  - criterionId: ac_repository
+    text: Repository values still override defaults when no task value exists.
+constraints:
+  - Do not add runtime dependencies.
+  - Do not access the network.
+implementation:
+  mode: patch
+  patches:
+    - path: src/resolve-config.js
+      operation: replace
+      content: |
+        export function resolveConfig(defaults, repository, task) {
+          return { ...defaults, ...repository, ...task };
+        }
+    - path: test/resolve-config.test.js
+      operation: append
+      content: |
+
+        test('task overrides repository', () => {
+          assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {mode:'task'}), {mode:'task'});
+        });

@@ -1,0 +1,9 @@
+.git
+.harness
+.venv
+__pycache__
+.pytest_cache
+build
+dist
+reports
+*.pyc
