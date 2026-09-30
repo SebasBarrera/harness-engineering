@@ -1,0 +1,4 @@
+PYTHONPATH=src python scripts/generate_schemas.py
+PYTHONPATH=src pytest -W error::ResourceWarning
+........................................................................ [ 83%]
+............make: *** [Makefile:7: test] Terminated
