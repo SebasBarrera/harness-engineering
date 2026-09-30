@@ -1,0 +1,8 @@
+# hadolint configuration
+ignored:
+  # DL3008: pin apt package versions. Debian package versions are rotated out of the archive, so
+  # exact pins break rebuilds; the base image is pinned by digest and git is the only package.
+  - DL3008
+  # DL3013: pin pip versions. The build stage uses a bounded range (build>=1.2,<2) and the
+  # runtime stage installs the wheel built from this commit.
+  - DL3013
