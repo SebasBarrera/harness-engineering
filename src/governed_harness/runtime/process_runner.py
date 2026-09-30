@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import signal
 import subprocess
 import threading
@@ -41,6 +42,15 @@ class ProcessResult:
     duration_ms: int
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+
+
+def resolve_executable(argv0: str) -> str:
+    """On Windows, resolve a bare command name through PATH and PATHEXT (``npm`` is
+    ``npm.cmd``), which CreateProcess does not do; elsewhere return it unchanged. Authorization
+    always applies to the name as written in the command."""
+    if os.name != "nt":
+        return argv0
+    return shutil.which(argv0) or argv0
 
 
 _READ_CHUNK_BYTES = 65536
@@ -109,7 +119,7 @@ class SafeProcessRunner:
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
         process = subprocess.Popen(
-            list(spec.argv),
+            [resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if spec.stdin is not None else subprocess.DEVNULL,
