@@ -1,0 +1,81 @@
+{
+  "$id": "https://example.org/governed-harness/schemas/v1/plugin-descriptor.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "capabilities": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Capabilities",
+      "type": "array"
+    },
+    "digest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Digest"
+    },
+    "operations": {
+      "items": {
+        "enum": [
+          "handshake",
+          "detect",
+          "describeCapabilities",
+          "plan",
+          "execute",
+          "interpret",
+          "health",
+          "cleanup"
+        ],
+        "type": "string"
+      },
+      "title": "Operations",
+      "type": "array"
+    },
+    "pluginId": {
+      "title": "Pluginid",
+      "type": "string"
+    },
+    "pluginVersion": {
+      "title": "Pluginversion",
+      "type": "string"
+    },
+    "protocolVersion": {
+      "const": "1.0",
+      "title": "Protocolversion",
+      "type": "string"
+    },
+    "resultSchemas": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Resultschemas",
+      "type": "array"
+    },
+    "supportedPlatforms": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Supportedplatforms",
+      "type": "array"
+    }
+  },
+  "required": [
+    "pluginId",
+    "pluginVersion",
+    "protocolVersion",
+    "operations"
+  ],
+  "title": "PluginDescriptor",
+  "type": "object"
+}

@@ -1,0 +1,173 @@
+workflowVersion: '1.0'
+workflowId: default_development
+description: Normative development workflow for the research artifact
+phases:
+- id: INTENT
+  purpose: Capture task, constraints and acceptance criteria
+  dependsOn: []
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - filesystem.read
+  validators:
+  - intent.schema
+  exitGate: intent_complete
+  timeoutSeconds: 1800
+  maxAttempts: 3
+- id: DISCOVERY
+  purpose: Detect workspace, baseline, technology and impact
+  dependsOn:
+  - INTENT
+  required: true
+  parallelizable: true
+  allowedCapabilities:
+  - filesystem.read
+  - git.read
+  - process.execute
+  validators:
+  - workspace.detect
+  - baseline.capture
+  exitGate: discovery_sufficient
+  timeoutSeconds: 1800
+  maxAttempts: 2
+- id: SPECIFICATION
+  purpose: Freeze executable acceptance and validation contract
+  dependsOn:
+  - DISCOVERY
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - filesystem.read
+  validators:
+  - acceptance.contract
+  exitGate: specification_approved
+  timeoutSeconds: 1800
+  maxAttempts: 3
+- id: PLANNING
+  purpose: Plan changes, checks, capabilities and risk controls
+  dependsOn:
+  - SPECIFICATION
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - filesystem.read
+  - git.read
+  - approval.request
+  validators:
+  - plan.scope
+  exitGate: plan_authorized
+  timeoutSeconds: 1800
+  maxAttempts: 3
+- id: IMPLEMENTATION
+  purpose: Produce an owned candidate ChangeSet
+  dependsOn:
+  - PLANNING
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - filesystem.read
+  - filesystem.write
+  - process.execute
+  - git.read
+  validators:
+  - changeset.present
+  exitGate: candidate_changeset
+  timeoutSeconds: 7200
+  maxAttempts: 5
+- id: VERIFICATION
+  purpose: Execute deterministic and technology-specific validators
+  dependsOn:
+  - IMPLEMENTATION
+  required: true
+  parallelizable: true
+  allowedCapabilities:
+  - filesystem.read
+  - process.execute
+  - git.read
+  validators:
+  - profile.required
+  exitGate: verification_passed
+  timeoutSeconds: 7200
+  maxAttempts: 3
+- id: INDEPENDENT_REVIEW
+  purpose: Evaluate the candidate independently from implementation
+  dependsOn:
+  - VERIFICATION
+  required: true
+  parallelizable: true
+  allowedCapabilities:
+  - filesystem.read
+  - git.read
+  validators:
+  - review.independent
+  exitGate: review_complete
+  timeoutSeconds: 3600
+  maxAttempts: 2
+- id: DECISION
+  purpose: Evaluate policy and obtain the required human decision
+  dependsOn:
+  - INDEPENDENT_REVIEW
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - approval.request
+  validators:
+  - gate.current_digest
+  exitGate: decision_recorded
+  timeoutSeconds: 86400
+  maxAttempts: 3
+- id: CLOSURE
+  purpose: Freeze trace and release resources
+  dependsOn:
+  - DECISION
+  required: true
+  parallelizable: false
+  allowedCapabilities:
+  - artifact.publish
+  validators:
+  - trace.complete
+  - cleanup.complete
+  exitGate: run_closed
+  timeoutSeconds: 1800
+  maxAttempts: 2
+transitions:
+- from: INTENT
+  to: DISCOVERY
+  condition: intent_complete
+- from: DISCOVERY
+  to: SPECIFICATION
+  condition: discovery_sufficient
+- from: SPECIFICATION
+  to: PLANNING
+  condition: specification_approved
+- from: PLANNING
+  to: IMPLEMENTATION
+  condition: plan_authorized
+- from: IMPLEMENTATION
+  to: VERIFICATION
+  condition: candidate_changeset
+- from: VERIFICATION
+  to: INDEPENDENT_REVIEW
+  condition: verification_passed
+- from: INDEPENDENT_REVIEW
+  to: DECISION
+  condition: review_complete
+- from: DECISION
+  to: CLOSURE
+  condition: decision_approved
+- from: DECISION
+  to: IMPLEMENTATION
+  condition: authorized_correction
+  invalidates:
+  - VERIFICATION
+  - INDEPENDENT_REVIEW
+  - DECISION
+invariants:
+- run_has_intent
+- configuration_is_snapshotted
+- transition_is_machine_validated
+- mandatory_gate_has_structured_result
+- non_success_is_not_pass
+- approval_matches_current_changeset_digest
+- repository_content_is_untrusted
+- retrospective_does_not_mutate_policy

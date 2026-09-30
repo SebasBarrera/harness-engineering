@@ -1,0 +1,276 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "EvidenceKind": {
+      "enum": [
+        "INTENT",
+        "CONFIGURATION",
+        "PLAN",
+        "CHANGESET",
+        "COMMAND",
+        "TEST_REPORT",
+        "STATIC_ANALYSIS",
+        "REVIEW",
+        "GATE",
+        "HUMAN_DECISION",
+        "TRACE",
+        "METRIC",
+        "RETROSPECTIVE",
+        "OTHER"
+      ],
+      "title": "EvidenceKind",
+      "type": "string"
+    },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "coreVersion": {
+          "title": "Coreversion",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginid"
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginversion"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promptdigest"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "sourceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "workflowDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflowdigest"
+        }
+      },
+      "required": [
+        "actor",
+        "coreVersion"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/evidence.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactRef": {
+      "title": "Artifactref",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "evidenceId": {
+      "title": "Evidenceid",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/EvidenceKind"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "title": "Observedat",
+      "type": "string"
+    },
+    "phaseId": {
+      "$ref": "#/$defs/PhaseId"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "supports": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Supports",
+      "type": "array"
+    }
+  },
+  "required": [
+    "evidenceId",
+    "executionId",
+    "phaseId",
+    "kind",
+    "artifactRef",
+    "digest",
+    "summary",
+    "provenance"
+  ],
+  "title": "Evidence",
+  "type": "object"
+}

@@ -1,0 +1,115 @@
+{
+  "$id": "https://example.org/governed-harness/schemas/v1/event.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "type": "string"
+        },
+        "actorType": {
+          "enum": [
+            "HUMAN",
+            "AGENT",
+            "TOOL",
+            "PLUGIN",
+            "HARNESS",
+            "CI"
+          ]
+        },
+        "displayName": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "type": "object"
+    },
+    "causationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "correlationId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "eventDigest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": "string"
+    },
+    "eventId": {
+      "minLength": 3,
+      "type": "string"
+    },
+    "eventType": {
+      "pattern": "^[a-z][a-z0-9_.-]{2,100}$",
+      "type": "string"
+    },
+    "executionId": {
+      "minLength": 3,
+      "type": "string"
+    },
+    "occurredAt": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "phaseExecutionId": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "previousEventDigest": {
+      "pattern": "^sha256:[a-f0-9]{64}$",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "redactionVersion": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0"
+    },
+    "sequence": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "executionId",
+    "sequence",
+    "eventType",
+    "occurredAt",
+    "actor",
+    "payload",
+    "previousEventDigest",
+    "eventDigest",
+    "redactionVersion"
+  ],
+  "title": "StoredEvent",
+  "type": "object"
+}

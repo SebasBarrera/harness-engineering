@@ -1,0 +1,258 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "ErrorKind": {
+      "enum": [
+        "HARNESS_ERROR",
+        "CONFIGURATION_ERROR",
+        "PROVIDER_ERROR",
+        "TOOL_ERROR",
+        "PROJECT_ERROR",
+        "PREEXISTING_ERROR",
+        "INTRODUCED_ERROR",
+        "POLICY_VIOLATION",
+        "MISSING_EVIDENCE",
+        "PROTOCOL_ERROR",
+        "SECURITY_ERROR"
+      ],
+      "title": "ErrorKind",
+      "type": "string"
+    },
+    "HarnessErrorRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "errorId": {
+          "title": "Errorid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ErrorKind"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "occurredAt": {
+          "format": "date-time",
+          "title": "Occurredat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "errorId",
+        "kind",
+        "message",
+        "actor"
+      ],
+      "title": "HarnessErrorRecord",
+      "type": "object"
+    },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/phase-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "artifactRefs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Artifactrefs",
+      "type": "array"
+    },
+    "attempt": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "errors": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/HarnessErrorRecord"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "evidenceRefs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidencerefs",
+      "type": "array"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "finishedAt": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Finishedat"
+    },
+    "inputDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Inputdigest"
+    },
+    "outputDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outputdigest"
+    },
+    "phaseExecutionId": {
+      "title": "Phaseexecutionid",
+      "type": "string"
+    },
+    "phaseId": {
+      "$ref": "#/$defs/PhaseId"
+    },
+    "startedAt": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Startedat"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus",
+      "default": "PENDING"
+    },
+    "summary": {
+      "default": "",
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "phaseExecutionId",
+    "executionId",
+    "phaseId"
+  ],
+  "title": "PhaseExecution",
+  "type": "object"
+}

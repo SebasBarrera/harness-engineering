@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "AcceptanceCriterion": {
+      "additionalProperties": false,
+      "properties": {
+        "criterionId": {
+          "title": "Criterionid",
+          "type": "string"
+        },
+        "priority": {
+          "default": "MUST",
+          "enum": [
+            "MUST",
+            "SHOULD",
+            "COULD"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        },
+        "verificationHint": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verificationhint"
+        }
+      },
+      "required": [
+        "criterionId",
+        "text"
+      ],
+      "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "FilePatch": {
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content"
+        },
+        "expectedSha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expectedsha256"
+        },
+        "operation": {
+          "enum": [
+            "create",
+            "replace",
+            "append",
+            "delete"
+          ],
+          "title": "Operation",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "operation"
+      ],
+      "title": "FilePatch",
+      "type": "object"
+    },
+    "ImplementationInstruction": {
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Argv",
+          "type": "array"
+        },
+        "cwd": {
+          "default": ".",
+          "title": "Cwd",
+          "type": "string"
+        },
+        "mode": {
+          "default": "none",
+          "enum": [
+            "none",
+            "patch",
+            "command"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "patches": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/FilePatch"
+          },
+          "title": "Patches",
+          "type": "array"
+        }
+      },
+      "title": "ImplementationInstruction",
+      "type": "object"
+    },
+    "Requirement": {
+      "additionalProperties": false,
+      "properties": {
+        "requirementId": {
+          "title": "Requirementid",
+          "type": "string"
+        },
+        "source": {
+          "default": "human",
+          "title": "Source",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 8000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "requirementId",
+        "text"
+      ],
+      "title": "Requirement",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/task.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "acceptanceCriteria": {
+      "items": {
+        "$ref": "#/$defs/AcceptanceCriterion"
+      },
+      "title": "Acceptancecriteria",
+      "type": "array"
+    },
+    "constraints": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Constraints",
+      "type": "array"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "implementation": {
+      "$ref": "#/$defs/ImplementationInstruction"
+    },
+    "intent": {
+      "maxLength": 16000,
+      "minLength": 1,
+      "title": "Intent",
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": true,
+      "title": "Metadata",
+      "type": "object"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "requirements": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Requirement"
+      },
+      "title": "Requirements",
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "title": {
+      "maxLength": 300,
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "taskId",
+    "projectId",
+    "title",
+    "intent",
+    "acceptanceCriteria"
+  ],
+  "title": "Task",
+  "type": "object"
+}

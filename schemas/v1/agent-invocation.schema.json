@@ -1,0 +1,278 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "ErrorKind": {
+      "enum": [
+        "HARNESS_ERROR",
+        "CONFIGURATION_ERROR",
+        "PROVIDER_ERROR",
+        "TOOL_ERROR",
+        "PROJECT_ERROR",
+        "PREEXISTING_ERROR",
+        "INTRODUCED_ERROR",
+        "POLICY_VIOLATION",
+        "MISSING_EVIDENCE",
+        "PROTOCOL_ERROR",
+        "SECURITY_ERROR"
+      ],
+      "title": "ErrorKind",
+      "type": "string"
+    },
+    "HarnessErrorRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "errorId": {
+          "title": "Errorid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ErrorKind"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "occurredAt": {
+          "format": "date-time",
+          "title": "Occurredat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "errorId",
+        "kind",
+        "message",
+        "actor"
+      ],
+      "title": "HarnessErrorRecord",
+      "type": "object"
+    },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/agent-invocation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/Actor"
+    },
+    "contextManifestRef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contextmanifestref"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HarnessErrorRecord"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "title": "Finishedat",
+      "type": "string"
+    },
+    "invocationId": {
+      "title": "Invocationid",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "outputRef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outputref"
+    },
+    "phaseId": {
+      "$ref": "#/$defs/PhaseId"
+    },
+    "promptDigest": {
+      "title": "Promptdigest",
+      "type": "string"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "sessionId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Sessionid"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "title": "Startedat",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus"
+    },
+    "toolInvocationIds": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Toolinvocationids",
+      "type": "array"
+    },
+    "usageRef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Usageref"
+    }
+  },
+  "required": [
+    "invocationId",
+    "executionId",
+    "phaseId",
+    "actor",
+    "provider",
+    "startedAt",
+    "finishedAt",
+    "status",
+    "promptDigest"
+  ],
+  "title": "AgentInvocation",
+  "type": "object"
+}

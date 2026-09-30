@@ -1,0 +1,181 @@
+{
+  "$defs": {
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/execution.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "attempt": {
+      "default": 1,
+      "minimum": 1,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "baselineRevision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baselinerevision"
+    },
+    "changeSetDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Changesetdigest"
+    },
+    "configurationDigest": {
+      "title": "Configurationdigest",
+      "type": "string"
+    },
+    "configurationSnapshotRef": {
+      "title": "Configurationsnapshotref",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "currentPhase": {
+      "$ref": "#/$defs/PhaseId",
+      "default": "INTENT"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "gateEvaluationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Gateevaluationid"
+    },
+    "humanDecisionId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Humandecisionid"
+    },
+    "policyDigest": {
+      "title": "Policydigest",
+      "type": "string"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus",
+      "default": "PENDING"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "terminalReason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Terminalreason"
+    },
+    "updatedAt": {
+      "format": "date-time",
+      "title": "Updatedat",
+      "type": "string"
+    },
+    "workflowDigest": {
+      "title": "Workflowdigest",
+      "type": "string"
+    },
+    "workflowRef": {
+      "title": "Workflowref",
+      "type": "string"
+    },
+    "workspace": {
+      "title": "Workspace",
+      "type": "string"
+    }
+  },
+  "required": [
+    "executionId",
+    "projectId",
+    "taskId",
+    "workspace",
+    "configurationDigest",
+    "workflowDigest",
+    "policyDigest",
+    "configurationSnapshotRef",
+    "workflowRef"
+  ],
+  "title": "Execution",
+  "type": "object"
+}

@@ -1,0 +1,61 @@
+{
+  "$id": "https://example.org/governed-harness/schemas/v1/retrospective-recommendation.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "category": {
+      "title": "Category",
+      "type": "string"
+    },
+    "confidence": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "evidenceRefs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidencerefs",
+      "type": "array"
+    },
+    "rationale": {
+      "title": "Rationale",
+      "type": "string"
+    },
+    "recommendationId": {
+      "title": "Recommendationid",
+      "type": "string"
+    },
+    "requiresHumanReview": {
+      "default": true,
+      "title": "Requireshumanreview",
+      "type": "boolean"
+    },
+    "risk": {
+      "enum": [
+        "LOW",
+        "MEDIUM",
+        "HIGH"
+      ],
+      "title": "Risk",
+      "type": "string"
+    },
+    "statement": {
+      "title": "Statement",
+      "type": "string"
+    }
+  },
+  "required": [
+    "recommendationId",
+    "category",
+    "statement",
+    "rationale",
+    "evidenceRefs",
+    "confidence",
+    "risk"
+  ],
+  "title": "Recommendation",
+  "type": "object"
+}

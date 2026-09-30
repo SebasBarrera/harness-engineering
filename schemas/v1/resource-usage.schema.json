@@ -1,0 +1,142 @@
+{
+  "$defs": {
+    "MetricQuality": {
+      "enum": [
+        "OBSERVED",
+        "REPORTED",
+        "DERIVED",
+        "ESTIMATED",
+        "NOT_AVAILABLE"
+      ],
+      "title": "MetricQuality",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/resource-usage.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "costUsd": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Costusd"
+    },
+    "cpuTimeMs": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cputimems"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "inputTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Inputtokens"
+    },
+    "invocationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocationid"
+    },
+    "limitations": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Limitations",
+      "type": "array"
+    },
+    "maxRssBytes": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Maxrssbytes"
+    },
+    "outputTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Outputtokens"
+    },
+    "quality": {
+      "$ref": "#/$defs/MetricQuality"
+    },
+    "reasoningTokens": {
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reasoningtokens"
+    },
+    "usageId": {
+      "title": "Usageid",
+      "type": "string"
+    },
+    "wallTimeMs": {
+      "minimum": 0,
+      "title": "Walltimems",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "usageId",
+    "executionId",
+    "wallTimeMs",
+    "quality"
+  ],
+  "title": "ResourceUsage",
+  "type": "object"
+}

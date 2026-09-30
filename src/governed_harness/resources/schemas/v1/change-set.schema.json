@@ -1,0 +1,138 @@
+{
+  "$defs": {
+    "ChangedFile": {
+      "additionalProperties": false,
+      "properties": {
+        "additions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Additions",
+          "type": "integer"
+        },
+        "afterDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Afterdigest"
+        },
+        "beforeDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Beforedigest"
+        },
+        "deletions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Deletions",
+          "type": "integer"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ADDED",
+            "MODIFIED",
+            "DELETED",
+            "RENAMED",
+            "UNTRACKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "status"
+      ],
+      "title": "ChangedFile",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/change-set.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "baselineRevision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Baselinerevision"
+    },
+    "changeSetId": {
+      "title": "Changesetid",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "currentRevision": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Currentrevision"
+    },
+    "diffRef": {
+      "title": "Diffref",
+      "type": "string"
+    },
+    "digest": {
+      "title": "Digest",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "files": {
+      "items": {
+        "$ref": "#/$defs/ChangedFile"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    }
+  },
+  "required": [
+    "changeSetId",
+    "executionId",
+    "files",
+    "diffRef",
+    "digest"
+  ],
+  "title": "ChangeSet",
+  "type": "object"
+}

@@ -1,0 +1,369 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "ErrorKind": {
+      "enum": [
+        "HARNESS_ERROR",
+        "CONFIGURATION_ERROR",
+        "PROVIDER_ERROR",
+        "TOOL_ERROR",
+        "PROJECT_ERROR",
+        "PREEXISTING_ERROR",
+        "INTRODUCED_ERROR",
+        "POLICY_VIOLATION",
+        "MISSING_EVIDENCE",
+        "PROTOCOL_ERROR",
+        "SECURITY_ERROR"
+      ],
+      "title": "ErrorKind",
+      "type": "string"
+    },
+    "HarnessErrorRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "details": {
+          "additionalProperties": true,
+          "title": "Details",
+          "type": "object"
+        },
+        "errorId": {
+          "title": "Errorid",
+          "type": "string"
+        },
+        "kind": {
+          "$ref": "#/$defs/ErrorKind"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "occurredAt": {
+          "format": "date-time",
+          "title": "Occurredat",
+          "type": "string"
+        }
+      },
+      "required": [
+        "errorId",
+        "kind",
+        "message",
+        "actor"
+      ],
+      "title": "HarnessErrorRecord",
+      "type": "object"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "coreVersion": {
+          "title": "Coreversion",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginid"
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginversion"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promptdigest"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "sourceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "workflowDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflowdigest"
+        }
+      },
+      "required": [
+        "actor",
+        "coreVersion"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    },
+    "ValidationKind": {
+      "enum": [
+        "SUCCESS",
+        "VALIDATION_FAILURE",
+        "PROJECT_ERROR",
+        "PREEXISTING_ERROR",
+        "INTRODUCED_ERROR",
+        "TOOL_ERROR",
+        "CONFIGURATION_ERROR",
+        "PROTOCOL_ERROR",
+        "POLICY_VIOLATION",
+        "INCONCLUSIVE"
+      ],
+      "title": "ValidationKind",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/validation-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "errors": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/HarnessErrorRecord"
+      },
+      "title": "Errors",
+      "type": "array"
+    },
+    "evidenceRefs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidencerefs",
+      "type": "array"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "findingIds": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Findingids",
+      "type": "array"
+    },
+    "finishedAt": {
+      "format": "date-time",
+      "title": "Finishedat",
+      "type": "string"
+    },
+    "kind": {
+      "$ref": "#/$defs/ValidationKind"
+    },
+    "mandatory": {
+      "default": true,
+      "title": "Mandatory",
+      "type": "boolean"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "startedAt": {
+      "format": "date-time",
+      "title": "Startedat",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    },
+    "toolInvocationIds": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Toolinvocationids",
+      "type": "array"
+    },
+    "validationResultId": {
+      "title": "Validationresultid",
+      "type": "string"
+    },
+    "validatorId": {
+      "title": "Validatorid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "validationResultId",
+    "executionId",
+    "validatorId",
+    "changeSetDigest",
+    "status",
+    "kind",
+    "summary",
+    "evidenceRefs",
+    "startedAt",
+    "finishedAt",
+    "provenance"
+  ],
+  "title": "ValidationResult",
+  "type": "object"
+}
