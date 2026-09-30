@@ -1,0 +1,169 @@
+{
+  "$defs": {
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "WorkflowPhaseDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "allowedCapabilities": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Allowedcapabilities",
+          "type": "array"
+        },
+        "dependsOn": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PhaseId"
+          },
+          "title": "Dependson",
+          "type": "array"
+        },
+        "exitGate": {
+          "title": "Exitgate",
+          "type": "string"
+        },
+        "id": {
+          "$ref": "#/$defs/PhaseId"
+        },
+        "maxAttempts": {
+          "default": 1,
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Maxattempts",
+          "type": "integer"
+        },
+        "parallelizable": {
+          "default": false,
+          "title": "Parallelizable",
+          "type": "boolean"
+        },
+        "purpose": {
+          "title": "Purpose",
+          "type": "string"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "timeoutSeconds": {
+          "default": 1800,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        },
+        "validators": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Validators",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "purpose",
+        "exitGate"
+      ],
+      "title": "WorkflowPhaseDefinition",
+      "type": "object"
+    },
+    "WorkflowTransitionDefinition": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "title": "Condition",
+          "type": "string"
+        },
+        "from": {
+          "$ref": "#/$defs/PhaseId"
+        },
+        "invalidates": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PhaseId"
+          },
+          "title": "Invalidates",
+          "type": "array"
+        },
+        "to": {
+          "$ref": "#/$defs/PhaseId"
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "condition"
+      ],
+      "title": "WorkflowTransitionDefinition",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/workflow.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "default": "",
+      "title": "Description",
+      "type": "string"
+    },
+    "invariants": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Invariants",
+      "type": "array"
+    },
+    "phases": {
+      "items": {
+        "$ref": "#/$defs/WorkflowPhaseDefinition"
+      },
+      "title": "Phases",
+      "type": "array"
+    },
+    "transitions": {
+      "items": {
+        "$ref": "#/$defs/WorkflowTransitionDefinition"
+      },
+      "title": "Transitions",
+      "type": "array"
+    },
+    "workflowId": {
+      "title": "Workflowid",
+      "type": "string"
+    },
+    "workflowVersion": {
+      "const": "1.0",
+      "title": "Workflowversion",
+      "type": "string"
+    }
+  },
+  "required": [
+    "workflowVersion",
+    "workflowId",
+    "phases",
+    "transitions"
+  ],
+  "title": "WorkflowDefinition",
+  "type": "object"
+}
