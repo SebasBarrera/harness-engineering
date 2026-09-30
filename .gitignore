@@ -10,3 +10,17 @@ build/
 *.egg-info/
 .harness/
 .DS_Store
+
+# Local workspace of the maintainer: never published (see .github/privacy-denylist.txt)
+/Documento/
+/prompt inicial
+/governed-agent-harness-0.8.0-current/
+/.local/
+.env
+.env.*
+
+# Generated reports and build outputs
+/reports/ci/
+/site/
+coverage.xml
+junit*.xml
