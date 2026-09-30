@@ -1,0 +1,65 @@
+# Pull-request hygiene for external contributions: Conventional Commits title, area labels by
+# path and a reference to an issue. (The maintainer integrates work branches directly.)
+name: pr-hygiene
+
+on:
+  pull_request:
+    branches: [develop, main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    name: conventional title
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      pull-requests: read
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            ci
+            chore
+            test
+            build
+            refactor
+            perf
+            style
+            security
+            revert
+
+  labels:
+    name: area labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          sync-labels: false
+
+  linked-issue:
+    name: linked issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require a reference to an issue in the description
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          if printf '%s' "${PR_BODY}" | grep -Eiq '\b(close[sd]?|fix(e[sd])?|resolve[sd]?|refs?)[[:space:]]+#[0-9]+'; then
+            echo "Issue reference found."
+          else
+            echo "::error::Reference an issue in the description (for example 'Closes #12' or 'Refs #12')."
+            exit 1
+          fi
