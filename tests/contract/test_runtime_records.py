@@ -27,7 +27,6 @@ from governed_harness.domain.models import (
 )
 from governed_harness.orchestration.engine import EngineServices
 
-
 T = TypeVar("T", bound=BaseModel)
 SCHEMA_DIR = Path(__file__).parents[2] / "schemas" / "v1"
 

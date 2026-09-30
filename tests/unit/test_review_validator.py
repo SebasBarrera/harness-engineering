@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from pathlib import Path
 
 from governed_harness.configuration.models import ValidatorDefinition
@@ -8,8 +7,8 @@ from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import (
     AcceptanceCriterion,
     Actor,
-    ChangeSet,
     ChangedFile,
+    ChangeSet,
     Provenance,
     Task,
 )

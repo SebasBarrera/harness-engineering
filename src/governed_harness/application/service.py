@@ -4,16 +4,16 @@ import json
 import os
 import shutil
 import sys
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from governed_harness import __version__
 from governed_harness.configuration import ConfigurationResolver, initialize_project
 from governed_harness.domain.enums import DecisionKind
-from governed_harness.domain.errors import ConfigurationError, NotFoundError
+from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.models import (
-    Artifact,
     Execution,
     Finding,
     GateEvaluation,

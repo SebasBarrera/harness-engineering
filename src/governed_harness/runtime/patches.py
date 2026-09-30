@@ -4,7 +4,11 @@ import os
 import tempfile
 from pathlib import Path
 
-from governed_harness.capabilities.authorizer import CapabilityAuthorizer, CapabilityDenied, contained_path
+from governed_harness.capabilities.authorizer import (
+    CapabilityAuthorizer,
+    CapabilityDenied,
+    contained_path,
+)
 from governed_harness.domain.models import Actor, CapabilityGrant, FilePatch
 from governed_harness.evidence.hashing import sha256_file
 

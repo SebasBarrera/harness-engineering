@@ -5,19 +5,18 @@ import statistics
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Callable
 
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.models import CapabilityRule
-from governed_harness.domain.enums import ActorType, ResultStatus
+from governed_harness.domain.enums import ActorType, PhaseId, ResultStatus
 from governed_harness.domain.models import Actor
 from governed_harness.events import SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GateInput
 from governed_harness.orchestration import NormativeStateMachine
-from governed_harness.domain.enums import PhaseId
 from governed_harness.runtime import CommandSpec, SafeProcessRunner
 
 

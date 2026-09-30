@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import TypeVar
 
 import typer
 
@@ -307,6 +308,7 @@ def api_serve(
     port: int = typer.Option(8765, "--port", min=1, max=65535),
 ) -> None:
     import uvicorn
+
     from governed_harness.api import create_app
 
     uvicorn.run(create_app(path), host=host, port=port, log_level="info")

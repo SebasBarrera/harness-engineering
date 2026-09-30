@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from governed_harness.domain.enums import ActorType, PhaseId, ResultStatus
-from governed_harness.domain.models import Actor, AgentInvocation, Provenance, ToolInvocation
+from governed_harness.domain.models import Actor, AgentInvocation
 from governed_harness.events import SQLiteEventStore
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector

@@ -5,7 +5,6 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-
 SCHEMA_DIR = Path(__file__).parents[2] / "schemas" / "v1"
 
 

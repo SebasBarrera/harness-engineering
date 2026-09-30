@@ -11,7 +11,6 @@ from governed_harness.domain.models import (
     Actor,
     AgentInvocation,
     CapabilityGrant,
-    HARNESS_ACTOR,
     HarnessErrorRecord,
     Plan,
     Provenance,

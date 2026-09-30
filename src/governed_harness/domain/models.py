@@ -99,7 +99,7 @@ class FilePatch(StrictModel):
         return value
 
     @model_validator(mode="after")
-    def content_matches_operation(self) -> "FilePatch":
+    def content_matches_operation(self) -> FilePatch:
         if self.operation in {"create", "replace", "append"} and self.content is None:
             raise ValueError("content is required for create/replace/append")
         return self
@@ -112,7 +112,7 @@ class ImplementationInstruction(StrictModel):
     cwd: str = "."
 
     @model_validator(mode="after")
-    def validate_mode(self) -> "ImplementationInstruction":
+    def validate_mode(self) -> ImplementationInstruction:
         if self.mode == "patch" and not self.patches:
             raise ValueError("patch mode requires at least one patch")
         if self.mode == "command" and not self.argv:

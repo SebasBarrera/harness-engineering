@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import fnmatch
 import os
+from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Iterable, Sequence
 
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.ids import new_id

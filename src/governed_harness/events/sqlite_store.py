@@ -6,9 +6,9 @@ import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
-from governed_harness.domain.models import Actor, HARNESS_ACTOR
+from governed_harness.domain.models import HARNESS_ACTOR, Actor
 from governed_harness.evidence.hashing import sha256_json
 
 

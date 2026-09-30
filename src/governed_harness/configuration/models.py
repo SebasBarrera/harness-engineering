@@ -136,7 +136,7 @@ class WorkflowDefinition(ConfigModel):
     invariants: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_graph(self) -> "WorkflowDefinition":
+    def validate_graph(self) -> WorkflowDefinition:
         primary = tuple(phase.phase_id for phase in self.phases)
         expected = (
             PhaseId.INTENT,

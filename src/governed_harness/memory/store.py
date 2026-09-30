@@ -43,9 +43,7 @@ class MemoryStore:
             if record.level in {MemoryLevel.NORMATIVE, MemoryLevel.PROJECT, MemoryLevel.RETROSPECTIVE}:
                 if not record.approved:
                     continue
-            elif record.level is MemoryLevel.TASK and record.task_id != task_id:
-                continue
-            elif record.level is MemoryLevel.EPHEMERAL and record.execution_id != execution_id:
+            elif record.level is MemoryLevel.TASK and record.task_id != task_id or record.level is MemoryLevel.EPHEMERAL and record.execution_id != execution_id:
                 continue
             eligible.append(record)
         order = {

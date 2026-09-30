@@ -7,9 +7,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Callable
 
 from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import DecisionKind, ResultStatus

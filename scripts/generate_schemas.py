@@ -37,7 +37,6 @@ from governed_harness.domain.models import (
 )
 from governed_harness.plugins.protocol import PluginDescriptor, PluginRequest, PluginResponse
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "schemas" / "v1"
 RESOURCE_ROOT = ROOT / "src" / "governed_harness" / "resources" / "schemas" / "v1"
