@@ -194,10 +194,11 @@ Qué cambia frente a un proyecto nuevo:
   `freezegun` (declarada en `requirements/tests.txt`): `run start` terminó con **6** y la salida de
   pytest guardada mostró dos módulos de prueba que no se recolectaban, fuera del ChangeSet.
 - **Dos salidas ante un baseline roto:** corregirlo y ejecutar `harness run continue` (el caso corrió
-  entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet), o cerrar con
-  `APPROVE_EXCEPTION` y una justificación escrita. Como el gate conserva el hallazgo del primer
-  intento (issue #2), un `APPROVE` simple se rechazó con **5** y la ejecución cerró por excepción
-  (46 eventos, cadena válida).
+  entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet; el gate cuenta
+  el último intento de cada validador, así que quedó en `PASSED` y un `APPROVE` simple cerró la
+  ejecución: 46 eventos, cadena válida), o cerrar con `APPROVE_EXCEPTION` y una justificación
+  escrita. En el corte evaluado 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
+  por excepción.
 - **Respeta las convenciones.** La detección es de solo lectura (en el caso: Python, confianza 1,0
   por `pyproject.toml` y `tox.ini`). Varios lockfiles elevan la confianza de Node.js, pero el perfil
   siempre ejecuta `npm`.
@@ -335,33 +336,25 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 
 | Síntoma | Causa y solución |
 |---|---|
-| `run start` termina con 6 y el hallazgo dice `python.pytest failed with exit code 1` aunque tus pruebas estén bien | `pytest` no está instalado en el entorno donde corre el harness. Instálalo y ejecuta `harness run continue`. (Debería ser `BLOCKED`, issue #1.) |
+| `run start` termina con 6 y estado `BLOCKED`; la validación `python.pytest` dice `mandatory Python module 'pytest' is not installed for 'python'` | `pytest` no está instalado en el entorno donde corre el harness. Instálalo y ejecuta `harness run continue`. |
 | Una ejecución brownfield falla con módulos de prueba que no se recolectan | Instala las dependencias de prueba del proyecto (por ejemplo `pip install -r requirements/tests.txt`) y ejecuta `run continue`. |
 | `gate decide` termina con 5: `prior approval is stale` | Un archivo propio cambió después del gate. Consulta el digest vigente con `harness status` o ejecuta `run continue` para reevaluar. |
 | `gate decide` termina con 5: `APPROVE is only valid for a passed automatic gate` | El gate no pasó. Usa `REQUEST_CHANGES`, `REJECT` o `APPROVE_EXCEPTION` con justificación. |
-| El gate sigue en `FAILED` después de que un reintento pasó | El gate conserva los resultados de todos los intentos para el mismo digest (issue #2). Decide con `APPROVE_EXCEPTION` y una justificación, o cambia el código. |
-| En macOS, `harness benchmark run` falla con `path escapes workspace` | `TMPDIR` pasa por el enlace simbólico `/var` (issue #19): `export TMPDIR=$(cd "$TMPDIR" && pwd -P)`. |
 | `harness init` termina con 2: `configuration already exists` | El proyecto ya está inicializado; usa `--force` para reemplazar la configuración. |
 
 ## Limitaciones y defectos conocidos
 
-Los defectos de comportamiento del corte evaluado se mantienen sin corregir mientras la evaluación de
-la tesis dependa de ellos (hito
-[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)):
+Defectos de comportamiento abiertos (hito
+[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); el tag
+`v0.8.0` conserva el comportamiento evaluado, y la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31
+([changelog](CHANGELOG.md)):
 
-- [#1](https://github.com/SebasBarrera/harness-engineering/issues/1) un validador obligatorio con un módulo de Python ausente produce `FAILED` en lugar de `BLOCKED`;
-- [#2](https://github.com/SebasBarrera/harness-engineering/issues/2) el gate conserva un `FAILED` anterior tras un reintento satisfactorio con el mismo digest (`needs-decision`);
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) la configuración de fases del workflow (capacidades, intentos, tiempos, gates de salida) se registra pero no se aplica;
 - [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) las capacidades se resuelven por ejecución y no por fase, y las concesiones del proyecto se suman a las del perfil;
 - [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` y otros ajustes declarados no se aplican;
 - [#6](https://github.com/SebasBarrera/harness-engineering/issues/6) ninguna ruta de producción crea registros de memoria;
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) no se distinguen errores preexistentes de errores introducidos;
-- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan;
-- [#9](https://github.com/SebasBarrera/harness-engineering/issues/9) la salida de los procesos se acota solo después de guardarla completa en memoria;
-- [#19](https://github.com/SebasBarrera/harness-engineering/issues/19) se rechazan rutas absolutas bajo un directorio con enlace simbólico (`TMPDIR` en macOS);
-- [#29](https://github.com/SebasBarrera/harness-engineering/issues/29) una tarea sin `title` o `intent` se acepta con el texto `None`;
-- [#30](https://github.com/SebasBarrera/harness-engineering/issues/30) `gate decide` imprime claves en snake_case.
-- [#31](https://github.com/SebasBarrera/harness-engineering/issues/31) Windows no está soportado (el almacén de artefactos usa `os.fchmod`); Linux y macOS sí.
+- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan.
 
 Limitaciones declaradas: sin aislamiento a nivel de sistema operativo
 ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), sin autenticación ni soporte
@@ -371,7 +364,7 @@ reporta.
 
 ## Hoja de ruta
 
-- Decidir y resolver el backlog `thesis-impact` cuando se cierre la evaluación de la tesis (#1–#9, #19, #29, #30).
+- Decidir y resolver el resto del backlog `thesis-impact` cuando se cierre la evaluación de la tesis (#3–#8).
 - Aplicar capacidades por fase y los ajustes del workflow que hoy solo se registran (#3, #4).
 - Un adaptador de sandbox a nivel de sistema operativo (contenedor) y una política de red aplicada (#5, #18).
 - Distinguir fallos preexistentes de fallos introducidos en repositorios brownfield (#7).

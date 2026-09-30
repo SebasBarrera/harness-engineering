@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.0 - 2026-09-30
+
+Behavioral fixes. `v0.8.0` keeps the behavior evaluated in the thesis; every fix below has a
+regression test that failed before the change.
+
+- The gate counts the latest attempt of each validator on the current ChangeSet digest (#2).
+  Earlier attempts stay in the record. In the brownfield case (`pallets/itsdangerous` 2.2.0),
+  repairing the baseline and running `run continue` now leaves the gate `PASSED` and a plain
+  `APPROVE` closes the run; on 0.8.0 the gate stayed `FAILED` and the case closed with
+  `APPROVE_EXCEPTION`. Exit codes of `run start` (6) and `run continue` (4), the 298 tests, the
+  ChangeSet digest and the 46 events are unchanged.
+- A validator run as `<python> -m <module>` is `BLOCKED` when mandatory, or `NOT_APPLICABLE` when
+  optional, if the module is not installed for that interpreter, instead of `FAILED` (#1).
+- Process output is bounded while it is read, so memory no longer grows with the output of a
+  validator or agent (#9).
+- Absolute paths reached through a symlinked ancestor of the workspace (for example the macOS
+  `/var` → `/private/var` temporary directory) are accepted; escapes are still rejected (#19).
+- Task files without a non-empty `title` or `intent`, or with unknown fields, are rejected with
+  exit code 2 (#29).
+- `gate decide` prints camelCase keys like every other command (#30).
+- Windows: artifacts are written without `os.fchmod`, and commands such as `npm` (`npm.cmd`) are
+  resolved through `PATHEXT` after authorization. The test suite and the documented flows run on
+  Windows in CI (#31).
+- `scripts/demo_flows.py` adds the review-exception flow (a hardcoded secret, `APPROVE` refused
+  with 5, `APPROVE_EXCEPTION` accepted); the broken-baseline flow now closes with `APPROVE`.
+
 ## 0.8.1 - 2026-09-30
 
 Repository infrastructure, documentation and quality release. No change to the behavior evaluated

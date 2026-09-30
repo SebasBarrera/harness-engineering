@@ -71,6 +71,5 @@ python scripts/benchmark_report.py --micro bench/micro-*.json --scenarios bench/
   --reference docs/benchmarks/thesis-reference.json --output bench/report.html
 ```
 
-On macOS, set `TMPDIR` to a path without symbolic links (for example `export TMPDIR=$(cd "$TMPDIR" &&
-pwd -P)`) before running the microbenchmark: the default `/var/folders/...` path goes through the
-`/var` → `/private/var` symlink, which the harness path containment rejects (issue #19).
+Before 0.9.0, the microbenchmark failed on macOS with `path escapes workspace` because the default
+`/var/folders/...` temporary directory goes through the `/var` → `/private/var` symlink (issue #19).

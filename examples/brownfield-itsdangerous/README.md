@@ -11,7 +11,8 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
   test (`patch` mode, two owned files).
 - `reproduce.sh`: downloads the GitHub tag archive, verifies its SHA-256
   (`7b0c6d41…37f2b`), prepares a virtual environment without `freezegun`, runs the task, installs
-  the declared dependency, resumes and records the decisions, checking every exit code:
-  `run start` 6, `run continue` 4, `APPROVE` 5, `APPROVE_EXCEPTION` 0.
+  the declared dependency, resumes and records the decision, checking every exit code:
+  `run start` 6, `run continue` 4, `APPROVE` 0 (on `v0.8.0`, `APPROVE` was refused with 5 and the
+  run closed with `APPROVE_EXCEPTION`).
 
 Network access to github.com and to a Python package index is required.

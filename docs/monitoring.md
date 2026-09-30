@@ -6,7 +6,7 @@ the process metrics of governed runs, see [metrics](metrics.md).
 | Signal | Where | Produced by | What to do when it alerts |
 |---|---|---|---|
 | Tests (CPython 3.12–3.14 Ubuntu, 3.12 macOS) | Actions → `ci`; job summary per test family | `ci.yml` | Reproduce with `make test`; a red job must be fixed before merging. |
-| Windows | Actions → `windows` (develop, main, weekly) | `windows.yml` | Informational: Windows is not supported yet (issue #31). |
+| Windows | Actions → `windows` (develop, main, release branches, weekly) | `windows.yml` | Test suite and documented flows on Windows. |
 | Coverage | `test-reports` artifact of `ci` (XML and HTML); Pages `/coverage/`; SonarQube Cloud | `ci.yml`, `pages.yml`, `sonarcloud.yml` | Coverage is reported, not gated; investigate drops in the modules you touched. |
 | Lint, types, workflows, data files | Actions → `lint` | `lint.yml` | All jobs block: Ruff (check and format), mypy, actionlint, zizmor, YAML/JSON validation, markdownlint and hadolint; fix locally with `ruff check --fix`, `ruff format`, `mypy`. |
 | Packaging | Actions → `build` | `build.yml` | Wheel content or clean-install smoke test failed: check `pyproject.toml` package data. |

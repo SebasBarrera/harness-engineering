@@ -4,8 +4,8 @@
 # Usage: examples/brownfield-itsdangerous/reproduce.sh <harness-wheel-or-requirement> [workdir]
 # Needs: Python >= 3.12 (set PYTHON=/path/to/python3.12 if python3 is older), Git, curl,
 # network access to github.com and to a Python package index.
-# Expected exit codes: run start 6 (baseline broken: freezegun missing), run continue 4,
-# APPROVE 5 (gate FAILED by the finding of attempt 1, issue #2), APPROVE_EXCEPTION 0.
+# Expected exit codes: run start 6 (baseline broken: freezegun missing), run continue 4
+# (gate PASSED: the latest attempt of each validator counts), APPROVE 0.
 set -euo pipefail
 
 HARNESS_SPEC="${1:?usage: reproduce.sh <harness wheel path or requirement> [workdir]}"
@@ -49,11 +49,9 @@ expect 0 harness findings list --path . --run "$RUN"
 python -m pip install -q "freezegun==1.4.0"   # fix the environment, not the ChangeSet
 expect 4 harness run continue --path . --run "$RUN"
 DIGEST=$(harness status --path . --run "$RUN" | python -c "import json,sys;print(json.load(sys.stdin)['execution']['changeSetDigest'])")
-expect 5 harness gate decide --path . --run "$RUN" --decision APPROVE --change-set-digest "$DIGEST" \
-  --actor human.reviewer --rationale "Plain approval"
-expect 0 harness gate decide --path . --run "$RUN" --decision APPROVE_EXCEPTION --change-set-digest "$DIGEST" \
+expect 0 harness gate decide --path . --run "$RUN" --decision APPROVE --change-set-digest "$DIGEST" \
   --actor human.reviewer \
-  --rationale "Attempt 1 failed only because freezegun was missing; all project tests pass with the same ChangeSet"
+  --rationale "Baseline repaired by installing freezegun; the latest verification passes with the same ChangeSet"
 harness status --path . --run "$RUN" | python -c "
 import json,sys; d=json.load(sys.stdin); e=d['execution']
 print('status', e['status'], '| changeSet', e['changeSetDigest'], '| events', d['eventCount'], '| chain valid', d['eventChainValid'])"
