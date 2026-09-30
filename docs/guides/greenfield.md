@@ -137,8 +137,8 @@ ChangeSet digest `sha256:b9c0c262e9466ed8b91ffa9fc24363ba3eec65465300af5b5c8ac69
 
 Inspect what the harness observed:
 
-```console
-$ harness status --run run_fe0fb47e63fc4fffbdae0b6e704bf034
+```bash
+harness status --run run_fe0fb47e63fc4fffbdae0b6e704bf034
 ```
 
 In this run the status projection showed:

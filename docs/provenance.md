@@ -48,8 +48,8 @@ recorded before the import started.
 `.gitattributes`, `.editorconfig`, `provenance/`, `scripts/verify_provenance.py`,
 `scripts/check_denylist.py`, `.github/privacy-denylist.txt` and the import-phase workflow.
 
-The cut's own `MANIFEST.sha256` is stale (51 of its 88 entries do not match the files it lists,
-#13). It is kept unchanged in the tag and attached to the release; it is not used for verification.
+The cut's own `MANIFEST.sha256` is stale (51 of its 88 entries do not match the files it lists;
+issue #13). It is kept unchanged in the tag and attached to the release; it is not used for verification.
 
 ## Verify it yourself
 

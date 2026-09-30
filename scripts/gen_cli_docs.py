@@ -92,11 +92,15 @@ def render() -> str:
         if command.help:
             lines += [command.help.strip(), ""]
         usage = " ".join(command.collect_usage_pieces(context(command)))
-        lines += ["```text", f"harness {name} {usage}".rstrip(), "```", ""]
+        lines += ["```text", f"harness {name} {usage}".rstrip(), "```"]
         params = [p for p in command.params if p.name != "help"]
         if not params:
             continue
-        lines += ["| Option | Type | Required | Default | Description |", "|---|---|---|---|---|"]
+        lines += [
+            "",
+            "| Option | Type | Required | Default | Description |",
+            "|---|---|---|---|---|",
+        ]
         for param in params:
             if param.param_type_name == "option":
                 flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])

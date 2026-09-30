@@ -7,6 +7,7 @@ config:
   MD033:
     allowed_elements: [a, img, p, br, details, summary, picture, source, sub, sup, kbd]
   MD041: false          # generated pages may start with a comment
+  MD060: false          # table column style: compact |---| separator rows are the GitHub norm
 ignores:
   - "**/node_modules/**"
   - "site/**"

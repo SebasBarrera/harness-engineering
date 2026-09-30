@@ -281,7 +281,6 @@ List the built-in extensions and the external plugin protocol version.
 harness plugins list [OPTIONS]
 ```
 
-
 ## harness benchmark run
 
 Run the synthetic microbenchmarks (hashing, transitions, gates, events, artifacts,
