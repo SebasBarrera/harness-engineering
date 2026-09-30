@@ -10,4 +10,17 @@ from .workspace import (
     WorkspaceSnapshotter,
 )
 
-__all__ = [name for name in globals() if not name.startswith("_")]
+__all__ = [
+    "CancellationToken",
+    "CommandSpec",
+    "FileState",
+    "GitAdapter",
+    "GitState",
+    "PatchApplier",
+    "ProcessResult",
+    "SafeProcessRunner",
+    "WorkspaceChange",
+    "WorkspaceDiff",
+    "WorkspaceSnapshot",
+    "WorkspaceSnapshotter",
+]
