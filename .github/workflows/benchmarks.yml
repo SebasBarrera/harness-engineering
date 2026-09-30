@@ -35,8 +35,8 @@ jobs:
         with:
           node-version: lts/*
           package-manager-cache: false
-      - name: Install the package
-        run: python -m pip install ".[api]"
+      - name: Install the package and pytest (the scenario benchmark runs the fixture's tests)
+        run: python -m pip install ".[api]" pytest
       - name: Run the microbenchmark five times and the scenario benchmark once
         run: |
           mkdir -p bench
