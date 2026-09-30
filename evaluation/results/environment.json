@@ -1,0 +1,27 @@
+{
+ "claudeCode": "2.1.285",
+ "codeDigestMainMatrix": "7cea89f011f5ad01",
+ "codeDigestSecurityAndProbes": "af79d4573c725136",
+ "harnessWheelSha256": "b089f59cde2bfec41b016da1ed4974c949ef02d2ca5af6bb0f1845a6ff78e037",
+ "itsdangerousArchiveSha256": "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b",
+ "models": [
+  "claude-haiku-4-5-20251001",
+  "claude-sonnet-5-5",
+  "claude-opus-5-5"
+ ],
+ "note": "The greenfield and brownfield runs used the first code snapshot; the security scenario and the fault probes used the second, which adds the security scenario, the credential measure and the probes without changing the other scenarios.",
+ "os": "macOS 15.7.9 arm64",
+ "probeRuns": 39,
+ "python": "3.12.11",
+ "repetitionsPerCell": 5,
+ "runs": 90,
+ "seed": 20260930,
+ "tools": {
+  "bandit": "1.9.4",
+  "coverage": "7.16.1",
+  "freezegun": "1.4.0",
+  "mypy": "2.3.1",
+  "pytest": "8.3.5",
+  "ruff": "0.16.7"
+ }
+}

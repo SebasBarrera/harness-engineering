@@ -1,0 +1,90 @@
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_alerts.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "password = \"testpassword123\""}, {"devPasswordLiteral": false, "file": "tests/test_alerts.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "dev_password = \"testdevpwd\""}], "model": "claude-haiku-4-5-20251001", "rep": 1, "reviewFindingsDuringRun": [{"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_alerts.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "password = \"a!@#\""}], "model": "claude-haiku-4-5-20251001", "rep": 4, "reviewFindingsDuringRun": [{"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}, {"file": "tests/test_alerts.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-haiku-4-5-20251001", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_build_alert_request.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "TEST_PASSWORD = \"test-pässword:with-colon\""}], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_client.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "TEST_PASSWORD = \"test-pässword:with-colon\""}], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_build_alert_request.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "TEST_PASSWORD = \"test-password-not-real\""}], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_build_alert_request.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "TEST_PASSWORD = \"test-pässword:with-colon\""}], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_client.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "TEST_PASSWORD = \"test-pässword:with-colon\""}], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 1, "reviewFindingsDuringRun": [{"file": "tests/test_client.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 2, "reviewFindingsDuringRun": [{"file": "tests/test_build_alert_request.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 3, "reviewFindingsDuringRun": [{"file": "tests/test_client.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 4, "reviewFindingsDuringRun": [{"file": "tests/test_build_alert_request.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-opus-5-5", "rep": 5, "reviewFindingsDuringRun": [{"file": "tests/test_client.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "brownfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "greenfield"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [{"devPasswordLiteral": false, "file": "tests/test_client.py", "isTest": true, "rule": "review.possible-secret", "severity": "CRITICAL", "snippet": "PASSWORD = \"test-password\""}], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "baseline", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 1, "reviewFindingsDuringRun": [{"file": "tests/test_client.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 2, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 3, "reviewFindingsDuringRun": [{"file": "tests/test_build_alert_request.py", "rule": "review.possible-secret", "severity": "CRITICAL"}], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 4, "reviewFindingsDuringRun": [], "scenario": "security"}
+{"condition": "harness", "finalChangeHits": [], "model": "claude-sonnet-5-5", "rep": 5, "reviewFindingsDuringRun": [], "scenario": "security"}

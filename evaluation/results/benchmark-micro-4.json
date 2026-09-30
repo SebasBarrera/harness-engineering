@@ -1,0 +1,77 @@
+{
+ "benchmarks": {
+  "artifactPutDeduplicated": {
+   "iterations": 1000.0,
+   "meanMs": 0.031619136,
+   "medianMs": 0.023833,
+   "operationsPerSecond": 31626.417622543515,
+   "p95Ms": 0.049333,
+   "totalMs": 31.619136
+  },
+  "canonicalHash": {
+   "iterations": 1000.0,
+   "meanMs": 0.004545874,
+   "medianMs": 0.0045,
+   "operationsPerSecond": 219979.7002732588,
+   "p95Ms": 0.004667,
+   "totalMs": 4.545874
+  },
+  "eventAppend": {
+   "iterations": 1000.0,
+   "meanMs": 0.090003007,
+   "medianMs": 0.0651665,
+   "operationsPerSecond": 11110.739888946155,
+   "p95Ms": 0.097417,
+   "totalMs": 90.003007
+  },
+  "gateEvaluation": {
+   "iterations": 1000.0,
+   "meanMs": 0.000620969,
+   "medianMs": 0.000625,
+   "operationsPerSecond": 1610386.347788698,
+   "p95Ms": 0.000667,
+   "totalMs": 0.620969
+  },
+  "processDirect": {
+   "iterations": 20.0,
+   "meanMs": 30.02346875,
+   "medianMs": 26.4806455,
+   "operationsPerSecond": 33.30727732784041,
+   "p95Ms": 52.134833,
+   "totalMs": 600.469375
+  },
+  "processGovernanceOverhead": {
+   "absoluteMedianMs": 1.6222914999999958,
+   "note": "Local process-launch overhead only; excludes validators, agents and human wait.",
+   "relativeMedianPercent": 6.1263291334797465
+  },
+  "processGoverned": {
+   "iterations": 20.0,
+   "meanMs": 28.471660500000002,
+   "medianMs": 28.102936999999997,
+   "operationsPerSecond": 35.122644146448714,
+   "p95Ms": 36.389125,
+   "totalMs": 569.43321
+  },
+  "stateTransition": {
+   "iterations": 1000.0,
+   "meanMs": 0.000392991,
+   "medianMs": 0.000375,
+   "operationsPerSecond": 2544587.5350835007,
+   "p95Ms": 0.000417,
+   "totalMs": 0.392991
+  }
+ },
+ "environment": {
+  "platform": "macOS-15.7.9-arm64-arm-64bit",
+  "processor": "arm",
+  "python": "3.12.11"
+ },
+ "generatedAt": "2026-09-30T17:20:14.467995+00:00",
+ "methodology": {
+  "clock": "time.perf_counter_ns",
+  "scope": "Microbenchmarks on this execution environment; not general performance claims.",
+  "warmup": "No explicit warmup; every sample is reported in the aggregate."
+ },
+ "schemaVersion": "1.0"
+}
