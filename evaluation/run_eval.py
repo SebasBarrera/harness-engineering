@@ -34,7 +34,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from agentlib import build_prompt, run_claude  # noqa: E402
+from agentlib import build_prompt, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
 
 MAX_CORRECTIONS = 2
@@ -93,17 +93,14 @@ def harness_json(workspace: Path, *args: str) -> Any:
     return json.loads(proc.stdout)
 
 
-def configure_provider(workspace: Path, model: str) -> None:
+def configure_provider(workspace: Path, model: str, agent: str = "claude", effort: str = "") -> None:
     path = workspace / ".harness" / "project.yaml"
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    config["agentProvider"] = "claude"
-    config["agentProviders"] = {
-        "claude": {
-            "kind": "command",
-            "command": ["python", str(HERE / "claude_provider.py"), "--model", model],
-            "model": model,
-        }
-    }
+    command = ["python", str(HERE / "claude_provider.py"), "--model", model]
+    if agent == "codex":
+        command = ["python", str(HERE / "codex_provider.py"), "--model", model, "--effort", effort]
+    config["agentProvider"] = agent
+    config["agentProviders"] = {agent: {"kind": "command", "command": command, "model": model}}
     config["runtime"]["commandTimeoutSeconds"] = 1800
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
@@ -118,7 +115,9 @@ def feedback_from(workspace: Path, run_id: str, status: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def run_harness(workspace: Path, run_dir: Path, task_file: Path, model: str) -> dict[str, Any]:
+def run_harness(
+    workspace: Path, run_dir: Path, task_file: Path, model: str, agent: str = "claude", effort: str = ""
+) -> dict[str, Any]:
     events: list[dict[str, Any]] = []
 
     def step(*args: str) -> subprocess.CompletedProcess[str]:
@@ -128,9 +127,9 @@ def run_harness(workspace: Path, run_dir: Path, task_file: Path, model: str) -> 
         return proc
 
     step("init", "--path", ".")
-    configure_provider(workspace, model)
+    configure_provider(workspace, model, agent, effort)
     task = json.loads(step("task", "create", "--path", ".", "--file", str(task_file)).stdout)
-    started = step("run", "start", "--path", ".", "--task", task["taskId"], "--provider", "claude")
+    started = step("run", "start", "--path", ".", "--task", task["taskId"], "--provider", agent)
     run_id = json.loads(started.stdout)["executionId"]
     code = started.returncode
     corrections, outcome, gate_history = 0, "error", []
@@ -230,6 +229,8 @@ def main() -> int:
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), required=True)
     parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
     parser.add_argument("--model", required=True)
+    parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
+    parser.add_argument("--effort", default="")
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
@@ -249,20 +250,31 @@ def main() -> int:
         "scenario": args.scenario,
         "condition": args.condition,
         "model": args.model,
+        "agent": args.agent,
+        "effort": args.effort or None,
         "rep": args.rep,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if args.condition == "baseline":
-        call = run_claude(build_prompt(task), workspace, args.model, run_dir / "agent-calls" / "call-1.json")
+        log = run_dir / "agent-calls" / "call-1.json"
+        if args.agent == "codex":
+            run_codex(build_prompt(task), workspace, args.model, args.effort, log)
+        else:
+            run_claude(build_prompt(task), workspace, args.model, log)
         record["baseline"] = {"delivered": True}
     else:
-        record["harness"] = run_harness(workspace, run_dir, task_file, args.model)
+        record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort)
     record["wallSeconds"] = round(time.monotonic() - started, 3)
     calls = [json.loads(p.read_text()) for p in sorted((run_dir / "agent-calls").glob("call-*.json"))]
     record["agentCalls"] = [{k: v for k, v in c.items() if k != "summary"} for c in calls]
     record["agent"] = {
         "calls": len(calls),
-        "costUsd": round(sum(c["costUsd"] or 0 for c in calls), 6),
+        "costUsd": (
+            round(sum(c["costUsd"] for c in calls), 6)
+            if calls and all(c["costUsd"] is not None for c in calls)
+            else None
+        ),
+        "reasoningTokens": sum(c.get("reasoningTokens") or 0 for c in calls),
         "inputTokens": sum(c["inputTokens"] or 0 for c in calls),
         "outputTokens": sum(c["outputTokens"] or 0 for c in calls),
         "cacheReadTokens": sum(c["cacheReadTokens"] or 0 for c in calls),

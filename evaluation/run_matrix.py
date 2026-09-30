@@ -35,6 +35,8 @@ def main() -> int:
     parser.add_argument("--reps", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--scenarios", default="greenfield,brownfield")
+    parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
+    parser.add_argument("--effort", default="")
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -52,7 +54,7 @@ def main() -> int:
         proc = subprocess.run(
             [sys.executable, str(HERE / "run_eval.py"), "--scenario", scenario, "--condition", condition,
              "--model", args.model, "--rep", str(rep), "--work", str(args.work), "--cache", str(args.cache),
-             "--out", str(args.out)],
+             "--out", str(args.out), "--agent", args.agent, "--effort", args.effort],
             capture_output=True, text=True,
         )
         status = "ok" if proc.returncode == 0 else f"FAILED ({proc.returncode})"
