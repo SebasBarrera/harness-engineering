@@ -104,6 +104,9 @@ jobs:
       - name: Audit the runtime dependency set (package + api extra)
         run: |
           python -m venv /tmp/audit
+          # The venv's bundled pip is tooling, not a dependency of the harness; upgrade it so the
+          # audit reflects the runtime dependency set rather than a stale installer.
+          /tmp/audit/bin/python -m pip install --upgrade pip
           /tmp/audit/bin/python -m pip install ".[api]" pip-audit
           /tmp/audit/bin/python -m pip_audit --skip-editable --desc on --progress-spinner off
 
