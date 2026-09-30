@@ -5,7 +5,7 @@ Every flow runs in a fresh temporary Git repository with the deterministic ``sim
 provider, and every command's exit code is checked against the documented expectation.
 The script is used by CI in three ways:
 
-* ``quickstart``: the README quickstart, step by step (docs-smoke workflow);
+* ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline and Node.js flows, leaving
   the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
@@ -26,6 +26,8 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
+
+GUIDE_TASK = Path(__file__).resolve().parent.parent / "docs" / "guides" / "task.yaml"
 
 PY_TASK = """\
 taskId: task_python_add_discount
@@ -195,31 +197,49 @@ def current_digest(t: Transcript, flow: str, root: Path, run_id: str) -> str:
     return str(status["execution"]["changeSetDigest"])
 
 
-def flow_quickstart(t: Transcript, root: Path) -> None:
-    """README quickstart: happy path on a new Python project, ending with APPROVE."""
-    flow = "quickstart"
-    python_project(root)
-    (root / "task.yaml").write_text(PY_TASK)
-    t.run(flow, root, ["init", "--path", "."], 0)
-    t.run(flow, root, ["inspect", "--path", "."], 0)
-    t.run(flow, root, ["doctor", "--path", ".", "--json"], 0)
-    t.run(flow, root, ["config", "validate", "--path", "."], 0)
-    t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
-    run = t.json(
-        flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 4
+def readme_project(root: Path) -> Path:
+    """The project created by the README quickstart, byte for byte."""
+    (root / "src" / "pricing").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "src" / "pricing" / "__init__.py").write_text(
+        "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
+        "    return subtotal\n"
     )
-    run_id = run["executionId"]
-    t.run(flow, root, ["findings", "list", "--path", ".", "--run", run_id], 0)
-    t.run(flow, root, ["evidence", "list", "--path", ".", "--run", run_id], 0)
-    digest = current_digest(t, flow, root, run_id)
+    (root / "tests" / "test_pricing.py").write_text(
+        "from pricing import apply_discount\n\n\n"
+        "def test_below_threshold() -> None:\n"
+        "    assert apply_discount(99, 100, 0.1) == 99\n"
+    )
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "pricing-demo"\nversion = "0.1.0"\n\n'
+        '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
+    )
+    (root / ".gitignore").write_text(".harness/\n")
+    git(root, "init", "-q")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "baseline")
+    return root
+
+
+def flow_quickstart(t: Transcript, root: Path) -> None:
+    """The README quickstart, command for command, then the other trace formats."""
+    flow = "quickstart"
+    readme_project(root)
+    shutil.copyfile(GUIDE_TASK, root / "task.yaml")
+    t.run(flow, root, ["init"], 0)
+    t.run(flow, root, ["task", "create", "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", "--task", "task_discount_rule"], 4)["executionId"]
+    status = t.json(flow, root, ["status", "--run", run_id], 0)
+    if status["gate"]["status"] != "PASSED":
+        t.ok = False
+        print(f"[BAD] {flow}: expected a PASSED gate, got {status['gate']['status']}")
+    digest = status["execution"]["changeSetDigest"]
     t.run(
         flow,
         root,
         [
             "gate",
             "decide",
-            "--path",
-            ".",
             "--run",
             run_id,
             "--decision",
@@ -227,20 +247,24 @@ def flow_quickstart(t: Transcript, root: Path) -> None:
             "--change-set-digest",
             digest,
             "--actor",
-            "human.reviewer",
+            "you",
             "--rationale",
-            "Acceptance criteria and independent evidence reviewed",
+            "Criteria covered by tests",
         ],
         0,
     )
-    for fmt in ("markdown", "json", "jsonl", "sarif"):
+    t.run(flow, root, ["trace", "--run", run_id, "--format", "markdown", "--output", "trace.md"], 0)
+    # Beyond the README: the other inspection commands and trace formats.
+    t.run(flow, root, ["inspect"], 0)
+    t.run(flow, root, ["doctor", "--path", ".", "--json"], 0)
+    t.run(flow, root, ["config", "validate"], 0)
+    t.run(flow, root, ["findings", "list", "--run", run_id], 0)
+    t.run(flow, root, ["evidence", "list", "--run", run_id], 0)
+    for fmt in ("json", "jsonl", "sarif"):
         t.run(
-            flow,
-            root,
-            ["trace", "--path", ".", "--run", run_id, "--format", fmt, "--output", f"trace.{fmt}"],
-            0,
+            flow, root, ["trace", "--run", run_id, "--format", fmt, "--output", f"trace.{fmt}"], 0
         )
-    t.run(flow, root, ["retrospect", "--path", ".", "--run", run_id], 0)
+    t.run(flow, root, ["retrospect", "--run", run_id], 0)
 
 
 def flow_later_change(t: Transcript, root: Path) -> None:
