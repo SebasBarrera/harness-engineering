@@ -1,0 +1,35 @@
+# Marks inactive issues and pull requests. Items labeled thesis-impact or needs-decision are
+# exempt: they track decisions that depend on the thesis evaluation, not on activity.
+name: stale
+
+on:
+  schedule:
+    - cron: "30 3 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  stale:
+    name: stale
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/stale@4391f3da665fdf50b6810c1a66712fb9ba21aa93 # v11.0.0
+        with:
+          days-before-stale: 60
+          days-before-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: thesis-impact,needs-decision,priority:high
+          exempt-pr-labels: thesis-impact,needs-decision
+          exempt-all-milestones: true
+          stale-issue-message: >-
+            This issue has had no activity for 60 days and is marked stale. It will be closed in
+            14 days unless there is new activity.
+          stale-pr-message: >-
+            This pull request has had no activity for 60 days and is marked stale. It will be
+            closed in 14 days unless there is new activity.
