@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790740872140,
+  "lastUpdate": 1790741046553,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -253,6 +253,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 0.846,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "1e1de64fba74fa0e87365d1950accccf7d1aa32a",
+          "message": "Merge branch 'ci/scorecard-default-branch' into develop\n\n- ci(scorecard): run on the default branch\n- docs(monitoring): Scorecard runs on develop\n\nVerification on the branch head 46070cc14413: 21 CI job(s) succeeded, no blocking job failed.\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027468\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027482\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027488\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027510\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027546\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36667027634\nFiles of the v0.8.0 cut in the tree: matched: 133/232  mismatched: 75  missing: 24",
+          "timestamp": "2026-09-29T23:03:23-05:00",
+          "tree_id": "4d0a928a74df85a7d76633e2c8bf9de6336886de",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/1e1de64fba74fa0e87365d1950accccf7d1aa32a"
+        },
+        "date": 1790741045535,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000921,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001382,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.008693,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.045028,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.188999,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.514032,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.562244,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 0.794,
             "unit": "%"
           }
         ]
