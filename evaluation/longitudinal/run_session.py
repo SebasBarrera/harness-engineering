@@ -3,9 +3,10 @@
 one-line casual prompts (baseline) or with structured tasks through the harness (harness).
 
 After every increment an external oracle (the hidden tests of the parts delivered so far) plays the
-user who notices defects: if checks fail, one fix request with the names of the failing checks is
-sent, in the condition's own style, and the oracle runs again. The same information reaches both
-conditions. Usage records, oracle results and final quality measures are appended as one JSON line.
+user who notices defects: if checks fail, a fix request with the bug report of each failing check
+(``bug_reports.yaml``) is sent, in the condition's own style, and the oracle runs again, for at most
+two rounds. The same reports reach both conditions. Usage records, oracle results and final quality
+measures are appended as one JSON line.
 """
 
 from __future__ import annotations

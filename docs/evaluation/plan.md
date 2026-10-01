@@ -1,5 +1,10 @@
 # Evaluation plan
 
+This is the plan written before the evaluation. The executed design differs in the brownfield
+fixture (a Python project, `pallets/itsdangerous`) and in the supervision measures (evidence bound
+to each decision and correction requests instead of review time and perceived control); see the
+[controlled evaluation of v0.9.0](results.md).
+
 ## Design
 
 Use controlled greenfield and brownfield tasks. Compare the same agent model and version with and without the harness while holding repository, task, tool access, time budget and environment as stable as possible. Prefer paired or counterbalanced tasks to reduce learning effects.
