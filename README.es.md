@@ -180,7 +180,8 @@ salida real de cada paso:
 5. `harness status --run <id>`, `harness findings list`, `harness evidence list`.
 6. `harness gate decide … --change-set-digest <digest vigente>` → código **0**.
 7. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (las recomendaciones
-   nunca se aplican solas). El harness nunca hace commit: revisa `git diff` y haz el commit tú.
+   nunca se aplican solas; `harness recommendation decide` registra si una persona acepta, edita o
+   rechaza cada una). El harness nunca hace commit: revisa `git diff` y haz el commit tú.
 
 ## Guía brownfield
 
@@ -216,7 +217,7 @@ falta uno, hoy se guarda el texto `None` (issue #29).
 
 ## CLI
 
-21 comandos (referencia completa con todas las opciones, generada desde el código:
+28 comandos (referencia completa con todas las opciones, generada desde el código:
 [docs/reference/cli.md](docs/reference/cli.md)):
 
 | Grupo | Comandos |
@@ -225,6 +226,8 @@ falta uno, hoy se guarda el texto `None` (issue #29).
 | Tareas | `task create`, `task list`, `task show` |
 | Ejecuciones | `run start`, `run continue`, `run cancel`, `run list`, `status` |
 | Evidencia | `evidence list`, `findings list`, `trace`, `retrospect` |
+| Memoria | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
+| Recomendaciones | `recommendation list`, `recommendation decide` |
 | Decisión | `gate decide` |
 | Extensiones y benchmarks | `plugins list`, `benchmark run`, `benchmark scenarios` |
 | Tablero | `api serve` |
@@ -288,7 +291,9 @@ Un validador opcional ausente queda en `NOT_APPLICABLE`; un ejecutable obligator
 
 Un agente se conecta mediante el **proveedor por comando**: un programa registrado en
 `agentProviders` que recibe la tarea y el plan como JSON por la entrada estándar e imprime un objeto
-JSON (`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`) por la salida estándar.
+JSON (`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`, opcionalmente con el `usage` que
+reporta el agente) por la salida estándar. Cuando el proyecto tiene memoria gobernada vigente, la
+petición también la lleva en `context` ([guía de memoria](docs/guides/memory.md)).
 `examples/structured-command-agent.py` es un ejemplo funcional. **No hay integración nativa con
 Claude Code, Codex ni ninguna API de modelos**: se conectan mediante un envoltorio de ese tipo; hay
 una plantilla en la [guía de agentes externos](docs/guides/external-agents.md). El proveedor solo
@@ -346,13 +351,12 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 
 Defectos de comportamiento abiertos (hito
 [backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); el tag
-`v0.8.0` conserva el comportamiento evaluado, y la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31
-([changelog](CHANGELOG.md)):
+`v0.8.0` conserva el comportamiento evaluado, la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, y la
+siguiente versión hace operable la memoria (#6) ([changelog](CHANGELOG.md)):
 
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) la configuración de fases del workflow (capacidades, intentos, tiempos, gates de salida) se registra pero no se aplica;
 - [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) las capacidades se resuelven por ejecución y no por fase, y las concesiones del proyecto se suman a las del perfil;
 - [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` y otros ajustes declarados no se aplican;
-- [#6](https://github.com/SebasBarrera/harness-engineering/issues/6) ninguna ruta de producción crea registros de memoria;
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) no se distinguen errores preexistentes de errores introducidos;
 - [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan.
 

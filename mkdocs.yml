@@ -72,6 +72,7 @@ nav:
       - Greenfield project: guides/greenfield.md
       - Brownfield repository: guides/brownfield.md
       - External agents: guides/external-agents.md
+      - Memory and retrospective decisions: guides/memory.md
       - CI integration: guides/ci-integration.md
   - Reference:
       - CLI: reference/cli.md
