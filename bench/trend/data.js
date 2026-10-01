@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790789905673,
+  "lastUpdate": 1790824594981,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -1277,6 +1277,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 3.296,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "e05e1bc730c92ca4b732bf11c66789fc4fd7a3e3",
+          "message": "Merge branch 'test/codex-evaluation' into develop\n\nExtend the controlled evaluation of v0.9.0 with three blocks and their\npublished data under evaluation/.\n\n- Codex CLI backend (codex_provider.py, --agent codex): 35 valid runs\n  with gpt-6.1-sol and gpt-6-luna; the 18 governed runs were approved at\n  the first gate with the eight traceability relations.\n- Prompt levels with Claude Code: a minimal task (one acceptance\n  criterion) with and without the harness, and a one-line casual prompt\n  without it; the harness rejects the casual prompt at task creation.\n  81 runs, summarized in results/summary-prompts.json.\n- Longitudinal experiment: the same library built in five increments\n  with one-line prompts or with structured tasks through the harness,\n  with an oracle that reports defects after each increment. 18 sessions,\n  17 valid, summarized in results/summary-longitudinal.json.\n\nNo change under src/ or tests/: the harness behavior is untouched.\n\nVerification on the branch head e08081a9c605: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555517\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555521\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555535\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555556\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555581\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36809555629\nFiles of the v0.8.0 cut in the tree: matched: 131/232  mismatched: 77  missing: 24",
+          "timestamp": "2026-09-30T22:15:40-05:00",
+          "tree_id": "5985dbb146433ddc10c7ae7274ec09a1316514c1",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/e05e1bc730c92ca4b732bf11c66789fc4fd7a3e3"
+        },
+        "date": 1790824594245,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000931,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001412,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.008753,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.044871,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.191553,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.460413,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.832141,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.869,
             "unit": "%"
           }
         ]
