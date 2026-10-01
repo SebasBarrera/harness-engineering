@@ -1,0 +1,20 @@
+[
+ {
+  "task": "greenfield-shipping",
+  "prompt": "implement the shipping cost calculator from SPEC.md",
+  "exitCode": 2,
+  "error": "invalid task definition: 1 validation error for Task"
+ },
+ {
+  "task": "brownfield-itsdangerous",
+  "prompt": "base64_decode in itsdangerous accepts garbage input, make it stricter",
+  "exitCode": 2,
+  "error": "invalid task definition: 1 validation error for Task"
+ },
+ {
+  "task": "greenfield-alerts",
+  "prompt": "write the alerts client described in SPEC.md",
+  "exitCode": 2,
+  "error": "invalid task definition: 1 validation error for Task"
+ }
+]

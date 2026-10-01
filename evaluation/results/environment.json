@@ -1,4 +1,32 @@
 {
+ "additionalBlocks": {
+  "claudeCasualPrompt": {
+   "codeDigest": "2a17d3d23b2a0083",
+   "condition": "baseline only; the harness rejects a task without acceptance criteria (casual-harness-rejection.json)",
+   "repetitionsPerCell": 3,
+   "runs": 27
+  },
+  "claudeMinimalPrompt": {
+   "codeDigest": "b691a676af178962",
+   "prompt": "title, one-sentence intent and one acceptance criterion (It works.)",
+   "repetitionsPerCell": 3,
+   "runs": 54
+  },
+  "codex": {
+   "cli": "codex-cli 0.159.2",
+   "codeDigest": {
+    "gpt-6-luna": "ee7ead76d07869ef",
+    "gpt-6.1-sol": "ee7ead76d07869ef"
+   },
+   "discarded": "30 runs requesting gpt-6.1-luna (not supported for the account) and 2 runs interrupted by an operator stop; kept out of the results",
+   "models": {
+    "gpt-6-luna": "high",
+    "gpt-6.1-sol": "medium"
+   },
+   "repetitionsPerCell": 3,
+   "validRuns": 35
+  }
+ },
  "claudeCode": "2.1.285",
  "codeDigestMainMatrix": "7cea89f011f5ad01",
  "codeDigestSecurityAndProbes": "af79d4573c725136",
