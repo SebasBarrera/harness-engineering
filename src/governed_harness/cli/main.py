@@ -397,6 +397,18 @@ def memory_list(
     _emit(_call(lambda: HarnessApplication().list_memory(path, task_id=task, execution_id=run)))
 
 
+@memory_app.command("manifest")
+def memory_manifest(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the context manifest recorded for a run: the records it applied, their digest and
+    the candidates it excluded with the reason."""
+    _emit(_call(lambda: HarnessApplication().memory_manifest(path, run)))
+
+
 @memory_app.command("approve")
 def memory_approve(
     memory: str = typer.Option(..., "--memory", help="Memory record identifier"),

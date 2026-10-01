@@ -13,7 +13,8 @@ unchanged: with no memory records, the request sent to the agent provider is ide
   unapproved record no longer supersedes an approved one, and supersession no longer depends on
   the order of the records. The value of a record marked as sensitive is withheld from the
   manifest. The selected records reach command agent providers under `context`, and each agent
-  invocation references its manifest (`contextManifestRef`).
+  invocation references its manifest (`contextManifestRef`). `harness memory manifest --run` shows
+  the manifest recorded for a run.
 - Retrospective recommendations can be decided. `harness recommendation list | decide` records
   `ACCEPT`, `EDIT` or `REJECT` with the acting person and a rationale. The decision is kept as
   retrospective memory: an accepted or edited recommendation is approved and enters the context
