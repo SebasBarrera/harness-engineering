@@ -178,3 +178,19 @@ def test_manifest_lists_exclusions_and_withholds_sensitive_values(tmp_path: Path
     ]
     assert str(manifest["digest"]).startswith("sha256:")
     state.close()
+
+
+def test_manifest_uses_the_field_names_of_the_public_contracts(tmp_path: Path) -> None:
+    """The manifest is printed by the CLI and reaches agent providers, so its provenance carries
+    the same camelCase names as every other record."""
+    state = SQLiteStateStore(tmp_path / "state.db")
+    store = MemoryStore(state)
+    store.put(record("mem_rule", approved=True))
+    selection = store.select(project_id="project_1", task_id=None, execution_id=None)
+    manifest = context_manifest(selection.records, selection.exclusions)
+    (item,) = manifest["records"]  # type: ignore[misc]
+    assert item["provenance"]["actor"]["actorId"] == "human.owner"
+    assert item["provenance"]["actor"]["actorType"] == "HUMAN"
+    assert item["provenance"]["coreVersion"] == "test"
+    assert "core_version" not in item["provenance"]
+    state.close()

@@ -21,7 +21,7 @@ def context_manifest(
             "level": item.level,
             "key": item.key,
             "value": None if item.sensitive else item.value,
-            "provenance": item.provenance.model_dump(mode="json"),
+            "provenance": item.provenance.model_dump(mode="json", by_alias=True),
             **({"sensitive": True} if item.sensitive else {}),
         }
         for item in records
