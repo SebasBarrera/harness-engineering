@@ -4,15 +4,23 @@ import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from governed_harness.agents.base import AgentContext, AgentExecutionResult
-from governed_harness.domain.enums import ActorType, ErrorKind, PhaseId, ResultStatus
+from governed_harness.domain.enums import (
+    ActorType,
+    ErrorKind,
+    MetricQuality,
+    PhaseId,
+    ResultStatus,
+)
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
     AgentInvocation,
     HarnessErrorRecord,
     Plan,
+    ResourceUsage,
     Task,
     ToolInvocation,
 )
@@ -96,6 +104,9 @@ class CommandAgentProvider:
         error = None
         status = result.status
         summary = f"Agent CLI exited with {result.exit_code}"
+        invocation_id = new_id("agentinv")
+        usage: ResourceUsage | None = None
+        usage_ref: str | None = None
         if result.status is ResultStatus.PASSED:
             try:
                 response = json.loads(result.stdout)
@@ -105,9 +116,21 @@ class CommandAgentProvider:
                     "BLOCKED",
                 }:
                     raise ValueError("agent response does not satisfy the minimal protocol")
+                if response.get("usage") is not None:
+                    usage = _reported_usage(
+                        response["usage"],
+                        execution_id=context.execution_id,
+                        invocation_id=invocation_id,
+                        wall_time_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
+                    )
+                    usage_ref = context.artifact_store.put_json(
+                        usage.model_dump(mode="json", by_alias=True),
+                        metadata={"kind": "resource-usage", "provider": self.provider_id},
+                    ).uri
                 status = ResultStatus(response["status"])
                 summary = str(response.get("summary", summary))
             except Exception as exc:
+                usage, usage_ref = None, None
                 status = ResultStatus.ERROR
                 error = HarnessErrorRecord(
                     error_id=new_id("err"),
@@ -117,7 +140,7 @@ class CommandAgentProvider:
                 )
                 summary = str(exc)
         invocation = AgentInvocation(
-            invocation_id=new_id("agentinv"),
+            invocation_id=invocation_id,
             execution_id=context.execution_id,
             phase_id=PhaseId.IMPLEMENTATION,
             actor=actor,
@@ -129,7 +152,46 @@ class CommandAgentProvider:
             prompt_digest=prompt_digest,
             context_manifest_ref=context.context_manifest_ref,
             tool_invocation_ids=(tool.invocation_id,),
+            usage_ref=usage_ref,
             output_ref=stdout_ref.uri,
             error=error,
         )
-        return AgentExecutionResult(status, summary, invocation, (tool,), stdout_ref.uri)
+        return AgentExecutionResult(status, summary, invocation, (tool,), stdout_ref.uri, usage)
+
+
+_USAGE_FIELDS = {
+    "inputTokens": "input_tokens",
+    "outputTokens": "output_tokens",
+    "reasoningTokens": "reasoning_tokens",
+    "costUsd": "cost_usd",
+}
+
+
+def _reported_usage(
+    raw: Any, *, execution_id: str, invocation_id: str, wall_time_ms: int
+) -> ResourceUsage:
+    """Usage the provider reports about its own model calls. It is optional, but a malformed
+    report is a protocol error: the harness records what was reported, never an estimate."""
+    if not isinstance(raw, dict) or not raw:
+        raise ValueError("agent usage must be a non-empty object")
+    unknown = sorted(set(raw) - set(_USAGE_FIELDS))
+    if unknown:
+        raise ValueError(f"unknown agent usage field(s): {', '.join(unknown)}")
+    values: dict[str, int | float] = {}
+    for name, field in _USAGE_FIELDS.items():
+        if name not in raw:
+            continue
+        value = raw[name]
+        numeric = isinstance(value, int | float) and not isinstance(value, bool)
+        if not numeric or value < 0 or (name != "costUsd" and not isinstance(value, int)):
+            raise ValueError(f"agent usage field {name} must be a non-negative number")
+        values[field] = value
+    return ResourceUsage(
+        usage_id=new_id("usage"),
+        execution_id=execution_id,
+        invocation_id=invocation_id,
+        wall_time_ms=wall_time_ms,
+        quality=MetricQuality.REPORTED,
+        limitations=("Reported by the agent provider; the harness does not measure it.",),
+        **values,  # type: ignore[arg-type]
+    )

@@ -686,6 +686,14 @@ class RunEngine:
         )
         for tool in result.tool_invocations:
             self._save_tool(execution, tool)
+        if result.usage is not None:
+            self.s.state.put(
+                "resource_usage",
+                result.usage.usage_id,
+                result.usage,
+                execution_id=execution.execution_id,
+                project_id=execution.project_id,
+            )
         self.s.events.append(
             execution.execution_id,
             "agent.invocation.completed",
