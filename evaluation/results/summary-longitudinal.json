@@ -1,0 +1,439 @@
+{
+ "cells": {
+  "claude-haiku-4-5-20251001|baseline": {
+   "banditFindings": 0,
+   "complete": 1,
+   "costUsd": {
+    "max": 0.880151,
+    "median": 0.7488465,
+    "min": 0.617542
+   },
+   "fixRequestsTotal": 7,
+   "harnessIncrementsApprovedFirstGate": 0,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 0,
+   "hiddenFailedAfterMain": 10,
+   "increments": 10,
+   "incrementsFirstPass": 4,
+   "lineCoverage": {
+    "max": 0.9333,
+    "median": 0.91665,
+    "min": 0.9
+   },
+   "prompts": {
+    "max": 9,
+    "median": 8.5,
+    "min": 8
+   },
+   "ruffFindings": {
+    "max": 14,
+    "median": 12.0,
+    "min": 10
+   },
+   "sessions": 2,
+   "sessionsWithoutFix": 0,
+   "sourceLines": {
+    "max": 210,
+    "median": 208.0,
+    "min": 206
+   },
+   "turns": {
+    "max": 168,
+    "median": 142.5,
+    "min": 117
+   },
+   "visibleTests": {
+    "max": 75,
+    "median": 71.5,
+    "min": 68
+   },
+   "wallSeconds": {
+    "max": 669.772,
+    "median": 621.9055000000001,
+    "min": 574.039
+   }
+  },
+  "claude-haiku-4-5-20251001|harness": {
+   "banditFindings": 0,
+   "complete": 0,
+   "costUsd": {
+    "max": 1.731618,
+    "median": 1.525465,
+    "min": 1.36756
+   },
+   "fixRequestsTotal": 12,
+   "harnessIncrementsApprovedFirstGate": 15,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 15,
+   "hiddenFailedAfterMain": 24,
+   "increments": 15,
+   "incrementsFirstPass": 9,
+   "lineCoverage": {
+    "max": 0.932,
+    "median": 0.9225,
+    "min": 0.9041
+   },
+   "prompts": {
+    "max": 9,
+    "median": 9,
+    "min": 9
+   },
+   "ruffFindings": {
+    "max": 14,
+    "median": 13,
+    "min": 12
+   },
+   "sessions": 3,
+   "sessionsWithoutFix": 0,
+   "sourceLines": {
+    "max": 230,
+    "median": 212,
+    "min": 206
+   },
+   "turns": {
+    "max": 248,
+    "median": 198,
+    "min": 193
+   },
+   "visibleTests": {
+    "max": 157,
+    "median": 128,
+    "min": 112
+   },
+   "wallSeconds": {
+    "max": 1184.058,
+    "median": 1168.148,
+    "min": 1149.085
+   }
+  },
+  "claude-opus-5-5|baseline": {
+   "banditFindings": 0,
+   "complete": 3,
+   "costUsd": {
+    "max": 2.115342,
+    "median": 1.984767,
+    "min": 1.943424
+   },
+   "fixRequestsTotal": 7,
+   "harnessIncrementsApprovedFirstGate": 0,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 0,
+   "hiddenFailedAfterMain": 13,
+   "increments": 15,
+   "incrementsFirstPass": 8,
+   "lineCoverage": {
+    "max": 0.9882,
+    "median": 0.9879,
+    "min": 0.9868
+   },
+   "prompts": {
+    "max": 8,
+    "median": 7,
+    "min": 7
+   },
+   "ruffFindings": {
+    "max": 6,
+    "median": 5,
+    "min": 4
+   },
+   "sessions": 3,
+   "sessionsWithoutFix": 0,
+   "sourceLines": {
+    "max": 278,
+    "median": 252,
+    "min": 236
+   },
+   "turns": {
+    "max": 111,
+    "median": 108,
+    "min": 106
+   },
+   "visibleTests": {
+    "max": 256,
+    "median": 236,
+    "min": 206
+   },
+   "wallSeconds": {
+    "max": 595.85,
+    "median": 576.849,
+    "min": 509.533
+   }
+  },
+  "claude-opus-5-5|harness": {
+   "banditFindings": 0,
+   "complete": 3,
+   "costUsd": {
+    "max": 1.454494,
+    "median": 1.413078,
+    "min": 1.338447
+   },
+   "fixRequestsTotal": 0,
+   "harnessIncrementsApprovedFirstGate": 15,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 15,
+   "hiddenFailedAfterMain": 0,
+   "increments": 15,
+   "incrementsFirstPass": 15,
+   "lineCoverage": {
+    "max": 1.0,
+    "median": 1.0,
+    "min": 0.9597
+   },
+   "prompts": {
+    "max": 5,
+    "median": 5,
+    "min": 5
+   },
+   "ruffFindings": {
+    "max": 6,
+    "median": 5,
+    "min": 5
+   },
+   "sessions": 3,
+   "sessionsWithoutFix": 3,
+   "sourceLines": {
+    "max": 225,
+    "median": 223,
+    "min": 179
+   },
+   "turns": {
+    "max": 68,
+    "median": 63,
+    "min": 58
+   },
+   "visibleTests": {
+    "max": 223,
+    "median": 221,
+    "min": 218
+   },
+   "wallSeconds": {
+    "max": 356.471,
+    "median": 345.254,
+    "min": 342.106
+   }
+  },
+  "claude-sonnet-5-5|baseline": {
+   "banditFindings": 0,
+   "complete": 3,
+   "costUsd": {
+    "max": 0.684579,
+    "median": 0.650146,
+    "min": 0.622985
+   },
+   "fixRequestsTotal": 5,
+   "harnessIncrementsApprovedFirstGate": 0,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 0,
+   "hiddenFailedAfterMain": 11,
+   "increments": 15,
+   "incrementsFirstPass": 10,
+   "lineCoverage": {
+    "max": 0.9876,
+    "median": 0.9857,
+    "min": 0.9797
+   },
+   "prompts": {
+    "max": 7,
+    "median": 7,
+    "min": 6
+   },
+   "ruffFindings": {
+    "max": 5,
+    "median": 4,
+    "min": 1
+   },
+   "sessions": 3,
+   "sessionsWithoutFix": 0,
+   "sourceLines": {
+    "max": 237,
+    "median": 214,
+    "min": 198
+   },
+   "turns": {
+    "max": 76,
+    "median": 73,
+    "min": 63
+   },
+   "visibleTests": {
+    "max": 115,
+    "median": 114,
+    "min": 104
+   },
+   "wallSeconds": {
+    "max": 307.544,
+    "median": 281.718,
+    "min": 273.425
+   }
+  },
+  "claude-sonnet-5-5|harness": {
+   "banditFindings": 0,
+   "complete": 3,
+   "costUsd": {
+    "max": 0.46556,
+    "median": 0.394502,
+    "min": 0.361118
+   },
+   "fixRequestsTotal": 0,
+   "harnessIncrementsApprovedFirstGate": 15,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 15,
+   "hiddenFailedAfterMain": 0,
+   "increments": 15,
+   "incrementsFirstPass": 15,
+   "lineCoverage": {
+    "max": 0.9825,
+    "median": 0.9545,
+    "min": 0.95
+   },
+   "prompts": {
+    "max": 5,
+    "median": 5,
+    "min": 5
+   },
+   "ruffFindings": {
+    "max": 5,
+    "median": 5,
+    "min": 5
+   },
+   "sessions": 3,
+   "sessionsWithoutFix": 3,
+   "sourceLines": {
+    "max": 160,
+    "median": 152,
+    "min": 149
+   },
+   "turns": {
+    "max": 45,
+    "median": 40,
+    "min": 29
+   },
+   "visibleTests": {
+    "max": 129,
+    "median": 113,
+    "min": 105
+   },
+   "wallSeconds": {
+    "max": 245.526,
+    "median": 218.447,
+    "min": 217.121
+   }
+  }
+ },
+ "conditions": {
+  "baseline": {
+   "banditFindings": 0,
+   "complete": 7,
+   "costUsd": {
+    "max": 2.115342,
+    "median": 0.782365,
+    "min": 0.617542
+   },
+   "fixRequestsTotal": 19,
+   "harnessIncrementsApprovedFirstGate": 0,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 0,
+   "hiddenFailedAfterMain": 34,
+   "increments": 40,
+   "incrementsFirstPass": 22,
+   "lineCoverage": {
+    "max": 0.9882,
+    "median": 0.9862500000000001,
+    "min": 0.9
+   },
+   "prompts": {
+    "max": 9,
+    "median": 7.0,
+    "min": 6
+   },
+   "ruffFindings": {
+    "max": 14,
+    "median": 5.0,
+    "min": 1
+   },
+   "sessions": 8,
+   "sessionsWithoutFix": 0,
+   "sourceLines": {
+    "max": 278,
+    "median": 225.0,
+    "min": 198
+   },
+   "turns": {
+    "max": 168,
+    "median": 107.0,
+    "min": 63
+   },
+   "visibleTests": {
+    "max": 256,
+    "median": 114.5,
+    "min": 68
+   },
+   "wallSeconds": {
+    "max": 669.772,
+    "median": 541.7860000000001,
+    "min": 273.425
+   }
+  },
+  "harness": {
+   "banditFindings": 0,
+   "complete": 6,
+   "costUsd": {
+    "max": 1.731618,
+    "median": 1.36756,
+    "min": 0.361118
+   },
+   "fixRequestsTotal": 12,
+   "harnessIncrementsApprovedFirstGate": 45,
+   "harnessIncrementsNotDelivered": 0,
+   "harnessIncrementsTraceComplete": 45,
+   "hiddenFailedAfterMain": 24,
+   "increments": 45,
+   "incrementsFirstPass": 39,
+   "lineCoverage": {
+    "max": 1.0,
+    "median": 0.9545,
+    "min": 0.9041
+   },
+   "prompts": {
+    "max": 9,
+    "median": 5,
+    "min": 5
+   },
+   "ruffFindings": {
+    "max": 14,
+    "median": 5,
+    "min": 5
+   },
+   "sessions": 9,
+   "sessionsWithoutFix": 6,
+   "sourceLines": {
+    "max": 230,
+    "median": 206,
+    "min": 149
+   },
+   "turns": {
+    "max": 248,
+    "median": 63,
+    "min": 29
+   },
+   "visibleTests": {
+    "max": 223,
+    "median": 129,
+    "min": 105
+   },
+   "wallSeconds": {
+    "max": 1184.058,
+    "median": 345.254,
+    "min": 217.121
+   }
+  }
+ },
+ "invalid": [
+  {
+   "condition": "baseline",
+   "model": "claude-haiku-4-5-20251001",
+   "rep": 3
+  }
+ ],
+ "sessionsRecorded": 18,
+ "sessionsValid": 17
+}

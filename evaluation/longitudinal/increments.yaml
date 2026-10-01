@@ -1,0 +1,102 @@
+# Five increments of the same development, in a fixed order for both conditions.
+# casual: the one-line prompt of the baseline. task: the structured task of the harness condition,
+# which carries the rules as requirements and acceptance criteria. SPEC.md names only the API.
+# parts: SPEC parts checked by the external oracle after the increment.
+- id: I1
+  parts:
+  - a
+  casual: make the inventory library from SPEC.md, just part A (items) for now
+  task:
+    title: Inventory items (part A)
+    intent: Implement part A (items) of the inventory package, with pytest tests.
+    requirements:
+    - 'add_item(sku, name, price, quantity=0): sku must match ^[A-Z]{3}-\d{4}$; a duplicate SKU, an empty name,
+      a negative price or a quantity that is not a non-negative int raise ValueError; price accepts int, str or
+      Decimal and is stored as Decimal rounded half up to two places.'
+    - get_item(sku) returns {sku, name, price, quantity}; remove_item(sku) deletes it; unknown SKUs raise KeyError;
+      list_items() returns the items as dictionaries sorted by SKU.
+    acceptanceCriteria:
+    - Invalid SKUs (lowercase, wrong length, missing dash, empty), duplicate SKUs, empty names, negative prices
+      and negative or non-int quantities raise ValueError.
+    - get_item returns the price as Decimal with two places (for example '3.456' becomes 3.46); unknown SKUs raise
+      KeyError in get_item and remove_item.
+    - tests/ contains pytest tests for every rule above and python -m pytest -q passes.
+    constraints:
+    - Use only the Python standard library.
+- id: I2
+  parts:
+  - a
+  - b
+  casual: now add stock movements, part B of the spec
+  task:
+    title: Stock movements (part B)
+    intent: Implement part B (stock movements) without breaking part A, with pytest tests.
+    requirements:
+    - 'receive(sku, quantity) and ship(sku, quantity): quantity must be a positive int (0, negatives, floats and
+      strings raise ValueError); shipping more than the available quantity raises ValueError and changes neither
+      the quantity nor the history.'
+    - history(sku) returns the movements in order as tuples ('receive' or 'ship', quantity); unknown SKUs raise
+      KeyError.
+    acceptanceCriteria:
+    - receive and ship update the quantity; history lists the movements in order.
+    - Invalid quantities and over-shipping raise ValueError with no change; unknown SKUs raise KeyError.
+    - Tests cover part B and all existing tests keep passing.
+    constraints:
+    - Use only the Python standard library.
+- id: I3
+  parts:
+  - a
+  - b
+  casual: add unit tests
+  task:
+    title: Unit tests for parts A and B
+    intent: Add or complete pytest tests that cover every rule of parts A and B (the rules of the previous tasks).
+    requirements:
+    - Every validation rule and error of parts A and B has at least one test.
+    acceptanceCriteria:
+    - Tests exercise valid and invalid inputs for add_item, get_item, remove_item, list_items, receive, ship and
+      history.
+    - python -m pytest -q passes.
+    constraints:
+    - Do not change the public behavior of the library.
+- id: I4
+  parts:
+  - a
+  - b
+  - c
+  casual: add saving and loading the inventory to a json file (part C), make it secure
+  task:
+    title: Secure persistence (part C)
+    intent: Implement part C (persistence) securely, with pytest tests.
+    requirements:
+    - save(path) writes the inventory including history as JSON, with prices as strings.
+    - Inventory.load(path) returns a new inventory; it accepts only paths ending in .json, rejects files larger
+      than 1 MB, and raises ValueError for malformed JSON or invalid data (bad SKU, negative quantity, negative
+      price); it never uses pickle or eval.
+    acceptanceCriteria:
+    - A save/load round trip preserves items, prices and history.
+    - load raises ValueError for a non-.json path, a file over 1 MB, malformed JSON, an invalid SKU, a negative
+      quantity or a negative price.
+    - Tests cover part C and all existing tests keep passing.
+    constraints:
+    - Use only the Python standard library.
+- id: I5
+  parts:
+  - a
+  - b
+  - c
+  - d
+  casual: add the reports from part D
+  task:
+    title: Reports (part D)
+    intent: Implement part D (reports), with pytest tests.
+    requirements:
+    - low_stock(threshold) returns the SKUs whose quantity is strictly below threshold, sorted.
+    - total_value() returns the sum of price * quantity as a Decimal rounded once, half up, to two places (0.00
+      for an empty inventory).
+    acceptanceCriteria:
+    - low_stock uses a strict comparison and returns sorted SKUs.
+    - total_value returns a Decimal with two places, rounded once.
+    - Tests cover part D and all existing tests keep passing.
+    constraints:
+    - Use only the Python standard library.

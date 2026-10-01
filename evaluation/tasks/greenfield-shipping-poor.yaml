@@ -1,0 +1,6 @@
+taskId: task_eval_greenfield_shipping_poor
+title: Shipping costs
+intent: Implement shipping_cost in a shipping package as described in SPEC.md.
+acceptanceCriteria:
+  - criterionId: ac_works
+    text: It works.

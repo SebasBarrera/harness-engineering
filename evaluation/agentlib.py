@@ -163,3 +163,101 @@ def run_claude(prompt: str, cwd: Path, model: str, log_path: Path) -> dict[str, 
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     (log_path.with_suffix(".stderr.txt")).write_text(stderr[-20000:], encoding="utf-8")
     return record
+
+
+CODEX_BIN = os.environ.get("EVAL_CODEX_BIN", "codex")
+
+
+def run_codex(prompt: str, cwd: Path, model: str, effort: str, log_path: Path) -> dict[str, Any]:
+    """Run Codex CLI non-interactively and return a record shaped like run_claude's.
+
+    Same prompt, minimal environment and time limit as the Claude backend. The sandbox limits
+    writes to the working directory without network access, and no session is persisted.
+    """
+    command = [
+        CODEX_BIN,
+        "exec",
+        "--ephemeral",
+        "--ignore-user-config",
+        "--ignore-rules",
+        "--skip-git-repo-check",
+        "--sandbox",
+        "workspace-write",
+        "-c",
+        'approval_policy="never"',
+        "-c",
+        f'model_reasoning_effort="{effort}"',
+        "--model",
+        model,
+        "--json",
+        prompt,
+    ]
+    env = agent_environment()
+    tmp = cwd.parent / "tmp"
+    tmp.mkdir(exist_ok=True)
+    env["TMPDIR"] = str(tmp)
+    started = time.monotonic()
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=cwd,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=AGENT_TIMEOUT_SECONDS,
+            stdin=subprocess.DEVNULL,
+        )
+        exit_code, stdout, stderr, timed_out = proc.returncode, proc.stdout, proc.stderr, False
+    except subprocess.TimeoutExpired as exc:
+        exit_code, timed_out = -1, True
+        stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+        stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+    wall = time.monotonic() - started
+    usage = {"input_tokens": 0, "cached_input_tokens": 0, "output_tokens": 0, "reasoning_output_tokens": 0}
+    turns, commands, failed, last_message, errors = 0, 0, False, "", []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        kind = str(event.get("type", ""))
+        if kind == "turn.completed":
+            turns += 1
+            for key in usage:
+                usage[key] += int((event.get("usage") or {}).get(key) or 0)
+        elif kind in {"turn.failed", "error"}:
+            failed = True
+            errors.append(json.dumps(event)[:300])
+        elif kind == "item.completed":
+            item = event.get("item") or {}
+            if item.get("type") == "command_execution":
+                commands += 1
+            elif item.get("type") in {"agent_message", "assistant_message"}:
+                last_message = str(item.get("text", ""))
+    record = {
+        "model": model,
+        "effort": effort,
+        "exitCode": exit_code,
+        "timedOut": timed_out,
+        "isError": failed or exit_code != 0 or timed_out,
+        "terminalReason": "completed" if not (failed or timed_out or exit_code) else "error",
+        "numTurns": turns,
+        "commands": commands,
+        "wallSeconds": round(wall, 3),
+        "durationApiMs": None,
+        "costUsd": None,
+        "inputTokens": usage["input_tokens"],
+        "outputTokens": usage["output_tokens"],
+        "cacheReadTokens": usage["cached_input_tokens"],
+        "cacheCreationTokens": 0,
+        "reasoningTokens": usage["reasoning_output_tokens"],
+        "permissionDenials": 0,
+        "deniedTools": [],
+        "errors": errors,
+        "summary": last_message[:2000],
+    }
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+    (log_path.with_suffix(".stderr.txt")).write_text(stderr[-20000:], encoding="utf-8")
+    (log_path.with_suffix(".events.jsonl")).write_text(stdout[-2000000:], encoding="utf-8")
+    return record

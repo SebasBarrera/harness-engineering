@@ -19,11 +19,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 
-def plan(model: str, reps: int, seed: int, scenarios: list[str]) -> list[tuple[str, str, int]]:
+def plan(
+    model: str, reps: int, seed: int, scenarios: list[str], conditions: tuple[str, ...] = ("baseline", "harness")
+) -> list[tuple[str, str, int]]:
     rng = random.Random(f"{seed}:{model}")
     order: list[tuple[str, str, int]] = []
     for rep in range(1, reps + 1):
-        cells = [(s, c, rep) for s in scenarios for c in ("baseline", "harness")]
+        cells = [(s, c, rep) for s in scenarios for c in conditions]
         rng.shuffle(cells)
         order += cells
     return order
@@ -35,6 +37,10 @@ def main() -> int:
     parser.add_argument("--reps", type=int, default=5)
     parser.add_argument("--seed", type=int, default=20260930)
     parser.add_argument("--scenarios", default="greenfield,brownfield")
+    parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
+    parser.add_argument("--prompt", choices=["full", "poor", "casual"], default="full")
+    parser.add_argument("--conditions", default="baseline,harness")
+    parser.add_argument("--effort", default="")
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--cache", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
@@ -44,7 +50,7 @@ def main() -> int:
         for line in args.out.read_text().splitlines():
             record = json.loads(line)
             done.add((record["scenario"], record["condition"], record["rep"]))
-    for scenario, condition, rep in plan(args.model, args.reps, args.seed, args.scenarios.split(",")):
+    for scenario, condition, rep in plan(args.model, args.reps, args.seed, args.scenarios.split(","), tuple(args.conditions.split(","))):
         if (scenario, condition, rep) in done:
             continue
         stamp = datetime.now(UTC).isoformat(timespec="seconds")
@@ -52,7 +58,8 @@ def main() -> int:
         proc = subprocess.run(
             [sys.executable, str(HERE / "run_eval.py"), "--scenario", scenario, "--condition", condition,
              "--model", args.model, "--rep", str(rep), "--work", str(args.work), "--cache", str(args.cache),
-             "--out", str(args.out)],
+             "--out", str(args.out), "--agent", args.agent, "--effort", args.effort,
+             "--prompt", args.prompt],
             capture_output=True, text=True,
         )
         status = "ok" if proc.returncode == 0 else f"FAILED ({proc.returncode})"

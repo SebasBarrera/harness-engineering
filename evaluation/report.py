@@ -26,7 +26,8 @@ def load(results: Path) -> list[dict[str, Any]]:
     records = []
     for path in sorted(results.glob("claude-*.jsonl")):
         records += [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-    return records
+    # The main comparison uses the full prompt with Claude; other blocks have their own report.
+    return [r for r in records if r.get("prompt", "full") == "full" and not r["model"].startswith("gpt-")]
 
 
 def stats(values: list[float | None]) -> dict[str, Any]:
