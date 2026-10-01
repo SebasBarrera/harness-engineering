@@ -71,7 +71,9 @@ From `v0.8.1` the code evolves, so the tree no longer matches the manifest. `v0.
 infrastructure, documentation and quality fixes that do not change the behavior evaluated in the
 thesis. `v0.9.0` fixes seven behavioral defects of the cut (#1, #2, #9, #19, #29, #30, #31); the
 [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md) and the
-[brownfield guide](guides/brownfield.md) state where the results differ from the thesis. The
+[brownfield guide](guides/brownfield.md) state where the results differ from the thesis. `v1.0.0` adds
+governed memory operations, decisions on retrospective recommendations and reported usage without
+changing the run path evaluated on `v0.9.0`. The
 remaining defects stay in the milestone *backlog — thesis-impact*. `v0.8.1` and later releases are built by CI with an SPDX SBOM and a build
 provenance attestation (`gh attestation verify`); the `v0.8.0` binaries are the original ones and
 have no attestation.
