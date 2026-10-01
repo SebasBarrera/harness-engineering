@@ -1,0 +1,124 @@
+{
+ "approvedWithoutCorrection": {
+  "implementationShare": {
+   "max": 0.994,
+   "median": 0.971,
+   "min": 0.912
+  },
+  "phaseSeconds": {
+   "CLOSURE": {
+    "max": 0.013,
+    "median": 0.008,
+    "min": 0.007
+   },
+   "DECISION": {
+    "max": 0.291,
+    "median": 0.181,
+    "min": 0.152
+   },
+   "DISCOVERY": {
+    "max": 0.154,
+    "median": 0.099,
+    "min": 0.074
+   },
+   "IMPLEMENTATION": {
+    "max": 226.712,
+    "median": 88.524,
+    "min": 28.654
+   },
+   "INDEPENDENT_REVIEW": {
+    "max": 0.02,
+    "median": 0.005,
+    "min": 0.003
+   },
+   "INTENT": {
+    "max": 0.007,
+    "median": 0.002,
+    "min": 0.001
+   },
+   "PLANNING": {
+    "max": 0.006,
+    "median": 0.003,
+    "min": 0.002
+   },
+   "SPECIFICATION": {
+    "max": 0.016,
+    "median": 0.002,
+    "min": 0.001
+   },
+   "VERIFICATION": {
+    "max": 3.066,
+    "median": 1.803,
+    "min": 0.669
+   }
+  },
+  "phasesOtherThanImplementationAndVerificationSeconds": {
+   "max": 0.421,
+   "median": 0.303,
+   "min": 0.271
+  },
+  "runs": 36,
+  "totalPhaseSeconds": {
+   "max": 228.178,
+   "median": 90.731,
+   "min": 31.423
+  }
+ },
+ "retrospective": {
+  "appliedAutomatically": 0,
+  "byCategory": {
+   "observation": 27,
+   "review": 7,
+   "specification": 7,
+   "validation": 12
+  },
+  "byCategoryAndScenario": {
+   "observation": {
+    "brownfield": 8,
+    "greenfield": 13,
+    "security": 6
+   },
+   "review": {
+    "security": 7
+   },
+   "specification": {
+    "security": 7
+   },
+   "validation": {
+    "brownfield": 7,
+    "greenfield": 2,
+    "security": 3
+   }
+  },
+  "recommendations": 53,
+  "records": 43,
+  "runsWithRetrospective": 43,
+  "runsWithoutRetrospective": [
+   {
+    "decisions": [
+     "REQUEST_CHANGES",
+     "REQUEST_CHANGES",
+     "REJECT"
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "rep": 1,
+    "scenario": "security"
+   },
+   {
+    "decisions": [
+     "REQUEST_CHANGES",
+     "REQUEST_CHANGES",
+     "REJECT"
+    ],
+    "model": "claude-haiku-4-5-20251001",
+    "rep": 4,
+    "scenario": "security"
+   }
+  ],
+  "validationRecommendations": {
+   "onlyOptionalValidatorsFailed": 12,
+   "total": 12
+  }
+ },
+ "runs": 45
+}
