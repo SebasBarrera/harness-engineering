@@ -379,7 +379,7 @@ Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state
 | Python modules / lines in `src/governed_harness` | 74 / 6,746 |
 | JSON Schema contracts · CLI commands · API routes | 25 · 21 · 9 |
 | Tests | 86 (core 79, E2E Python 4, E2E Node.js 1, performance 2) |
-| Core coverage | lines 77.48 %, branches 59.29 % |
+| Core coverage | lines 80.60 %, branches 59.29 % (77.48 % combined) |
 | Governed-process overhead | 10.09 % and 11.23 % (about 1.2 ms) |
 | Brownfield case | itsdangerous 2.2.0, 298 tests, invariant ChangeSet digest |
 

@@ -27,6 +27,13 @@ unchanged: with no memory records, the request sent to the agent provider is ide
   record of quality `REPORTED`, referenced from the agent invocation (`usageRef`) and summed into
   the metrics `tokens.*` and `cost.usd`. Without it the metrics stay `NOT_AVAILABLE`; a malformed
   report is a protocol error. Nothing is estimated.
+- Evaluation data: a delivery counts as "without new tests" when no changed file is named like a
+  pytest module, wherever it is. The previous count only looked under `tests/`, so it missed two
+  runs that wrote `test_shipping.py` at the repository root and counted one whose only file under
+  `tests/` was an empty `__init__.py`: the one-line prompt without the harness delivered 7 of 27
+  runs without tests (not 9) and the minimal task 11 of 27 (not 10). The per-run records are
+  unchanged. The core coverage of the v0.8.0 cut is labeled correctly: 80.60 % of lines and
+  59.29 % of branches; 77.48 % is the combined figure.
 - `harness benchmark scenarios` no longer depends on the user's Git configuration: the fixture
   repository is created with commit signing and hooks disabled, so a global `commit.gpgsign` does
   not make the baseline commit fail.

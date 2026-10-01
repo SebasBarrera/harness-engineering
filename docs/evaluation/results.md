@@ -59,12 +59,14 @@ because a task needs acceptance criteria.
 
 | Flow | Runs | Delivered | With a defect | Without new tests | Stopped (correct + defective) |
 |---|---|---|---|---|---|
-| One-line prompt, without harness | 27 | 27 | 4 | 9 | — |
-| Minimal task, without harness | 27 | 27 | 5 | 10 | — |
+| One-line prompt, without harness | 27 | 27 | 4 | 7 | — |
+| Minimal task, without harness | 27 | 27 | 5 | 11 | — |
 | Minimal task, with harness | 27 | 21 | 4 | 6 | 5 + 1 |
 | Full task, without harness | 45 | 45 | 1 | 0 | — |
 | Full task, with harness | 45 | 43 | 0 | 0 | 2 + 0 |
 
+- A delivery is without new tests when no changed file is named like a pytest module (`test_*.py`
+  or `*_test.py`), wherever it is in the tree.
 - A delivery has a defect when it fails a hidden test. All 14 defective deliveries are in the
   brownfield scenario, where an existing suite that passes hides the missing criteria.
 - Structuring the task explains most of the reduction (5 of 27 to 1 of 45 without the harness).

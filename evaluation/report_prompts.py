@@ -11,7 +11,7 @@ import json
 import statistics
 import sys
 from collections import defaultdict
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 FLOWS = [("casual", "baseline"), ("poor", "baseline"), ("poor", "harness"), ("full", "baseline"), ("full", "harness")]
@@ -41,6 +41,16 @@ def correct(r: dict[str, Any]) -> bool:
     return h["tests"] > 1 and h["passed"] == h["tests"]
 
 
+def has_tests(r: dict[str, Any]) -> bool:
+    """A changed file named like a pytest module, wherever it is.
+
+    `measures.change.testFiles` only counts paths under tests/, so it misses a test module written
+    at the repository root and counts an empty tests/__init__.py.
+    """
+    names = (PurePosixPath(p).name for p in r["measures"]["change"]["paths"])
+    return any(n.endswith(".py") and (n.startswith("test_") or n.endswith("_test.py")) for n in names)
+
+
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
     d = [r for r in rows if delivered(r)]
     nd = [r for r in rows if not delivered(r)]
@@ -48,9 +58,9 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "runs": len(rows),
         "delivered": len(d),
         "deliveredDefective": sum(not correct(r) for r in d),
-        "deliveredWithoutTests": sum(r["measures"]["change"]["testFiles"] == 0 for r in d),
+        "deliveredWithoutTests": sum(not has_tests(r) for r in d),
         "deliveredWithoutTestsGreenfieldOrSecurity": sum(
-            r["measures"]["change"]["testFiles"] == 0 for r in d if r["scenario"] != "brownfield"
+            not has_tests(r) for r in d if r["scenario"] != "brownfield"
         ),
         "runsGreenfieldOrSecurity": sum(r["scenario"] != "brownfield" for r in rows),
         "blockedCorrect": sum(correct(r) for r in nd),
