@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 - 2026-10-01
 
 Additions that close gaps between the design and the prototype. The run path evaluated on 0.9.0 is
 unchanged: with no memory records, the request sent to the agent provider is identical.

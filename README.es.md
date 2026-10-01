@@ -129,7 +129,7 @@ código de salida que aparece aquí.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.9.0/governed_agent_harness-0.9.0-py3-none-any.whl" pytest
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl" pytest
 
 # un proyecto Python mínimo con un commit de baseline
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -158,7 +158,7 @@ La tarea usada es [`docs/guides/task.yaml`](docs/guides/task.yaml); la
 |---|---|
 | Un wheel del release (recomendado) | `pip install <URL del wheel en la página del release>`; verifícalo con `sha256sum -c SHA256SUMS` y `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | Código fuente | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.9.0 --help` (publicada desde `v0.9.0`; corre con un usuario sin privilegios) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (publicada desde `v1.0.0`; corre con un usuario sin privilegios) |
 
 Requisitos: **Python ≥ 3.12** y **Git** (los baselines y ChangeSets salen del repositorio). Para
 proyectos Node.js, **Node.js LTS y npm**. El extra opcional `api` instala FastAPI y Uvicorn para el
@@ -352,7 +352,7 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 Defectos de comportamiento abiertos (hito
 [backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); el tag
 `v0.8.0` conserva el comportamiento evaluado, la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, y la
-siguiente versión hace operable la memoria (#6) ([changelog](CHANGELOG.md)):
+1.0.0 hizo operable la memoria (#6) ([changelog](CHANGELOG.md)):
 
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) la configuración de fases del workflow (capacidades, intentos, tiempos, gates de salida) se registra pero no se aplica;
 - [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) las capacidades se resuelven por ejecución y no por fase, y las concesiones del proyecto se suman a las del perfil;

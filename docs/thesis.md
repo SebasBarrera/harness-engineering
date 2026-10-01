@@ -14,14 +14,18 @@ the quality, traceability and control of AI-assisted software development in gre
 brownfield scenarios. It follows Design Science Research: the harness is the designed artifact,
 and its evaluation is formative and descriptive (no statistical generalization).
 
-## Evaluated version
+## Evaluated versions
 
-The thesis evaluates the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
-which reproduces it byte for byte (see [provenance](provenance.md)). `v0.8.1` adds
+The thesis documents the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
+which reproduces it byte for byte (see [provenance](provenance.md)), and runs its
+[controlled evaluation](evaluation/results.md) on `v0.9.0`. `v0.8.1` adds
 infrastructure, documentation and quality fixes without behavior change. `v0.9.0` fixes seven
 behavioral defects; the only difference visible in the thesis cases is the brownfield closure, which
 is now a plain `APPROVE` instead of an `APPROVE_EXCEPTION` (see the
-[brownfield guide](guides/brownfield.md)). The remaining defects are tracked in the milestone
+[brownfield guide](guides/brownfield.md)). `v1.0.0` adds, after the evaluation, governed memory
+operations, decisions on retrospective recommendations and the usage reported by agent providers
+(see [memory and retrospective decisions](guides/memory.md)); with no memory records the run path
+is the evaluated one. The remaining defects are tracked in the milestone
 *backlog — thesis-impact*.
 
 ## Snapshot reported for the evaluated cut
@@ -52,4 +56,4 @@ The re-verification of these figures during publication is recorded in the
 
 Use the citation metadata in [`CITATION.cff`](https://github.com/SebasBarrera/harness-engineering/blob/develop/CITATION.cff)
 (GitHub shows a "Cite this repository" button), and cite the version you used, for example
-`v0.8.0` for the evaluated cut.
+`v0.8.0` for the documented cut or `v0.9.0` for the controlled evaluation.
