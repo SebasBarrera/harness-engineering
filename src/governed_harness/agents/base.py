@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
 from governed_harness.domain.enums import ResultStatus
-from governed_harness.domain.models import AgentInvocation, Plan, Task, ToolInvocation
+from governed_harness.domain.models import (
+    AgentInvocation,
+    Plan,
+    ResourceUsage,
+    Task,
+    ToolInvocation,
+)
 
 if TYPE_CHECKING:
     from governed_harness.domain.models import CapabilityGrant, Provenance
@@ -21,6 +27,7 @@ class AgentExecutionResult:
     invocation: AgentInvocation
     tool_invocations: tuple[ToolInvocation, ...] = ()
     output_ref: str | None = None
+    usage: ResourceUsage | None = None
 
 
 class AgentContext(Protocol):
@@ -46,6 +53,10 @@ class AgentContext(Protocol):
     def max_output_bytes(self) -> int: ...
     @property
     def cancellation(self) -> CancellationToken: ...
+    @property
+    def context_manifest_ref(self) -> str | None: ...
+    @property
+    def memory_context(self) -> dict[str, Any] | None: ...
 
 
 class AgentProvider(Protocol):

@@ -1,0 +1,1 @@
+write the alerts client described in SPEC.md

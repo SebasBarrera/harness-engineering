@@ -40,7 +40,10 @@ else. The process runs with `cwd` set to the workspace, without a shell, with th
 }
 ```
 
-The task and plan are serialized with the model field names (snake_case).
+The task and plan are serialized with the model field names (snake_case). When the project has
+governed memory that applies to the run, the request also carries `context`, with the selected
+records and their digest (`{"records": [...], "digest": "sha256:…"}`); a run without memory sends
+no `context` key. See [memory and retrospective decisions](memory.md).
 
 **Response (stdout)**: the whole standard output must be one JSON object, and the process must
 exit with 0:
@@ -53,6 +56,11 @@ exit with 0:
 |---|---|
 | `status` | `PASSED`, `FAILED` or `BLOCKED` |
 | `summary` | optional text recorded on the agent invocation |
+| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens` (non-negative integers) and `costUsd` (non-negative number), as reported by the agent |
+
+When `usage` is present it is stored as a `ResourceUsage` record of quality `REPORTED` and summed
+into the metrics `tokens.*` and `cost.usd`. The harness records what the provider reports and
+never estimates it; an empty object, an unknown field or a negative value is a `PROTOCOL_ERROR`.
 
 Anything else on standard output (logs, progress) breaks the protocol and the invocation is
 recorded as `ERROR` (`PROTOCOL_ERROR`). Write diagnostics to standard error; both streams are stored
@@ -115,8 +123,8 @@ print(json.dumps({"status": status, "summary": f"agent exited with {result.retur
 ```
 
 Register it with `command: [python, tools/agent_adapter.py]` and pass `AGENT_COMMAND` in the
-environment of the harness process. Provider-specific token and cost usage is not captured by this
-protocol, so the metrics `tokens.*` and `cost.usd` stay `NOT_AVAILABLE`
+environment of the harness process. If the agent CLI reports its token and cost usage, forward it
+in `usage`; otherwise the metrics `tokens.*` and `cost.usd` stay `NOT_AVAILABLE`
 (see [metrics](../metrics.md)).
 
 ## External plugins

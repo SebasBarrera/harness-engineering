@@ -9,10 +9,10 @@ hierarchy in `src/governed_harness/domain/errors.py` and from the run status map
 |---:|---|---|---|
 | `0` | success | The command completed. For `run start`, `run continue` and `gate decide`, the run reached `CLOSURE` or the decision was recorded. | quickstart flow |
 | `1` | harness or integration error | `HarnessError`, or any unexpected exception (printed as JSON with `errorType`). A run whose status is `ERROR` also exits with 1. | code |
-| `2` | configuration error | `ConfigurationError`: no `.harness/project.yaml` in the directory, invalid configuration, a task file that cannot be parsed, an attempt to weaken a locked policy, or a failed `doctor` check. | `harness status` in a directory without a project |
-| `3` | not found | `NotFoundError`: unknown run, task or record. | `harness status --run run_missing` |
+| `2` | configuration error | `ConfigurationError`: no `.harness/project.yaml` in the directory, invalid configuration, a task file that cannot be parsed, an attempt to weaken a locked policy, a failed `doctor` check, a task memory record without its task, or an `EDIT` of a recommendation without the edited text. | `harness status` in a directory without a project; memory flow |
+| `3` | not found | `NotFoundError`: unknown run, task, memory record or recommendation, or a run without a retrospective or context manifest. | `harness status --run run_missing` |
 | `4` | waiting for a human decision | The automated phases finished and the run stopped at `DECISION`: automation reached the limit of its authority. | `harness run start` in every demo flow |
-| `5` | policy violation | `PolicyViolationError` from `gate decide`: the digest is not the current ChangeSet digest (stale approval), `APPROVE` over a gate that did not pass (`FAILED`, `INCONCLUSIVE`, ...), the run is not in `DECISION`, or `APPROVE_EXCEPTION` without a rationale. | later-change and review-exception flows |
+| `5` | policy violation | `PolicyViolationError` from `gate decide`: the digest is not the current ChangeSet digest (stale approval), `APPROVE` over a gate that did not pass (`FAILED`, `INCONCLUSIVE`, ...), the run is not in `DECISION`, or `APPROVE_EXCEPTION` without a rationale. Also approving a memory record that is already approved or needs no approval, and deciding a recommendation twice. | later-change, review-exception and memory flows |
 | `6` | blocked | The run stopped because a validation, policy, blocking, timeout or inconclusive condition held (`BLOCKED`, `FAILED`, `INCONCLUSIVE` or `TIMED_OUT` outside `DECISION`). | broken-baseline flow (`run start`) |
 | `130` | cancelled | The run status is `CANCELLED` (`harness run cancel`, or cancellation during execution). | code |
 

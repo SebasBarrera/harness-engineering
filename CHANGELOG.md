@@ -1,5 +1,43 @@
 # Changelog
 
+## 1.0.0 - 2026-10-01
+
+Additions that close gaps between the design and the prototype. The run path evaluated on 0.9.0 is
+unchanged: with no memory records, the request sent to the agent provider is identical.
+
+- Governed memory is operable (#6). `harness memory add | list | approve | invalidate` record,
+  approve and invalidate entries with the acting person; an approval or an invalidation is a new
+  record that supersedes the previous one, so nothing is edited in place. The context manifest
+  built in `PLANNING` lists the records that entered the context and, under `excluded`, every
+  candidate that did not, with its reason (`superseded`, `expired`, `unapproved`, `limit`). An
+  unapproved record no longer supersedes an approved one, and supersession no longer depends on
+  the order of the records. The value of a record marked as sensitive is withheld from the
+  manifest, and the provenance of each record uses the camelCase names of the public contracts
+  (`actorId`, `coreVersion`). The selected records reach command agent providers under `context`,
+  and each agent invocation references its manifest (`contextManifestRef`).
+  `harness memory manifest --run` shows the manifest recorded for a run.
+- Retrospective recommendations can be decided. `harness recommendation list | decide` records
+  `ACCEPT`, `EDIT` or `REJECT` with the acting person and a rationale. The decision is kept as
+  retrospective memory: an accepted or edited recommendation is approved and enters the context
+  of later runs; a rejected one stays as history and never enters a context. A recommendation
+  takes one decision (a second one exits with 5). Rules, gates and configuration are still
+  changed only by a person: `retrospectiveAutoApply` remains a locked `false` policy.
+- Command agent providers can report their usage. An optional `usage` object in the response
+  (`inputTokens`, `outputTokens`, `reasoningTokens`, `costUsd`) is stored as a `ResourceUsage`
+  record of quality `REPORTED`, referenced from the agent invocation (`usageRef`) and summed into
+  the metrics `tokens.*` and `cost.usd`. Without it the metrics stay `NOT_AVAILABLE`; a malformed
+  report is a protocol error. Nothing is estimated.
+- Evaluation data: a delivery counts as "without new tests" when no changed file is named like a
+  pytest module, wherever it is. The previous count only looked under `tests/`, so it missed two
+  runs that wrote `test_shipping.py` at the repository root and counted one whose only file under
+  `tests/` was an empty `__init__.py`: the one-line prompt without the harness delivered 7 of 27
+  runs without tests (not 9) and the minimal task 11 of 27 (not 10). The per-run records are
+  unchanged. The core coverage of the v0.8.0 cut is labeled correctly: 80.60 % of lines and
+  59.29 % of branches; 77.48 % is the combined figure.
+- `harness benchmark scenarios` no longer depends on the user's Git configuration: the fixture
+  repository is created with commit signing and hooks disabled, so a global `commit.gpgsign` does
+  not make the baseline commit fail.
+
 ## 0.9.0 - 2026-09-30
 
 Behavioral fixes. `v0.8.0` keeps the behavior evaluated in the thesis; every fix below has a

@@ -47,10 +47,11 @@ The list below is the complete set computed by `MetricsProjector.project` in
 | `tokens.reasoning` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported reasoning tokens; no estimation. | resource usage records | See below. |
 | `cost.usd` | USD | REPORTED, or NOT_AVAILABLE | Sum of provider-reported costs; never inferred from tokens. | resource usage records | See below. |
 
-**Why tokens and cost are `NOT_AVAILABLE`.** They are read from `ResourceUsage` records, and no
-built-in provider creates one: the simulated provider does not call a model and the command
-provider protocol has no usage field. Until a provider reports usage, the harness shows the gap
-instead of estimating it.
+**When tokens and cost are `NOT_AVAILABLE`.** They are read from `ResourceUsage` records. The
+simulated provider does not call a model and creates none. A command provider creates one when its
+response carries the optional `usage` object (see
+[connecting an external agent](guides/external-agents.md)); the values are then `REPORTED`. When a
+provider reports nothing, the harness shows the gap instead of estimating it.
 
 ## Reading the metrics
 

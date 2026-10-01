@@ -1,0 +1,9 @@
+# Gitleaks configuration: the default rules plus one documented exception.
+title = "harness-engineering"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fictitious password set by a hidden test of the controlled evaluation; it is not a credential."
+regexes = ['''s3cret-from-env''']

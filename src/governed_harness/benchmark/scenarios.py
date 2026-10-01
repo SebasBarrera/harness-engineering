@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import platform
 import shutil
 import statistics
@@ -15,15 +16,22 @@ from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import DecisionKind, ResultStatus
 from governed_harness.runtime import resolve_executable
 
+# The fixture repository must not inherit the user's Git configuration: global commit signing or
+# a global core.hooksPath would make the baseline commit fail or prompt.
+_GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnull}")
+
 
 def _git_init(root: Path) -> None:
-    subprocess.run(["git", "init", "-q"], cwd=root, check=True)
-    subprocess.run(
-        ["git", "config", "user.email", "benchmark@example.invalid"], cwd=root, check=True
-    )
-    subprocess.run(["git", "config", "user.name", "Benchmark Fixture"], cwd=root, check=True)
-    subprocess.run(["git", "add", "."], cwd=root, check=True)
-    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=root, check=True)
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *_GIT_ISOLATION, *args], cwd=root, check=True, env=env)
+
+    git("init", "-q")
+    git("config", "user.email", "benchmark@example.invalid")
+    git("config", "user.name", "Benchmark Fixture")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
 
 
 def _python_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:

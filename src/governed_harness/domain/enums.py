@@ -89,6 +89,12 @@ class DecisionKind(StrEnum):
     APPROVE_EXCEPTION = "APPROVE_EXCEPTION"
 
 
+class RecommendationDecision(StrEnum):
+    ACCEPT = "ACCEPT"
+    EDIT = "EDIT"
+    REJECT = "REJECT"
+
+
 class EvidenceKind(StrEnum):
     INTENT = "INTENT"
     CONFIGURATION = "CONFIGURATION"

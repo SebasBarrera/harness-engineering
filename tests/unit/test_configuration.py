@@ -30,6 +30,16 @@ def test_locked_policy_cannot_be_disabled(python_workspace: Path) -> None:
         ConfigurationResolver().resolve(python_workspace)
 
 
+def test_retrospective_auto_apply_cannot_be_enabled(python_workspace: Path) -> None:
+    """RD-11: no project configuration lets the retrospective apply its own recommendations."""
+    path = python_workspace / ".harness" / "project.yaml"
+    value = yaml.safe_load(path.read_text())
+    value["policies"]["retrospectiveAutoApply"] = True
+    path.write_text(yaml.safe_dump(value, sort_keys=False))
+    with pytest.raises(ConfigurationError, match="retrospectiveAutoApply"):
+        ConfigurationResolver().resolve(python_workspace)
+
+
 def test_config_validate_reports_effective_controls(python_workspace: Path) -> None:
     result = HarnessApplication().validate_config(python_workspace)
     assert result["status"] == "PASSED"

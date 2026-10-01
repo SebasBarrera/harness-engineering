@@ -36,6 +36,8 @@ class SimulatedAgentContext:
     timeout_seconds: int
     max_output_bytes: int
     cancellation: CancellationToken
+    context_manifest_ref: str | None = None
+    memory_context: dict[str, Any] | None = None
 
 
 class SimulatedAgentProvider:
@@ -154,6 +156,7 @@ class SimulatedAgentProvider:
             finished_at=finished,
             status=status,
             prompt_digest=prompt_digest,
+            context_manifest_ref=context.context_manifest_ref,
             tool_invocation_ids=tuple(item.invocation_id for item in tool_invocations),
             output_ref=output_ref.uri,
             error=error_record,

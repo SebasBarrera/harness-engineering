@@ -1,0 +1,77 @@
+{
+ "benchmarks": {
+  "artifactPutDeduplicated": {
+   "iterations": 1000.0,
+   "meanMs": 0.035565788,
+   "medianMs": 0.024542,
+   "operationsPerSecond": 28116.9083052511,
+   "p95Ms": 0.054,
+   "totalMs": 35.565788
+  },
+  "canonicalHash": {
+   "iterations": 1000.0,
+   "meanMs": 0.005155757,
+   "medianMs": 0.004667,
+   "operationsPerSecond": 193957.93866933603,
+   "p95Ms": 0.004916,
+   "totalMs": 5.155757
+  },
+  "eventAppend": {
+   "iterations": 1000.0,
+   "meanMs": 0.084448412,
+   "medianMs": 0.06706200000000001,
+   "operationsPerSecond": 11841.548897331544,
+   "p95Ms": 0.140833,
+   "totalMs": 84.448412
+  },
+  "gateEvaluation": {
+   "iterations": 1000.0,
+   "meanMs": 0.000639318,
+   "medianMs": 0.000625,
+   "operationsPerSecond": 1564166.815262514,
+   "p95Ms": 0.000667,
+   "totalMs": 0.639318
+  },
+  "processDirect": {
+   "iterations": 20.0,
+   "meanMs": 29.447651999999998,
+   "medianMs": 29.2191245,
+   "operationsPerSecond": 33.95856484584917,
+   "p95Ms": 35.862375,
+   "totalMs": 588.95304
+  },
+  "processGovernanceOverhead": {
+   "absoluteMedianMs": 7.6365835,
+   "note": "Local process-launch overhead only; excludes validators, agents and human wait.",
+   "relativeMedianPercent": 26.135565766181678
+  },
+  "processGoverned": {
+   "iterations": 20.0,
+   "meanMs": 37.4434104,
+   "medianMs": 36.855708,
+   "operationsPerSecond": 26.706968978445403,
+   "p95Ms": 49.590167,
+   "totalMs": 748.868208
+  },
+  "stateTransition": {
+   "iterations": 1000.0,
+   "meanMs": 0.000427057,
+   "medianMs": 0.000416,
+   "operationsPerSecond": 2341607.7947440273,
+   "p95Ms": 0.000458,
+   "totalMs": 0.427057
+  }
+ },
+ "environment": {
+  "platform": "macOS-15.7.9-arm64-arm-64bit",
+  "processor": "arm",
+  "python": "3.12.11"
+ },
+ "generatedAt": "2026-09-30T17:20:11.431047+00:00",
+ "methodology": {
+  "clock": "time.perf_counter_ns",
+  "scope": "Microbenchmarks on this execution environment; not general performance claims.",
+  "warmup": "No explicit warmup; every sample is reported in the aggregate."
+ },
+ "schemaVersion": "1.0"
+}

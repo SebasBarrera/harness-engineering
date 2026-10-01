@@ -1,0 +1,23 @@
+taskId: task_eval_brownfield_strict_base64
+title: Make base64_decode strict
+intent: >-
+  itsdangerous.encoding.base64_decode silently discards characters that are not part of the
+  URL-safe base64 alphabet (including non-ASCII characters), so several different strings decode
+  to the same bytes and a signature can be altered without being rejected. Make the decoder strict.
+requirements:
+  - requirementId: req_alphabet
+    text: base64_decode raises BadData when the input contains any character outside A-Z, a-z, 0-9, '-' and '_', except '=' padding at the end.
+    source: brownfield-evaluation
+  - requirementId: req_padding
+    text: Unpadded input and at most two trailing '=' padding characters keep being accepted.
+    source: brownfield-evaluation
+acceptanceCriteria:
+  - criterionId: ac_reject
+    text: Input with '+', '/', whitespace, non-ASCII characters, control characters or '=' before the end raises BadData, for both str and bytes.
+  - criterionId: ac_signatures
+    text: A signed value or serialized token whose signature has an inserted character outside the alphabet is rejected.
+  - criterionId: ac_existing
+    text: Existing tests keep passing (python -m pytest -q) and the new behavior is covered by tests.
+constraints:
+  - Keep the public signature of base64_decode and base64_encode.
+  - Do not add dependencies.

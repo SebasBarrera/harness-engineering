@@ -51,7 +51,11 @@ def test_passing_retry_with_same_changeset_clears_the_earlier_failure(
     digest = failed.change_set_digest
 
     # The baseline is repaired without touching the owned files: the ChangeSet does not change.
-    legacy.write_text("def test_legacy() -> None:\n    assert 1 + 1 == 2\n", encoding="utf-8")
+    # The repaired file has a different size: Python reuses the bytecode cache of a source with
+    # the same size rewritten within the same second, and pytest would run the broken test again.
+    legacy.write_text(
+        "def test_legacy() -> None:\n    assert 1 + 1 == 2  # repaired\n", encoding="utf-8"
+    )
     pending = app.continue_run(python_workspace, failed.execution_id)
     assert pending.current_phase is PhaseId.DECISION
     assert pending.change_set_digest == digest

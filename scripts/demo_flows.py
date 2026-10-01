@@ -6,8 +6,9 @@ provider, and every command's exit code is checked against the documented expect
 The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
-* ``all``: quickstart plus the later-change, broken-baseline, review-exception and Node.js
-  flows, leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
+* ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js and
+  memory flows, leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read
+  them;
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
@@ -90,6 +91,39 @@ implementation:
 """
 
 
+FOLLOW_UP_TASK = """\
+taskId: {task_id}
+title: Cover another discount case
+intent: Add a regression test for {case}.
+acceptanceCriteria:
+  - criterionId: ac_case
+    text: The new test passes with the current implementation.
+implementation:
+  mode: patch
+  patches:
+    - path: tests/test_pricing.py
+      operation: append
+      content: |
+
+        def {test}() -> None:
+            assert apply_discount({subtotal}, 100, 0.1) == {expected}
+"""
+
+USAGE_ADAPTER = """\
+import json
+import sys
+from pathlib import Path
+
+request = json.load(sys.stdin)
+for patch in request["task"]["implementation"]["patches"]:
+    with Path(patch["path"]).open("a", encoding="utf-8") as handle:
+        handle.write(patch.get("content") or "")
+# Fixed figures: this fixture exercises the usage protocol, it does not call a model.
+usage = {"inputTokens": 1200, "outputTokens": 340, "costUsd": 0.0125}
+print(json.dumps({"status": "PASSED", "summary": "Patches applied", "usage": usage}))
+"""
+
+
 class Transcript:
     def __init__(self, harness: str) -> None:
         self.harness = harness
@@ -122,6 +156,12 @@ class Transcript:
 
     def json(self, flow: str, cwd: Path, args: Sequence[str], expect: int) -> Any:
         return json.loads(self.run(flow, cwd, args, expect).stdout)
+
+    def check(self, flow: str, condition: bool, description: str) -> None:
+        """Record an assertion on the output of a step, next to its exit code."""
+        self.ok &= condition
+        mark = "ok " if condition else "BAD"
+        print(f"[{mark}] {flow:<14} check: {description}")
 
 
 def git(cwd: Path, *args: str) -> None:
@@ -373,7 +413,9 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     run_id = started["executionId"]
     t.run(flow, root, ["findings", "list", "--path", ".", "--run", run_id], 0)
     before = current_digest(t, flow, root, run_id)
-    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2\n")
+    # A different size than the broken version: Python reuses the bytecode cache of a source
+    # with the same size rewritten within the same second.
+    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2  # repaired\n")
     t.run(flow, root, ["run", "continue", "--path", ".", "--run", run_id], 4)
     status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
     digest = status["execution"]["changeSetDigest"]
@@ -507,12 +549,226 @@ def flow_node(t: Transcript, root: Path) -> None:
     )
 
 
+def approve(t: Transcript, flow: str, root: Path, run_id: str, rationale: str) -> None:
+    digest = current_digest(t, flow, root, run_id)
+    t.run(
+        flow,
+        root,
+        [
+            "gate",
+            "decide",
+            "--path",
+            ".",
+            "--run",
+            run_id,
+            "--decision",
+            "APPROVE",
+            "--change-set-digest",
+            digest,
+            "--actor",
+            "human.reviewer",
+            "--rationale",
+            rationale,
+        ],
+        0,
+    )
+
+
+def flow_memory(t: Transcript, root: Path) -> None:
+    """Governed memory, a decided recommendation and reported usage.
+
+    A proposal enters no context until a person approves it; an expired record is listed as
+    excluded; an accepted recommendation becomes context of the next run; an invalidated record
+    leaves the context; and a command provider that reports its usage fills the token metrics.
+    """
+    flow = "memory"
+    python_project(root)
+    (root / "task.yaml").write_text(PY_TASK)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    proposal = t.json(
+        flow,
+        root,
+        [
+            "memory",
+            "add",
+            *here,
+            "--level",
+            "project",
+            "--key",
+            "money.rounding",
+            "--value",
+            "Round money half up to two places.",
+            "--actor",
+            "human.author",
+        ],
+        0,
+    )
+    freeze = t.json(
+        flow,
+        root,
+        [
+            "memory",
+            "add",
+            *here,
+            "--level",
+            "normative",
+            "--key",
+            "release.freeze",
+            "--value",
+            "No dependency upgrades during the freeze.",
+            "--valid-until",
+            "2020-01-01T00:00:00+00:00",
+            "--approve",
+            "--actor",
+            "human.lead",
+        ],
+        0,
+    )
+    # A task record without its task is a configuration error.
+    t.run(flow, root, ["memory", "add", *here, "--level", "task", "--key", "k", "--value", "v"], 2)
+    rule = t.json(
+        flow,
+        root,
+        ["memory", "approve", *here, "--memory", proposal["memoryId"], "--actor", "human.lead"],
+        0,
+    )
+    # Approving an approved record is a policy violation.
+    t.run(flow, root, ["memory", "approve", *here, "--memory", rule["memoryId"]], 5)
+
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    first = t.json(flow, root, ["run", "start", *here, "--task", "task_python_add_discount"], 4)[
+        "executionId"
+    ]
+    manifest = t.json(flow, root, ["memory", "manifest", *here, "--run", first], 0)
+    t.check(
+        flow,
+        [item["memoryId"] for item in manifest["records"]] == [rule["memoryId"]],
+        "the first run applied the approved rule only",
+    )
+    t.check(
+        flow,
+        {item["memoryId"]: item["reason"] for item in manifest["excluded"]}
+        == {proposal["memoryId"]: "superseded", freeze["memoryId"]: "expired"},
+        "the proposal is recorded as superseded and the old rule as expired",
+    )
+    approve(t, flow, root, first, "Validators passed")
+
+    recommendation = t.json(flow, root, ["recommendation", "list", *here, "--run", first], 0)[0][
+        "recommendation"
+    ]["recommendationId"]
+    decide = ["recommendation", "decide", *here, "--run", first, "--recommendation", recommendation]
+    accepted = t.json(
+        flow,
+        root,
+        [
+            *decide,
+            "--decision",
+            "ACCEPT",
+            "--actor",
+            "human.lead",
+            "--rationale",
+            "No findings in this run; keep the controls as they are.",
+        ],
+        0,
+    )
+    # A recommendation takes one decision.
+    t.run(flow, root, [*decide, "--decision", "REJECT", "--rationale", "Changed my mind"], 5)
+
+    (root / "task-2.yaml").write_text(
+        FOLLOW_UP_TASK.format(
+            task_id="task_python_above_threshold",
+            case="a subtotal above the threshold",
+            test="test_above_threshold",
+            subtotal=200,
+            expected=180,
+        )
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "task-2.yaml"], 0)
+    second = t.json(
+        flow, root, ["run", "start", *here, "--task", "task_python_above_threshold"], 4
+    )["executionId"]
+    manifest = t.json(flow, root, ["memory", "manifest", *here, "--run", second], 0)
+    t.check(
+        flow,
+        {item["memoryId"] for item in manifest["records"]}
+        == {rule["memoryId"], accepted["memoryId"]},
+        "the second run applied the rule and the accepted recommendation",
+    )
+    approve(t, flow, root, second, "Validators passed")
+
+    tombstone = t.json(
+        flow,
+        root,
+        [
+            "memory",
+            "invalidate",
+            *here,
+            "--memory",
+            rule["memoryId"],
+            "--reason",
+            "Rounding moved to the billing service.",
+            "--actor",
+            "human.lead",
+        ],
+        0,
+    )
+    listing = t.json(flow, root, ["memory", "list", *here], 0)
+    t.check(
+        flow,
+        {item["record"]["memoryId"]: item["status"] for item in listing}
+        == {
+            proposal["memoryId"]: "superseded",
+            freeze["memoryId"]: "expired",
+            rule["memoryId"]: "superseded",
+            accepted["memoryId"]: "active",
+            tombstone["memoryId"]: "expired",
+        },
+        "after the invalidation only the accepted recommendation stays active",
+    )
+
+    # A command provider that reports its usage fills the token and cost metrics.
+    (root / "usage_adapter.py").write_text(USAGE_ADAPTER)
+    config = root / ".harness" / "project.yaml"
+    config.write_text(
+        config.read_text()
+        + "agentProviders:\n  usage_fixture:\n    kind: command\n"
+        + "    command: [python, usage_adapter.py]\n    model: usage-fixture\n"
+    )
+    (root / "task-3.yaml").write_text(
+        FOLLOW_UP_TASK.format(
+            task_id="task_python_zero",
+            case="a subtotal of zero",
+            test="test_zero_subtotal",
+            subtotal=0,
+            expected=0,
+        )
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "task-3.yaml"], 0)
+    third = t.json(
+        flow,
+        root,
+        ["run", "start", *here, "--task", "task_python_zero", "--provider", "usage_fixture"],
+        4,
+    )["executionId"]
+    metrics = t.json(flow, root, ["status", *here, "--run", third], 0)["metrics"]
+    t.check(
+        flow,
+        metrics["tokens.input"]["value"] == 1200
+        and metrics["tokens.input"]["quality"] == "REPORTED"
+        and metrics["cost.usd"]["quality"] == "REPORTED",
+        "token and cost metrics carry the usage the provider reported",
+    )
+    approve(t, flow, root, third, "Validators passed")
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
     "broken-baseline": flow_broken_baseline,
     "review-exception": flow_review_exception,
     "node": flow_node,
+    "memory": flow_memory,
 }
 
 

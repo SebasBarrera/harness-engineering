@@ -2,13 +2,20 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from governed_harness.application import HarnessApplication
-from governed_harness.domain.enums import DecisionKind, ResultStatus
-from governed_harness.domain.errors import HarnessError
+from governed_harness.domain.enums import (
+    DecisionKind,
+    MemoryLevel,
+    RecommendationDecision,
+    ResultStatus,
+)
+from governed_harness.domain.errors import ConfigurationError, HarnessError
 
 app = typer.Typer(no_args_is_help=True, help="Governed Agent Harness CLI")
 config_app = typer.Typer(help="Configuration commands")
@@ -17,6 +24,8 @@ run_app = typer.Typer(help="Execution lifecycle commands")
 gate_app = typer.Typer(help="Human gate commands")
 evidence_app = typer.Typer(help="Evidence commands")
 findings_app = typer.Typer(help="Finding commands")
+memory_app = typer.Typer(help="Governed memory commands")
+recommendation_app = typer.Typer(help="Retrospective recommendation commands")
 plugins_app = typer.Typer(help="Plugin and extension commands")
 benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
@@ -26,6 +35,8 @@ app.add_typer(run_app, name="run")
 app.add_typer(gate_app, name="gate")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(findings_app, name="findings")
+app.add_typer(memory_app, name="memory")
+app.add_typer(recommendation_app, name="recommendation")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
@@ -301,6 +312,146 @@ def findings_list(
     _emit(_call(lambda: HarnessApplication().list_findings(path, run)))
 
 
+def _memory_value(raw: str) -> dict[str, Any]:
+    """A JSON object is stored as given; any other text is stored under the key ``text``."""
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"text": raw}
+    return parsed if isinstance(parsed, dict) else {"text": raw}
+
+
+def _memory_deadline(raw: str | None) -> datetime | None:
+    if raw is None:
+        return None
+    try:
+        value = datetime.fromisoformat(raw)
+    except ValueError as error:
+        raise ConfigurationError(f"--valid-until is not an ISO 8601 date: {raw}") from error
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+@memory_app.command("add")
+def memory_add(
+    level: MemoryLevel = typer.Option(
+        ..., "--level", case_sensitive=False, help="Scope of the record"
+    ),
+    key: str = typer.Option(..., "--key", help="Stable name of the record within its level"),
+    value: str = typer.Option(
+        ..., "--value", help="JSON object, or plain text stored under the key 'text'"
+    ),
+    task: str | None = typer.Option(None, "--task", help="Task identifier; required for TASK"),
+    run: str | None = typer.Option(None, "--run", help="Run identifier; required for EPHEMERAL"),
+    valid_until: str | None = typer.Option(
+        None, "--valid-until", help="ISO 8601 instant after which the record no longer applies"
+    ),
+    supersedes: str | None = typer.Option(
+        None, "--supersedes", help="Identifier of the record this one replaces"
+    ),
+    sensitive: bool = typer.Option(
+        False, "--sensitive", help="Withhold the value from the context manifest and the agent"
+    ),
+    approve: bool = typer.Option(
+        False, "--approve", help="Record the entry as approved by the acting person"
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Record a memory entry with its provenance. NORMATIVE, PROJECT and RETROSPECTIVE entries
+    enter a context only once approved."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().add_memory(
+                path,
+                level=level,
+                key=key,
+                value=_memory_value(value),
+                actor_id=actor,
+                task_id=task,
+                execution_id=run,
+                valid_until=_memory_deadline(valid_until),
+                supersedes=supersedes,
+                sensitive=sensitive,
+                approved=approve,
+            )
+        )
+    )
+
+
+@memory_app.command("list")
+def memory_list(
+    task: str | None = typer.Option(None, "--task", help="Evaluate the status for this task"),
+    run: str | None = typer.Option(None, "--run", help="Evaluate the status for this run"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the memory records of the project with their status: active, superseded, expired,
+    unapproved, limit or out_of_scope."""
+    _emit(_call(lambda: HarnessApplication().list_memory(path, task_id=task, execution_id=run)))
+
+
+@memory_app.command("manifest")
+def memory_manifest(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the context manifest recorded for a run: the records it applied, their digest and
+    the candidates it excluded with the reason."""
+    _emit(_call(lambda: HarnessApplication().memory_manifest(path, run)))
+
+
+@memory_app.command("approve")
+def memory_approve(
+    memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Approve a proposed record. The approval is a new record that supersedes the proposal;
+    approving a record that needs no approval or is already approved exits with code 5."""
+    _emit(
+        _call(lambda: HarnessApplication().approve_memory(path, memory_id=memory, actor_id=actor))
+    )
+
+
+@memory_app.command("invalidate")
+def memory_invalidate(
+    memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
+    reason: str = typer.Option(..., "--reason", help="Why the record no longer applies"),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Invalidate a record without deleting it: it stops entering any context and the actor and
+    the reason stay on record."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().invalidate_memory(
+                path, memory_id=memory, actor_id=actor, reason=reason
+            )
+        )
+    )
+
+
 @gate_app.command("decide")
 def gate_decide(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
@@ -357,6 +508,60 @@ def retrospect(
     """Derive non-mutating observations and recommendations from a closed run. Nothing is
     applied automatically."""
     _emit(_call(lambda: HarnessApplication().retrospect(path, run)))
+
+
+@recommendation_app.command("list")
+def recommendation_list(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the retrospective recommendations of a run with the decision recorded for each."""
+    _emit(_call(lambda: HarnessApplication().list_recommendations(path, run)))
+
+
+@recommendation_app.command("decide")
+def recommendation_decide(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    recommendation: str = typer.Option(
+        ..., "--recommendation", help="Recommendation identifier shown by retrospect"
+    ),
+    decision: RecommendationDecision = typer.Option(
+        ..., "--decision", case_sensitive=False, help="Decision on the recommendation"
+    ),
+    rationale: str = typer.Option(
+        ..., "--rationale", help="Justification recorded with the decision"
+    ),
+    statement: str | None = typer.Option(
+        None, "--statement", help="Edited text of the recommendation; required with EDIT"
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Accept, edit or reject a retrospective recommendation. The decision is kept as
+    retrospective memory: an accepted or edited recommendation enters the context of later
+    runs, a rejected one stays as history. A second decision on the same recommendation exits
+    with code 5; nothing is applied to rules, gates or configuration."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().decide_recommendation(
+                path,
+                execution_id=run,
+                recommendation_id=recommendation,
+                decision=decision,
+                actor_id=actor,
+                rationale=rationale,
+                statement=statement,
+            )
+        )
+    )
 
 
 @plugins_app.command("list")

@@ -1,0 +1,77 @@
+{
+ "benchmarks": {
+  "artifactPutDeduplicated": {
+   "iterations": 1000.0,
+   "meanMs": 0.031455637,
+   "medianMs": 0.023417,
+   "operationsPerSecond": 31790.804300036903,
+   "p95Ms": 0.043125,
+   "totalMs": 31.455637
+  },
+  "canonicalHash": {
+   "iterations": 1000.0,
+   "meanMs": 0.004916655000000001,
+   "medianMs": 0.004583,
+   "operationsPerSecond": 203390.31312955654,
+   "p95Ms": 0.004792,
+   "totalMs": 4.916655
+  },
+  "eventAppend": {
+   "iterations": 1000.0,
+   "meanMs": 0.093485338,
+   "medianMs": 0.06460450000000001,
+   "operationsPerSecond": 10696.864571426164,
+   "p95Ms": 0.13925,
+   "totalMs": 93.485338
+  },
+  "gateEvaluation": {
+   "iterations": 1000.0,
+   "meanMs": 0.000637096,
+   "medianMs": 0.000625,
+   "operationsPerSecond": 1569622.1605535117,
+   "p95Ms": 0.000667,
+   "totalMs": 0.637096
+  },
+  "processDirect": {
+   "iterations": 20.0,
+   "meanMs": 27.543818800000004,
+   "medianMs": 27.313083499999998,
+   "operationsPerSecond": 36.30578632763878,
+   "p95Ms": 35.342875,
+   "totalMs": 550.876376
+  },
+  "processGovernanceOverhead": {
+   "absoluteMedianMs": 0.8074585000000027,
+   "note": "Local process-launch overhead only; excludes validators, agents and human wait.",
+   "relativeMedianPercent": 2.956306635975392
+  },
+  "processGoverned": {
+   "iterations": 20.0,
+   "meanMs": 28.98215,
+   "medianMs": 28.120542,
+   "operationsPerSecond": 34.50399642538597,
+   "p95Ms": 41.608375,
+   "totalMs": 579.643
+  },
+  "stateTransition": {
+   "iterations": 1000.0,
+   "meanMs": 0.00039150800000000005,
+   "medianMs": 0.000375,
+   "operationsPerSecond": 2554226.2227080925,
+   "p95Ms": 0.000417,
+   "totalMs": 0.391508
+  }
+ },
+ "environment": {
+  "platform": "macOS-15.7.9-arm64-arm-64bit",
+  "processor": "arm",
+  "python": "3.12.11"
+ },
+ "generatedAt": "2026-09-30T17:20:15.962055+00:00",
+ "methodology": {
+  "clock": "time.perf_counter_ns",
+  "scope": "Microbenchmarks on this execution environment; not general performance claims.",
+  "warmup": "No explicit warmup; every sample is reported in the aggregate."
+ },
+ "schemaVersion": "1.0"
+}

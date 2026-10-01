@@ -1,0 +1,179 @@
+{
+ "codex": {
+  "gpt-6-luna|baseline": {
+   "approvedFirstGate": 0,
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": null,
+   "defectiveByScenario": {
+    "brownfield": 0,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 9,
+   "deliveredDefective": 0,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "inputTokensMedian": 157283,
+   "outputTokensMedian": 3746,
+   "overheadSecondsMedian": null,
+   "runs": 9,
+   "runsGreenfieldOrSecurity": 6,
+   "totalSecondsMedian": 106.974,
+   "traceComplete": 0
+  },
+  "gpt-6-luna|harness": {
+   "approvedFirstGate": 9,
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": null,
+   "defectiveByScenario": {
+    "brownfield": 0,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 9,
+   "deliveredDefective": 0,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "inputTokensMedian": 168964,
+   "outputTokensMedian": 2942,
+   "overheadSecondsMedian": 5.556999999999988,
+   "runs": 9,
+   "runsGreenfieldOrSecurity": 6,
+   "totalSecondsMedian": 132.42,
+   "traceComplete": 9
+  },
+  "gpt-6.1-sol|baseline": {
+   "approvedFirstGate": 0,
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": null,
+   "defectiveByScenario": {
+    "brownfield": 0,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 8,
+   "deliveredDefective": 0,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "inputTokensMedian": 106868.5,
+   "outputTokensMedian": 2527.5,
+   "overheadSecondsMedian": null,
+   "runs": 8,
+   "runsGreenfieldOrSecurity": 5,
+   "totalSecondsMedian": 106.357,
+   "traceComplete": 0
+  },
+  "gpt-6.1-sol|harness": {
+   "approvedFirstGate": 9,
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": null,
+   "defectiveByScenario": {
+    "brownfield": 0,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 9,
+   "deliveredDefective": 0,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "inputTokensMedian": 108276,
+   "outputTokensMedian": 2434,
+   "overheadSecondsMedian": 5.626999999999995,
+   "runs": 9,
+   "runsGreenfieldOrSecurity": 6,
+   "totalSecondsMedian": 113.672,
+   "traceComplete": 9
+  }
+ },
+ "promptLevels": {
+  "casual|baseline": {
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": 0.102117,
+   "defectiveByScenario": {
+    "brownfield": 4,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 27,
+   "deliveredDefective": 4,
+   "deliveredWithoutTests": 7,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 4,
+   "runs": 27,
+   "runsGreenfieldOrSecurity": 18,
+   "totalSecondsMedian": 66.149
+  },
+  "full|baseline": {
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": 0.126614,
+   "defectiveByScenario": {
+    "brownfield": 1,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 45,
+   "deliveredDefective": 1,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "runs": 45,
+   "runsGreenfieldOrSecurity": 30,
+   "totalSecondsMedian": 82.932
+  },
+  "full|harness": {
+   "blockedCorrect": 2,
+   "blockedDefective": 0,
+   "costMedianUsd": 0.145072,
+   "defectiveByScenario": {
+    "brownfield": 0,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 43,
+   "deliveredDefective": 0,
+   "deliveredWithoutTests": 0,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "runs": 45,
+   "runsGreenfieldOrSecurity": 30,
+   "totalSecondsMedian": 94.739
+  },
+  "poor|baseline": {
+   "blockedCorrect": 0,
+   "blockedDefective": 0,
+   "costMedianUsd": 0.093209,
+   "defectiveByScenario": {
+    "brownfield": 5,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 27,
+   "deliveredDefective": 5,
+   "deliveredWithoutTests": 11,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 5,
+   "runs": 27,
+   "runsGreenfieldOrSecurity": 18,
+   "totalSecondsMedian": 58.875
+  },
+  "poor|harness": {
+   "blockedCorrect": 5,
+   "blockedDefective": 1,
+   "costMedianUsd": 0.090945,
+   "defectiveByScenario": {
+    "brownfield": 4,
+    "greenfield": 0,
+    "security": 0
+   },
+   "delivered": 21,
+   "deliveredDefective": 4,
+   "deliveredWithoutTests": 6,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 0,
+   "runs": 27,
+   "runsGreenfieldOrSecurity": 18,
+   "totalSecondsMedian": 68.19
+  }
+ }
+}

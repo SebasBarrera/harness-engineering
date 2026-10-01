@@ -127,7 +127,7 @@ harness installed from source (`scripts/demo_flows.py quickstart`), and checks e
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v0.9.0/governed_agent_harness-0.9.0-py3-none-any.whl" pytest
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl" pytest
 
 # a tiny Python project with a baseline commit
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -156,7 +156,7 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 |---|---|
 | A release wheel (recommended) | `pip install <wheel URL from the release page>`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | Source | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:0.9.0 --help` (published from `v0.9.0`; runs as a non-root user) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (published from `v1.0.0`; runs as a non-root user) |
 
 Requirements: **Python ≥ 3.12** and **Git** (baselines and ChangeSets come from the repository). For
 Node.js projects, **Node.js LTS and npm**. The optional `api` extra installs FastAPI and Uvicorn for
@@ -178,7 +178,8 @@ every step:
 5. `harness status --run <id>`, `harness findings list`, `harness evidence list`.
 6. `harness gate decide … --change-set-digest <current digest>` → exit **0**.
 7. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (recommendations are
-   never applied automatically). The harness never commits: review `git diff` and commit yourself.
+   never applied automatically; `harness recommendation decide` records whether a person accepts,
+   edits or rejects each one). The harness never commits: review `git diff` and commit yourself.
 
 ## Brownfield guide
 
@@ -212,7 +213,7 @@ a missing one is currently stored as the text `None` (issue #29).
 
 ## CLI
 
-21 commands (full reference with every option, generated from the code:
+28 commands (full reference with every option, generated from the code:
 [docs/reference/cli.md](docs/reference/cli.md)):
 
 | Group | Commands |
@@ -221,6 +222,8 @@ a missing one is currently stored as the text `None` (issue #29).
 | Tasks | `task create`, `task list`, `task show` |
 | Runs | `run start`, `run continue`, `run cancel`, `run list`, `status` |
 | Evidence | `evidence list`, `findings list`, `trace`, `retrospect` |
+| Memory | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
+| Recommendations | `recommendation list`, `recommendation decide` |
 | Decision | `gate decide` |
 | Extensions and benchmarks | `plugins list`, `benchmark run`, `benchmark scenarios` |
 | Dashboard | `api serve` |
@@ -281,7 +284,9 @@ An absent optional validator is `NOT_APPLICABLE`; an absent mandatory executable
 
 An agent is connected through the **command provider**: a program registered in
 `agentProviders` that receives the task and plan as JSON on stdin and prints one JSON object
-(`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`) on stdout.
+(`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`, optionally with the `usage` the
+agent reports) on stdout. When the project has governed memory in force, the request also carries
+it under `context` ([memory guide](docs/guides/memory.md)).
 `examples/structured-command-agent.py` is a working example. There is **no native integration with
 Claude Code, Codex or any model API**: they are connected through such a wrapper; a template is in
 the [external agents guide](docs/guides/external-agents.md). The provider only proposes a change;
@@ -336,13 +341,12 @@ overhead on shared runners, not productivity or quality. See [docs/benchmarks.md
 
 Open behavioral defects (milestone
 [backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); the
-`v0.8.0` tag keeps the evaluated behavior, and 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31
-([changelog](CHANGELOG.md)):
+`v0.8.0` tag keeps the evaluated behavior, 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, and
+1.0.0 made memory operable (#6) ([changelog](CHANGELOG.md)):
 
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) workflow phase settings (capabilities, attempts, timeouts, exit gates) are recorded but not enforced;
 - [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) capabilities are resolved per run, not per phase, and project grants add to profile grants;
 - [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` and other declared settings are not enforced;
-- [#6](https://github.com/SebasBarrera/harness-engineering/issues/6) no production path creates memory records;
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) pre-existing and introduced errors are not distinguished;
 - [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) there is no plan-approval checkpoint.
 
@@ -375,7 +379,7 @@ Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state
 | Python modules / lines in `src/governed_harness` | 74 / 6,746 |
 | JSON Schema contracts · CLI commands · API routes | 25 · 21 · 9 |
 | Tests | 86 (core 79, E2E Python 4, E2E Node.js 1, performance 2) |
-| Core coverage | lines 77.48 %, branches 59.29 % |
+| Core coverage | lines 80.60 %, branches 59.29 % (77.48 % combined) |
 | Governed-process overhead | 10.09 % and 11.23 % (about 1.2 ms) |
 | Brownfield case | itsdangerous 2.2.0, 298 tests, invariant ChangeSet digest |
 
