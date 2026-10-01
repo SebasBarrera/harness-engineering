@@ -5,7 +5,9 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
+from governed_harness.application import HarnessApplication
 from governed_harness.cli.main import app
+from governed_harness.domain.enums import MemoryLevel
 
 
 def invoke(workspace: Path, *args: str) -> tuple[int, object]:
@@ -132,3 +134,55 @@ def test_memory_commands_fail_closed(python_workspace: Path) -> None:
         app, ["memory", "invalidate", "--memory", record["memoryId"], "--reason", " ", *path]
     )
     assert no_reason.exit_code == 2
+
+
+def test_memory_manifest_shows_what_a_run_applied(python_workspace: Path, tmp_path: Path) -> None:
+    application = HarnessApplication()
+    rule = application.add_memory(
+        python_workspace,
+        level=MemoryLevel.PROJECT,
+        key="money.rounding",
+        value={"text": "Round money half up to two places."},
+        actor_id="human.lead",
+        approved=True,
+    )
+    proposal = application.add_memory(
+        python_workspace,
+        level=MemoryLevel.PROJECT,
+        key="naming",
+        value={"text": "Prefer long names."},
+        actor_id="human.author",
+    )
+    task_path = tmp_path / "task.yaml"
+    task_path.write_text(
+        "title: Example\nintent: Do work\nacceptanceCriteria:\n  - It works\n"
+        "implementation:\n  mode: patch\n  patches:\n"
+        "    - path: tests/test_pricing.py\n      operation: append\n      content: |\n"
+        "\n        def test_extra() -> None:\n            assert apply_discount(1, 100, 0.1) == 1\n",
+        encoding="utf-8",
+    )
+    task = application.create_task(python_workspace, task_path)
+    run = application.start_run(python_workspace, task.task_id)
+    code, manifest = invoke(python_workspace, "memory", "manifest", "--run", run.execution_id)
+    assert code == 0
+    assert isinstance(manifest, dict)
+    assert [item["memoryId"] for item in manifest["records"]] == [rule.memory_id]
+    assert manifest["excluded"] == [
+        {
+            "memoryId": proposal.memory_id,
+            "level": "PROJECT",
+            "key": "naming",
+            "reason": "unapproved",
+        }
+    ]
+    assert manifest["manifestRef"].startswith("artifact://sha256/")
+    # The manifest is a record of the run: approving the proposal later does not rewrite it.
+    application.approve_memory(
+        python_workspace, memory_id=proposal.memory_id, actor_id="human.lead"
+    )
+    _, later = invoke(python_workspace, "memory", "manifest", "--run", run.execution_id)
+    assert later == manifest
+    unknown = CliRunner().invoke(
+        app, ["memory", "manifest", "--run", "run_unknown", "--path", str(python_workspace)]
+    )
+    assert unknown.exit_code == 3

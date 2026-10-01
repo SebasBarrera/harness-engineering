@@ -360,6 +360,17 @@ class HarnessApplication:
                 listing.append(entry)
             return listing
 
+    def memory_manifest(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """Return the context manifest recorded for a run: the memory it applied and the
+        candidates it left out, as they were when the run was planned."""
+        with self._services(path) as services:
+            services.state.get("execution", execution_id, Execution)
+            reference = services.state.get_flag(f"context:{execution_id}")
+            if not reference:
+                raise NotFoundError(f"run has no context manifest: {execution_id}")
+            manifest: dict[str, Any] = json.loads(services.artifacts.get(reference))
+            return {"executionId": execution_id, "manifestRef": reference, **manifest}
+
     def approve_memory(self, path: Path, *, memory_id: str, actor_id: str) -> MemoryRecord:
         """Approve a normative, project or retrospective record. The approval is a new record
         that supersedes the proposal, so the proposal and its approver both stay on record."""
