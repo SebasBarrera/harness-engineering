@@ -27,6 +27,9 @@ unchanged: with no memory records, the request sent to the agent provider is ide
   record of quality `REPORTED`, referenced from the agent invocation (`usageRef`) and summed into
   the metrics `tokens.*` and `cost.usd`. Without it the metrics stay `NOT_AVAILABLE`; a malformed
   report is a protocol error. Nothing is estimated.
+- `harness benchmark scenarios` no longer depends on the user's Git configuration: the fixture
+  repository is created with commit signing and hooks disabled, so a global `commit.gpgsign` does
+  not make the baseline commit fail.
 
 ## 0.9.0 - 2026-09-30
 
