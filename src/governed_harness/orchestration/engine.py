@@ -559,13 +559,14 @@ class RunEngine:
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.get_task(execution.task_id)
-        memories = MemoryStore(self.s.state).select_context(
+        selection = MemoryStore(self.s.state).select(
             project_id=execution.project_id,
             task_id=task.task_id,
             execution_id=execution.execution_id,
         )
-        manifest = context_manifest(memories)
+        manifest = context_manifest(selection.records, selection.exclusions)
         context_ref = self.s.artifacts.put_json(manifest, metadata={"kind": "context-manifest"})
+        self.s.state.set_flag(f"context:{execution.execution_id}", context_ref.uri)
         steps = (
             PlanStep(
                 step_id=new_id("step"),
@@ -653,6 +654,11 @@ class RunEngine:
         )
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
         runner = SafeProcessRunner(self.s.paths.workspace)
+        context_uri = self.s.state.get_flag(f"context:{execution.execution_id}")
+        memory_context: dict[str, Any] | None = None
+        if context_uri:
+            manifest = json.loads(self.s.artifacts.get(context_uri))
+            memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
         result = provider.implement(
             task,
             plan,
@@ -667,6 +673,8 @@ class RunEngine:
                 timeout_seconds=self.s.resolved.project.runtime.command_timeout_seconds,
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
                 cancellation=cancellation,
+                context_manifest_ref=context_uri,
+                memory_context=memory_context,
             ),
         )
         self.s.state.put(

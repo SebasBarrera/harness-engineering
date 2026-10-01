@@ -50,11 +50,15 @@ class CommandAgentProvider:
                 version="1",
             )
         started = datetime.now(UTC)
-        request = {
+        request: dict[str, object] = {
             "schemaVersion": "1.0",
             "task": task.model_dump(mode="json"),
             "plan": plan.model_dump(mode="json"),
         }
+        # The governed memory selected in PLANNING reaches the agent only when there is any, so
+        # a request without memory is identical to the one sent before memory was wired in.
+        if context.memory_context and context.memory_context.get("records"):
+            request["context"] = context.memory_context
         request_bytes = json.dumps(request, sort_keys=True).encode("utf-8")
         prompt_digest = sha256_json(request)
         result = context.process_runner.run(
@@ -123,6 +127,7 @@ class CommandAgentProvider:
             finished_at=datetime.now(UTC),
             status=status,
             prompt_digest=prompt_digest,
+            context_manifest_ref=context.context_manifest_ref,
             tool_invocation_ids=(tool.invocation_id,),
             output_ref=stdout_ref.uri,
             error=error,

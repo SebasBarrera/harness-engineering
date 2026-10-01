@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+Additions that close gaps between the design and the prototype. The run path evaluated on 0.9.0 is
+unchanged: with no memory records, the request sent to the agent provider is identical.
+
+- Governed memory is operable (#6). `harness memory add | list | approve | invalidate` record,
+  approve and invalidate entries with the acting person; an approval or an invalidation is a new
+  record that supersedes the previous one, so nothing is edited in place. The context manifest
+  built in `PLANNING` lists the records that entered the context and, under `excluded`, every
+  candidate that did not, with its reason (`superseded`, `expired`, `unapproved`, `limit`). An
+  unapproved record no longer supersedes an approved one, and supersession no longer depends on
+  the order of the records. The value of a record marked as sensitive is withheld from the
+  manifest. The selected records reach command agent providers under `context`, and each agent
+  invocation references its manifest (`contextManifestRef`).
+
 ## 0.9.0 - 2026-09-30
 
 Behavioral fixes. `v0.8.0` keeps the behavior evaluated in the thesis; every fix below has a
