@@ -16,7 +16,6 @@ from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import DecisionKind, ResultStatus
 from governed_harness.runtime import resolve_executable
 
-
 # The fixture repository must not inherit the user's Git configuration: global commit signing or
 # a global core.hooksPath would make the baseline commit fail or prompt.
 _GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnull}")
