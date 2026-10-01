@@ -43,7 +43,7 @@ else. The process runs with `cwd` set to the workspace, without a shell, with th
 The task and plan are serialized with the model field names (snake_case). When the project has
 governed memory that applies to the run, the request also carries `context`, with the selected
 records and their digest (`{"records": [...], "digest": "sha256:…"}`); a run without memory sends
-no `context` key.
+no `context` key. See [memory and retrospective decisions](memory.md).
 
 **Response (stdout)**: the whole standard output must be one JSON object, and the process must
 exit with 0:
