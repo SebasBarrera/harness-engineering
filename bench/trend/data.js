@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790832135119,
+  "lastUpdate": 1790832248219,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -1405,6 +1405,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.317,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "47837394+SebasBarrera@users.noreply.github.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "2a1316161bdd02365b5c6f85b3f575ff69813a10",
+          "message": "Merge branch 'feat/memory-operations' into develop\n\n- feat(memory): record why a record did not enter a context\n- feat(cli): add memory add, list, approve and invalidate\n- feat(agents): pass the selected memory to the agent provider\n\nCloses #6\n\nVerification on the branch head 18b7aeae4705: 21 CI job(s) succeeded, no blocking job failed.\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368658\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368674\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368691\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368704\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368706\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/36819368707\nFiles of the v0.8.0 cut in the tree: matched: 129/232  mismatched: 79  missing: 24",
+          "timestamp": "2026-10-01T00:23:36-05:00",
+          "tree_id": "2f6fe7b241835c72f6b012593e2c622a6f90090b",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/2a1316161bdd02365b5c6f85b3f575ff69813a10"
+        },
+        "date": 1790832247952,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000912,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001382,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.008693,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.045063,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.197283,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.518304,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.825157,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.352,
             "unit": "%"
           }
         ]
