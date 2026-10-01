@@ -20,6 +20,11 @@ unchanged: with no memory records, the request sent to the agent provider is ide
   of later runs; a rejected one stays as history and never enters a context. A recommendation
   takes one decision (a second one exits with 5). Rules, gates and configuration are still
   changed only by a person: `retrospectiveAutoApply` remains a locked `false` policy.
+- Command agent providers can report their usage. An optional `usage` object in the response
+  (`inputTokens`, `outputTokens`, `reasoningTokens`, `costUsd`) is stored as a `ResourceUsage`
+  record of quality `REPORTED`, referenced from the agent invocation (`usageRef`) and summed into
+  the metrics `tokens.*` and `cost.usd`. Without it the metrics stay `NOT_AVAILABLE`; a malformed
+  report is a protocol error. Nothing is estimated.
 
 ## 0.9.0 - 2026-09-30
 
