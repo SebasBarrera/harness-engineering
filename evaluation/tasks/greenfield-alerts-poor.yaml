@@ -1,0 +1,6 @@
+taskId: task_eval_greenfield_alerts_poor
+title: Alerts client
+intent: Implement build_alert_request in an alerts package as described in SPEC.md.
+acceptanceCriteria:
+  - criterionId: ac_works
+    text: It works.

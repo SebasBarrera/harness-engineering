@@ -230,6 +230,7 @@ def main() -> int:
     parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
+    parser.add_argument("--prompt", choices=["full", "poor", "casual"], default="full")
     parser.add_argument("--effort", default="")
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
@@ -239,10 +240,18 @@ def main() -> int:
 
     site_packages = Path(next(p for p in sys.path if p.endswith("site-packages")))
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = args.work / f"{args.scenario}-{args.condition}-{args.model}-r{args.rep}-{stamp}"
+    tag = "" if args.prompt == "full" else f"-{args.prompt}"
+    run_dir = args.work / f"{args.scenario}{tag}-{args.condition}-{args.model}-r{args.rep}-{stamp}"
     workspace = run_dir / "ws"
     baseline = prepare(args.scenario, workspace, args.cache, site_packages)
     task_file = SCENARIOS[args.scenario]["task"]
+    if args.prompt == "poor":
+        task_file = task_file.with_name(task_file.stem + "-poor.yaml")
+    casual_prompt = None
+    if args.prompt == "casual":
+        if args.condition != "baseline":
+            parser.error("the casual prompt has no task file; the harness rejects it at task create")
+        casual_prompt = task_file.with_name(task_file.stem + "-casual.txt").read_text(encoding="utf-8")
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
 
     started = time.monotonic()
@@ -250,17 +259,19 @@ def main() -> int:
         "scenario": args.scenario,
         "condition": args.condition,
         "model": args.model,
-        "agent": args.agent,
+        "agentName": args.agent,
+        "prompt": args.prompt,
         "effort": args.effort or None,
         "rep": args.rep,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     if args.condition == "baseline":
         log = run_dir / "agent-calls" / "call-1.json"
+        prompt = casual_prompt if casual_prompt is not None else build_prompt(task)
         if args.agent == "codex":
-            run_codex(build_prompt(task), workspace, args.model, args.effort, log)
+            run_codex(prompt, workspace, args.model, args.effort, log)
         else:
-            run_claude(build_prompt(task), workspace, args.model, log)
+            run_claude(prompt, workspace, args.model, log)
         record["baseline"] = {"delivered": True}
     else:
         record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort)
