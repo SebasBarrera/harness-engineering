@@ -9,7 +9,12 @@ from typing import Any
 import typer
 
 from governed_harness.application import HarnessApplication
-from governed_harness.domain.enums import DecisionKind, MemoryLevel, ResultStatus
+from governed_harness.domain.enums import (
+    DecisionKind,
+    MemoryLevel,
+    RecommendationDecision,
+    ResultStatus,
+)
 from governed_harness.domain.errors import ConfigurationError, HarnessError
 
 app = typer.Typer(no_args_is_help=True, help="Governed Agent Harness CLI")
@@ -20,6 +25,7 @@ gate_app = typer.Typer(help="Human gate commands")
 evidence_app = typer.Typer(help="Evidence commands")
 findings_app = typer.Typer(help="Finding commands")
 memory_app = typer.Typer(help="Governed memory commands")
+recommendation_app = typer.Typer(help="Retrospective recommendation commands")
 plugins_app = typer.Typer(help="Plugin and extension commands")
 benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
@@ -30,6 +36,7 @@ app.add_typer(gate_app, name="gate")
 app.add_typer(evidence_app, name="evidence")
 app.add_typer(findings_app, name="findings")
 app.add_typer(memory_app, name="memory")
+app.add_typer(recommendation_app, name="recommendation")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
@@ -489,6 +496,60 @@ def retrospect(
     """Derive non-mutating observations and recommendations from a closed run. Nothing is
     applied automatically."""
     _emit(_call(lambda: HarnessApplication().retrospect(path, run)))
+
+
+@recommendation_app.command("list")
+def recommendation_list(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the retrospective recommendations of a run with the decision recorded for each."""
+    _emit(_call(lambda: HarnessApplication().list_recommendations(path, run)))
+
+
+@recommendation_app.command("decide")
+def recommendation_decide(
+    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    recommendation: str = typer.Option(
+        ..., "--recommendation", help="Recommendation identifier shown by retrospect"
+    ),
+    decision: RecommendationDecision = typer.Option(
+        ..., "--decision", case_sensitive=False, help="Decision on the recommendation"
+    ),
+    rationale: str = typer.Option(
+        ..., "--rationale", help="Justification recorded with the decision"
+    ),
+    statement: str | None = typer.Option(
+        None, "--statement", help="Edited text of the recommendation; required with EDIT"
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Accept, edit or reject a retrospective recommendation. The decision is kept as
+    retrospective memory: an accepted or edited recommendation enters the context of later
+    runs, a rejected one stays as history. A second decision on the same recommendation exits
+    with code 5; nothing is applied to rules, gates or configuration."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().decide_recommendation(
+                path,
+                execution_id=run,
+                recommendation_id=recommendation,
+                decision=decision,
+                actor_id=actor,
+                rationale=rationale,
+                statement=statement,
+            )
+        )
+    )
 
 
 @plugins_app.command("list")

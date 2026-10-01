@@ -12,7 +12,12 @@ from typing import Any
 
 from governed_harness import __version__
 from governed_harness.configuration import ConfigurationResolver, initialize_project
-from governed_harness.domain.enums import ActorType, DecisionKind, MemoryLevel
+from governed_harness.domain.enums import (
+    ActorType,
+    DecisionKind,
+    MemoryLevel,
+    RecommendationDecision,
+)
 from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -407,6 +412,101 @@ class HarnessApplication:
             store.put(record)
             return record
 
+    def list_recommendations(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
+        """List the recommendations of a run with the decision recorded for each, if any."""
+        with self._services(path) as services:
+            retrospective = self._retrospective(services, execution_id)
+            decided = {
+                item.key: item
+                for item in MemoryStore(services.state).list_project(
+                    services.resolved.project.project_id
+                )
+                if item.level is MemoryLevel.RETROSPECTIVE
+            }
+            listing: list[dict[str, Any]] = []
+            for recommendation in retrospective.recommendations:
+                record = decided.get(self._recommendation_key(recommendation.recommendation_id))
+                listing.append(
+                    {
+                        "recommendation": recommendation.model_dump(mode="json", by_alias=True),
+                        "decision": record.value.get("decision") if record else None,
+                        "memoryId": record.memory_id if record else None,
+                    }
+                )
+            return listing
+
+    def decide_recommendation(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        recommendation_id: str,
+        decision: RecommendationDecision,
+        actor_id: str,
+        rationale: str,
+        statement: str | None = None,
+    ) -> MemoryRecord:
+        """Record the decision of a person on a retrospective recommendation.
+
+        The decision is kept as retrospective memory. An accepted or edited recommendation is
+        approved and enters the context of later runs; a rejected one is kept as history and
+        never enters a context. Nothing else changes: rules, gates and configuration are only
+        modified by a person through a versioned change."""
+        with self._services(path) as services:
+            retrospective = self._retrospective(services, execution_id)
+            recommendation = next(
+                (
+                    item
+                    for item in retrospective.recommendations
+                    if item.recommendation_id == recommendation_id
+                ),
+                None,
+            )
+            if recommendation is None:
+                raise NotFoundError(f"recommendation not found in run: {recommendation_id}")
+            if not rationale.strip():
+                raise ConfigurationError("a decision on a recommendation requires a rationale")
+            edited = statement.strip() if statement else ""
+            if decision is RecommendationDecision.EDIT and not edited:
+                raise ConfigurationError("EDIT requires the edited statement")
+            if decision is not RecommendationDecision.EDIT and edited:
+                raise ConfigurationError("only EDIT takes an edited statement")
+            store = MemoryStore(services.state)
+            project_id = services.resolved.project.project_id
+            key = self._recommendation_key(recommendation_id)
+            if any(item.key == key for item in store.list_project(project_id)):
+                raise PolicyViolationError(
+                    f"recommendation already has a decision: {recommendation_id}"
+                )
+            now = datetime.now(UTC)
+            value: dict[str, Any] = {
+                "recommendationId": recommendation.recommendation_id,
+                "executionId": execution_id,
+                "category": recommendation.category,
+                "statement": edited or recommendation.statement,
+                "rationale": recommendation.rationale,
+                "decision": decision.value,
+                "decisionRationale": rationale.strip(),
+            }
+            if edited:
+                value["originalStatement"] = recommendation.statement
+            rejected = decision is RecommendationDecision.REJECT
+            record = MemoryRecord(
+                memory_id=new_id("mem"),
+                project_id=project_id,
+                level=MemoryLevel.RETROSPECTIVE,
+                key=key,
+                value=value,
+                provenance=self._human_provenance(
+                    actor_id, source_refs=(retrospective.retrospective_id,)
+                ),
+                created_at=now,
+                valid_until=now if rejected else None,
+                approved=not rejected,
+            )
+            store.put(record)
+            return record
+
     def doctor(self, path: Path | None = None) -> dict[str, Any]:
         checks: dict[str, Any] = {
             "python": {"status": "PASSED", "version": sys.version.split()[0]},
@@ -444,6 +544,18 @@ class HarnessApplication:
             yield services
         finally:
             services.close()
+
+    @staticmethod
+    def _retrospective(services: EngineServices, execution_id: str) -> Retrospective:
+        services.state.get("execution", execution_id, Execution)
+        records = services.state.list("retrospective", Retrospective, execution_id=execution_id)
+        if not records:
+            raise NotFoundError(f"run has no retrospective yet: {execution_id}")
+        return records[-1]
+
+    @staticmethod
+    def _recommendation_key(recommendation_id: str) -> str:
+        return f"recommendation/{recommendation_id}"
 
     @staticmethod
     def _human_provenance(actor_id: str, *, source_refs: tuple[str, ...] = ()) -> Provenance:
