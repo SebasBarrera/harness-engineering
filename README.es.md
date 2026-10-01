@@ -390,7 +390,7 @@ Snapshot reportado por la tesis para v0.8.0 (los badges de CI muestran el estado
 | Módulos / líneas de Python en `src/governed_harness` | 74 / 6.746 |
 | Contratos JSON Schema · comandos de la CLI · rutas de la API | 25 · 21 · 9 |
 | Pruebas | 86 (núcleo 79, E2E Python 4, E2E Node.js 1, rendimiento 2) |
-| Cobertura del núcleo | líneas 77,48 %, ramas 59,29 % |
+| Cobertura del núcleo | líneas 80,60 %, ramas 59,29 % (77,48 % combinada) |
 | Sobrecarga del proceso gobernado | 10,09 % y 11,23 % (cerca de 1,2 ms) |
 | Caso brownfield | itsdangerous 2.2.0, 298 pruebas, digest del ChangeSet invariante |
 

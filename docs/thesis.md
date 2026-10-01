@@ -37,7 +37,7 @@ state of `develop`):
 | API routes | 9 (seven queries, one decision POST, the dashboard at `/`) |
 | Tests | 86: core 79, E2E Python 4, E2E Node.js 1, performance 2 |
 | Full suite in one process | exit 0 in three runs, 19–21 s |
-| Core coverage | lines 77.48 %, branches 59.29 %, 3,268 statements |
+| Core coverage | lines 80.60 %, branches 59.29 % (77.48 % combined), 3,268 statements |
 | Ruff 0.16.5 | 140 findings in `src`, 11 in `tests` (60 F401, 40 B008) |
 | Mypy strict | package mode blocked by the missing `py.typed`; 54 errors in 15 files on sources |
 | Wheel in a clean environment | installs its runtime dependencies (18 counted during publication) and `harness` runs |

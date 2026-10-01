@@ -101,8 +101,8 @@
    },
    "delivered": 27,
    "deliveredDefective": 4,
-   "deliveredWithoutTests": 9,
-   "deliveredWithoutTestsGreenfieldOrSecurity": 6,
+   "deliveredWithoutTests": 7,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 4,
    "runs": 27,
    "runsGreenfieldOrSecurity": 18,
    "totalSecondsMedian": 66.149
@@ -152,8 +152,8 @@
    },
    "delivered": 27,
    "deliveredDefective": 5,
-   "deliveredWithoutTests": 10,
-   "deliveredWithoutTestsGreenfieldOrSecurity": 4,
+   "deliveredWithoutTests": 11,
+   "deliveredWithoutTestsGreenfieldOrSecurity": 5,
    "runs": 27,
    "runsGreenfieldOrSecurity": 18,
    "totalSecondsMedian": 58.875
