@@ -25,6 +25,14 @@ which control reacts (regression, failing test, secret, dynamic evaluation, miss
 change after the gate, tampered event log, change outside the declared paths, timeout, output flood,
 unauthorized command).
 
+Three further blocks reuse the same scenarios and measures:
+
+| Block | What changes | Runs |
+|---|---|---|
+| Instruction levels (`--prompt poor`, `--prompt casual`) | The task shrinks to a title, a one-sentence intent and the criterion `It works.` (`tasks/*-poor.yaml`), or to a one-line prompt (`tasks/*-casual.txt`, baseline only: the harness rejects a task without acceptance criteria) | 81, 3 per cell |
+| Second agent (`--agent codex`) | Codex CLI 0.159.2 with two models and the full task | 35 valid, 3 per cell |
+| Iterative development (`longitudinal/`) | Five increments of one library: one-line prompts without the harness, structured tasks with it; an oracle of 25 hidden checks sends the same bug reports to both conditions, at most two rounds per increment | 17 valid sessions, 3 per cell |
+
 ## Measures (`measure.py`)
 
 - Hidden acceptance tests (`hidden/`), never shown to the implementer.
@@ -55,5 +63,18 @@ importable through a `.pth` file in the environment's `site-packages`.
 
 ## Results
 
-`results/` holds one JSON line per run (local paths and run identifiers are not recorded),
-`fault-probes.jsonl`, `environment.json` and the aggregated `summary.json`.
+`results/` holds one JSON line per run or session; local paths and run identifiers are not recorded.
+
+| File | Content | Aggregated by |
+|---|---|---|
+| `claude-<model>.jsonl`, `claude-<model>-security.jsonl` | Full task, with and without the harness (90 runs) | `report.py` → `summary.json` |
+| `claude-minimal-<model>.jsonl`, `claude-casual-<model>.jsonl`, `casual-harness-rejection.json` | Instruction levels (81 runs) and the rejection of the one-line prompt | `report_prompts.py` → `summary-prompts.json` |
+| `codex-<model>.jsonl` | Second agent (35 runs) | `report_prompts.py` → `summary-prompts.json` |
+| `longitudinal-<model>.jsonl` | Iterative development (18 sessions, 17 valid) | `longitudinal/report.py` → `summary-longitudinal.json` |
+| `fault-probes.jsonl` | 13 probes, 3 repetitions each | `report.py` → `summary.json` |
+| `review-posthoc.jsonl` | Review rules applied to the final change of every run of the first block | `posthoc_review.py` |
+| `phases-retrospective.jsonl` | Seconds per phase, decisions, non-passed validations and retrospective recommendations of the 45 governed runs of the first block | `report_phases.py` → `summary-phases.json` |
+| `benchmark-*.json`, `environment.json` | Benchmarks of the prototype; versions, digests and excluded runs | — |
+
+`posthoc_review.py` and `report_phases.py` read the run directories left under `--work`, which keep
+the workspace and the harness state of each run.
