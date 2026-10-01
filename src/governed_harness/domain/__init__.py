@@ -8,6 +8,7 @@ from .enums import (
     MemoryLevel,
     MetricQuality,
     PhaseId,
+    RecommendationDecision,
     ResultStatus,
     ValidationKind,
 )
@@ -98,6 +99,7 @@ __all__ = [
     "PolicyViolationError",
     "Provenance",
     "Recommendation",
+    "RecommendationDecision",
     "Requirement",
     "ResourceUsage",
     "ResultStatus",

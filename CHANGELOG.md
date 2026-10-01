@@ -14,6 +14,12 @@ unchanged: with no memory records, the request sent to the agent provider is ide
   the order of the records. The value of a record marked as sensitive is withheld from the
   manifest. The selected records reach command agent providers under `context`, and each agent
   invocation references its manifest (`contextManifestRef`).
+- Retrospective recommendations can be decided. `harness recommendation list | decide` records
+  `ACCEPT`, `EDIT` or `REJECT` with the acting person and a rationale. The decision is kept as
+  retrospective memory: an accepted or edited recommendation is approved and enters the context
+  of later runs; a rejected one stays as history and never enters a context. A recommendation
+  takes one decision (a second one exits with 5). Rules, gates and configuration are still
+  changed only by a person: `retrospectiveAutoApply` remains a locked `false` policy.
 
 ## 0.9.0 - 2026-09-30
 
