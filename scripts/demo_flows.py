@@ -373,7 +373,9 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     run_id = started["executionId"]
     t.run(flow, root, ["findings", "list", "--path", ".", "--run", run_id], 0)
     before = current_digest(t, flow, root, run_id)
-    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2\n")
+    # A different size than the broken version: Python reuses the bytecode cache of a source
+    # with the same size rewritten within the same second.
+    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2  # repaired\n")
     t.run(flow, root, ["run", "continue", "--path", ".", "--run", run_id], 4)
     status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
     digest = status["execution"]["changeSetDigest"]
