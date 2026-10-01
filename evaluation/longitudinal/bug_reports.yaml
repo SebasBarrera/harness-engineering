@@ -14,3 +14,4 @@ test_c_rejects_invalid_content: "Inventory.load must raise ValueError for malfor
 test_c_rejects_large_files: "Inventory.load must raise ValueError for files larger than 1 MB"
 test_d_low_stock: "low_stock(threshold) must return the SKUs whose quantity is strictly below the threshold, sorted"
 test_d_total_value_rounding: "total_value must return a Decimal rounded half up to two decimals, and Decimal('0.00') for an empty inventory"
+collection: "the library cannot be used: from inventory import Inventory fails or the tests cannot even start; it must be importable as the package inventory in src/inventory"

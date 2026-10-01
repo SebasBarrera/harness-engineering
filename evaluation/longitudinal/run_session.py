@@ -77,8 +77,17 @@ def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
 
 
 def failing(result: dict[str, Any], parts: list[str]) -> list[str]:
-    names = {re.sub(r"\[.*\]$", "", n) for n, ok in result["cases"].items() if not ok
-             and (n == "collection" or n[5:6] in parts)}
+    """Failing checks of the delivered parts; any failure outside named checks (for example an import
+    or collection error) is reported as 'collection', as a user would notice that nothing runs."""
+    names: set[str] = set()
+    for n, ok in result["cases"].items():
+        if ok:
+            continue
+        if re.match(r"test_[a-d]_", n):
+            if n[5] in parts:
+                names.add(re.sub(r"\[.*\]$", "", n))
+        else:
+            names.add("collection")
     return sorted(names)
 
 
