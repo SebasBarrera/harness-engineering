@@ -95,6 +95,9 @@ FOLLOW_UP_TASK = """\
 taskId: {task_id}
 title: Cover another discount case
 intent: Add a regression test for {case}.
+requirements:
+  - requirementId: req_case
+    text: A regression test covers {case} without changing the implementation.
 acceptanceCriteria:
   - criterionId: ac_case
     text: The new test passes with the current implementation.

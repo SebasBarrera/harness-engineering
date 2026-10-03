@@ -27,6 +27,8 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
     task_file.write_text(
         "title: Add API fixture behavior\n"
         "intent: Exercise the application API through HTTP.\n"
+        "requirements:\n"
+        "  - A subtotal equal to the threshold is reduced by the rate.\n"
         "acceptanceCriteria:\n"
         "  - The threshold behavior passes.\n"
         "implementation:\n"

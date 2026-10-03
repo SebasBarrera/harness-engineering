@@ -12,6 +12,7 @@ def test_trace_json_jsonl_and_sarif(python_workspace: Path, tmp_path: Path) -> N
     task_file.write_text(
         "title: Change implementation\n"
         "intent: Add a no-op comment with a matching test change.\n"
+        "requirements:\n  - The change adds comments only.\n"
         "acceptanceCriteria:\n  - Tests pass.\n"
         "implementation:\n"
         "  mode: patch\n"
