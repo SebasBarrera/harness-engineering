@@ -323,7 +323,7 @@ def test_partial_answers_leave_the_remaining_question_open(
         "--task",
         task_id,
         "--file",
-        write_answers(tmp_path, "answers:\n  Q-1: apply_discount(100, 100, 0.1) returns 90.\n"),
+        write_answers(tmp_path, "answers:\n  Q-2: Only the threshold rule.\n"),
     )
     assert code == 0
     code, run = invoke(python_workspace, "run", "continue", "--run", run_id)
@@ -331,8 +331,29 @@ def test_partial_answers_leave_the_remaining_question_open(
     assert run["currentPhase"] == "INTENT"
     code, questions = invoke(python_workspace, "task", "questions", "--task", task_id)
     assert [(q["questionId"], q["ruleId"]) for q in questions["openRequest"]["questions"]] == [
-        ("Q-1", "T1")
+        ("Q-1", "C1")
     ]
+
+
+def test_a_precise_answer_to_the_criterion_also_settles_the_scope(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """T1 only questions a single criterion without an anchor: once the answer gives the
+    criterion an observable result, the reassessed task raises no question."""
+    task_id, run_id = blocked_run(python_workspace, tmp_path)
+    code, _ = invoke(
+        python_workspace,
+        "task",
+        "clarify",
+        "--task",
+        task_id,
+        "--file",
+        write_answers(tmp_path, "answers:\n  Q-1: apply_discount(100, 100, 0.1) returns 90.\n"),
+    )
+    assert code == 0
+    code, run = invoke(python_workspace, "run", "continue", "--run", run_id)
+    assert code == 4
+    assert run["currentPhase"] == "DECISION"
 
 
 @pytest.mark.parametrize("policy", ["warn", None])

@@ -10,7 +10,8 @@ The rules are deliberately conservative: a criterion is questioned only when not
 * ``C1`` no observable result: fewer than four words, or only vague vocabulary, and no anchor.
 * ``C2`` quality without a measure: a quality word such as "fast" or "secure" and no number.
 * ``C3`` duplicate: the same criterion text (and hint) as an earlier criterion.
-* ``T1`` scope without breakdown: an intent under 25 words, no requirements and one criterion.
+* ``T1`` scope without breakdown: an intent under 25 words, no requirements and a single
+  criterion that has no anchor.
 
 An anchor is a digit, quoted or back-quoted text, a code identifier (``name()``, a
 ``snake_case`` name, a path, a file name, a ``CamelCase`` name such as ``ValueError``) or a
@@ -47,8 +48,9 @@ QUESTION_TEMPLATES: dict[ClarificationRule, str] = {
         "it check, or which criterion should replace it?"
     ),
     "T1": (
-        "The intent ('{text}') is short, has no requirements and a single acceptance criterion. "
-        "Which separate behaviours must the task deliver, and what is out of scope?"
+        "The intent ('{text}') is short, has no requirements and a single acceptance criterion "
+        "with nothing concrete to check. Which separate behaviours must the task deliver, and "
+        "what is out of scope?"
     ),
 }
 """English question templates, one per rule. The only place where question texts live."""
@@ -335,12 +337,15 @@ def unmeasured_quality(criterion: AcceptanceCriterion) -> str | None:
 
 
 def scope_without_breakdown(task: Task) -> bool:
-    """Rule T1."""
-    return (
-        len(task.intent.split()) < MIN_INTENT_WORDS
-        and not task.requirements
-        and len(task.acceptance_criteria) == 1
-    )
+    """Rule T1: a short intent, no requirements and a single criterion with no anchor.
+
+    A precise single criterion (one with a number, a quoted value, a code identifier or a
+    result verb) already bounds a small task, so it is not questioned."""
+    if len(task.intent.split()) >= MIN_INTENT_WORDS or task.requirements:
+        return False
+    if len(task.acceptance_criteria) != 1:
+        return False
+    return not _has_anchor(_statement(task.acceptance_criteria[0]))
 
 
 def assess_intent(task: Task) -> tuple[ClarificationQuestion, ...]:

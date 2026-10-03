@@ -172,21 +172,59 @@ def test_c3_ignores_distinct_criteria_and_distinct_hints() -> None:
     )
 
 
-def test_t1_flags_a_short_intent_with_one_criterion_and_no_requirements() -> None:
-    short = task(criterion("apply_discount(100, 100, 0.1) returns 90."), intent="Add a discount.")
+def test_t1_flags_a_short_intent_with_one_unanchored_criterion_and_no_requirements() -> None:
+    short = task(criterion("The threshold is inclusive."), intent="Add a discount.")
     assert scope_without_breakdown(short)
     questions = assess_intent(short)
     assert [(q.rule_id, q.target) for q in questions] == [("T1", TASK_TARGET)]
 
 
-def test_t1_needs_all_three_conditions() -> None:
-    good = criterion("apply_discount(100, 100, 0.1) returns 90.")
-    other = criterion("apply_discount(99, 100, 0.1) returns 99.", criterion_id="AC-2")
+@pytest.mark.parametrize(
+    "text",
+    [
+        "apply_discount(100, 100, 0.1) returns 90.",
+        "A subtotal of 100 with a ten percent rate returns 90.",
+        "Tests pass.",
+        "Raises ValueError for a negative rate",
+    ],
+)
+def test_t1_spares_a_precise_single_criterion(text: str) -> None:
+    precise = task(criterion(text), intent="Add a discount.")
+    assert not scope_without_breakdown(precise)
+    assert not assess_intent(precise)
+
+
+@pytest.mark.parametrize(
+    ("text", "rules"),
+    [("It works.", ["C1", "T1"]), ("It is fast.", ["C2", "T1"])],
+)
+def test_t1_also_asks_about_scope_when_the_single_criterion_is_vague(
+    text: str, rules: list[str]
+) -> None:
+    questions = assess_intent(task(criterion(text), intent="Add a discount."))
+    assert [q.rule_id for q in questions] == rules
+    # The criterion question asks for an observable result, T1 for the scope breakdown.
+    assert "what exact result" in questions[0].text or "threshold" in questions[0].text
+    assert "out of scope" in questions[1].text
+    assert questions[0].text != questions[1].text
+
+
+def test_t1_reads_the_hint_of_the_single_criterion() -> None:
+    hinted = task(
+        criterion("The threshold is inclusive.", hint="apply_discount(100, 100, 0.1) returns 90."),
+        intent="Add a discount.",
+    )
+    assert not scope_without_breakdown(hinted)
+
+
+def test_t1_needs_all_its_conditions() -> None:
+    loose = criterion("The threshold is inclusive.")
+    other = criterion("Rates are fractions of one.", criterion_id="AC-2")
     requirement = Requirement(requirement_id="req_1", text="Discount at the threshold.")
-    assert not scope_without_breakdown(task(good))
-    assert not scope_without_breakdown(task(good, other, intent="Add a discount."))
+    assert not scope_without_breakdown(task(loose))
+    assert not scope_without_breakdown(task(loose, other, intent="Add a discount."))
     assert not scope_without_breakdown(
-        task(good, intent="Add a discount.", requirements=(requirement,))
+        task(loose, intent="Add a discount.", requirements=(requirement,))
     )
 
 
