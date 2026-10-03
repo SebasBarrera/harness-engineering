@@ -210,6 +210,8 @@ def configure_limits(workspace: Path, model: str) -> None:
 
 
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str) -> dict[str, Any]:
+    # Feedback belongs to the correction cycles of one task; a later step must not receive it.
+    (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
     task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
     if "acceptanceCriteria" not in task:
