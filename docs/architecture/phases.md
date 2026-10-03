@@ -19,7 +19,8 @@ Retrospective runs after closure and only produces recommendations. It never mut
 `INTENT` also checks that the acceptance criteria say something that can be observed. A
 deterministic assessment (fixed vocabularies and patterns, no language model) raises a question
 for a criterion without an observable result (`C1`), a quality without a measure (`C2`), a
-duplicate criterion (`C3`) and a short intent with one criterion and no requirements (`T1`).
+duplicate criterion (`C3`) and a short intent with no requirements and a single criterion that has
+no anchor (`T1`).
 With `intake.criteriaPolicy: enforce` the phase is `BLOCKED` until a person answers with
 `harness task clarify`; the answers produce a new task revision, and `harness run continue`
 re-runs `INTENT` on it. The run never leaves `INTENT` with open questions, and no phase is added:

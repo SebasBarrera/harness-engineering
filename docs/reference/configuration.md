@@ -91,7 +91,7 @@ into clarification questions with stable ids (`Q-1`, `Q-2`, ...):
 | `C1` no observable result | A criterion has fewer than four words, or only vague words ("works", "correctly", "properly", "as expected", "good", "fine", "nice", "clean", "robust", "user-friendly", "well"), and no anchor: a digit, quoted or back-quoted text, a code identifier (`name()`, `snake_case`, a path, a file name, a `CamelCase` name such as `ValueError`) or a checkable result verb (returns, raises, rejects, accepts, equals, contains, lists, stores, prints, exits, responds, creates, deletes, matches, passes, fails, at most, at least, within, before, after). |
 | `C2` quality without a measure | A criterion says "fast", "quick", "performant", "efficient", "scalable", "secure", "reliable" or "responsive" without a number. |
 | `C3` duplicate | Two criteria have the same text once case, spacing and trailing punctuation are folded. |
-| `T1` scope without breakdown | The intent has fewer than 25 words, there are no requirements and there is exactly one criterion. |
+| `T1` scope without breakdown | The intent has fewer than 25 words, there are no requirements and there is exactly one criterion, and that criterion has no anchor (as in `C1`). It is asked next to a `C1` or `C2` question about the same criterion, because it asks for the scope rather than the result. |
 
 A criterion's `verificationHint` counts as part of what it says can be observed. What happens
 with the questions depends on `intake.criteriaPolicy`:

@@ -6,7 +6,7 @@
   "It works." passed `INTENT` and `SPECIFICATION` and was approved. A deterministic assessment now
   raises clarification questions with stable ids for a criterion without an observable result
   (`C1`), a quality without a measure (`C2`), a duplicate criterion (`C3`) and a short intent with
-  one criterion and no requirements (`T1`). The new `intake.criteriaPolicy` setting decides what
+  no requirements and a single criterion that has nothing concrete to check (`T1`). The new `intake.criteriaPolicy` setting decides what
   happens: `enforce` (written by `harness init`) blocks `INTENT` (`run start` exits with 6),
   `warn` records the questions as evidence and `LOW` findings and lets the run continue, `off`
   skips the check. A `project.yaml` without the key runs with `warn` and keeps its configuration
@@ -14,9 +14,8 @@
   records a person's answers, optional criterion and requirement changes, the previous and new
   task digest and the new task revision on the run's event chain; `harness run continue`
   re-assesses the revision. No phase was added. New contracts:
-  `clarification-request.schema.json` and `clarification-record.schema.json`. The demonstration
-  follow-up tasks of the memory flow gained a requirement (they had one criterion and a short
-  intent), and a clarification flow was added to `scripts/demo_flows.py`.
+  `clarification-request.schema.json` and `clarification-record.schema.json`. A clarification
+  flow was added to `scripts/demo_flows.py`.
 
 ## 1.0.0 - 2026-10-01
 
