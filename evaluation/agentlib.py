@@ -36,7 +36,8 @@ MAX_BUDGET_USD = "5"
 # A resumable call that stops on the account usage limit (or an overloaded API) waits and resumes the
 # same session; the wait is recorded apart from the agent's working time.
 LIMIT_TEXT = re.compile(
-    r"usage limit|limit reached|hit your limit|limit will reset|resets? at|rate.?limit|overloaded"
+    r"usage limit|session limit|weekly limit|limit reached|hit your (\w+ )?limit|limit will reset"
+    r"|resets? (at |in )?\d|rate.?limit|overloaded"
     r"|\b(429|529)\b",
     re.IGNORECASE,
 )
@@ -220,33 +221,51 @@ def _run_resumable(
         state["pausedSeconds"] += wait
     segments = state["segments"]
     last = segments[-1]
+    # On --resume, Claude Code reports total_cost_usd, duration_api_ms and modelUsage for the whole session
+    # (they are restored from it), while usage tokens and num_turns cover only that invocation. So the
+    # session totals come from the latest segment that reports them, tokens are summed, and probes that
+    # only met the limit again (no output) add no turns.
+    cumulative = max(segments, key=lambda seg: seg["costUsd"] or 0)
 
     def total(key: str) -> Any:
         values = [seg[key] for seg in segments if seg[key] is not None]
-        return round(sum(values), 6) if values else None
+        return sum(values) if values else None
 
-    model_usage: dict[str, dict[str, Any]] = {}
-    for seg in segments:
-        for name, data in seg["modelUsage"].items():
-            merged = model_usage.setdefault(name, {})
-            for key, value in data.items():
-                if isinstance(value, (int, float)):
-                    merged[key] = round(merged.get(key, 0) + value, 6)
     record = {
         **last,
-        "costUsd": total("costUsd"),
+        "costUsd": cumulative["costUsd"],
+        "durationApiMs": cumulative["durationApiMs"],
+        "modelUsage": cumulative["modelUsage"],
         "inputTokens": total("inputTokens"),
         "outputTokens": total("outputTokens"),
         "cacheReadTokens": total("cacheReadTokens"),
         "cacheCreationTokens": total("cacheCreationTokens"),
-        "numTurns": total("numTurns"),
-        "durationApiMs": total("durationApiMs"),
+        "numTurns": sum(
+            seg["numTurns"] or 0
+            for seg in segments
+            if not seg["resumed"] or (seg["outputTokens"] or 0) > 0
+        ),
         "wallSeconds": round(sum(seg["wallSeconds"] for seg in segments), 3),
         "permissionDenials": sum(seg["permissionDenials"] for seg in segments),
         "deniedTools": [tool for seg in segments for tool in seg["deniedTools"]],
-        "modelUsage": model_usage,
         "sessionId": state["sessionId"],
         "segments": len(segments),
+        "segmentLog": [
+            {
+                k: seg[k]
+                for k in (
+                    "resumed",
+                    "exitCode",
+                    "isError",
+                    "numTurns",
+                    "costUsd",
+                    "outputTokens",
+                    "wallSeconds",
+                )
+            }
+            | {"summary": seg["summary"][:200]}
+            for seg in segments
+        ],
         "limitPauses": state.get("limitPauses", 0),
         "pausedSeconds": round(state["pausedSeconds"], 3),
     }
