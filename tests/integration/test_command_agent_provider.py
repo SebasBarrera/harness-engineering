@@ -45,8 +45,6 @@ def test_configured_command_agent_is_a_functional_second_provider(
     task_file.write_text(
         "title: Implement threshold discount through command adapter\n"
         "intent: Verify a provider-neutral external agent contract.\n"
-        "requirements:\n"
-        "  - The command adapter applies the patch and reports its status.\n"
         "acceptanceCriteria:\n"
         "  - The changed behavior passes its regression test.\n"
         "implementation:\n"

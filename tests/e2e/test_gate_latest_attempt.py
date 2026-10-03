@@ -15,8 +15,6 @@ def discount_task(tmp_path: Path) -> Path:
     path.write_text(
         "title: Implement threshold discount\n"
         "intent: Apply a discount at or above the threshold.\n"
-        "requirements:\n"
-        "  - A subtotal at or above the threshold is reduced by the rate.\n"
         "acceptanceCriteria:\n"
         "  - A subtotal of 100 with a ten percent rate returns 90.\n"
         "implementation:\n"

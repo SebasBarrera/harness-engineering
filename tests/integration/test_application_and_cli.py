@@ -51,7 +51,6 @@ def test_cli_gate_decide_prints_camel_case_like_every_other_command(
     task.write_text(
         "title: Discount\n"
         "intent: Apply a discount at or above the threshold.\n"
-        "requirements:\n  - A subtotal at or above the threshold is reduced by the rate.\n"
         "acceptanceCriteria:\n  - A subtotal of 100 at ten percent returns 90.\n"
         "implementation:\n  mode: patch\n  patches:\n"
         "    - path: src/sample/pricing.py\n      operation: replace\n      content: |\n"
