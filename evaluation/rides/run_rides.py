@@ -60,7 +60,9 @@ from run_session import calls_since, final_measures, usage  # noqa: E402
 PROMPTS = yaml.safe_load((HERE / "prompts.yaml").read_text(encoding="utf-8"))
 SPEC_TEXT = (HERE / "SPEC.md").read_text(encoding="utf-8")
 HIDDEN = HERE / "hidden"
-TOOLS_PYTHON = str(HERE.parents[1] / ".local" / "venv-repo" / "bin" / "python")
+# Ruff and Mypy for quality.py: the repository's tool venv, found from the repository or from a copy in .local.
+TOOLS_PYTHON = str(next(p for p in HERE.parents if (p / ".local" / "venv-repo").is_dir()) / ".local" / "venv-repo"
+                   / "bin" / "python")
 AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
