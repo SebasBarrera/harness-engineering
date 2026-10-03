@@ -6,9 +6,9 @@ provider, and every command's exit code is checked against the documented expect
 The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
-* ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js and
-  memory flows, leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read
-  them;
+* ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory
+  and clarification flows, leaving the projects in ``--workdir`` so
+  ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
@@ -762,6 +762,61 @@ def flow_memory(t: Transcript, root: Path) -> None:
     approve(t, flow, root, third, "Validators passed")
 
 
+VAGUE_TASK = """\
+taskId: task_python_vague
+title: Discount
+intent: Add a discount.
+acceptanceCriteria:
+  - criterionId: ac_works
+    text: It works.
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            return subtotal * (1 - rate) if subtotal >= threshold else subtotal
+"""
+
+CLARIFICATION = """\
+answers:
+  Q-1: apply_discount(100, 100, 0.1) returns 90 and apply_discount(99, 100, 0.1) returns 99.
+  Q-2: Only the threshold rule; rounding and currencies are out of scope.
+"""
+
+
+def flow_clarification(t: Transcript, root: Path) -> None:
+    """A task whose only criterion is "It works." blocks INTENT under the enforce policy written
+    by init (exit 6). A person answers the questions; the revised task passes INTENT on
+    run continue and the run reaches DECISION. Unknown question ids exit with 2 and clarifying a
+    task whose run is past INTENT exits with 5."""
+    flow = "clarification"
+    python_project(root)
+    (root / "task.yaml").write_text(VAGUE_TASK)
+    (root / "answers.yaml").write_text(CLARIFICATION)
+    (root / "unknown.yaml").write_text("answers:\n  Q-9: Not a question of this task.\n")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_vague"], 6)[
+        "executionId"
+    ]
+    questions = t.json(flow, root, ["task", "questions", *here, "--task", "task_python_vague"], 0)
+    t.check(
+        flow,
+        [item["ruleId"] for item in (questions["openRequest"] or {}).get("questions", [])]
+        == ["C1", "T1"],
+        "INTENT asked about the unobservable criterion and the unbroken scope",
+    )
+    clarify = ["task", "clarify", *here, "--task", "task_python_vague", "--actor", "human.author"]
+    t.run(flow, root, [*clarify, "--file", "unknown.yaml"], 2)
+    t.run(flow, root, [*clarify, "--file", "answers.yaml"], 0)
+    t.run(flow, root, ["run", "continue", *here, "--run", run_id], 4)
+    approve(t, flow, root, run_id, "Clarified criteria covered by the validators")
+    t.run(flow, root, [*clarify, "--file", "answers.yaml"], 5)
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -769,6 +824,7 @@ FLOWS = {
     "review-exception": flow_review_exception,
     "node": flow_node,
     "memory": flow_memory,
+    "clarification": flow_clarification,
 }
 
 

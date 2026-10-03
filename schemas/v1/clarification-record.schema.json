@@ -1,0 +1,199 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "ClarificationAnswer": {
+      "additionalProperties": false,
+      "properties": {
+        "answer": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Answer",
+          "type": "string"
+        },
+        "question": {
+          "title": "Question",
+          "type": "string"
+        },
+        "questionId": {
+          "title": "Questionid",
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "C1",
+            "C2",
+            "C3",
+            "T1"
+          ],
+          "title": "Ruleid",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "questionId",
+        "ruleId",
+        "target",
+        "question",
+        "answer"
+      ],
+      "title": "ClarificationAnswer",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/clarification-record.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A person's answers to a clarification request and the task revision they produced.",
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/Actor"
+    },
+    "addedCriteria": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Addedcriteria",
+      "type": "array"
+    },
+    "addedRequirements": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Addedrequirements",
+      "type": "array"
+    },
+    "answers": {
+      "items": {
+        "$ref": "#/$defs/ClarificationAnswer"
+      },
+      "minItems": 1,
+      "title": "Answers",
+      "type": "array"
+    },
+    "clarificationId": {
+      "title": "Clarificationid",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "previousTaskDigest": {
+      "title": "Previoustaskdigest",
+      "type": "string"
+    },
+    "previousTaskRef": {
+      "title": "Previoustaskref",
+      "type": "string"
+    },
+    "recordedAt": {
+      "format": "date-time",
+      "title": "Recordedat",
+      "type": "string"
+    },
+    "replacedCriteria": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Replacedcriteria",
+      "type": "array"
+    },
+    "requestId": {
+      "title": "Requestid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "taskDigest": {
+      "title": "Taskdigest",
+      "type": "string"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "taskRef": {
+      "title": "Taskref",
+      "type": "string"
+    }
+  },
+  "required": [
+    "clarificationId",
+    "executionId",
+    "taskId",
+    "requestId",
+    "actor",
+    "answers",
+    "previousTaskDigest",
+    "taskDigest",
+    "previousTaskRef",
+    "taskRef"
+  ],
+  "title": "ClarificationRecord",
+  "type": "object"
+}

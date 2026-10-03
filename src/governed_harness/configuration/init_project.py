@@ -42,6 +42,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "allowNetwork": False,
         },
         "retention": {"artifactDays": 30, "eventDays": 365},
+        "intake": {"criteriaPolicy": "enforce"},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

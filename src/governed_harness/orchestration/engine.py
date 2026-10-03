@@ -36,6 +36,10 @@ from governed_harness.domain.models import (
     Artifact,
     ChangedFile,
     ChangeSet,
+    ClarificationAnswer,
+    ClarificationQuestion,
+    ClarificationRecord,
+    ClarificationRequest,
     ConfigurationSnapshot,
     Evidence,
     Execution,
@@ -54,6 +58,7 @@ from governed_harness.domain.models import (
 from governed_harness.events import SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
+from governed_harness.intake import ClarificationInput, assess_intent, revise_task, task_digest
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
@@ -74,6 +79,9 @@ from governed_harness.validators import (
     ValidationContext,
     ValidatorRegistry,
 )
+
+NON_HUMAN_ACTOR_PREFIXES = ("agent.", "validator.", "harness.")
+"""Actor id namespaces the harness assigns to agents, validators and itself."""
 
 
 @dataclass(frozen=True)
@@ -354,6 +362,108 @@ class RunEngine:
         self._save_execution(updated)
         return record
 
+    def clarify(
+        self, *, task_id: str, clarification: ClarificationInput, actor: Actor
+    ) -> tuple[ClarificationRecord, Task]:
+        """Answer the open clarification request of a task and store the revised task.
+
+        The answers and the revision are recorded on the event chain of the run whose INTENT
+        asked the questions; ``continue_execution`` then assesses the revised task."""
+        if actor.actor_type is not ActorType.HUMAN or actor.actor_id.startswith(
+            NON_HUMAN_ACTOR_PREFIXES
+        ):
+            raise PolicyViolationError("only a human actor can answer clarification questions")
+        task = self.get_task(task_id)
+        executions = [
+            item
+            for item in self.s.state.list("execution", Execution, project_id=task.project_id)
+            if item.task_id == task_id
+        ]
+        advanced = [item for item in executions if item.current_phase is not PhaseId.INTENT]
+        if advanced:
+            raise PolicyViolationError(
+                f"task {task_id} has a run past INTENT ({advanced[0].execution_id}); "
+                "clarify a new task instead"
+            )
+        previous_digest = task_digest(task)
+        requests = sorted(
+            (
+                item
+                for item in self.s.state.list(
+                    "clarification_request", ClarificationRequest, project_id=task.project_id
+                )
+                if item.task_id == task_id and item.task_digest == previous_digest
+            ),
+            key=lambda item: item.created_at,
+        )
+        if not requests:
+            raise NotFoundError(
+                f"no open clarification request for the current revision of task {task_id}"
+            )
+        request = requests[-1]
+        revision = revise_task(task, request.questions, clarification)
+        execution = self.get_execution(request.execution_id)
+        by_id = {question.question_id: question for question in request.questions}
+        previous_ref = self.s.artifacts.put_json(
+            task.model_dump(mode="json"), metadata={"kind": "task-intent"}
+        )
+        revised_ref = self.s.artifacts.put_json(
+            revision.task.model_dump(mode="json"), metadata={"kind": "task-intent"}
+        )
+        record = ClarificationRecord(
+            clarification_id=new_id("clarification"),
+            execution_id=execution.execution_id,
+            task_id=task_id,
+            request_id=request.request_id,
+            actor=actor,
+            answers=tuple(
+                ClarificationAnswer(
+                    question_id=question_id,
+                    rule_id=by_id[question_id].rule_id,
+                    target=by_id[question_id].target,
+                    question=by_id[question_id].text,
+                    answer=answer.strip(),
+                )
+                for question_id, answer in sorted(
+                    clarification.answers.items(), key=lambda item: int(item[0][2:])
+                )
+            ),
+            replaced_criteria=revision.replaced_criteria,
+            added_criteria=revision.added_criteria,
+            added_requirements=revision.added_requirements,
+            previous_task_digest=previous_digest,
+            task_digest=task_digest(revision.task),
+            previous_task_ref=previous_ref.uri,
+            task_ref=revised_ref.uri,
+        )
+        self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
+        self.s.state.put(
+            "clarification",
+            record.clarification_id,
+            record,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        record_ref = self.s.artifacts.put_json(
+            record.model_dump(mode="json", by_alias=True),
+            metadata={"kind": "clarification-record", "executionId": execution.execution_id},
+        )
+        self._record_evidence(
+            execution,
+            PhaseId.INTENT,
+            EvidenceKind.HUMAN_DECISION,
+            record_ref,
+            f"Clarification: {len(record.answers)} answer(s), task revised",
+            supports=(request.request_id, task_id),
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "intent.clarified",
+            record.model_dump(mode="json"),
+            actor=actor,
+        )
+        return record, revision.task
+
     # ----- phases -----------------------------------------------------------------
     def _run_phase(
         self, execution: Execution, handler: Callable[[Execution, PhaseExecution], PhaseOutcome]
@@ -482,8 +592,105 @@ class RunEngine:
             "Structured intent and acceptance criteria",
             supports=(task.task_id,),
         )
+        policy = self.s.resolved.project.criteria_policy
+        questions = assess_intent(task) if policy != "off" else ()
+        if not questions:
+            return PhaseOutcome(
+                ResultStatus.PASSED,
+                "Intent is structured and identifiable",
+                (evidence.artifact_ref,),
+            )
+        request_evidence = self._request_clarification(
+            execution, phase, task, questions, "enforce" if policy == "enforce" else "warn"
+        )
+        if policy == "enforce":
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"Intent needs clarification: {len(questions)} question(s)",
+                (evidence.artifact_ref, request_evidence.artifact_ref),
+            )
+        for question in questions:
+            self._record_clarification_finding(execution, question, request_evidence)
         return PhaseOutcome(
-            ResultStatus.PASSED, "Intent is structured and identifiable", (evidence.artifact_ref,)
+            ResultStatus.PASSED,
+            f"Intent is structured and identifiable; {len(questions)} clarification "
+            "question(s) recorded as warnings",
+            (evidence.artifact_ref, request_evidence.artifact_ref),
+        )
+
+    def _request_clarification(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        questions: tuple[ClarificationQuestion, ...],
+        policy: Literal["enforce", "warn"],
+    ) -> Evidence:
+        request = ClarificationRequest(
+            request_id=new_id("clarifyrequest"),
+            execution_id=execution.execution_id,
+            task_id=task.task_id,
+            task_digest=task_digest(task),
+            policy=policy,
+            questions=questions,
+        )
+        self.s.state.put(
+            "clarification_request",
+            request.request_id,
+            request,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        request_ref = self.s.artifacts.put_json(
+            request.model_dump(mode="json", by_alias=True),
+            metadata={"kind": "clarification-request", "executionId": execution.execution_id},
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.INTENT,
+            request_ref,
+            f"Clarification request: {len(questions)} question(s)",
+            supports=tuple(dict.fromkeys(question.target for question in questions)),
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "intent.clarification.requested",
+            request.model_dump(mode="json"),
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return evidence
+
+    def _record_clarification_finding(
+        self, execution: Execution, question: ClarificationQuestion, evidence: Evidence
+    ) -> None:
+        finding = Finding(
+            finding_id=new_id("finding"),
+            execution_id=execution.execution_id,
+            validator_id="intake.clarification",
+            rule_id=question.rule_id,
+            category="intent-clarification",
+            severity=FindingSeverity.LOW,
+            message=question.text,
+            evidence_refs=(evidence.artifact_ref,),
+            recommendation=(
+                f"Answer {question.question_id} with harness task clarify, or set "
+                "intake.criteriaPolicy to enforce to block INTENT until it is answered."
+            ),
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "finding",
+            finding.finding_id,
+            finding,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "finding.recorded",
+            finding.model_dump(mode="json"),
+            actor=finding.provenance.actor,
         )
 
     def _phase_discovery(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:

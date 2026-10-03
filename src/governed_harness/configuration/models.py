@@ -3,7 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from governed_harness.domain.enums import PhaseId
 
@@ -55,6 +63,22 @@ class AgentProviderConfiguration(ConfigModel):
         return value
 
 
+CriteriaPolicy = Literal["enforce", "warn", "off"]
+
+DEFAULT_CRITERIA_POLICY: CriteriaPolicy = "warn"
+"""Policy of a project.yaml without ``intake.criteriaPolicy`` (files written before 1.1)."""
+
+
+class IntakeConfig(ConfigModel):
+    """How INTENT treats acceptance criteria that cannot be observed.
+
+    ``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``
+    records the questions as evidence and low-severity findings and lets the run continue,
+    ``off`` skips the assessment."""
+
+    criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
+
+
 class ProjectConfiguration(ConfigModel):
     config_version: Literal["1.0"] = Field(alias="configVersion")
     project_id: str = Field(alias="projectId")
@@ -70,6 +94,7 @@ class ProjectConfiguration(ConfigModel):
     )
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     retention: dict[str, Any] = Field(default_factory=dict)
+    intake: IntakeConfig | None = None
 
     @field_validator("profiles")
     @classmethod
@@ -77,6 +102,20 @@ class ProjectConfiguration(ConfigModel):
         if not value:
             return ("auto",)
         return value
+
+    @property
+    def criteria_policy(self) -> CriteriaPolicy:
+        """The effective acceptance-criteria policy: ``warn`` when ``intake`` is absent."""
+        return self.intake.criteria_policy if self.intake else DEFAULT_CRITERIA_POLICY
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_intake(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # A file without the section serializes as before, so the configuration snapshot
+        # (and its digest) of a project written for 1.0.0 does not change.
+        data: dict[str, Any] = handler(self)
+        if self.intake is None:
+            data.pop("intake", None)
+        return data
 
 
 class DetectorMarker(ConfigModel):

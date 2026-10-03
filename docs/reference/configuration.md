@@ -36,6 +36,8 @@ runtime:
 retention:
   artifactDays: 30
   eventDays: 365
+intake:
+  criteriaPolicy: enforce
 ```
 
 ## Fields
@@ -59,6 +61,7 @@ retention:
 | `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially). |
 | `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
+| `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 
 ## Policies
 
@@ -77,6 +80,64 @@ Resolution order: core policies, then profile policies, then project policies.
 
 Setting a locked policy to any other value fails with a configuration error (exit code 2), for
 example `project configuration may not weaken locked policy requireHumanDecision`.
+
+## Acceptance-criteria policy
+
+INTENT runs a deterministic assessment of the task (no language model) and turns what it finds
+into clarification questions with stable ids (`Q-1`, `Q-2`, ...):
+
+| Rule | Asks when |
+|---|---|
+| `C1` no observable result | A criterion has fewer than four words, or only vague words ("works", "correctly", "properly", "as expected", "good", "fine", "nice", "clean", "robust", "user-friendly", "well"), and no anchor: a digit, quoted or back-quoted text, a code identifier (`name()`, `snake_case`, a path, a file name, a `CamelCase` name such as `ValueError`) or a checkable result verb (returns, raises, rejects, accepts, equals, contains, lists, stores, prints, exits, responds, creates, deletes, matches, passes, fails, at most, at least, within, before, after). |
+| `C2` quality without a measure | A criterion says "fast", "quick", "performant", "efficient", "scalable", "secure", "reliable" or "responsive" without a number. |
+| `C3` duplicate | Two criteria have the same text once case, spacing and trailing punctuation are folded. |
+| `T1` scope without breakdown | The intent has fewer than 25 words, there are no requirements and there is exactly one criterion, and that criterion has no anchor (as in `C1`). It is asked next to a `C1` or `C2` question about the same criterion, because it asks for the scope rather than the result. |
+
+A criterion's `verificationHint` counts as part of what it says can be observed. What happens
+with the questions depends on `intake.criteriaPolicy`:
+
+| Policy | INTENT with questions |
+|---|---|
+| `enforce` | `BLOCKED` with `Intent needs clarification: N question(s)`; `run start` and `run continue` exit with 6. |
+| `warn` | `PASSED`; each question is also recorded as a `LOW` finding of `intake.clarification`, which the gate does not count. |
+| `off` | No assessment: INTENT behaves as in 1.0.0. |
+
+With `enforce` and `warn` the questions are stored as a `clarification-request` artifact
+(INTENT evidence, schema `clarification-request.schema.json`) and an
+`intent.clarification.requested` event. A task without questions is not affected by any policy.
+
+A `project.yaml` written before this section existed has no `intake` key and runs with `warn`:
+the run continues as before and only the evidence and findings are added. Its configuration
+snapshot is serialized without the section, so its digest does not change.
+
+`harness task questions --task T` shows the open request. A person answers it with
+`harness task clarify --task T --file answers.yaml [--actor human.id]`:
+
+```yaml
+answers:                      # required: question id -> answer
+  Q-1: apply_discount(100, 100, 0.1) returns 90.
+  Q-2: Only the threshold rule; rounding is out of scope.
+replaceCriteria:              # optional: replace a criterion by its id
+  - criterionId: ac_works
+    text: A subtotal equal to the threshold is reduced by the rate.
+addCriteria:                  # optional
+  - A subtotal below the threshold is unchanged.
+addRequirements:              # optional; stored with source "clarification"
+  - Apply the discount only at or above the threshold.
+```
+
+The harness stores a new revision of the task and a clarification record (schema
+`clarification-record.schema.json`): the human actor, each question with its answer, the
+previous and the new task digest and both task revisions as artifacts, recorded as evidence and
+as an `intent.clarified` event on the run that asked. An answer about a criterion that the file
+does not replace becomes (or extends) that criterion's `verificationHint`; an answer about the
+task, when the file adds no requirement or criterion, becomes a requirement with source
+`clarification`. `harness run continue` then assesses the revised task in INTENT.
+
+`task clarify` rejects an unknown question id, an empty answer or an unknown field (exit 2), a
+task without an open request (exit 3), and a task that has a run past INTENT or an actor id in a
+namespace the harness uses for agents, validators or itself (`agent.`, `validator.`, `harness.`)
+(exit 5). Actor ids are recorded, not authenticated.
 
 ## Technology profiles
 

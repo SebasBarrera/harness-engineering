@@ -143,6 +143,62 @@ class Task(StrictModel):
         return value
 
 
+ClarificationRule = Literal["C1", "C2", "C3", "T1"]
+
+
+class ClarificationQuestion(StrictModel):
+    """A question raised by the deterministic intent assessment in INTENT.
+
+    ``target`` is the criterion id the question is about, or ``task`` for the task as a
+    whole. ``question_id`` is stable for a given task revision (``Q-1``, ``Q-2``, ...)."""
+
+    question_id: str = Field(pattern=r"^Q-[1-9][0-9]*$")
+    rule_id: ClarificationRule
+    target: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
+class ClarificationRequest(StrictModel):
+    """The questions INTENT asked about one revision of a task, identified by its digest."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    request_id: str
+    execution_id: str
+    task_id: str
+    task_digest: str
+    policy: Literal["enforce", "warn"]
+    questions: tuple[ClarificationQuestion, ...] = Field(min_length=1)
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class ClarificationAnswer(StrictModel):
+    question_id: str
+    rule_id: ClarificationRule
+    target: str
+    question: str
+    answer: str = Field(min_length=1, max_length=4000)
+
+
+class ClarificationRecord(StrictModel):
+    """A person's answers to a clarification request and the task revision they produced."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    clarification_id: str
+    execution_id: str
+    task_id: str
+    request_id: str
+    actor: Actor
+    answers: tuple[ClarificationAnswer, ...] = Field(min_length=1)
+    replaced_criteria: tuple[str, ...] = ()
+    added_criteria: tuple[str, ...] = ()
+    added_requirements: tuple[str, ...] = ()
+    previous_task_digest: str
+    task_digest: str
+    previous_task_ref: str
+    task_ref: str
+    recorded_at: datetime = Field(default_factory=utc_now)
+
+
 class PlanStep(StrictModel):
     step_id: str
     description: str

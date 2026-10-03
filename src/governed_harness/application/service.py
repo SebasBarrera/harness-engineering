@@ -22,6 +22,8 @@ from governed_harness.domain.errors import ConfigurationError, NotFoundError, Po
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
+    ClarificationRecord,
+    ClarificationRequest,
     Execution,
     Finding,
     GateEvaluation,
@@ -33,12 +35,14 @@ from governed_harness.domain.models import (
     Task,
     ValidationResult,
 )
+from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
 from governed_harness.telemetry import MetricsProjector
 
+from .clarification_loader import load_clarification_file
 from .task_loader import load_task_file
 
 
@@ -79,6 +83,7 @@ class HarnessApplication:
                 for item in resolved.effective_capabilities
             ],
             "policies": resolved.effective_policies,
+            "intake": {"criteriaPolicy": resolved.project.criteria_policy},
         }
 
     def create_task(self, path: Path, source: Path) -> Task:
@@ -101,6 +106,74 @@ class HarnessApplication:
     def get_task(self, path: Path, task_id: str) -> Task:
         with self._services(path) as services:
             return services.state.get("task", task_id, Task)
+
+    def clarify_task(
+        self,
+        path: Path,
+        *,
+        task_id: str,
+        answers_file: Path,
+        actor_id: str,
+        actor_type: ActorType = ActorType.HUMAN,
+    ) -> dict[str, Any]:
+        """Answer the clarification questions INTENT asked about a task.
+
+        The answers file maps question ids to answers and may replace criteria, add criteria
+        and add requirements. The harness stores the revised task and a clarification record
+        (actor, questions, answers, previous and new task digest) on the event chain of the
+        run that asked; ``continue_run`` then assesses the revised task in INTENT.
+
+        Only a human actor may answer. Unknown question ids and empty answers are rejected
+        (exit code 2), as is a task with a run past INTENT (exit code 5)."""
+        clarification = load_clarification_file(answers_file)
+        with self._services(path) as services:
+            record, task = RunEngine(services).clarify(
+                task_id=task_id,
+                clarification=clarification,
+                actor=Actor(actor_type=actor_type, actor_id=actor_id),
+            )
+            return {
+                "clarification": record.model_dump(mode="json", by_alias=True),
+                "task": task.model_dump(mode="json", by_alias=True),
+                "next": f"harness run continue --run {record.execution_id}",
+            }
+
+    def list_clarifications(self, path: Path, task_id: str) -> dict[str, Any]:
+        """The clarification requests asked about a task, the answers recorded for them and
+        the open request: the latest one asked about the current revision of the task."""
+        with self._services(path) as services:
+            task = services.state.get("task", task_id, Task)
+            requests = sorted(
+                (
+                    item
+                    for item in services.state.list(
+                        "clarification_request", ClarificationRequest, project_id=task.project_id
+                    )
+                    if item.task_id == task_id
+                ),
+                key=lambda item: item.created_at,
+            )
+            current = task_digest(task)
+            open_requests = [item for item in requests if item.task_digest == current]
+            records = [
+                item
+                for item in services.state.list(
+                    "clarification", ClarificationRecord, project_id=task.project_id
+                )
+                if item.task_id == task_id
+            ]
+            return {
+                "taskId": task_id,
+                "taskDigest": current,
+                "openRequest": open_requests[-1].model_dump(mode="json", by_alias=True)
+                if open_requests
+                else None,
+                "requests": [item.model_dump(mode="json", by_alias=True) for item in requests],
+                "clarifications": [
+                    item.model_dump(mode="json", by_alias=True)
+                    for item in sorted(records, key=lambda item: item.recorded_at)
+                ],
+            }
 
     def start_run(self, path: Path, task_id: str, provider: str | None = None) -> Execution:
         with self._services(path) as services:
