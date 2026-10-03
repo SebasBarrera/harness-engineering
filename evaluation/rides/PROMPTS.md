@@ -27,18 +27,18 @@ Build the backend of the ride-hailing and food delivery platform described in do
 
 Work plan. Build it in this order, and do not start a step until the previous one is complete and every test passes:
 1. Accounts and security (sections X, A of docs/SPEC.md).
-2. Drivers (sections B of docs/SPEC.md).
+2. Drivers, couriers and vehicles (sections B of docs/SPEC.md).
 3. Geography and zones (sections C of docs/SPEC.md).
-4. Ride quotes (sections D, E of docs/SPEC.md).
-5. Cards (sections O of docs/SPEC.md).
+4. Ride quotes, fares and surge pricing (sections D, E of docs/SPEC.md).
+5. Cards, wallet and payments (sections O of docs/SPEC.md).
 6. Dispatch and ride lifecycle (sections F, G of docs/SPEC.md).
-7. Final fare (sections H, I of docs/SPEC.md).
+7. Final fare, tips and scheduled rides (sections H, I of docs/SPEC.md).
 8. Restaurants and menus (sections J of docs/SPEC.md).
 9. Food order pricing and lifecycle (sections K, L of docs/SPEC.md).
 10. Couriers and batching (sections M of docs/SPEC.md).
 11. Promotions and referrals (sections N of docs/SPEC.md).
-12. Earnings (sections P, Q of docs/SPEC.md).
-13. Support (sections R, S of docs/SPEC.md).
+12. Earnings, payouts and ratings (sections P, Q of docs/SPEC.md).
+13. Support, trip sharing and notifications (sections R, S of docs/SPEC.md).
 14. Reports and audit log (sections T of docs/SPEC.md).
 15. Persistence in SQLite (sections U of docs/SPEC.md).
 16. Non-functional requirements (sections V of docs/SPEC.md).
@@ -196,14 +196,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S02. Drivers
+#### S02. Drivers, couriers and vehicles
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Drivers
+Task: Drivers, couriers and vehicles
 
-Implement sections B of docs/SPEC.md (drivers) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections B of docs/SPEC.md (drivers, couriers and vehicles) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - B1. `add_vehicle(driver_id, plate, make, model, year, seats, category)`: plate matches `^[A-Z]{3}\d{3}$` and is unique; make and model are not empty; year is an int from 2012 to the current year + 1; category is `economy`, `comfort`, `xl` or `moto`. Seats: `moto` exactly 1; `economy` and `comfort` 4 to 6; `xl` 6 to 8. `comfort` requires year 2018 or later.
@@ -256,14 +256,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S04. Ride quotes
+#### S04. Ride quotes, fares and surge pricing
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Ride quotes
+Task: Ride quotes, fares and surge pricing
 
-Implement sections D, E of docs/SPEC.md (ride quotes) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections D, E of docs/SPEC.md (ride quotes, fares and surge pricing) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - D1. `quote_ride(rider_id, pickup, dropoff, category)` returns `quote_id`, `category`, `distance_km = distance_km(pickup, dropoff)`, `duration_min = eta_minutes(pickup, dropoff)`, `surge`, `fare` and `expires_at = now + 5 minutes`. The distance must be from 0.2 to 150 km. The rider must be active (`ValueError` otherwise).
@@ -289,14 +289,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S05. Cards
+#### S05. Cards, wallet and payments
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Cards
+Task: Cards, wallet and payments
 
-Implement sections O of docs/SPEC.md (cards) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections O of docs/SPEC.md (cards, wallet and payments) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - O1. `add_card(rider_id, number, exp_month, exp_year, cvc)`: the number is a string of 13 to 19 digits (no spaces) and passes the Luhn check; the expiry month must not be before the current month; the cvc is 3 digits (4 for amex). Brand: starts with 4 → visa; 51 to 55 → mastercard; 34 or 37 → amex; otherwise `ValueError`. Only brand, last 4 digits and expiry are stored, never the number or the cvc.
@@ -354,14 +354,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S07. Final fare
+#### S07. Final fare, tips and scheduled rides
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Final fare
+Task: Final fare, tips and scheduled rides
 
-Implement sections H, I of docs/SPEC.md (final fare) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections H, I of docs/SPEC.md (final fare, tips and scheduled rides) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - H1. `complete_ride(driver_id, ride_id, route)`: route is a list of at least 2 locations; the actual distance is the sum of the haversine distances between consecutive points (not rounded per segment), rounded half up to 3 places; the actual minutes are the minutes between start and completion rounded up, at least 1.
@@ -513,14 +513,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S12. Earnings
+#### S12. Earnings, payouts and ratings
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Earnings
+Task: Earnings, payouts and ratings
 
-Implement sections P, Q of docs/SPEC.md (earnings) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections P, Q of docs/SPEC.md (earnings, payouts and ratings) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - P1. Driver earnings for a completed ride: 75 % of (fare - booking fee - airport surcharge) rounded half up, plus the airport surcharge, the wait fee and the tip; cancellation fees of G3 go entirely to the driver. Courier earnings as in M4.
@@ -546,14 +546,14 @@ packages. You may run the test suite with `python -m pytest -q`. When you are do
 with a short summary of the change.
 ```
 
-#### S13. Support
+#### S13. Support, trip sharing and notifications
 
 ```text
 You are working in the Git repository in the current directory.
 
-Task: Support
+Task: Support, trip sharing and notifications
 
-Implement sections R, S of docs/SPEC.md (support) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
+Implement sections R, S of docs/SPEC.md (support, trip sharing and notifications) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - R1. `report_issue(actor_id, ref_id, kind, text)`: the actor is the rider, or the driver of a ride (`PermissionError` otherwise); any status; kind `lost_item`, `overcharge`, `safety` or `missing_items` (orders only); text 10 to 1000 characters. Returns a ticket id; a `safety` ticket notifies every admin with `safety_ticket` whose `ref` is the ticket id.

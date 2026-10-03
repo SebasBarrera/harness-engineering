@@ -30,19 +30,19 @@ approval_conditions:
   card number or cvc is stored.
 
 steps:
-- {id: S01, title: Accounts and security, sections: [X, A]}
-- {id: S02, title: Drivers, couriers and vehicles, sections: [B]}
-- {id: S03, title: Geography and zones, sections: [C]}
-- {id: S04, title: Ride quotes, fares and surge pricing, sections: [D, E]}
-- {id: S05, title: Cards, wallet and payments, sections: [O]}
-- {id: S06, title: Dispatch and ride lifecycle, sections: [F, G]}
-- {id: S07, title: Final fare, tips and scheduled rides, sections: [H, I]}
-- {id: S08, title: Restaurants and menus, sections: [J]}
-- {id: S09, title: Food order pricing and lifecycle, sections: [K, L]}
-- {id: S10, title: Couriers and batching, sections: [M]}
-- {id: S11, title: Promotions and referrals, sections: [N]}
-- {id: S12, title: Earnings, payouts and ratings, sections: [P, Q]}
-- {id: S13, title: Support, trip sharing and notifications, sections: [R, S]}
-- {id: S14, title: Reports and audit log, sections: [T]}
-- {id: S15, title: Persistence in SQLite, sections: [U]}
-- {id: S16, title: Non-functional requirements, sections: [V]}
+- {id: S01, title: "Accounts and security", sections: [X, A]}
+- {id: S02, title: "Drivers, couriers and vehicles", sections: [B]}
+- {id: S03, title: "Geography and zones", sections: [C]}
+- {id: S04, title: "Ride quotes, fares and surge pricing", sections: [D, E]}
+- {id: S05, title: "Cards, wallet and payments", sections: [O]}
+- {id: S06, title: "Dispatch and ride lifecycle", sections: [F, G]}
+- {id: S07, title: "Final fare, tips and scheduled rides", sections: [H, I]}
+- {id: S08, title: "Restaurants and menus", sections: [J]}
+- {id: S09, title: "Food order pricing and lifecycle", sections: [K, L]}
+- {id: S10, title: "Couriers and batching", sections: [M]}
+- {id: S11, title: "Promotions and referrals", sections: [N]}
+- {id: S12, title: "Earnings, payouts and ratings", sections: [P, Q]}
+- {id: S13, title: "Support, trip sharing and notifications", sections: [R, S]}
+- {id: S14, title: "Reports and audit log", sections: [T]}
+- {id: S15, title: "Persistence in SQLite", sections: [U]}
+- {id: S16, title: "Non-functional requirements", sections: [V]}
