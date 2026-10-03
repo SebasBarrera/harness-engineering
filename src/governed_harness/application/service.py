@@ -79,6 +79,7 @@ class HarnessApplication:
                 for item in resolved.effective_capabilities
             ],
             "policies": resolved.effective_policies,
+            "intake": {"criteriaPolicy": resolved.project.criteria_policy},
         }
 
     def create_task(self, path: Path, source: Path) -> Task:

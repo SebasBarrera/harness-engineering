@@ -88,6 +88,24 @@
       "title": "CapabilityRule",
       "type": "object"
     },
+    "IntakeConfig": {
+      "additionalProperties": false,
+      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.",
+      "properties": {
+        "criteriaPolicy": {
+          "default": "warn",
+          "enum": [
+            "enforce",
+            "warn",
+            "off"
+          ],
+          "title": "Criteriapolicy",
+          "type": "string"
+        }
+      },
+      "title": "IntakeConfig",
+      "type": "object"
+    },
     "RuntimeConfig": {
       "additionalProperties": false,
       "properties": {
@@ -194,6 +212,17 @@
       "const": "1.0",
       "title": "Configversion",
       "type": "string"
+    },
+    "intake": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IntakeConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "policies": {
       "additionalProperties": true,
