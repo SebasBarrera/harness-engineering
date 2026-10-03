@@ -88,8 +88,18 @@ def agent_environment() -> dict[str, str]:
     return env
 
 
-def run_claude(prompt: str, cwd: Path, model: str, log_path: Path) -> dict[str, Any]:
-    """Run Claude Code non-interactively and return the normalized usage record."""
+def run_claude(
+    prompt: str,
+    cwd: Path,
+    model: str,
+    log_path: Path,
+    timeout_seconds: int = AGENT_TIMEOUT_SECONDS,
+    max_budget_usd: str = MAX_BUDGET_USD,
+) -> dict[str, Any]:
+    """Run Claude Code non-interactively and return the normalized usage record.
+
+    The large-project scenario raises the time and budget limits; every other scenario uses the defaults.
+    """
     command = [
         CLAUDE_BIN,
         "-p",
@@ -108,7 +118,7 @@ def run_claude(prompt: str, cwd: Path, model: str, log_path: Path) -> dict[str, 
         "--permission-mode",
         "acceptEdits",
         "--max-budget-usd",
-        MAX_BUDGET_USD,
+        max_budget_usd,
     ]
     started = time.monotonic()
     try:
@@ -118,7 +128,7 @@ def run_claude(prompt: str, cwd: Path, model: str, log_path: Path) -> dict[str, 
             env=agent_environment(),
             capture_output=True,
             text=True,
-            timeout=AGENT_TIMEOUT_SECONDS,
+            timeout=timeout_seconds,
             stdin=subprocess.DEVNULL,
         )
         exit_code, stdout, stderr, timed_out = proc.returncode, proc.stdout, proc.stderr, False

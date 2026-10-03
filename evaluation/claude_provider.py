@@ -22,6 +22,8 @@ from agentlib import build_prompt, run_claude  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True)
+    parser.add_argument("--timeout", type=int, default=None)
+    parser.add_argument("--budget", default=None)
     args = parser.parse_args()
     request = json.load(sys.stdin)
     workspace = Path.cwd()
@@ -36,6 +38,8 @@ def main() -> int:
         workspace,
         args.model,
         calls / f"call-{number}.json",
+        **({"timeout_seconds": args.timeout} if args.timeout else {}),
+        **({"max_budget_usd": args.budget} if args.budget else {}),
     )
     status = "FAILED" if record["isError"] else "PASSED"
     summary = f"Claude Code ({args.model}) finished: {record['terminalReason']}"
