@@ -83,7 +83,8 @@ SECTIONS = requirements_by_section()
 
 
 def super_text() -> str:
-    lines = [PROMPTS["requirements_intro"], "", "Work plan. Build it in this order, and do not start a step until "
+    lines = [PROMPTS["requirements_intro"], "", "Engineering guide (it applies to every step):",
+             *[f"- {g}" for g in PROMPTS["engineering_guide"]], "", "Work plan. Build it in this order, and do not start a step until "
              "the previous one is complete and every test passes:"]
     for number, step in enumerate(PROMPTS["steps"], start=1):
         lines.append(f"{number}. {step['title']} (sections {', '.join(step['sections'])} of docs/SPEC.md).")
@@ -105,8 +106,10 @@ def step_task(step: dict[str, Any]) -> dict[str, Any]:
             "Every requirement above holds, exactly as written in docs/SPEC.md.",
             "tests/ contains pytest tests for every requirement above.",
             "python -m pytest -q passes, including the tests of earlier steps.",
+            "Every time, distance and amount limit of the requirements above is tested on both sides.",
         ],
-        "constraints": list(PROMPTS["approval_conditions"][2:]) + ["Use only the Python standard library."],
+        "constraints": list(PROMPTS["approval_conditions"][2:4]) + ["Use only the Python standard library."]
+        + [f"Engineering guide: {g}" for g in PROMPTS["engineering_guide"]],
     }
 
 

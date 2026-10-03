@@ -25,6 +25,17 @@ Build the backend of the ride-hailing and food delivery platform described in do
 ```text
 Build the backend of the ride-hailing and food delivery platform described in docs/SPEC.md, following INTERFACE.md. Implement every requirement of docs/SPEC.md exactly as written (numbers, rounding, exceptions, identifiers) and write pytest tests under tests/ for every requirement; python -m pytest -q must pass. Use only the Python standard library.
 
+Engineering guide (it applies to every step):
+- Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
+
 Work plan. Build it in this order, and do not start a step until the previous one is complete and every test passes:
 1. Accounts and security (sections X, A of docs/SPEC.md).
 2. Drivers, couriers and vehicles (sections B of docs/SPEC.md).
@@ -48,6 +59,7 @@ Approval conditions for every step:
 - python -m pytest -q passes, including the tests of every earlier step.
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
+- The code of the step follows the engineering guide (layers, state machines, Decimal, clock, validation helper, size limits), and every limit of its requirements is tested on both sides.
 
 When every step is done, reply with a short summary of each step and how it was verified.
 ```
@@ -185,11 +197,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -216,11 +238,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -245,11 +277,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -278,11 +320,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -308,11 +360,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -343,11 +405,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -376,11 +448,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -406,11 +488,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -442,11 +534,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -472,11 +574,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -502,11 +614,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -535,11 +657,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -565,11 +697,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -595,11 +737,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -623,11 +775,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
@@ -654,11 +816,21 @@ Acceptance criteria:
 - Every requirement above holds, exactly as written in docs/SPEC.md.
 - tests/ contains pytest tests for every requirement above.
 - python -m pytest -q passes, including the tests of earlier steps.
+- Every time, distance and amount limit of the requirements above is tested on both sides.
 
 Constraints:
 - The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
 - Money is never a float, every rounding is half up where the specification says so, and no plain password, card number or cvc is stored.
 - Use only the Python standard library.
+- Engineering guide: Architecture: a thin Platform facade in src/rides/platform.py that checks the actor and delegates; a domain layer (entities, value objects, state machines) with no I/O; one service module per area (accounts, fleet, geography, pricing, dispatch, rides, scheduling, restaurants, orders, couriers, promotions, payments, earnings, ratings, support, notifications, reports, audit); one persistence module, the only one that imports sqlite3. Dependencies point inward: facade, then services, then domain.
+- Engineering guide: Size: no module over 400 lines, no function over 40 lines or with cyclomatic complexity over 10, no class with more than one responsibility, no duplicated logic.
+- Engineering guide: Ride and order statuses are explicit state machines: one table of allowed transitions per entity, and every status change goes through it.
+- Engineering guide: Money is Decimal end to end and is rounded half up in one helper; never float. Time comes only from the virtual clock; every timer (offers, order expiry, scheduled dispatch) sits in one ordered queue that advance() runs in time order.
+- Engineering guide: Validation and error precedence (rule X8) live in one helper module used by every service, not rewritten in each method.
+- Engineering guide: Dispatch uses a spatial index (a grid of cells) so that a request among 5,000 online drivers stays far below the limit of V3.
+- Engineering guide: Persistence: a versioned schema (schema_version table), one transaction per save(), passwords stored only as salted PBKDF2 hashes, card numbers and cvc never stored.
+- Engineering guide: Type hints on every function, written to pass mypy --strict and ruff with no findings; docstrings on public classes and functions; no dead code and no broad except.
+- Engineering guide: Tests: tests/ mirrors the services; each requirement has tests named after its id (test_<id>_...) that use the public Platform API only, cover both sides of every time, distance and amount limit and every exception type, are independent of each other and run in under a minute.
 
 Work only inside this directory. Do not commit, do not create branches and do not install
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
