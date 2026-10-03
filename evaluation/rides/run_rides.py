@@ -20,6 +20,11 @@ of quality.py and the usage are recorded as one JSON line, with the hidden check
 requirement) when the hidden suite is present. The runs are made without it, so that no agent can reach
 it, and rescore.py scores the kept workspaces afterwards with the final suite.
 
+Every agent call is resumable (agentlib.run_claude with resumable=True): a call stopped by the usage
+limit waits and resumes its session. A cell whose runner died is resumed by running the same command
+again: the unfinished run directory is reused, finished steps are skipped (progress.json), a direct
+call in flight resumes its session, and a governed step in flight is started again as a new task.
+
 Usage: python run_rides.py --level LEVEL --condition CONDITION --model MODEL --rep N --work DIR --out FILE
 """
 
@@ -193,8 +198,9 @@ def configure_limits(workspace: Path, model: str) -> None:
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
     config["agentProviders"]["claude"]["command"] = [
         "python", str(HERE.parent / "claude_provider.py"), "--model", model,
-        "--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET]
-    config["runtime"]["commandTimeoutSeconds"] = AGENT_TIMEOUT + 300
+        "--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET, "--resumable"]
+    # Waits for the usage limit happen inside the provider call, so the harness must not cut it short.
+    config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
@@ -236,43 +242,80 @@ def main() -> int:
     if (args.condition, args.level) not in VALID:
         parser.error(f"{args.condition} does not apply to {args.level}")
     site_packages = Path(next(p for p in sys.path if p.endswith("site-packages")))
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = args.work / f"rides-{args.level}-{args.condition}-{args.model}-r{args.rep}-{stamp}"
-    workspace, scratch = run_dir / "ws", run_dir / "measure"
-    prepare(workspace, site_packages, with_spec=args.level in {"requirements", "super"})
-    scratch.mkdir(parents=True)
+    prefix = f"rides-{args.level}-{args.condition}-{args.model}-r{args.rep}-"
+    unfinished = sorted(d for d in args.work.glob(prefix + "*") if (d / "progress.json").is_file()
+                        and not (d / "record.json").exists()) if args.work.is_dir() else []
+    if unfinished:
+        run_dir = unfinished[-1]
+        workspace, scratch = run_dir / "ws", run_dir / "measure"
+        (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
+        progress = json.loads((run_dir / "progress.json").read_text(encoding="utf-8"))
+        progress["restarts"] += 1
+    else:
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = args.work / f"{prefix}{stamp}"
+        workspace, scratch = run_dir / "ws", run_dir / "measure"
+        prepare(workspace, site_packages, with_spec=args.level in {"requirements", "super"})
+        scratch.mkdir(parents=True)
+        (run_dir / "agent-calls").mkdir()
+        progress = {"steps": [], "promptsSent": [], "elapsedSeconds": 0.0, "restarts": 0, "current": None}
     calls_dir = run_dir / "agent-calls"
-    calls_dir.mkdir()
-    started = time.monotonic()
-    steps: list[dict[str, Any]] = []
-    prompts_sent: list[str] = []
+    started = time.monotonic() - progress["elapsedSeconds"]
+    steps: list[dict[str, Any]] = progress["steps"]
+    prompts_sent: list[str] = progress["promptsSent"]
+    done = {step["step"] for step in steps}
+
+    def save_progress(current: str | None) -> None:
+        progress["current"] = current
+        progress["elapsedSeconds"] = round(time.monotonic() - started, 3)
+        (run_dir / "progress.json").write_text(json.dumps(progress, indent=1), encoding="utf-8")
 
     def direct(text: str, label: str) -> None:
         before = len(list(calls_dir.glob("call-*.json")))
+        log_path = calls_dir / f"call-{before + 1}.json"
+        inflight = log_path.with_name(log_path.name + ".inflight")
+        resume = json.loads(inflight.read_text(encoding="utf-8")).get("sessionId") if inflight.exists() else None
+        # Resume the session only if Claude Code kept it on disk; otherwise send the prompt again.
+        if resume and not list((Path.home() / ".claude" / "projects").glob(f"*/{resume}.jsonl")):
+            resume = None
         t0 = time.monotonic()
-        prompts_sent.append(text)
-        run_claude(text, workspace, args.model, calls_dir / f"call-{before + 1}.json",
-                   timeout_seconds=AGENT_TIMEOUT, max_budget_usd=AGENT_BUDGET)
+        if progress["current"] != label:
+            prompts_sent.append(text)
+        save_progress(label)
+        run_claude(text, workspace, args.model, log_path, timeout_seconds=AGENT_TIMEOUT,
+                   max_budget_usd=AGENT_BUDGET, resumable=True, resume_session=resume)
         steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3),
                       "usage": usage(calls_since(calls_dir, before))})
+        save_progress(None)
 
+    save_progress(progress["current"])
     if args.condition == "direct":
         text = {"one_line": PROMPTS["one_line"], "paragraph": PROMPTS["paragraph"],
                 "requirements": PROMPTS["requirements_intro"], "super": super_text()}[args.level]
-        direct(text, "whole")
+        if "whole" not in done:
+            direct(text, "whole")
     elif args.condition == "stepwise":
         for step in PROMPTS["steps"]:
-            direct(build_prompt(step_task(step)), step["id"])
+            if step["id"] not in done:
+                direct(build_prompt(step_task(step)), step["id"])
     else:
         tasks = ([(s["id"], step_task(s)) for s in PROMPTS["steps"]] if args.level == "super"
                  else [("whole", whole_task(args.level))])
+        refused = any(str((s.get("harness") or {}).get("outcome", "")).startswith("task-refused") for s in steps)
         for label, task in tasks:
+            if label in done or refused:
+                continue
+            if progress["current"] == label:
+                # The runner died during this governed step: start it again as a new task.
+                task = {**task, "taskId": f"{task['taskId']}_restart{progress['restarts']}"}
             before = len(list(calls_dir.glob("call-*.json")))
             t0 = time.monotonic()
             prompts_sent.append(yaml.safe_dump(task, sort_keys=False))
+            save_progress(label)
             result = governed(workspace, run_dir, task, args.model, label)
             steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3), "harness": result,
                           "usage": usage(calls_since(calls_dir, before))})
+            save_progress(None)
             if result["outcome"].startswith("task-refused"):
                 break
 
@@ -284,14 +327,18 @@ def main() -> int:
         "model": args.model,
         "rep": args.rep,
         "runDir": str(run_dir),
+        "restarts": progress["restarts"],
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "wallSeconds": round(time.monotonic() - started, 3),
         "steps": steps,
         "usage": usage(calls_since(calls_dir, 0)),
+        "pausedSeconds": round(sum(c.get("pausedSeconds", 0) for c in calls_since(calls_dir, 0)), 3),
+        "limitPauses": sum(c.get("limitPauses", 0) for c in calls_since(calls_dir, 0)),
         "final": {"hidden": hidden, **final_measures(workspace, scratch)},
         "quality": analyze(workspace, TOOLS_PYTHON),
     }
     (run_dir / "prompts-sent.json").write_text(json.dumps(prompts_sent, indent=1), encoding="utf-8")
+    (run_dir / "record.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
