@@ -161,7 +161,7 @@ You are working in the Git repository in the current directory.
 
 Task: Accounts and security
 
-Implement sections X, A of docs/SPEC.md (accounts and security) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections X, A of docs/SPEC.md (accounts and security) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - X1. Identifiers are a prefix and a six-digit counter, starting at 000001 for each prefix: `ADM-` admins, `RID-` riders, `DRV-` drivers, `CUR-` couriers, `RST-` restaurants, `VEH-` vehicles, `ZON-` zones, `QTE-` quotes, `RDE-` rides, `ITM-` menu items, `GRP-` option groups, `OPT-` options, `ORD-` food orders, `PM-` cards, `PAY-` payments, `TCK-` tickets. A failed call never consumes an identifier.
@@ -203,7 +203,7 @@ You are working in the Git repository in the current directory.
 
 Task: Drivers
 
-Implement sections B of docs/SPEC.md (drivers) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections B of docs/SPEC.md (drivers) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - B1. `add_vehicle(driver_id, plate, make, model, year, seats, category)`: plate matches `^[A-Z]{3}\d{3}$` and is unique; make and model are not empty; year is an int from 2012 to the current year + 1; category is `economy`, `comfort`, `xl` or `moto`. Seats: `moto` exactly 1; `economy` and `comfort` 4 to 6; `xl` 6 to 8. `comfort` requires year 2018 or later.
@@ -234,7 +234,7 @@ You are working in the Git repository in the current directory.
 
 Task: Geography and zones
 
-Implement sections C of docs/SPEC.md (geography and zones) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections C of docs/SPEC.md (geography and zones) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - C1. `distance_km(a, b)` is the haversine distance with Earth radius 6371.0 km, as `Decimal` rounded half up to 3 places.
@@ -263,7 +263,7 @@ You are working in the Git repository in the current directory.
 
 Task: Ride quotes
 
-Implement sections D, E of docs/SPEC.md (ride quotes) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections D, E of docs/SPEC.md (ride quotes) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - D1. `quote_ride(rider_id, pickup, dropoff, category)` returns `quote_id`, `category`, `distance_km = distance_km(pickup, dropoff)`, `duration_min = eta_minutes(pickup, dropoff)`, `surge`, `fare` and `expires_at = now + 5 minutes`. The distance must be from 0.2 to 150 km. The rider must be active (`ValueError` otherwise).
@@ -296,7 +296,7 @@ You are working in the Git repository in the current directory.
 
 Task: Cards
 
-Implement sections O of docs/SPEC.md (cards) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections O of docs/SPEC.md (cards) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - O1. `add_card(rider_id, number, exp_month, exp_year, cvc)`: the number is a string of 13 to 19 digits (no spaces) and passes the Luhn check; the expiry month must not be before the current month; the cvc is 3 digits (4 for amex). Brand: starts with 4 → visa; 51 to 55 → mastercard; 34 or 37 → amex; otherwise `ValueError`. Only brand, last 4 digits and expiry are stored, never the number or the cvc.
@@ -326,7 +326,7 @@ You are working in the Git repository in the current directory.
 
 Task: Dispatch and ride lifecycle
 
-Implement sections F, G of docs/SPEC.md (dispatch and ride lifecycle) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections F, G of docs/SPEC.md (dispatch and ride lifecycle) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - F1. `request_ride` creates a ride in status `requested`, places a hold for the quoted fare on the payment method (see O) and offers the ride to the best driver. A rider with another ride in `requested`, `driver_assigned`, `arrived` or `in_progress` raises `ValueError` (scheduled rides do not count). A rider may quote at any time.
@@ -361,7 +361,7 @@ You are working in the Git repository in the current directory.
 
 Task: Final fare
 
-Implement sections H, I of docs/SPEC.md (final fare) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections H, I of docs/SPEC.md (final fare) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - H1. `complete_ride(driver_id, ride_id, route)`: route is a list of at least 2 locations; the actual distance is the sum of the haversine distances between consecutive points (not rounded per segment), rounded half up to 3 places; the actual minutes are the minutes between start and completion rounded up, at least 1.
@@ -394,7 +394,7 @@ You are working in the Git repository in the current directory.
 
 Task: Restaurants and menus
 
-Implement sections J of docs/SPEC.md (restaurants and menus) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections J of docs/SPEC.md (restaurants and menus) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - J1. `set_hours(restaurant_id, weekday, opens, closes)`: weekday 0 (Monday) to 6; times `HH:MM` with opens before closes on the same day; one interval per weekday, replacing the previous one; a weekday without an interval is closed. `is_open` is true when the restaurant is active and the current time is in `[opens, closes)` of the current weekday.
@@ -424,7 +424,7 @@ You are working in the Git repository in the current directory.
 
 Task: Food order pricing and lifecycle
 
-Implement sections K, L of docs/SPEC.md (food order pricing and lifecycle) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections K, L of docs/SPEC.md (food order pricing and lifecycle) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - K1. `place_order(rider_id, restaurant_id, lines, dropoff, payment_method_id, ...)`: lines is a list of dicts with `item_id`, `quantity` (int 1 to 20) and optional `options` (list of option ids). The restaurant must be open; every item must belong to it and be available; options must belong to the item; every required group has between min and max choices; an optional group at most max; no option repeated. The dropoff must be at most 10 km from the restaurant. At least one line. Unknown item or option ids raise `KeyError`; an option of another item raises `ValueError`. `order()["lines"]` lists the lines in the given order, each with `item_id`, `quantity`, `options` (ids), `unit_price`, `amount` and `tax`.
@@ -460,7 +460,7 @@ You are working in the Git repository in the current directory.
 
 Task: Couriers and batching
 
-Implement sections M of docs/SPEC.md (couriers and batching) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections M of docs/SPEC.md (couriers and batching) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - M1. When an order is accepted it is assigned to the nearest `available` active courier at most 6 km from the restaurant; ties go to the lower id. A `bike` courier only takes orders whose dropoff is at most 4 km from the restaurant. Without a courier the order keeps waiting and assignment is retried on every `advance` and whenever a courier goes online or becomes available.
@@ -490,7 +490,7 @@ You are working in the Git repository in the current directory.
 
 Task: Promotions and referrals
 
-Implement sections N of docs/SPEC.md (promotions and referrals) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections N of docs/SPEC.md (promotions and referrals) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - N1. `create_promo` (admins only): code stripped, uppercased, matches `^[A-Z0-9]{4,15}$`, unique; service `rides`, `eats` or `both`; kind `percent` (value an int from 1 to 50) or `fixed` (value from 1.00 to 100.00); optional max discount, minimum spend, start and end, total and per-user limits, and first-order-only.
@@ -520,7 +520,7 @@ You are working in the Git repository in the current directory.
 
 Task: Earnings
 
-Implement sections P, Q of docs/SPEC.md (earnings) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections P, Q of docs/SPEC.md (earnings) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - P1. Driver earnings for a completed ride: 75 % of (fare - booking fee - airport surcharge) rounded half up, plus the airport surcharge, the wait fee and the tip; cancellation fees of G3 go entirely to the driver. Courier earnings as in M4.
@@ -553,7 +553,7 @@ You are working in the Git repository in the current directory.
 
 Task: Support
 
-Implement sections R, S of docs/SPEC.md (support) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections R, S of docs/SPEC.md (support) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - R1. `report_issue(actor_id, ref_id, kind, text)`: the actor is the rider, or the driver of a ride (`PermissionError` otherwise); any status; kind `lost_item`, `overcharge`, `safety` or `missing_items` (orders only); text 10 to 1000 characters. Returns a ticket id; a `safety` ticket notifies every admin with `safety_ticket` whose `ref` is the ticket id.
@@ -583,7 +583,7 @@ You are working in the Git repository in the current directory.
 
 Task: Reports and audit log
 
-Implement sections T of docs/SPEC.md (reports and audit log) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections T of docs/SPEC.md (reports and audit log) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - T1. `daily_report(admin_id, day)`: `rides_completed`, `rides_cancelled`, `ride_revenue` (sum of `charged` of the rides completed that day), `orders_delivered`, `order_revenue` (sum of order charges), `platform_revenue` (every amount captured that day for rides, orders and cancellations, minus the earnings that workers generated that day), `cancellation_rate` (cancelled / (completed + cancelled) rounded half up to 4 places, 0 when none). Rides that ended `no_driver` are neither completed nor cancelled. Restaurants are not paid by the platform in this model.
@@ -613,7 +613,7 @@ You are working in the Git repository in the current directory.
 
 Task: Persistence in SQLite
 
-Implement sections U of docs/SPEC.md (persistence in sqlite) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections U of docs/SPEC.md (persistence in sqlite) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - U1. With `db_path`, the state is stored in a SQLite database at that path. `save()` commits it; `Platform.open(db_path)` restores the state as of the last `save()`, everything included, including the clock, the counters, holds, timers, passwords' hashes and pending offers, so that the platform behaves as if it had never stopped.
@@ -641,7 +641,7 @@ You are working in the Git repository in the current directory.
 
 Task: Non-functional requirements
 
-Implement sections V of docs/SPEC.md (non-functional requirements) in the rides package, with pytest tests. The general rules X1 to X5 of docs/SPEC.md apply to everything.
+Implement sections V of docs/SPEC.md (non-functional requirements) in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md apply to everything.
 
 Requirements:
 - V1. Security: no plain password, card number or cvc is ever stored in memory structures exposed by the platform or written to the database.
