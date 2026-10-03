@@ -1402,7 +1402,7 @@ def test_s1_ride_offer_notifies_driver(w):
 def test_s1_rider_ride_lifecycle_in_order(w):
     p = w.p
     rid = w.request()
-    p.advance(minutes=1)
+    p.advance(seconds=10)
     p.accept_ride(w.driver, rid)
     assigned = p.now()
     p.advance(minutes=1)

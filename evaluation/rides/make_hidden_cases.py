@@ -16,7 +16,7 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-NAME = re.compile(r"^test_([A-Z]\d+)_")
+NAME = re.compile(r"^test_([a-z]\d+)_", re.IGNORECASE)
 
 
 def main() -> int:
@@ -37,7 +37,7 @@ def main() -> int:
         if key in cases:
             print(f"duplicate case: {key}", file=sys.stderr)
             return 1
-        cases[key] = match.group(1)
+        cases[key] = match.group(1).upper()
     if proc.returncode != 0 or not cases:
         print(proc.stdout[-3000:], proc.stderr[-3000:], file=sys.stderr)
         return 1
