@@ -188,6 +188,51 @@ def task_show(
     _emit(_call(lambda: HarnessApplication().get_task(path, task)))
 
 
+@task_app.command("questions")
+def task_questions(
+    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the clarification questions INTENT asked about a task: the open request (asked
+    about the current revision of the task), every earlier request and the recorded answers."""
+    _emit(_call(lambda: HarnessApplication().list_clarifications(path, task)))
+
+
+@task_app.command("clarify")
+def task_clarify(
+    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    file: Path = typer.Option(
+        ...,
+        "--file",
+        exists=True,
+        dir_okay=False,
+        help="Answers file (YAML or JSON): answers by question id, optional criteria and "
+        "requirement changes",
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Answer the open clarification questions of a task and store the revised task. Run
+    `harness run continue` afterwards to assess the revision in INTENT. An unknown question id
+    or an empty answer exits with 2, no open request with 3, and a task with a run past INTENT
+    or an actor id of an agent, validator or the harness with 5."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().clarify_task(
+                path, task_id=task, answers_file=file, actor_id=actor
+            )
+        )
+    )
+
+
 @run_app.command("start")
 def run_start(
     task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
