@@ -217,13 +217,13 @@ falta uno, hoy se guarda el texto `None` (issue #29).
 
 ## CLI
 
-28 comandos (referencia completa con todas las opciones, generada desde el código:
+30 comandos (referencia completa con todas las opciones, generada desde el código:
 [docs/reference/cli.md](docs/reference/cli.md)):
 
 | Grupo | Comandos |
 |---|---|
 | Proyecto | `init`, `inspect`, `doctor`, `config validate` |
-| Tareas | `task create`, `task list`, `task show` |
+| Tareas | `task create`, `task list`, `task show`, `task questions`, `task clarify` |
 | Ejecuciones | `run start`, `run continue`, `run cancel`, `run list`, `status` |
 | Evidencia | `evidence list`, `findings list`, `trace`, `retrospect` |
 | Memoria | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
@@ -275,7 +275,10 @@ están **bloqueadas** y no se pueden debilitar: `requireHumanDecision`, `approva
 `mandatoryNonSuccessBlocks` (siempre `true`) y `retrospectiveAutoApply` (siempre `false`).
 `findingBlockSeverities` (por defecto `HIGH` y `CRITICAL`) y `allowEmptyChangeSet` son configurables.
 `runtime.allowNetwork`, `runtime.maxParallel`, `retention` y `workspace.units` son **declarativos:
-nada los aplica**. Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
+nada los aplica**. `intake.criteriaPolicy` decide qué hace `INTENT` con criterios de aceptación que
+no se pueden observar ("It works."): `enforce` (lo escribe `init`) bloquea hasta que una persona
+responda las preguntas con `harness task clarify`, `warn` (un archivo sin la clave) las registra como
+evidencia y hallazgos `LOW`, y `off` omite la verificación. Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
 

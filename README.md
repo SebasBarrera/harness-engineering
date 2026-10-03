@@ -213,13 +213,13 @@ a missing one is currently stored as the text `None` (issue #29).
 
 ## CLI
 
-28 commands (full reference with every option, generated from the code:
+30 commands (full reference with every option, generated from the code:
 [docs/reference/cli.md](docs/reference/cli.md)):
 
 | Group | Commands |
 |---|---|
 | Project | `init`, `inspect`, `doctor`, `config validate` |
-| Tasks | `task create`, `task list`, `task show` |
+| Tasks | `task create`, `task list`, `task show`, `task questions`, `task clarify` |
 | Runs | `run start`, `run continue`, `run cancel`, `run list`, `status` |
 | Evidence | `evidence list`, `findings list`, `trace`, `retrospect` |
 | Memory | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
@@ -269,6 +269,10 @@ weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessB
 `true`) and `retrospectiveAutoApply` (always `false`). `findingBlockSeverities` (default `HIGH`,
 `CRITICAL`) and `allowEmptyChangeSet` are configurable. `runtime.allowNetwork`,
 `runtime.maxParallel`, `retention` and `workspace.units` are **declarative: nothing enforces them**.
+`intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
+("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
+`harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
+findings, `off` skips the check.
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles
