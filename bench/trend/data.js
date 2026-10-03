@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1790872346716,
+  "lastUpdate": 1791039963825,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2173,6 +2173,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 8.474,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "ad6d9ce8ab14edb7529ddb4e822f222d18fcb12a",
+          "message": "Merge branch 'feat/intent-clarification' into develop\n\nINTENT now checks that acceptance criteria can be observed, not only that the\nintent is structurally complete. A deterministic assessment (no language model)\nasks concrete questions for criteria without an observable result (C1),\nqualities without a measure (C2), duplicates (C3) and a short intent whose single\ncriterion has nothing concrete to check (T1). The new intake.criteriaPolicy\nsetting blocks INTENT until a human answers (enforce, written by harness init),\nrecords the questions only (warn, the default for an existing project.yaml) or\nkeeps the 1.0.0 behavior (off). harness task questions shows them and harness\ntask clarify stores the answers as a new task revision with a clarification\nrecord linking questions, answers and both digests; run continue assesses INTENT\nagain. The agent never answers. Over the evaluation tasks only the three -poor\ntasks get questions.\n\nCloses #32\n\nVerification on the branch head 3f1fdfd2abb2: 21 CI job(s) succeeded, no blocking job failed.\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818707\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818719\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818725\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818742\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818784\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37131818797\nFiles of the v0.8.0 cut in the tree: matched: 121/232  mismatched: 87  missing: 24",
+          "timestamp": "2026-10-03T10:05:31-05:00",
+          "tree_id": "3080fdc5abaa6aaac126a29a241903a0581912f1",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/ad6d9ce8ab14edb7529ddb4e822f222d18fcb12a"
+        },
+        "date": 1791039963533,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001223,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001913,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011452,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.073974,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.257293,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.870769,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.28613,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.889,
             "unit": "%"
           }
         ]
