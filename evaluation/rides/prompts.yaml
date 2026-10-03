@@ -1,0 +1,48 @@
+# Ride-hailing and food delivery scenario (package `rides`, see fixture/INTERFACE.md and SPEC.md).
+# Four instruction levels. one_line and paragraph see only INTERFACE.md in the repository;
+# requirements and super also find SPEC.md in the repository as docs/SPEC.md.
+# steps: the plan of the super prompt; with the harness each one is a short governed task.
+
+one_line: build an app like Uber with Uber Eats, rides and food delivery, following INTERFACE.md
+
+paragraph: >-
+  Build the backend of a platform like Uber and Uber Eats in Python, following INTERFACE.md. Riders,
+  drivers, couriers, restaurants and admins have accounts with secure passwords. Drivers register vehicles
+  and go online; riders get a price quote with surge pricing, request a ride, a nearby driver is matched,
+  and the ride goes from pickup to drop-off with cancellations, tips and scheduled rides. Restaurants have
+  opening hours and menus with options; riders order food, the restaurant accepts and prepares it and a
+  courier delivers it, with batching of orders. Add promo codes and referrals, cards and a wallet,
+  earnings and weekly payouts for drivers and couriers, ratings, support tickets, trip sharing,
+  notifications, admin reports and an audit log. Store everything in SQLite. Use a virtual clock. Keep
+  the code clean and add tests.
+
+requirements_intro: >-
+  Build the backend of the ride-hailing and food delivery platform described in docs/SPEC.md, following
+  INTERFACE.md. Implement every requirement of docs/SPEC.md exactly as written (numbers, rounding,
+  exceptions, identifiers) and write pytest tests under tests/ for every requirement; python -m pytest -q
+  must pass. Use only the Python standard library.
+
+approval_conditions:
+- Every requirement of the step has at least one pytest test that would fail if the requirement were broken.
+- python -m pytest -q passes, including the tests of every earlier step.
+- The change touches only src/rides and tests, adds no dependency and keeps INTERFACE.md intact.
+- Money is never a float, every rounding is half up where the specification says so, and no plain password,
+  card number or cvc is stored.
+
+steps:
+- {id: S01, title: Accounts and security, sections: [X, A]}
+- {id: S02, title: Drivers, couriers and vehicles, sections: [B]}
+- {id: S03, title: Geography and zones, sections: [C]}
+- {id: S04, title: Ride quotes, fares and surge pricing, sections: [D, E]}
+- {id: S05, title: Cards, wallet and payments, sections: [O]}
+- {id: S06, title: Dispatch and ride lifecycle, sections: [F, G]}
+- {id: S07, title: Final fare, tips and scheduled rides, sections: [H, I]}
+- {id: S08, title: Restaurants and menus, sections: [J]}
+- {id: S09, title: Food order pricing and lifecycle, sections: [K, L]}
+- {id: S10, title: Couriers and batching, sections: [M]}
+- {id: S11, title: Promotions and referrals, sections: [N]}
+- {id: S12, title: Earnings, payouts and ratings, sections: [P, Q]}
+- {id: S13, title: Support, trip sharing and notifications, sections: [R, S]}
+- {id: S14, title: Reports and audit log, sections: [T]}
+- {id: S15, title: Persistence in SQLite, sections: [U]}
+- {id: S16, title: Non-functional requirements, sections: [V]}
