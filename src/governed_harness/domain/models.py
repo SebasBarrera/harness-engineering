@@ -178,14 +178,16 @@ class Task(StrictModel):
         return data
 
 
-ClarificationRule = Literal["C1", "C2", "C3", "T1"]
+ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1"]
 
 
 class ClarificationQuestion(StrictModel):
     """A question raised by the deterministic intent assessment in INTENT.
 
-    ``target`` is the criterion id the question is about, or ``task`` for the task as a
-    whole. ``question_id`` is stable for a given task revision (``Q-1``, ``Q-2``, ...)."""
+    ``target`` is the criterion id the question is about, ``task`` for the task as a whole,
+    or ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for
+    example ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,
+    ``Q-2``, ...)."""
 
     question_id: str = Field(pattern=r"^Q-[1-9][0-9]*$")
     rule_id: ClarificationRule

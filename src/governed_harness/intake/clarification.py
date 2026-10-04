@@ -7,6 +7,10 @@ language model, so the same task always yields the same questions with the same 
 The rules are deliberately conservative: a criterion is questioned only when nothing in it
 (or in its verification hint) can be checked, so a false question is rarer than a missed one.
 
+* ``C0`` no acceptance criteria: a task accepted without criteria (``criteria_pending``, only
+  under the ``enforce`` policy) gets one question per thing its criteria must settle, in a
+  fixed order: results and how each is checked, inputs and outputs, limits, errors, behaviours
+  in scope, what is out of scope and non-functional constraints. ``C0`` subsumes ``T1``.
 * ``C1`` no observable result: fewer than four words, or only vague vocabulary, and no anchor.
 * ``C2`` quality without a measure: a quality word such as "fast" or "secure" and no number.
 * ``C3`` duplicate: the same criterion text (and hint) as an earlier criterion.
@@ -34,7 +38,30 @@ from governed_harness.domain.models import (
 )
 from governed_harness.evidence import sha256_json
 
-QUESTION_TEMPLATES: dict[ClarificationRule, str] = {
+QUESTION_TEMPLATES: dict[str, str] = {
+    "C0a": (
+        "Task '{title}' has no acceptance criteria. Which observable results show that it is "
+        "done, and how is each one checked (input or action -> exact expected result)? One "
+        "result per line."
+    ),
+    "C0b": (
+        "What are the main inputs and outputs of task '{title}', and in which formats (for "
+        "example JSON fields, a CSV header or a function signature)?"
+    ),
+    "C0c": (
+        "Which limits and boundaries must task '{title}' respect (numbers, sizes, times), and "
+        "what happens exactly at each boundary?"
+    ),
+    "C0d": (
+        "Which errors or rejections should task '{title}' produce for invalid input, and what "
+        "exactly does each one return, raise or print?"
+    ),
+    "C0e": "Which behaviours are in scope for task '{title}'? One behaviour per line.",
+    "C0f": "What is explicitly out of scope for task '{title}'? One item per line.",
+    "C0g": (
+        "Which non-functional constraints apply to task '{title}' (performance, security, "
+        "persistence), and with which measure is each one checked?"
+    ),
     "C1": (
         "Criterion {target} ('{text}') does not say what can be observed. For which input or "
         "action, and what exact result shows that it holds?"
@@ -53,10 +80,29 @@ QUESTION_TEMPLATES: dict[ClarificationRule, str] = {
         "what is out of scope?"
     ),
 }
-"""English question templates, one per rule. The only place where question texts live."""
+"""English question templates, one per rule and, for ``C0``, one per elicitation question
+(``C0a`` to ``C0g``). The only place where question texts live."""
 
 TASK_TARGET = "task"
 """Target of a question about the task as a whole rather than one criterion."""
+
+C0_TARGETS: tuple[str, ...] = (
+    "task:results",
+    "task:interface",
+    "task:limits",
+    "task:errors",
+    "task:scope",
+    "task:out-of-scope",
+    "task:non-functional",
+)
+"""Targets of the ``C0`` questions, in the order they are asked (templates ``C0a`` to ``C0g``).
+
+Each names the part of the task its answer lands in when the task is revised."""
+
+OUT_OF_SCOPE_PREFIX = "Out of scope: "
+"""Prefix of the constraints made from the answer about what is out of scope."""
+
+_C0_TEMPLATE_KEYS = tuple(f"C0{letter}" for letter in "abcdefg")
 
 MIN_CRITERION_WORDS = 4
 MIN_INTENT_WORDS = 25
@@ -348,13 +394,27 @@ def scope_without_breakdown(task: Task) -> bool:
     return not _has_anchor(_statement(task.acceptance_criteria[0]))
 
 
+def no_acceptance_criteria(task: Task) -> bool:
+    """Rule C0."""
+    return not task.acceptance_criteria
+
+
 def assess_intent(task: Task) -> tuple[ClarificationQuestion, ...]:
     """Return the clarification questions for a task, in a stable order.
 
-    Criteria are examined in their order (C2, then C1 unless C2 already applies, then C3),
-    followed by the task-level rule T1. Question ids are ``Q-1``, ``Q-2``, ... in that order.
+    A task without acceptance criteria gets the seven ``C0`` questions and nothing else: no
+    criterion can be examined and ``C0`` already asks what ``T1`` would (the behaviours in
+    scope and what is out of scope). Otherwise criteria are examined in their order (C2, then
+    C1 unless C2 already applies, then C3), followed by the task-level rule T1. Question ids
+    are ``Q-1``, ``Q-2``, ... in that order.
     """
     findings: list[tuple[ClarificationRule, str, str]] = []
+    if no_acceptance_criteria(task):
+        title = _excerpt(task.title)
+        findings = [
+            ("C0", target, QUESTION_TEMPLATES[key].format(title=title))
+            for key, target in zip(_C0_TEMPLATE_KEYS, C0_TARGETS, strict=True)
+        ]
     seen: dict[str, str] = {}
     for criterion in task.acceptance_criteria:
         values = {"target": criterion.criterion_id, "text": _excerpt(criterion.text)}
@@ -423,7 +483,16 @@ def revise_task(
     * an answer about a criterion that was not replaced becomes (or extends) its
       verification hint;
     * an answer about the task, when the file adds no requirement or criterion, becomes a
-      requirement with source ``clarification``.
+      requirement with source ``clarification``;
+    * an answer to a ``C0`` question lands by its target: ``task:results`` becomes acceptance
+      criteria, one per non-empty line, unless the file adds criteria; ``task:scope`` becomes
+      one requirement per non-empty line and ``task:interface``, ``task:limits``,
+      ``task:errors`` and ``task:non-functional`` one requirement each, unless the file adds
+      requirements; ``task:out-of-scope`` becomes one constraint per non-empty line, prefixed
+      with ``Out of scope:``. A leading list marker (``-``, ``*``, ``+``, ``1.``) is removed.
+
+    A revision that still has no criteria stays marked ``criteria_pending``, so INTENT asks
+    the ``C0`` questions again; one that has criteria is no longer marked.
     """
     by_id = {question.question_id: question for question in questions}
     unknown = sorted(set(clarification.answers) - set(by_id))
@@ -464,9 +533,28 @@ def revise_task(
         existing_requirements.add(requirement.requirement_id)
         added_requirements.append(requirement.requirement_id)
 
+    constraints = list(task.constraints)
     for question_id in sorted(clarification.answers, key=_question_order):
         question = by_id[question_id]
         answer = clarification.answers[question_id].strip()
+        if question.rule_id == "C0":
+            if question.target == "task:results":
+                if not clarification.add_criteria:
+                    for line in _answer_lines(answer):
+                        criterion = AcceptanceCriterion(criterion_id=new_id("ac"), text=line)
+                        criteria.append(criterion)
+                        added_criteria.append(criterion.criterion_id)
+            elif question.target == "task:out-of-scope":
+                constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
+            elif question.target in C0_TARGETS and not clarification.add_requirements:
+                texts = _answer_lines(answer) if question.target == "task:scope" else [answer]
+                for text in texts:
+                    requirement = Requirement(
+                        requirement_id=new_id("req"), text=text, source="clarification"
+                    )
+                    requirements.append(requirement)
+                    added_requirements.append(requirement.requirement_id)
+            continue
         if question.target == TASK_TARGET:
             if clarification.add_requirements or clarification.add_criteria:
                 continue
@@ -493,7 +581,9 @@ def revise_task(
         revised = Task.model_validate(
             {
                 **task.model_dump(by_alias=True),
+                "constraints": constraints,
                 "requirements": [item.model_dump(by_alias=True) for item in requirements],
+                "criteriaPending": not criteria,
                 "acceptanceCriteria": [item.model_dump(by_alias=True) for item in criteria],
             }
         )
@@ -505,6 +595,15 @@ def revise_task(
         added_criteria=tuple(added_criteria),
         added_requirements=tuple(added_requirements),
     )
+
+
+_LIST_MARKER = re.compile(r"^(?:[-*+\u2022]|\d+[.)])(?:\s+|$)")
+
+
+def _answer_lines(answer: str) -> list[str]:
+    """The non-empty lines of an answer, without a leading list marker."""
+    lines = (_LIST_MARKER.sub("", line.strip()).strip() for line in answer.splitlines())
+    return [line for line in lines if line]
 
 
 def _question_order(question_id: str) -> int:

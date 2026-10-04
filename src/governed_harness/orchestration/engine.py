@@ -58,7 +58,13 @@ from governed_harness.domain.models import (
 from governed_harness.events import SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
-from governed_harness.intake import ClarificationInput, assess_intent, revise_task, task_digest
+from governed_harness.intake import (
+    ClarificationInput,
+    assess_intent,
+    no_acceptance_criteria,
+    revise_task,
+    task_digest,
+)
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
@@ -593,6 +599,10 @@ class RunEngine:
             supports=(task.task_id,),
         )
         policy = self.s.resolved.project.criteria_policy
+        # A task without acceptance criteria (accepted under enforce, rule C0) never passes
+        # INTENT, whatever the policy says now: there is nothing to verify the work against.
+        if no_acceptance_criteria(task):
+            policy = "enforce"
         questions = assess_intent(task) if policy != "off" else ()
         if not questions:
             return PhaseOutcome(
