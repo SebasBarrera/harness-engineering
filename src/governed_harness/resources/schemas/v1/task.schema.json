@@ -161,6 +161,7 @@
   "$id": "https://example.org/governed-harness/schemas/v1/task.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "A versioned unit of work.\n\nA task needs at least one acceptance criterion. The only exception is a task marked\n``criteria_pending``: the task loader sets the marker when the project policy\n``intake.criteriaPolicy`` is ``enforce`` and the task file has no criteria, so that INTENT\nasks for them (rule ``C0``) instead of the task being refused. The marker is valid only\nwhile the task has no criteria, and it is left out of the serialized task when it is\nfalse, so tasks with criteria keep their stored form and their digest.",
   "properties": {
     "acceptanceCriteria": {
       "items": {
@@ -181,6 +182,11 @@
       "format": "date-time",
       "title": "Createdat",
       "type": "string"
+    },
+    "criteriaPending": {
+      "default": false,
+      "title": "Criteriapending",
+      "type": "boolean"
     },
     "implementation": {
       "$ref": "#/$defs/ImplementationInstruction"

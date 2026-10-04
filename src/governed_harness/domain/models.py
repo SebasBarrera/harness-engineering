@@ -4,7 +4,16 @@ from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationInfo,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from .enums import (
     ActorType,
@@ -121,6 +130,15 @@ class ImplementationInstruction(StrictModel):
 
 
 class Task(StrictModel):
+    """A versioned unit of work.
+
+    A task needs at least one acceptance criterion. The only exception is a task marked
+    ``criteria_pending``: the task loader sets the marker when the project policy
+    ``intake.criteriaPolicy`` is ``enforce`` and the task file has no criteria, so that INTENT
+    asks for them (rule ``C0``) instead of the task being refused. The marker is valid only
+    while the task has no criteria, and it is left out of the serialized task when it is
+    false, so tasks with criteria keep their stored form and their digest."""
+
     schema_version: Literal["1.0"] = "1.0"
     task_id: str
     project_id: str
@@ -128,6 +146,7 @@ class Task(StrictModel):
     intent: str = Field(min_length=1, max_length=16000)
     constraints: tuple[str, ...] = ()
     requirements: tuple[Requirement, ...] = ()
+    criteria_pending: bool = False
     acceptance_criteria: tuple[AcceptanceCriterion, ...]
     implementation: ImplementationInstruction = Field(default_factory=ImplementationInstruction)
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -136,11 +155,27 @@ class Task(StrictModel):
     @field_validator("acceptance_criteria")
     @classmethod
     def require_acceptance(
-        cls, value: tuple[AcceptanceCriterion, ...]
+        cls, value: tuple[AcceptanceCriterion, ...], info: ValidationInfo
     ) -> tuple[AcceptanceCriterion, ...]:
-        if not value:
+        # criteria_pending is declared (and so validated) before acceptance_criteria.
+        pending = info.data.get("criteria_pending", False) is True
+        if not value and not pending:
             raise ValueError("at least one acceptance criterion is required")
+        if value and pending:
+            raise ValueError(
+                "criteriaPending is only allowed on a task without acceptance criteria"
+            )
         return value
+
+    @model_serializer(mode="wrap")
+    def _omit_false_criteria_pending(
+        self, handler: SerializerFunctionWrapHandler
+    ) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if not self.criteria_pending:
+            data.pop("criteriaPending", None)
+            data.pop("criteria_pending", None)
+        return data
 
 
 ClarificationRule = Literal["C1", "C2", "C3", "T1"]

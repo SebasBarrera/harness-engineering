@@ -19,6 +19,7 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 | `acceptanceCriteria` | array of [AcceptanceCriterion](#acceptancecriterion) | yes |  |
 | `constraints` | array of string | no |  |
 | `createdAt` | string (date-time) | no |  |
+| `criteriaPending` | boolean | no | default `false` |
 | `implementation` | [ImplementationInstruction](#implementationinstruction) | no |  |
 | `intent` | string | yes | min length 1; max length 16000 |
 | `metadata` | object | no |  |
