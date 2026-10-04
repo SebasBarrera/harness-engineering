@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791039963825,
+  "lastUpdate": 1791158277874,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2237,6 +2237,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 3.889,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "abdf7bc29b96744943ffda56c86333f892fd8277",
+          "message": "Merge branch 'feat/intent-elicit-criteria' into develop\n\nUnder intake.criteriaPolicy enforce, a task without acceptance criteria is no\nlonger refused at creation: it is created as pending and INTENT blocks it with\nrule C0, which asks for the observable results and how they are checked, the\ninputs and outputs, the limits, the expected errors, the behaviours in scope,\nwhat is out of scope and the non-functional constraints. harness task clarify\nturns the answers into criteria, requirements and constraints; a revision that\nstill has no criteria stays blocked. Under warn and off, and for any path that\ndoes not know the policy, the 1.0.0 refusal is unchanged, and a task without\nthe pending marker keeps its digest.\n\nCloses #33\n\nVerification on the branch head c13fc3da6384: 21 CI job(s) succeeded, no blocking job failed.\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478816\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478824\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478834\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478836\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478842\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37245478864\nFiles of the v0.8.0 cut in the tree: matched: 119/232  mismatched: 89  missing: 24",
+          "timestamp": "2026-10-04T18:57:11-05:00",
+          "tree_id": "b6a561455512f2044db22f177b97275b3fd3074e",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/abdf7bc29b96744943ffda56c86333f892fd8277"
+        },
+        "date": 1791158277462,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001222,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001863,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011587,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.060185,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.242142,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 12.83769,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 13.241321,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 2.653,
             "unit": "%"
           }
         ]
