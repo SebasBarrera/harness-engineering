@@ -16,6 +16,21 @@
   re-assesses the revision. No phase was added. New contracts:
   `clarification-request.schema.json` and `clarification-record.schema.json`. A clarification
   flow was added to `scripts/demo_flows.py`.
+- `INTENT` elicits the acceptance criteria of a task that has none (#33). A one-sentence task was
+  refused by `harness task create`, so it never reached the clarification questions. Under
+  `intake.criteriaPolicy: enforce` the task is now accepted and stored with
+  `criteriaPending: true`; under `warn`, `off` or without the setting it is still refused with
+  exit code 2 and the same message. The task model allows no criteria only together with that
+  marker, which only the harness sets and which is left out of tasks with criteria, so their
+  stored form and digest do not change. The new rule `C0` asks seven separate questions (results
+  and how each is checked, inputs and outputs, limits, errors, behaviours in scope, out of scope,
+  non-functional constraints) instead of the other rules, and a task without criteria never
+  passes `INTENT` under any policy (exit 6). `harness task clarify` turns the answer about results
+  into acceptance criteria, one per line (or takes `addCriteria`), the scope and other answers
+  into requirements and the out-of-scope answer into constraints; a revision still without
+  criteria is asked again. The task, clarification-request and clarification-record schemas gain
+  `criteriaPending` and the rule id `C0`. The clarification demo flow now also runs a
+  one-sentence task.
 
 ## 1.0.0 - 2026-10-01
 

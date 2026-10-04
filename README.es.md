@@ -278,7 +278,9 @@ están **bloqueadas** y no se pueden debilitar: `requireHumanDecision`, `approva
 nada los aplica**. `intake.criteriaPolicy` decide qué hace `INTENT` con criterios de aceptación que
 no se pueden observar ("It works."): `enforce` (lo escribe `init`) bloquea hasta que una persona
 responda las preguntas con `harness task clarify`, `warn` (un archivo sin la clave) las registra como
-evidencia y hallazgos `LOW`, y `off` omite la verificación. Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
+evidencia y hallazgos `LOW`, y `off` omite la verificación. Solo `enforce` acepta una tarea sin
+criterios de aceptación; `INTENT` los pide entonces (regla `C0`) antes de que se ejecute nada más.
+Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
 
