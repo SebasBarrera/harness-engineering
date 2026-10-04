@@ -38,6 +38,8 @@ from agentlib import build_prompt, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
 
 MAX_CORRECTIONS = 2
+# Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
+MAX_CLARIFY_ROUNDS = 3
 SCENARIOS = {
     "greenfield": {
         "task": HERE / "tasks" / "greenfield-shipping.yaml",
@@ -116,7 +118,13 @@ def feedback_from(workspace: Path, run_id: str, status: dict[str, Any]) -> str:
 
 
 def run_harness(
-    workspace: Path, run_dir: Path, task_file: Path, model: str, agent: str = "claude", effort: str = ""
+    workspace: Path,
+    run_dir: Path,
+    task_file: Path,
+    model: str,
+    agent: str = "claude",
+    effort: str = "",
+    clarifier: Any = None,
 ) -> dict[str, Any]:
     events: list[dict[str, Any]] = []
 
@@ -132,6 +140,26 @@ def run_harness(
     started = step("run", "start", "--path", ".", "--task", task["taskId"], "--provider", agent)
     run_id = json.loads(started.stdout)["executionId"]
     code = started.returncode
+    clarification: list[dict[str, Any]] = []
+    # Without a clarifier the flow is the one of the evaluated runs. With one, a run blocked in INTENT
+    # by clarification questions gets them answered (harness task clarify) and continues.
+    while clarifier is not None and code == 6 and len(clarification) < MAX_CLARIFY_ROUNDS:
+        request = harness_json(workspace, "task", "questions", "--path", ".", "--task", task["taskId"]).get(
+            "openRequest"
+        )
+        if not request:
+            break
+        current = harness_json(workspace, "task", "show", "--path", ".", "--task", task["taskId"])
+        answers = clarifier(current, request)
+        answers_file = run_dir / f"answers-{task['taskId']}-{len(clarification) + 1}.yaml"
+        answers_file.write_text(yaml.safe_dump(answers, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        clarified = step("task", "clarify", "--path", ".", "--task", task["taskId"], "--file", str(answers_file),
+                         "--actor", getattr(clarifier, "actor", "human.local"))
+        clarification.append({"questions": [q["ruleId"] for q in request["questions"]],
+                              "answered": sorted(answers["answers"]), "clarifyExit": clarified.returncode})
+        if clarified.returncode != 0:
+            break
+        code = step("run", "continue", "--path", ".", "--run", run_id).returncode
     corrections, outcome, gate_history = 0, "error", []
     while True:
         status = harness_json(workspace, "status", "--path", ".", "--run", run_id)
@@ -175,6 +203,7 @@ def run_harness(
         ],
         "eventCount": final["eventCount"],
         "eventChainValid": final["eventChainValid"],
+        "clarification": clarification,
         "harnessMetrics": {name: item.get("value") for name, item in final["metrics"].items()},
         "trace": trace_completeness(workspace, final),
         "commands": events,
