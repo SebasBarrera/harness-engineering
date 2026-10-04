@@ -27,6 +27,13 @@ permissions of the operating-system user. The local API and dashboard have no au
 must stay on loopback. Run untrusted repositories, agents or plugins only inside a container, VM or
 comparable OS-level sandbox. The model below details what is and is not enforced.
 
+One OS-level control exists, for agent providers only: with `runtime.agentSandbox: enforce` (written
+by `harness init`) a command provider runs under `sandbox-exec` (macOS) or `bwrap` (Linux) and
+cannot **write** outside the workspace, `$TMPDIR` and the declared `runtime.sandboxWritePaths`; on a
+host without either tool `IMPLEMENTATION` is blocked instead (#34). It does not restrict reads,
+network access or process execution, and validators and the simulated provider are not wrapped.
+See [agent sandbox](docs/reference/configuration.md#agent-sandbox).
+
 ## Repository supply chain
 
 - GitHub Actions are pinned by commit SHA and run with least-privilege tokens; workflows are
@@ -73,12 +80,17 @@ The implementation distinguishes authorization logic from strong containment.
 - Any later owned-path change invalidates the approval.
 - Retrospective recommendations cannot apply themselves.
 - External plugin output must be a single schema-valid response correlated to the request ID.
+- With `runtime.agentSandbox: enforce`, command-provider processes cannot write outside the
+  workspace, `$TMPDIR` and the declared write paths (`sandbox-exec` on macOS, `bwrap` on Linux);
+  without a mechanism the provider is not started. The profile digest and the allowed paths are
+  recorded as `IMPLEMENTATION` evidence.
 
 ### Not enforced by the local process runner
 
 The local runner is **not an OS sandbox**. Once a native process is launched, capability metadata alone cannot technically prevent that process from:
 
-- accessing files permitted by the operating-system user but outside the workspace;
+- accessing files permitted by the operating-system user but outside the workspace (for an agent
+  provider under `agentSandbox: enforce`, reading them; writes are denied);
 - opening network connections;
 - spawning additional processes;
 - consuming CPU or memory beyond Python-level time/output controls;

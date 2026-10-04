@@ -16,6 +16,20 @@
   re-assesses the revision. No phase was added. New contracts:
   `clarification-request.schema.json` and `clarification-record.schema.json`. A clarification
   flow was added to `scripts/demo_flows.py`.
+- Agent providers run write-confined (#34). In an evaluation an agent CLI wrote files outside its
+  workspace: the harness's path containment covers its own file handling, not the agent process.
+  The new `runtime.agentSandbox: enforce | off` wraps every command-provider invocation in
+  `IMPLEMENTATION`, including those after `REQUEST_CHANGES`, in `sandbox-exec` (macOS) or `bwrap`
+  (Linux) so that writes outside the workspace, `$TMPDIR` and `runtime.sandboxWritePaths` fail;
+  reads, network and process execution stay allowed. `harness init` writes `enforce` with default
+  write paths for agent CLIs (`/tmp`, `/var/folders`, `~/.claude`, `~/.claude.json*`, `~/.cache`,
+  `~/Library/Caches`, `~/.config`, `~/.npm`). The profile digest and the allowed paths are recorded
+  as `IMPLEMENTATION` evidence and an `agent.sandbox.applied` event; a host without a mechanism
+  blocks `IMPLEMENTATION` with a `sandbox.unavailable` finding (`run start` exits with 6), and a
+  provider that fails on a denied write gets a `sandbox.write-denied` finding. A `project.yaml`
+  without the key runs with `off` and keeps its configuration snapshot digest. The simulated
+  provider and the validators are not wrapped. The usage flow of `scripts/demo_flows.py` sets
+  `agentSandbox: 'off'`, since it runs on hosts without a mechanism.
 
 ## 1.0.0 - 2026-10-01
 

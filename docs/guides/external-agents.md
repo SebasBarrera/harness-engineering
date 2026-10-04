@@ -27,6 +27,28 @@ of `command` must be allowed by a `process.execute` capability (the Python profi
 else. The process runs with `cwd` set to the workspace, without a shell, with the
 `runtime.commandTimeoutSeconds` timeout and the `runtime.maxOutputBytes` output bound.
 
+## Write confinement
+
+A project created by `harness init` has `runtime.agentSandbox: enforce`: on macOS the provider runs
+under `sandbox-exec` and on Linux under `bwrap`, and the operating system denies its writes outside
+the workspace, `$TMPDIR` and `runtime.sandboxWritePaths`. Reads, network and process execution are
+not restricted. On a host without a mechanism (Linux without bubblewrap, Windows) `IMPLEMENTATION`
+is `BLOCKED` with a `sandbox.unavailable` finding instead of running the agent unconfined. Details,
+the default write paths and the recorded evidence: [agent sandbox](../reference/configuration.md#agent-sandbox).
+
+With a provider that writes outside the workspace, `harness run start` on macOS exited with 6, the
+run was `FAILED` in `IMPLEMENTATION`, the file was not created and the run had the finding
+`sandbox.write-denied MEDIUM The agent sandbox denied a write: /Users/<user>/harness-cli-escape.txt`.
+
+Claude Code 2.1.287 was run directly (not through the harness) under the profile the harness builds
+from the `init` defaults, on macOS 15 with the user's own login:
+`sandbox-exec -p <profile> claude -p "Create a file hello.txt containing hi in the current
+directory, then reply done." --model claude-haiku-4-5-20251001 --output-format json
+--permission-mode acceptEdits --tools Write,Read --no-session-persistence` exited with 0
+(`"subtype":"success"`, `"result":"done"`) and created `hello.txt`. Asked to write to a file in the
+home directory (with `--add-dir` on the home directory, so that Claude Code's own permission check
+allowed it), its `Write` tool failed with `EPERM: operation not permitted` and no file was created.
+
 ## The protocol
 
 **Request (stdin)**, one JSON document:
@@ -94,7 +116,8 @@ with the model label, and the ChangeSet contained the two owned files.
 The following wrapper shows the shape of an adapter for an agent CLI such as Claude Code or Codex.
 It has **not** been run against a real agent in this repository; adapt the command line to the
 agent's documented non-interactive mode and review its permission settings. Remember that the
-harness is not a sandbox: the agent runs with your user's permissions.
+harness is not a full sandbox: with `agentSandbox: enforce` the agent cannot write outside the
+allowed paths, but it reads, connects and runs programs with your user's permissions.
 
 ```python
 #!/usr/bin/env python3
