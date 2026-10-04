@@ -2,8 +2,9 @@
 """Build a blind review folder for one group of rides cells (see REVIEW.md).
 
 Copies src/ and tests/ of each run's workspace (nothing else: no .harness, prompts or logs) as
-implementations A, B, C in an order shuffled with a fixed seed, plus SPEC.md, INTERFACE.md and
-REVIEW.md. The key (letter -> run directory) is written next to the folder, not inside it.
+implementations A, B, C in an order shuffled with a fixed seed, plus SPEC.md, INTERFACE.md and the
+review instructions as INSTRUCTIONS.md (on a case-insensitive file system REVIEW.md and the reviewer's
+review.md would be the same file). The key (letter -> run directory) is written next to the folder, not inside it.
 
 Usage: python prepare_review.py OUT_DIR RUN_DIR [RUN_DIR ...]
 """
@@ -39,7 +40,7 @@ def main() -> int:
                                 ignore=shutil.ignore_patterns("__pycache__", "*.db", "*.sqlite", ".pytest_cache"))
         key[letter] = run.name
     for name, source in (("SPEC.md", HERE / "SPEC.md"), ("INTERFACE.md", HERE / "fixture" / "INTERFACE.md"),
-                         ("REVIEW.md", HERE / "REVIEW.md")):
+                         ("INSTRUCTIONS.md", HERE / "REVIEW.md")):
         shutil.copy2(source, out / name)
     (out.parent / f"{out.name}.key.json").write_text(json.dumps(key, indent=1), encoding="utf-8")
     print(json.dumps({"folder": str(out), "implementations": sorted(key)}))
