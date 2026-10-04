@@ -36,6 +36,7 @@ sys.path.insert(0, str(HERE))
 
 from agentlib import build_prompt, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
+from product_owner import ProductOwner  # noqa: E402
 
 MAX_CORRECTIONS = 2
 # Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
@@ -256,7 +257,7 @@ def trace_completeness(workspace: Path, status: dict[str, Any]) -> dict[str, Any
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), required=True)
-    parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
+    parser.add_argument("--condition", choices=["baseline", "harness", "clarify"], required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
     parser.add_argument("--prompt", choices=["full", "poor", "casual"], default="full")
@@ -282,6 +283,8 @@ def main() -> int:
             parser.error("the casual prompt has no task file; the harness rejects it at task create")
         casual_prompt = task_file.with_name(task_file.stem + "-casual.txt").read_text(encoding="utf-8")
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
+    if args.condition == "clarify" and args.prompt != "poor":
+        parser.error("the clarify condition applies to the poor prompt (harness 1.1.0 or later)")
 
     started = time.monotonic()
     record: dict[str, Any] = {
@@ -302,6 +305,17 @@ def main() -> int:
         else:
             run_claude(prompt, workspace, args.model, log)
         record["baseline"] = {"delivered": True}
+    elif args.condition == "clarify":
+        # The simulated product owner knows the full task and the specification the poor task leaves out.
+        full_task = SCENARIOS[args.scenario]["task"]
+        spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
+        knowledge = "Full task description:\n" + full_task.read_text(encoding="utf-8")
+        if spec.is_file():
+            knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
+        owner = ProductOwner(knowledge, args.model, run_dir)
+        record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort,
+                                        clarifier=owner)
+        record["productOwner"] = owner.rounds
     else:
         record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort)
     record["wallSeconds"] = round(time.monotonic() - started, 3)
