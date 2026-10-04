@@ -727,11 +727,13 @@ def flow_memory(t: Transcript, root: Path) -> None:
         "after the invalidation only the accepted recommendation stays active",
     )
 
-    # A command provider that reports its usage fills the token and cost metrics.
+    # A command provider that reports its usage fills the token and cost metrics. The flow is
+    # about usage and runs on Linux and Windows hosts without a sandbox mechanism, so it turns the
+    # agent sandbox that init enforces off (with enforce such a host blocks IMPLEMENTATION).
     (root / "usage_adapter.py").write_text(USAGE_ADAPTER)
     config = root / ".harness" / "project.yaml"
     config.write_text(
-        config.read_text()
+        config.read_text().replace("agentSandbox: enforce", "agentSandbox: 'off'")
         + "agentProviders:\n  usage_fixture:\n    kind: command\n"
         + "    command: [python, usage_adapter.py]\n    model: usage-fixture\n"
     )

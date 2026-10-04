@@ -44,6 +44,7 @@ from governed_harness.domain.models import (
     Evidence,
     Execution,
     Finding,
+    FindingLocation,
     GateEvaluation,
     HumanDecision,
     PhaseExecution,
@@ -71,6 +72,13 @@ from governed_harness.runtime import (
     WorkspaceDiff,
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
+)
+from governed_harness.runtime.sandbox import (
+    SandboxHost,
+    SandboxPlan,
+    SandboxUnavailable,
+    build_sandbox,
+    denied_writes,
 )
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
@@ -132,12 +140,20 @@ class PhaseOutcome:
 
 
 class RunEngine:
-    def __init__(self, services: EngineServices) -> None:
+    def __init__(self, services: EngineServices, sandbox_host: SandboxHost | None = None) -> None:
         self.s = services
         self.state_machine = NormativeStateMachine()
         self.gate_engine = GateEngine()
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
+        self._sandbox_host = sandbox_host
+
+    @property
+    def sandbox_host(self) -> SandboxHost:
+        """The host the agent sandbox is built for; detected on first use unless injected."""
+        if self._sandbox_host is None:
+            self._sandbox_host = SandboxHost.detect()
+        return self._sandbox_host
 
     # ----- creation and lifecycle -------------------------------------------------
     def create_execution(self, task: Task, provider: str | None = None) -> Execution:
@@ -838,6 +854,8 @@ class RunEngine:
             return PhaseOutcome(ResultStatus.BLOCKED, "No approved plan exists")
         plan = self.s.state.get("plan", plan_id, Plan)
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
+        sandbox: SandboxPlan | None = None
+        sandbox_refs: tuple[str, ...] = ()
         if provider_id == "simulated":
             provider: AgentProvider = SimulatedAgentProvider()
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
@@ -848,11 +866,36 @@ class RunEngine:
                     ResultStatus.BLOCKED,
                     f"Provider {provider_id!r} is not configured",
                 )
+            if self.s.resolved.project.runtime.effective_agent_sandbox == "enforce":
+                try:
+                    sandbox = build_sandbox(
+                        self.s.paths.workspace,
+                        self.s.resolved.project.runtime.sandbox_write_paths or (),
+                        self.sandbox_host,
+                    )
+                except SandboxUnavailable as error:
+                    self._record_sandbox_finding(
+                        execution,
+                        rule_id="sandbox.unavailable",
+                        severity=FindingSeverity.HIGH,
+                        message=f"The agent sandbox is enforced but unavailable: {error}",
+                        recommendation=(
+                            "Run on macOS (sandbox-exec) or on Linux with bubblewrap (bwrap) "
+                            "installed, or set runtime.agentSandbox to off to run the agent "
+                            "with the user's permissions."
+                        ),
+                    )
+                    return PhaseOutcome(
+                        ResultStatus.BLOCKED,
+                        f"Agent sandbox unavailable: {error}; the provider was not started",
+                    )
+                sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
             provider = CommandAgentProvider(
                 CommandAgentConfiguration(
                     provider_id=provider_id,
                     argv_prefix=provider_config.command,
                     model=provider_config.model,
+                    sandbox_prefix=sandbox.prefix if sandbox else (),
                 )
             )
             actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
@@ -909,18 +952,117 @@ class RunEngine:
             phase_execution_id=phase.phase_execution_id,
         )
         if result.status is not ResultStatus.PASSED:
+            if sandbox is not None:
+                self._record_denied_writes(execution, result.tool_invocations)
             return PhaseOutcome(
-                result.status, result.summary, (result.output_ref,) if result.output_ref else ()
+                result.status,
+                result.summary,
+                ((result.output_ref,) if result.output_ref else ()) + sandbox_refs,
             )
         change_set = self._refresh_changeset(execution)
         if not change_set.files and not bool(
             self.s.resolved.effective_policies.get("allowEmptyChangeSet", False)
         ):
-            return PhaseOutcome(ResultStatus.FAILED, "Implementation produced no ChangeSet")
+            return PhaseOutcome(
+                ResultStatus.FAILED, "Implementation produced no ChangeSet", sandbox_refs
+            )
         return PhaseOutcome(
             ResultStatus.PASSED,
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
-            (change_set.diff_ref,),
+            (change_set.diff_ref, *sandbox_refs),
+        )
+
+    def _record_sandbox_evidence(
+        self, execution: Execution, phase: PhaseExecution, sandbox: SandboxPlan
+    ) -> str:
+        """Record the confinement the provider runs under: mechanism, profile and its digest,
+        and the resolved write paths (IMPLEMENTATION evidence and an ``agent.sandbox.applied``
+        event)."""
+        record = sandbox.evidence()
+        ref = self.s.artifacts.put_json(
+            record, metadata={"kind": "agent-sandbox", "executionId": execution.execution_id}
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.CONFIGURATION,
+            ref,
+            f"Agent sandbox: {sandbox.mechanism}, {len(sandbox.allowed_paths)} writable path(s)",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.sandbox.applied",
+            {
+                "mechanism": sandbox.mechanism,
+                "profileDigest": sandbox.profile_digest,
+                "allowedPaths": [item.path for item in sandbox.allowed_paths],
+                "evidenceRef": evidence.artifact_ref,
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return evidence.artifact_ref
+
+    def _record_denied_writes(
+        self, execution: Execution, tools: tuple[ToolInvocation, ...]
+    ) -> None:
+        """A provider that failed under the sandbox and reports a denied write on standard
+        error gets a ``sandbox.write-denied`` finding naming the path when it can be read."""
+        for tool in tools:
+            if not tool.stderr_ref:
+                continue
+            found, paths = denied_writes(self.s.artifacts.get(tool.stderr_ref))
+            if not found:
+                continue
+            named = ", ".join(paths) if paths else "a path not named in the output"
+            self._record_sandbox_finding(
+                execution,
+                rule_id="sandbox.write-denied",
+                severity=FindingSeverity.MEDIUM,
+                message=f"The agent sandbox denied a write: {named}",
+                recommendation=(
+                    "If the agent needs this path, add it to runtime.sandboxWritePaths; "
+                    "otherwise keep the agent's changes inside the workspace."
+                ),
+                path=paths[0] if paths else None,
+                evidence_refs=(tool.stderr_ref,),
+            )
+
+    def _record_sandbox_finding(
+        self,
+        execution: Execution,
+        *,
+        rule_id: str,
+        severity: FindingSeverity,
+        message: str,
+        recommendation: str,
+        path: str | None = None,
+        evidence_refs: tuple[str, ...] = (),
+    ) -> None:
+        finding = Finding(
+            finding_id=new_id("finding"),
+            execution_id=execution.execution_id,
+            validator_id="harness.sandbox",
+            rule_id=rule_id,
+            category="agent-sandbox",
+            severity=severity,
+            message=message,
+            location=FindingLocation(path=path) if path else None,
+            evidence_refs=evidence_refs,
+            recommendation=recommendation,
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "finding",
+            finding.finding_id,
+            finding,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "finding.recorded",
+            finding.model_dump(mode="json"),
+            actor=finding.provenance.actor,
         )
 
     def _phase_verification(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
