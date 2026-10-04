@@ -41,11 +41,20 @@ LIMIT_TEXT = re.compile(
     r"|\b(429|529)\b",
     re.IGNORECASE,
 )
+# Failures of the environment, not of the agent: the machine slept, the request timed out or the
+# connection dropped. A resumable call waits briefly and resumes the session.
+TRANSIENT_TEXT = re.compile(
+    r"went to sleep|request timed out|timed out|connection error|connection reset|econnreset|"
+    r"socket hang up|network error|fetch failed|api error: 5\d\d|internal server error",
+    re.IGNORECASE,
+)
+TRANSIENT_WAIT_SECONDS = 60
+TRANSIENT_MAX_RETRIES = 20
 LIMIT_RESET_EPOCH = re.compile(r"\|(\d{10})\b")
 LIMIT_POLL_SECONDS = 600
 CONTINUE_PROMPT = (
-    "The previous session was interrupted by a usage limit before the task was finished. "
-    "Continue the same task from where you left off; do not start over."
+    "The previous session was interrupted (usage limit or a failure of the machine or the network) "
+    "before the task was finished. Continue the same task from where you left off; do not start over."
 )
 
 
@@ -154,6 +163,14 @@ def run_claude(
     return record
 
 
+def _transient(record: dict[str, Any], result: dict[str, Any], stderr: str) -> bool:
+    """True when the call failed because of the environment (sleep, timeout, network), not the agent."""
+    if record["timedOut"] or (result and not result.get("is_error")):
+        return False
+    text = " ".join([str(result.get("result", "")), stderr[-4000:]])
+    return bool(TRANSIENT_TEXT.search(text))
+
+
 def _limited(record: dict[str, Any], result: dict[str, Any], stderr: str) -> bool:
     """True when the call stopped on the usage limit or an overloaded API, not on the agent's own error."""
     if record["timedOut"] or (result and not result.get("is_error")):
@@ -211,6 +228,15 @@ def _run_resumable(
         record["resumed"] = state["started"]
         state["segments"].append(record)
         state["started"] = state["started"] or bool(record["numTurns"]) or bool(record["costUsd"])
+        if (
+            _transient(record, result, stderr)
+            and state.get("transientRetries", 0) < TRANSIENT_MAX_RETRIES
+        ):
+            state["transientRetries"] = state.get("transientRetries", 0) + 1
+            inflight.write_text(json.dumps(state, indent=1), encoding="utf-8")
+            time.sleep(TRANSIENT_WAIT_SECONDS)
+            state["pausedSeconds"] += TRANSIENT_WAIT_SECONDS
+            continue
         if not _limited(record, result, stderr):
             break
         match = LIMIT_RESET_EPOCH.search(str(result.get("result", "")))
@@ -267,6 +293,7 @@ def _run_resumable(
             for seg in segments
         ],
         "limitPauses": state.get("limitPauses", 0),
+        "transientRetries": state.get("transientRetries", 0),
         "pausedSeconds": round(state["pausedSeconds"], 3),
     }
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
