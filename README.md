@@ -272,7 +272,8 @@ weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessB
 `intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
 ("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
-findings, `off` skips the check.
+findings, `off` skips the check. Only `enforce` accepts a task without acceptance criteria;
+`INTENT` then asks for them (rule `C0`) before anything else runs.
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles

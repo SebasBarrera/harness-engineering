@@ -92,3 +92,48 @@ def test_persisted_clarification_records_match_public_schemas(
             _validate("event.schema.json", event.as_dict())
     finally:
         services.close()
+
+
+def test_a_task_without_criteria_and_its_c0_records_match_public_schemas(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """Under enforce a task may start without criteria (#33): the pending task, the C0
+    questions and the answers that add its criteria are all valid records."""
+    task_file = tmp_path / "task.yaml"
+    task_file.write_text("title: Rides\nintent: Build a ride-sharing backend.\n", encoding="utf-8")
+    application = HarnessApplication()
+    task = application.create_task(python_workspace, task_file)
+    pending = task.model_dump(mode="json", by_alias=True)
+    assert pending["criteriaPending"] is True
+    _validate("task.schema.json", pending)
+    with pytest.raises(ValidationError):
+        _validate("task.schema.json", {**pending, "criteriaPending": "yes"})
+    run = application.start_run(python_workspace, task.task_id)
+    answers = tmp_path / "answers.yaml"
+    answers.write_text(
+        "answers:\n  Q-1: POST /rides returns 201.\n  Q-6: Payments.\n", encoding="utf-8"
+    )
+    result = application.clarify_task(
+        python_workspace, task_id=task.task_id, answers_file=answers, actor_id="human.contract"
+    )
+    _validate("task.schema.json", result["task"])
+    assert "criteriaPending" not in result["task"]
+    services = EngineServices.open(ConfigurationResolver().resolve(python_workspace))
+    try:
+        (request,) = services.state.list(
+            "clarification_request", ClarificationRequest, execution_id=run.execution_id
+        )
+        (record,) = services.state.list(
+            "clarification", ClarificationRecord, execution_id=run.execution_id
+        )
+        assert {question.rule_id for question in request.questions} == {"C0"}
+        assert [answer.target for answer in record.answers] == [
+            "task:results",
+            "task:out-of-scope",
+        ]
+        _validate(
+            "clarification-request.schema.json", request.model_dump(mode="json", by_alias=True)
+        )
+        _validate("clarification-record.schema.json", record.model_dump(mode="json", by_alias=True))
+    finally:
+        services.close()

@@ -2,7 +2,7 @@
   "$defs": {
     "ClarificationQuestion": {
       "additionalProperties": false,
-      "description": "A question raised by the deterministic intent assessment in INTENT.\n\n``target`` is the criterion id the question is about, or ``task`` for the task as a\nwhole. ``question_id`` is stable for a given task revision (``Q-1``, ``Q-2``, ...).",
+      "description": "A question raised by the deterministic intent assessment in INTENT.\n\n``target`` is the criterion id the question is about, ``task`` for the task as a whole,\nor ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for\nexample ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,\n``Q-2``, ...).",
       "properties": {
         "questionId": {
           "pattern": "^Q-[1-9][0-9]*$",
@@ -11,6 +11,7 @@
         },
         "ruleId": {
           "enum": [
+            "C0",
             "C1",
             "C2",
             "C3",

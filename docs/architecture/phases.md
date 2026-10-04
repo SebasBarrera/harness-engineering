@@ -28,3 +28,13 @@ the questions, the answers, the actor and the previous and new task digests are 
 events of the same run. With `warn` the questions are recorded as evidence and `LOW` findings and
 the phase passes; with `off` the check is skipped. See the
 [configuration reference](../reference/configuration.md#acceptance-criteria-policy).
+
+Under `enforce`, `harness task create` also accepts a task without acceptance criteria (for
+example a single sentence of intent) and marks it `criteriaPending`; the other policies refuse
+it with exit code 2. For such a task `INTENT` asks rule `C0` instead of the other rules: seven
+separate questions about the observable results and how each is checked, the inputs and outputs,
+the limits, the errors for invalid input, the behaviours in scope, what is out of scope and the
+non-functional constraints. The answer about results becomes the acceptance criteria. A task
+without criteria never passes `INTENT`, whatever the policy is when the run starts: the phase
+stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
+[tasks without acceptance criteria](../reference/configuration.md#tasks-without-acceptance-criteria).
