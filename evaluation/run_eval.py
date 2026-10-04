@@ -41,6 +41,9 @@ from product_owner import ProductOwner  # noqa: E402
 MAX_CORRECTIONS = 2
 # Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
 MAX_CLARIFY_ROUNDS = 3
+# Set by the clarify condition only: agent calls resume after a usage limit or a failure of the machine,
+# and the harness waits for them; the evaluated conditions keep one plain call.
+RESUMABLE_PROVIDER = False
 SCENARIOS = {
     "greenfield": {
         "task": HERE / "tasks" / "greenfield-shipping.yaml",
@@ -105,6 +108,9 @@ def configure_provider(workspace: Path, model: str, agent: str = "claude", effor
     config["agentProvider"] = agent
     config["agentProviders"] = {agent: {"kind": "command", "command": command, "model": model}}
     config["runtime"]["commandTimeoutSeconds"] = 1800
+    if RESUMABLE_PROVIDER and agent == "claude":
+        command.append("--resumable")
+        config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
@@ -313,6 +319,8 @@ def main() -> int:
         if spec.is_file():
             knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
         owner = ProductOwner(knowledge, args.model, run_dir)
+        global RESUMABLE_PROVIDER  # noqa: PLW0603
+        RESUMABLE_PROVIDER = True
         record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort,
                                         clarifier=owner)
         record["productOwner"] = owner.rounds
