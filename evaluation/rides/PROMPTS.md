@@ -836,3 +836,42 @@ Work only inside this directory. Do not commit, do not create branches and do no
 packages. You may run the test suite with `python -m pytest -q`. When you are done, reply
 with a short summary of the change.
 ```
+
+## 6. Clarification with harness 1.1.0 (clarify condition)
+
+The paragraph task runs with `intake.criteriaPolicy: enforce`. INTENT asks questions about the criterion `It works.`; a separate agent call plays the product owner with the prompt below (`{task}` is the current task, `{questions}` the open questions, `{knowledge}` SPEC.md). Its answers go to `harness task clarify` as `human.product-owner-simulated`.
+
+```text
+You are the product owner of the product described at the end of this message. A developer
+wrote the task below for a coding agent, and the development process tool stopped it before any work because
+its acceptance criteria cannot be checked. The tool asks the questions below.
+
+Answer them as a product owner would in a short written clarification:
+- answer every question, concisely and in your own words, from the product description;
+- answer only what each question asks; do not paste the product description;
+- then state the task changes your answers imply: acceptance criteria that can be checked (observable
+  results for given inputs or actions) and, if a question asks about scope, the requirements in scope.
+
+Reply with exactly one ```yaml block and nothing else, in this format:
+
+```yaml
+answers:              # every question id below, mapped to your answer
+  Q-1: ...
+replaceCriteria:      # optional: rewrite a criterion by its id
+  - criterionId: ...
+    text: ...
+addCriteria:          # optional: new checkable criteria
+  - ...
+addRequirements:      # optional: requirements in scope
+  - ...
+```
+
+Task:
+{task}
+
+Questions:
+{questions}
+
+Product description:
+{knowledge}
+```

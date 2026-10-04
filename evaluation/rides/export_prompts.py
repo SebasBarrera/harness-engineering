@@ -46,6 +46,12 @@ def main() -> int:
     parts += ["### 5.4. Super prompt with the harness, and stepwise without it: the 16 steps", ""]
     for step in rr.PROMPTS["steps"]:
         parts += [f"#### {step['id']}. {step['title']}", "", block(build_prompt(rr.step_task(step)))]
+    from product_owner import PO_PROMPT  # noqa: PLC0415
+    parts += ["## 6. Clarification with harness 1.1.0 (clarify condition)", "",
+              "The paragraph task runs with `intake.criteriaPolicy: enforce`. INTENT asks questions about the "
+              "criterion `It works.`; a separate agent call plays the product owner with the prompt below "
+              "(`{task}` is the current task, `{questions}` the open questions, `{knowledge}` SPEC.md). Its "
+              "answers go to `harness task clarify` as `human.product-owner-simulated`.", "", block(PO_PROMPT)]
     (HERE / "PROMPTS.md").write_text("\n".join(parts), encoding="utf-8")
     print(f"PROMPTS.md: {sum(len(p.split()) for p in parts)} words")
     return 0
