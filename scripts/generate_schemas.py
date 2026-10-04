@@ -38,6 +38,7 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.plugins.protocol import PluginDescriptor, PluginRequest, PluginResponse
+from governed_harness.validators.traceability import RequirementTraceabilityReport
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "schemas" / "v1"
@@ -63,6 +64,7 @@ MODELS: dict[str, SchemaModel] = {
     "plugin-request.schema.json": PluginRequest,
     "plugin-response.schema.json": PluginResponse,
     "project-config.schema.json": ProjectConfiguration,
+    "requirement-traceability.schema.json": RequirementTraceabilityReport,
     "resource-usage.schema.json": ResourceUsage,
     "retrospective-recommendation.schema.json": Recommendation,
     "retrospective.schema.json": Retrospective,
