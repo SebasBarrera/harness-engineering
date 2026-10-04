@@ -846,24 +846,29 @@ You are the product owner of the product described at the end of this message. A
 wrote the task below for a coding agent, and the development process tool stopped it before any work because
 its acceptance criteria cannot be checked. The tool asks the questions below.
 
-Answer them as a product owner would in a short written clarification:
+Answer them as a product owner would in a short written clarification, in English:
 - answer every question, concisely and in your own words, from the product description;
 - answer only what each question asks; do not paste the product description;
 - then state the task changes your answers imply: acceptance criteria that can be checked (observable
   results for given inputs or actions) and, if a question asks about scope, the requirements in scope.
 
-Reply with exactly one ```yaml block and nothing else, in this format:
+Reply with exactly one ```yaml block and nothing else, in this format. Write every text as a literal block
+scalar (a "|" followed by indented lines), so that no quoting is needed:
 
 ```yaml
 answers:              # every question id below, mapped to your answer
-  Q-1: ...
+  Q-1: |
+    ...
 replaceCriteria:      # optional: rewrite a criterion by its id
   - criterionId: ...
-    text: ...
+    text: |
+      ...
 addCriteria:          # optional: new checkable criteria
-  - ...
+  - |
+    ...
 addRequirements:      # optional: requirements in scope
-  - ...
+  - |
+    ...
 ```
 
 Task:

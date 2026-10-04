@@ -157,7 +157,12 @@ def run_harness(
         if not request:
             break
         current = harness_json(workspace, "task", "show", "--path", ".", "--task", task["taskId"])
-        answers = clarifier(current, request)
+        try:
+            answers = clarifier(current, request)
+        except Exception as error:  # noqa: BLE001 - the clarifier is an agent; its failure is a result
+            clarification.append({"questions": [q["ruleId"] for q in request["questions"]],
+                                  "error": f"{type(error).__name__}: {str(error)[:300]}"})
+            break
         answers_file = run_dir / f"answers-{task['taskId']}-{len(clarification) + 1}.yaml"
         answers_file.write_text(yaml.safe_dump(answers, sort_keys=False, allow_unicode=True), encoding="utf-8")
         clarified = step("task", "clarify", "--path", ".", "--task", task["taskId"], "--file", str(answers_file),

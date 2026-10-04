@@ -24,24 +24,29 @@ PO_PROMPT = """You are the product owner of the product described at the end of 
 wrote the task below for a coding agent, and the development process tool stopped it before any work because
 its acceptance criteria cannot be checked. The tool asks the questions below.
 
-Answer them as a product owner would in a short written clarification:
+Answer them as a product owner would in a short written clarification, in English:
 - answer every question, concisely and in your own words, from the product description;
 - answer only what each question asks; do not paste the product description;
 - then state the task changes your answers imply: acceptance criteria that can be checked (observable
   results for given inputs or actions) and, if a question asks about scope, the requirements in scope.
 
-Reply with exactly one ```yaml block and nothing else, in this format:
+Reply with exactly one ```yaml block and nothing else, in this format. Write every text as a literal block
+scalar (a "|" followed by indented lines), so that no quoting is needed:
 
 ```yaml
 answers:              # every question id below, mapped to your answer
-  Q-1: ...
+  Q-1: |
+    ...
 replaceCriteria:      # optional: rewrite a criterion by its id
   - criterionId: ...
-    text: ...
+    text: |
+      ...
 addCriteria:          # optional: new checkable criteria
-  - ...
+  - |
+    ...
 addRequirements:      # optional: requirements in scope
-  - ...
+  - |
+    ...
 ```
 
 Task:
@@ -69,7 +74,11 @@ def parse_answers(text: str, question_ids: list[str]) -> dict[str, Any]:
     result: dict[str, Any] = {"answers": answers}
     for key in ("replaceCriteria", "addCriteria", "addRequirements"):
         if raw.get(key):
-            result[key] = raw[key]
+            result[key] = [
+                {k: (v.strip() if isinstance(v, str) else v) for k, v in item.items()} if isinstance(item, dict)
+                else str(item).strip()
+                for item in raw[key]
+            ]
     return result
 
 
@@ -94,10 +103,19 @@ class ProductOwner:
             questions="\n".join(f"- {q['questionId']}: {q['text']}" for q in questions),
             knowledge=self.knowledge,
         )
+        ids = [q["questionId"] for q in questions]
         number = len(list(self.calls.glob("call-*.json"))) + 1
         record = run_claude(prompt, self.scratch, self.model, self.calls / f"call-{number}.json",
                             timeout_seconds=PO_TIMEOUT_SECONDS, max_budget_usd=PO_BUDGET_USD, resumable=True)
-        answers = parse_answers(record.get("resultText", ""), [q["questionId"] for q in questions])
+        try:
+            answers = parse_answers(record.get("resultText", ""), ids)
+        except (ValueError, yaml.YAMLError) as error:
+            # One retry with the parse error, as a person would be asked to fix a malformed file.
+            retry = (prompt + "\n\nYour previous reply could not be read as the answers file (" + str(error)[:300]
+                     + "). Reply again with one valid ```yaml block, every text as a | block scalar.")
+            record = run_claude(retry, self.scratch, self.model, self.calls / f"call-{number + 1}.json",
+                                timeout_seconds=PO_TIMEOUT_SECONDS, max_budget_usd=PO_BUDGET_USD, resumable=True)
+            answers = parse_answers(record.get("resultText", ""), ids)
         # A rewrite of a criterion the task does not have becomes a new criterion instead of an error.
         known = {c.get("criterionId") for c in task.get("acceptanceCriteria", [])}
         replace = [c for c in answers.get("replaceCriteria", []) if isinstance(c, dict) and c.get("criterionId") in known]
