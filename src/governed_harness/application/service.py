@@ -88,7 +88,10 @@ class HarnessApplication:
 
     def create_task(self, path: Path, source: Path) -> Task:
         with self._services(path) as services:
-            task = load_task_file(source, project_id=services.resolved.project.project_id)
+            project = services.resolved.project
+            task = load_task_file(
+                source, project_id=project.project_id, criteria_policy=project.criteria_policy
+            )
             services.state.put(
                 "task",
                 task.task_id,

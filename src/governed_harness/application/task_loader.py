@@ -6,6 +6,7 @@ from typing import Any, Literal, cast
 
 import yaml
 
+from governed_harness.configuration.models import CriteriaPolicy
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -50,7 +51,14 @@ def _required_text(value: dict[str, Any], name: str, where: str) -> str:
     return str(text)
 
 
-def load_task_file(path: Path, *, project_id: str) -> Task:
+def load_task_file(
+    path: Path, *, project_id: str, criteria_policy: CriteriaPolicy | None = None
+) -> Task:
+    """Read a task file (YAML or JSON) into a task.
+
+    A task needs at least one acceptance criterion. Only when ``criteria_policy`` is
+    ``enforce`` is a task without criteria accepted: it is marked ``criteria_pending`` and
+    INTENT asks for its criteria (rule ``C0``). Any other policy, or none, keeps the refusal."""
     try:
         if path.suffix.lower() == ".json":
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -134,6 +142,7 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
             intent=intent,
             constraints=tuple(str(item) for item in (_first(raw, "constraints", default=[]) or [])),
             requirements=tuple(requirements),
+            criteria_pending=not criteria and criteria_policy == "enforce",
             acceptance_criteria=tuple(criteria),
             implementation=implementation,
             metadata=dict(_first(raw, "metadata", default={}) or {}),
