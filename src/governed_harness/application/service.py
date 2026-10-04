@@ -84,6 +84,10 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "agentSandbox": {
+                "mode": resolved.project.runtime.effective_agent_sandbox,
+                "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),
+            },
         }
 
     def create_task(self, path: Path, source: Path) -> Task:

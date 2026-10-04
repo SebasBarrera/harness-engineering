@@ -109,6 +109,22 @@
     "RuntimeConfig": {
       "additionalProperties": false,
       "properties": {
+        "agentSandbox": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentsandbox"
+        },
         "allowNetwork": {
           "default": false,
           "title": "Allownetwork",
@@ -132,6 +148,21 @@
           "minimum": 1,
           "title": "Maxparallel",
           "type": "integer"
+        },
+        "sandboxWritePaths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sandboxwritepaths"
         }
       },
       "title": "RuntimeConfig",

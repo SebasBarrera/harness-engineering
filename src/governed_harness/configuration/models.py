@@ -43,11 +43,89 @@ class CapabilitiesConfig(ConfigModel):
     grants: tuple[CapabilityRule, ...] = ()
 
 
+AgentSandboxMode = Literal["enforce", "off"]
+
+DEFAULT_AGENT_SANDBOX: AgentSandboxMode = "off"
+"""Mode of a project.yaml without ``runtime.agentSandbox`` (files written before 1.1)."""
+
+DEFAULT_SANDBOX_WRITE_PATHS: tuple[tuple[str, str], ...] = (
+    ("/tmp", "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it."),
+    (
+        "/var/folders",
+        "Per-user temporary and cache directories of macOS (/private/var/folders); $TMPDIR "
+        "lives here.",
+    ),
+    ("~/.claude", "Claude Code keeps its settings, session state, todos and logs here."),
+    (
+        "~/.claude.json*",
+        "Claude Code rewrites its configuration file through temporary, backup and lock files "
+        "next to it (~/.claude.json.backup, ~/.claude.json.lock, ...).",
+    ),
+    ("~/.cache", "XDG cache directory used by agent CLIs, pip, uv and many tools."),
+    ("~/Library/Caches", "Per-user cache directory of macOS (CLI update checks, node caches)."),
+    ("~/.config", "XDG configuration directory where agent CLIs keep state and credentials."),
+    ("~/.npm", "npm cache and logs: npx-launched agents and MCP servers write here."),
+)
+"""Write paths ``harness init`` declares, with the reason for each. The workspace and the
+resolved ``$TMPDIR`` are always writable and are not listed."""
+
+_SANDBOX_PATH_FORBIDDEN = frozenset('"\\$?[]{}')
+
+
+def _sandbox_mode_from_yaml(value: Any) -> Any:
+    # YAML 1.1 (PyYAML) reads a bare ``off`` as false; a hand-written ``agentSandbox: off`` must
+    # mean what it says.
+    return "off" if value is False else value
+
+
 class RuntimeConfig(ConfigModel):
     command_timeout_seconds: int = Field(default=900, alias="commandTimeoutSeconds", ge=1)
     max_output_bytes: int = Field(default=1_000_000, alias="maxOutputBytes", ge=1024)
     max_parallel: int = Field(default=2, alias="maxParallel", ge=1, le=32)
     allow_network: bool = Field(default=False, alias="allowNetwork")
+    agent_sandbox: AgentSandboxMode | None = Field(default=None, alias="agentSandbox")
+    sandbox_write_paths: tuple[str, ...] | None = Field(default=None, alias="sandboxWritePaths")
+
+    @field_validator("agent_sandbox", mode="before")
+    @classmethod
+    def _bare_off_is_off(cls, value: Any) -> Any:
+        return _sandbox_mode_from_yaml(value)
+
+    @field_validator("sandbox_write_paths")
+    @classmethod
+    def _write_paths_are_absolute(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for path in value or ():
+            if not (path.startswith("/") or path == "~" or path.startswith("~/")):
+                raise ValueError(f"sandbox write path must be absolute or start with ~/: {path!r}")
+            if any(ord(char) < 32 for char in path) or _SANDBOX_PATH_FORBIDDEN & set(path):
+                raise ValueError(
+                    f"sandbox write path must not contain quotes, backslashes, $, control "
+                    f"characters or glob patterns other than a trailing *: {path!r}"
+                )
+            if "*" in path.rstrip("*") or path.count("*") > 1:
+                raise ValueError(f"only a single trailing * is allowed: {path!r}")
+            if path.rstrip("/*") == "":
+                raise ValueError("the file system root is not a sandbox write path; use 'off'")
+        return value
+
+    @property
+    def effective_agent_sandbox(self) -> AgentSandboxMode:
+        """The agent sandbox mode: ``off`` when ``agentSandbox`` is absent."""
+        return self.agent_sandbox or DEFAULT_AGENT_SANDBOX
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_sandbox(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Like the intake section: a file without the sandbox keys serializes as before, so the
+        # configuration snapshot (and its digest) of a project written for 1.0.0 does not change.
+        data: dict[str, Any] = handler(self)
+        for name, alias in (
+            ("agent_sandbox", "agentSandbox"),
+            ("sandbox_write_paths", "sandboxWritePaths"),
+        ):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
 
 
 class AgentProviderConfiguration(ConfigModel):
