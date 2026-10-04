@@ -84,6 +84,7 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "verification": {"requirementTraceability": resolved.project.requirement_traceability},
         }
 
     def create_task(self, path: Path, source: Path) -> Task:
