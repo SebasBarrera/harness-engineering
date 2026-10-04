@@ -13,6 +13,9 @@ Conditions:
             any verification between steps;
   harness   governed tasks: one for paragraph (only criterion "It works.") and requirements, one per step
             for super; one_line is refused when the task is created (no acceptance criteria).
+  clarify   (paragraph only; harness 1.1.0 or later) the governed paragraph task with
+            intake.criteriaPolicy enforce: INTENT asks clarification questions and a simulated product
+            owner who holds SPEC.md answers them (product_owner.py) before the run continues.
 
 The harness applies the decision rule of run_eval.run_harness. A step that is not delivered leaves its
 changes in the working tree and the next step continues from there. After the run the quality measures
@@ -53,6 +56,7 @@ sys.path.insert(0, str(HERE))
 
 import run_eval  # noqa: E402
 from agentlib import build_prompt, run_claude  # noqa: E402
+from product_owner import ProductOwner  # noqa: E402
 from quality import analyze  # noqa: E402
 from run_eval import git, harness, run_harness  # noqa: E402
 from run_session import calls_since, final_measures, usage  # noqa: E402
@@ -67,7 +71,7 @@ AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
     ("stepwise", "super"), ("harness", "one_line"), ("harness", "paragraph"), ("harness", "requirements"),
-    ("harness", "super")}
+    ("harness", "super"), ("clarify", "paragraph")}
 
 
 def requirements_by_section() -> dict[str, list[tuple[str, str]]]:
@@ -209,7 +213,8 @@ def configure_limits(workspace: Path, model: str) -> None:
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
-def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str) -> dict[str, Any]:
+def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str,
+             clarifier: Any = None) -> dict[str, Any]:
     # Feedback belongs to the correction cycles of one task; a later step must not receive it.
     (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
@@ -226,11 +231,11 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
 
     run_eval.configure_provider = with_limits
     try:
-        outcome = run_harness(workspace, run_dir, task_file, model)
+        outcome = run_harness(workspace, run_dir, task_file, model, clarifier=clarifier)
     finally:
         run_eval.configure_provider = original
     keep = ("outcome", "delivered", "corrections", "gateHistory", "finalStatus", "finalPhase", "eventCount",
-            "eventChainValid", "validationSummary")
+            "eventChainValid", "validationSummary", "clarification")
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]
@@ -240,7 +245,7 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--level", choices=["one_line", "paragraph", "requirements", "super"], required=True)
-    parser.add_argument("--condition", choices=["direct", "stepwise", "harness"], required=True)
+    parser.add_argument("--condition", choices=["direct", "stepwise", "harness", "clarify"], required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
@@ -319,7 +324,10 @@ def main() -> int:
             t0 = time.monotonic()
             prompts_sent.append(yaml.safe_dump(task, sort_keys=False))
             save_progress(label)
-            result = governed(workspace, run_dir, task, args.model, label)
+            clarifier = ProductOwner(SPEC_TEXT, args.model, run_dir) if args.condition == "clarify" else None
+            result = governed(workspace, run_dir, task, args.model, label, clarifier)
+            if clarifier is not None:
+                result["productOwner"] = clarifier.rounds
             steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3), "harness": result,
                           "usage": usage(calls_since(calls_dir, before))})
             save_progress(None)
@@ -334,11 +342,13 @@ def main() -> int:
         "model": args.model,
         "rep": args.rep,
         "runDir": str(run_dir),
+        "harnessSource": str(Path(__import__("governed_harness").__file__).resolve().parents[1]),
         "restarts": progress["restarts"],
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "wallSeconds": round(time.monotonic() - started, 3),
         "steps": steps,
         "usage": usage(calls_since(calls_dir, 0)),
+        "productOwnerUsage": usage(calls_since(run_dir / "po-calls", 0)) if (run_dir / "po-calls").is_dir() else None,
         "pausedSeconds": round(sum(c.get("pausedSeconds", 0) for c in calls_since(calls_dir, 0)), 3),
         "limitPauses": sum(c.get("limitPauses", 0) for c in calls_since(calls_dir, 0)),
         "final": {"hidden": hidden, **final_measures(workspace, scratch)},
