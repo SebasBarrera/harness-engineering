@@ -354,6 +354,7 @@ def _invoke(
             for name, data in (result.get("modelUsage") or {}).items()
         },
         "summary": str(result.get("result", ""))[:2000],
+        "resultText": str(result.get("result", "")),
     }
     return record, stderr, result
 
