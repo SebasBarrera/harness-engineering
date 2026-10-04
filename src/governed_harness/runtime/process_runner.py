@@ -29,6 +29,9 @@ class CommandSpec:
     allowed_environment: tuple[str, ...] = ()
     max_output_bytes: int = 1_000_000
     stdin: bytes | None = None
+    sandbox_prefix: tuple[str, ...] = ()
+    """Confinement wrapper (``runtime.agentSandbox``) placed before ``argv`` after authorization:
+    the capability grant applies to the command itself, the wrapper is the harness's own."""
 
 
 @dataclass(frozen=True)
@@ -112,14 +115,14 @@ class SafeProcessRunner:
         extra_env: Mapping[str, str] | None = None,
         cancellation: CancellationToken | None = None,
     ) -> ProcessResult:
-        if not spec.argv or any("\x00" in part for part in spec.argv):
+        if not spec.argv or any("\x00" in part for part in (*spec.argv, *spec.sandbox_prefix)):
             raise ValueError("argv must be a non-empty, NUL-free vector")
         self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
         cwd = contained_path(self.workspace_root, spec.cwd)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
         process = subprocess.Popen(
-            [resolve_executable(spec.argv[0]), *spec.argv[1:]],
+            [*spec.sandbox_prefix, resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if spec.stdin is not None else subprocess.DEVNULL,

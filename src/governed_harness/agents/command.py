@@ -33,13 +33,16 @@ class CommandAgentConfiguration:
     provider_id: str
     argv_prefix: tuple[str, ...]
     model: str | None = None
+    sandbox_prefix: tuple[str, ...] = ()
+    """Write-confinement wrapper (``runtime.agentSandbox: enforce``); empty runs unconfined."""
 
 
 class CommandAgentProvider:
     """Provider-neutral adapter for a locally installed agent CLI.
 
     The CLI must read a JSON request from stdin and return JSON on stdout. It remains
-    constrained by the same process capability grant as any other tool.
+    constrained by the same process capability grant as any other tool and, when the
+    configuration carries a sandbox prefix, runs inside that write confinement.
     """
 
     def __init__(self, configuration: CommandAgentConfiguration) -> None:
@@ -76,6 +79,7 @@ class CommandAgentProvider:
                 timeout_seconds=context.timeout_seconds,
                 max_output_bytes=context.max_output_bytes,
                 stdin=request_bytes,
+                sandbox_prefix=self.configuration.sandbox_prefix,
             ),
             actor=actor,
             grants=context.grants,
