@@ -684,11 +684,8 @@ class HarnessApplication:
             database = Path(entry["database"])
             runs: list[dict[str, Any]] = []
             if database.is_file():
-                store = SQLiteStateStore(database)
-                try:
+                with SQLiteStateStore(database) as store:
                     executions = store.list("execution", Execution, newest_first=True)
-                finally:
-                    store.close()
                 runs = [
                     {
                         "executionId": item.execution_id,
