@@ -21,6 +21,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pydantic import ValidationError
+
 from governed_harness.configuration.api import (
     MIN_API_TOKEN_LENGTH,
     ApiConfig,
@@ -82,8 +84,14 @@ def api_settings(workspace: Path) -> ApiConfig:
         return ApiConfig(auth="off")
     try:
         return ApiConfig.model_validate(section)
-    except Exception as error:
-        raise ConfigurationError(f"invalid api section in {config_path}: {error}") from error
+    except ValidationError as error:
+        # Locations and messages only: a value (a token written in the file by mistake) is
+        # never echoed.
+        problems = "; ".join(
+            f"{'.'.join(str(part) for part in item['loc']) or 'api'}: {item['msg']}"
+            for item in error.errors(include_input=False, include_url=False)
+        )
+        raise ConfigurationError(f"invalid api section in {config_path}: {problems}") from None
 
 
 def start_token(settings: ApiConfig, environ: Mapping[str, str] | None = None) -> StartToken:
