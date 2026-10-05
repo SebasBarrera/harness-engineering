@@ -92,6 +92,7 @@ class AgentCallOutcome:
 
 class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
+        from governed_harness.orchestration.corrections import Corrections
         from governed_harness.orchestration.differential import Differential
         from governed_harness.orchestration.gate_contract import GateContract
         from governed_harness.orchestration.intent_review import IntentReview
@@ -104,6 +105,7 @@ class AgentResults:
         self.differential = Differential(self)
         self.stop_line = StopLine(self)
         self.gate = GateContract(self)
+        self.corrections = Corrections(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(

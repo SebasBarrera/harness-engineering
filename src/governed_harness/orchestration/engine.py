@@ -1137,6 +1137,8 @@ class RunEngine:
             blocked = self.results.before_agent_call(execution, phase, "implement")
             if blocked is not None:
                 return blocked
+            # runtime.reproduceFirst: the workspace as the correction attempt found it.
+            self.results.corrections.start(execution, phase)
         grants = grants_from_rules(
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
@@ -1199,6 +1201,8 @@ class RunEngine:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
         if self.results.active:
             self.results.after_agent_call(execution, phase, result)
+            if result.status is ResultStatus.PASSED:
+                self.results.corrections.end(execution, phase, result)
         if (
             result.status is ResultStatus.PASSED
             and runtime.claim_check_enabled

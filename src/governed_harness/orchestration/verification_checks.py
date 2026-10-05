@@ -124,6 +124,9 @@ class VerificationChecks:
         owned = self.results.stop_line.owned_paths_output(execution, change_set)
         if owned is not None:
             outputs.append(owned)
+        reproduced = self.results.corrections.validation(execution, change_set)
+        if reproduced is not None:
+            outputs.append(reproduced)
         requests = self.results.change_requests(execution)
         if requests:
             outputs.append(self._change_requests(execution, change_set, requests, diff))

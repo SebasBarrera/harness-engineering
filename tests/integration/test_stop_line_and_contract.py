@@ -56,9 +56,7 @@ def set_keys(workspace: Path, **sections: dict[str, Any]) -> None:
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
-def start(
-    application: HarnessApplication, workspace: Path, tmp_path: Path, content: str
-) -> str:
+def start(application: HarnessApplication, workspace: Path, tmp_path: Path, content: str) -> str:
     source = tmp_path / f"task-{len(list(tmp_path.glob('task-*')))}.yaml"
     source.write_text(content, encoding="utf-8")
     task = application.create_task(workspace, source)
