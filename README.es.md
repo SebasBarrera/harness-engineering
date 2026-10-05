@@ -325,6 +325,9 @@ la ejecución puede llevar los estándares de lenguaje, los principios de ingeni
 pruebas y la arquitectura del equipo ([guía](docs/guides/engineering.md)), y el resultado puede
 publicarse en GitHub, GitLab, Bitbucket, Azure DevOps o Gitea
 ([forjas y plantillas de CI](docs/guides/forges.md)).
+La segunda revisión es un panel de revisores por dominio con un catálogo de reglas por capas,
+también disponible fuera de una ejecución como `harness review-code` y un hook pre-push
+([panel de revisión](docs/guides/review-panel.md)).
 
 ## Tablero web y API
 
