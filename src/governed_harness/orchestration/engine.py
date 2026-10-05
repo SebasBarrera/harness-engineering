@@ -4,6 +4,7 @@ import json
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -45,6 +46,7 @@ from governed_harness.domain.models import (
     ClarificationRequest,
     ConfigurationSnapshot,
     Evidence,
+    ExceptionRecord,
     Execution,
     FeedbackDecision,
     FeedbackGate,
@@ -65,6 +67,7 @@ from governed_harness.domain.models import (
 from governed_harness.events import SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
+from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
     ClarificationInput,
     assess_intent,
@@ -322,6 +325,7 @@ class RunEngine:
         change_set_digest: str,
         actor_id: str,
         rationale: str,
+        expires_at: datetime | None = None,
     ) -> HumanDecision:
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
@@ -358,6 +362,7 @@ class RunEngine:
             change_set_digest=change_set_digest,
             configuration_digest=execution.configuration_digest,
             policy_digest=execution.policy_digest,
+            expires_at=expires_at,
         )
         self.s.state.put(
             "decision",
@@ -1307,6 +1312,17 @@ class RunEngine:
                 return PhaseOutcome(
                     ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
                 )
+            if (
+                current_decision.decision is DecisionKind.APPROVE_EXCEPTION
+                and current_decision.expires_at is not None
+                and current_decision.expires_at <= utc_now()
+            ):
+                # Only a decision taken under review.exceptions carries an expiry.
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    f"Exception {current_decision.decision_id} expired at "
+                    f"{current_decision.expires_at.isoformat()}; a new decision is required",
+                )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
                 return PhaseOutcome(
                     ResultStatus.PASSED,
@@ -1838,9 +1854,13 @@ class RunEngine:
     def _current_or_evaluate_gate(
         self, execution: Execution, change_set: ChangeSet
     ) -> GateEvaluation:
+        now = utc_now()
+        exceptions = self._project_exceptions(execution)
         if execution.gate_evaluation_id:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
-            if gate.change_set_digest == change_set.digest:
+            relied_on = set(exception_ids(gate.reason_codes))
+            in_force = {item.exception_id for item in exceptions if item.active_at(now)}
+            if gate.change_set_digest == change_set.digest and relied_on <= in_force:
                 return gate
         validations = self._latest_validations(execution.execution_id, change_set.digest)
         findings = [
@@ -1848,6 +1868,8 @@ class RunEngine:
             for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
             if any(item.finding_id in validation.finding_ids for validation in validations)
         ]
+        applied = apply_exceptions(findings, exceptions, now)
+        findings = applied.kept
         severity_names = self.s.resolved.effective_policies.get(
             "findingBlockSeverities", ["HIGH", "CRITICAL"]
         )
@@ -1872,6 +1894,17 @@ class RunEngine:
                 provenance=self._provenance(execution),
             ),
         )
+        if applied.used:
+            gate = gate.model_copy(
+                update={
+                    "reason_codes": (*gate.reason_codes, *applied.reason_codes),
+                    "input_refs": (
+                        *gate.input_refs,
+                        *(f"record://finding/{item.finding_id}" for item in applied.excepted),
+                        *(f"record://exception/{item.exception_id}" for item in applied.used),
+                    ),
+                }
+            )
         self.s.state.put(
             "gate",
             gate.gate_evaluation_id,
@@ -1889,6 +1922,13 @@ class RunEngine:
             gate.model_dump(mode="json"),
         )
         return gate
+
+    def _project_exceptions(self, execution: Execution) -> list[ExceptionRecord]:
+        """Exceptions recorded in the project, considered only under ``review.exceptions``:
+        without the key the gate evaluates every finding, as in 1.0.0."""
+        if not self.s.resolved.project.exceptions_enabled:
+            return []
+        return self.s.state.list("exception", ExceptionRecord, project_id=execution.project_id)
 
     def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]:
         # Only the latest attempt of each validator for the current digest counts: a failure

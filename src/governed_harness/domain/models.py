@@ -483,6 +483,45 @@ class HumanDecision(StrictModel):
     expires_at: datetime | None = None
 
 
+class ExceptionScope(StrictModel):
+    """Findings an exception covers: a rule, optionally narrowed to a path and to one finding
+    fingerprint (``reporting.fingerprint``)."""
+
+    rule_id: str = Field(min_length=1)
+    path: str | None = None
+    fingerprint: str | None = None
+
+
+class ExceptionRecord(StrictModel):
+    """A person's exception to blocking findings, recorded with ``APPROVE_EXCEPTION`` when
+    ``review.exceptions`` is on.
+
+    It is bound to the decision and the ChangeSet digest it was granted on, expires at
+    ``expires_at`` and covers the findings in ``scope``: while it is in force a later run of the
+    project does not block on them, and once it expires they block again. Alternative evidence
+    and the follow-up are what the person declared; the harness records them, it does not check
+    them."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    exception_id: str
+    project_id: str
+    execution_id: str
+    decision_id: str
+    gate_evaluation_id: str
+    actor: Actor
+    rationale: str = Field(min_length=1)
+    scope: tuple[ExceptionScope, ...] = ()
+    change_set_digest: str
+    granted_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    alternative_evidence: str | None = Field(default=None, max_length=4000)
+    follow_up: str | None = Field(default=None, max_length=1000)
+    provenance: Provenance
+
+    def active_at(self, now: datetime) -> bool:
+        return self.granted_at <= now < self.expires_at
+
+
 FEEDBACK_STREAM_CHARS = 4000
 """Characters kept from the end of each failing validator stream in provider feedback."""
 FEEDBACK_TOTAL_CHARS = 16000

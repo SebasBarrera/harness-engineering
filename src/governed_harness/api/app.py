@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from governed_harness import __version__
 from governed_harness.application import HarnessApplication
+from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.domain.enums import DecisionKind
 
 
@@ -19,6 +20,11 @@ class DecisionRequest(BaseModel):
     actor_id: str = "human.web"
     rationale: str
     continue_after: bool = True
+    expires_in: str | None = None
+    expires_at: str | None = None
+    scope: tuple[str, ...] = ()
+    alternative_evidence: str | None = None
+    follow_up: str | None = None
 
 
 def create_app(workspace: Path) -> FastAPI:
@@ -108,6 +114,13 @@ def create_app(workspace: Path) -> FastAPI:
                 actor_id=request.actor_id,
                 rationale=request.rationale,
                 continue_after=request.continue_after,
+                exception=ExceptionOptions(
+                    expires_in=request.expires_in,
+                    expires_at=request.expires_at,
+                    scope=request.scope,
+                    alternative_evidence=request.alternative_evidence,
+                    follow_up=request.follow_up,
+                ),
             )
             return {
                 "decision": decision.model_dump(mode="json", by_alias=True),
@@ -115,6 +128,13 @@ def create_app(workspace: Path) -> FastAPI:
             }
         except Exception as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.get("/api/exceptions")
+    def exceptions(status: Literal["all", "active", "expired"] = "all") -> list[dict[str, object]]:
+        try:
+            return application.list_exceptions(root, status=status)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @api.get("/", response_class=HTMLResponse)
     def index() -> str:

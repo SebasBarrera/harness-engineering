@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ import typer
 
 from governed_harness import __version__
 from governed_harness.application import HarnessApplication
+from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.application.hints import default_hint
 from governed_harness.cli.render import render_human, wants_json
 from governed_harness.domain.enums import (
@@ -35,6 +37,7 @@ plugins_app = typer.Typer(help="Plugin and extension commands")
 benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
 artifact_app = typer.Typer(help="Artifact store commands")
+exceptions_app = typer.Typer(help="Exception ledger commands")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -47,6 +50,7 @@ app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 app.add_typer(artifact_app, name="artifact")
+app.add_typer(exceptions_app, name="exceptions")
 
 
 JSON_OPTION: Any = typer.Option(
@@ -607,6 +611,29 @@ def gate_decide(
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
     ),
+    expires_in: str | None = typer.Option(
+        None,
+        "--expires-in",
+        help="APPROVE_EXCEPTION under review.exceptions: validity such as 14d, 36h or 2w "
+        "(default review.exceptionDays)",
+    ),
+    expires_at: str | None = typer.Option(
+        None, "--expires-at", help="APPROVE_EXCEPTION: ISO 8601 instant the exception expires"
+    ),
+    scope: list[str] | None = typer.Option(
+        None,
+        "--scope",
+        help="APPROVE_EXCEPTION: findings covered, as rule or rule:path (repeatable; default: "
+        "the blocking findings of the gate, by fingerprint)",
+    ),
+    alternative_evidence: str | None = typer.Option(
+        None,
+        "--alternative-evidence",
+        help="APPROVE_EXCEPTION: evidence that compensates for the blocking findings",
+    ),
+    follow_up: str | None = typer.Option(
+        None, "--follow-up", help="APPROVE_EXCEPTION: issue or task that will remove the exception"
+    ),
     interactive: bool = typer.Option(
         False,
         "--interactive",
@@ -638,10 +665,19 @@ def gate_decide(
             }
         )
         raise typer.Exit(code=2)
+    exception = ExceptionOptions(
+        expires_in=expires_in,
+        expires_at=expires_at,
+        scope=tuple(scope or ()),
+        alternative_evidence=alternative_evidence,
+        follow_up=follow_up,
+    )
     if missing or interactive:
         decision, change_set_digest, rationale = _interactive_decision(
             application, path, run_id, decision, change_set_digest, rationale
         )
+        if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
+            exception = _interactive_exception(exception)
     assert decision is not None and change_set_digest is not None and rationale is not None
     chosen, digest, reason = decision, change_set_digest, rationale
     record, execution = _call(
@@ -653,6 +689,7 @@ def gate_decide(
             actor_id=actor,
             rationale=reason,
             continue_after=continue_after,
+            exception=exception,
         ),
         hint=_decide_hint(application, path, run_id),
     )
@@ -664,6 +701,31 @@ def gate_decide(
         kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
+
+
+def _exceptions_enabled(path: Path) -> bool:
+    try:
+        return bool(HarnessApplication().validate_config(path)["review"]["exceptions"])
+    except Exception:  # noqa: BLE001 - decide reports configuration errors itself
+        return False
+
+
+def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
+    """Ask for what an exception records when the options were not given."""
+
+    def ask(question: str) -> str | None:
+        answer = typer.prompt(question, default="", show_default=False)
+        return str(answer).strip() or None
+
+    return replace(
+        exception,
+        expires_in=exception.expires_in
+        if exception.expires_in or exception.expires_at
+        else ask("Expires in (e.g. 14d, 36h, 2w; empty for the project default)"),
+        alternative_evidence=exception.alternative_evidence
+        or ask("Alternative evidence (optional)"),
+        follow_up=exception.follow_up or ask("Follow-up issue or task (optional)"),
+    )
 
 
 DIGEST_CONFIRM_CHARS = 12
@@ -755,6 +817,31 @@ def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hi
         return None
 
     return hint
+
+
+@exceptions_app.command("list")
+def exceptions_list(
+    status: str = typer.Option("all", "--status", help="all, active or expired"),
+    expiring_within: int | None = typer.Option(
+        None, "--expiring-within", min=0, help="Only active exceptions expiring within N days"
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the exceptions of the project (review.exceptions): who granted each, on which run
+    and digest, its scope, alternative evidence and follow-up, when it expires and the runs whose
+    gate relied on it. An expired exception no longer covers any finding."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().list_exceptions(
+                path, status=status, expiring_within=expiring_within
+            )
+        ),
+        json_output,
+        kind="exceptions",
+    )
 
 
 @app.command()

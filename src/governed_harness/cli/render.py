@@ -408,6 +408,24 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _exceptions(items: Sequence[Mapping[str, Any]]) -> list[str]:
+    if not items:
+        return ["No exceptions recorded."]
+    rows = [
+        [
+            str(item["exceptionId"]),
+            str(item["status"]),
+            str(item["expiresAt"])[:19],
+            str(item["actorId"]),
+            str(len(item["scope"])),
+            str(len(item["appliedIn"])),
+            short(item.get("followUp") or "-", 30),
+        ]
+        for item in items
+    ]
+    return table(rows, ["EXCEPTION", "STATUS", "EXPIRES", "BY", "SCOPES", "USED IN", "FOLLOW-UP"])
+
+
 Renderer = Callable[[Any], list[str]]
 
 RENDERERS: dict[str, Renderer] = {
@@ -420,6 +438,7 @@ RENDERERS: dict[str, Renderer] = {
     "doctor": _doctor,
     "init": _init,
     "review": _review,
+    "exceptions": _exceptions,
 }
 
 

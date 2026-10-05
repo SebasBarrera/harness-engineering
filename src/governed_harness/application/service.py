@@ -35,6 +35,7 @@ from governed_harness.domain.models import (
     Retrospective,
     Task,
     ValidationResult,
+    utc_now,
 )
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
@@ -44,6 +45,14 @@ from governed_harness.reporting import TraceReporter
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
+from .exceptions import (
+    ExceptionOptions,
+    brief_exceptions,
+    list_exceptions,
+    parse_expiry,
+    parse_scope,
+    record_exception,
+)
 from .hints import default_hint
 from .onboarding import (
     EXAMPLE_TASK_NAME,
@@ -295,17 +304,53 @@ class HarnessApplication:
         actor_id: str,
         rationale: str,
         continue_after: bool = True,
+        exception: ExceptionOptions | None = None,
     ) -> tuple[HumanDecision, Execution]:
+        """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
+        records an exception with an expiry (``expires_in``/``expires_at``, else
+        ``review.exceptionDays``), a scope (``rule[:path]`` entries, else the blocking findings
+        of the gate), alternative evidence and a follow-up (``exception``)."""
+        options = exception or ExceptionOptions()
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
             engine = RunEngine(services)
+            project = services.resolved.project
+            records_exception = (
+                decision is DecisionKind.APPROVE_EXCEPTION and project.exceptions_enabled
+            )
+            if options.given and not records_exception:
+                raise ConfigurationError(
+                    "exception options (--expires-in, --expires-at, --scope, "
+                    "--alternative-evidence, --follow-up) need APPROVE_EXCEPTION and "
+                    "review.exceptions: true in project.yaml"
+                )
+            expiry = (
+                parse_expiry(
+                    expires_in=options.expires_in,
+                    expires_at=options.expires_at,
+                    default_days=project.exception_days,
+                    now=utc_now(),
+                )
+                if records_exception
+                else None
+            )
+            scopes = parse_scope(options.scope)
             record = engine.decide(
                 execution_id=execution_id,
                 decision=decision,
                 change_set_digest=change_set_digest,
                 actor_id=actor_id,
                 rationale=rationale,
+                expires_at=expiry,
             )
+            if records_exception:
+                record_exception(
+                    services,
+                    decision=record,
+                    scope=scopes,
+                    alternative_evidence=options.alternative_evidence,
+                    follow_up=options.follow_up,
+                )
             execution = (
                 engine.continue_execution(execution_id)
                 if continue_after
@@ -749,7 +794,23 @@ class HarnessApplication:
         """The decision brief of a run (see ``application.review``)."""
         with self._services(path) as services:
             run_id = self._run_id(services, execution_id)
-            return build_brief(services, run_id, include_diff=include_diff)
+            execution = services.state.get("execution", run_id, Execution)
+            return build_brief(
+                services,
+                run_id,
+                include_diff=include_diff,
+                exceptions=brief_exceptions(services, execution),
+            )
+
+    def list_exceptions(
+        self, path: Path, *, status: str = "all", expiring_within: int | None = None
+    ) -> list[dict[str, Any]]:
+        """The exceptions of the project with their status (ACTIVE or EXPIRED), days left and
+        the runs whose gate relied on them."""
+        if status.lower() not in {"all", "active", "expired"}:
+            raise ConfigurationError(f"unknown exception status: {status}")
+        with self._services(path) as services:
+            return list_exceptions(services, status=status.lower(), expiring_within=expiring_within)
 
     def show_artifact(self, path: Path, reference: str) -> tuple[dict[str, Any], bytes]:
         """An artifact's descriptor and its content, read with digest verification. The
