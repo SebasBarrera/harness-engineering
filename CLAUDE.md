@@ -50,10 +50,11 @@ If the developer's global Git config signs commits, the test fixtures are isolat
 ## Branch flow
 
 Work branches start from `develop` (`feat/`, `fix/`, `docs/`, `ci/`, `chore/`, `test/`, `build/`,
-`security/`, `refactor/`, `style/`). Single maintainer, no pull requests: push the branch, wait until
-every blocking job of every workflow on the branch head is green, then
-`git merge --no-ff <branch>` into `develop` with a message that summarizes the change, the CI run
-and the issues it closes, and push. Keep the branch on the remote. Releases: `release/x.y.z` →
+`security/`, `refactor/`, `style/`). Every branch reaches `develop` through a pull request: push the
+branch, open a pull request with a Conventional Commit title and a description that summarizes the change
+and references its issues (`Closes #n` or `Refs #n`, one per line; `pr-hygiene` checks both), wait until
+every blocking check of the pull request is green, then merge it with a merge commit (no squash, no
+rebase). Keep the branch on the remote. Releases: `release/x.y.z` →
 `main` (merge commit, annotated unsigned tag `vx.y.z`, `release.yml` builds and attests the
 artifacts) → merge `main` back into `develop`.
 
