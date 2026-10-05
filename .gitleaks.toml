@@ -7,3 +7,7 @@ useDefault = true
 [[allowlists]]
 description = "Fictitious password set by a hidden test of the controlled evaluation; it is not a credential."
 regexes = ['''s3cret-from-env''']
+
+[[allowlists]]
+description = "Fictitious credential once used by the native-adapter redaction test (commit 5b6b918, since replaced); it is not a credential."
+regexes = ['''sk-test-0123456789abcdef''']

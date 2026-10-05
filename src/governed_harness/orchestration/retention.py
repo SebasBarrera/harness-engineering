@@ -12,11 +12,19 @@ the setting, counted from the run's last update:
 * ``eventDays``: the run is removed entirely: its events, its records (memory records stay),
   its flags and the artifacts no kept run references.
 
+Since 1.1, ``retention.orphanArtifacts: true`` also deletes the artifacts nothing references:
+no record, flag or event of any run or of the project names them (left by runs removed before
+the setting, by an interrupted write, or by a version that did not record a reference). An
+artifact written in the last hour is never an orphan, so a run that is writing its evidence in
+another process keeps it.
+
 Without ``--apply`` nothing is deleted and the report says what would be.
 """
 
 from __future__ import annotations
 
+import contextlib
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
@@ -30,6 +38,8 @@ if TYPE_CHECKING:
 PRUNED_EVENT = "retention.artifacts.pruned"
 _ARTIFACT_PREFIX = "artifact://sha256/"
 KEPT_RECORD_TYPES = frozenset({"memory", "task"})
+ORPHAN_GRACE_SECONDS = 3600
+"""An artifact younger than this is never an orphan (``retention.orphanArtifacts``)."""
 
 
 @dataclass
@@ -39,9 +49,12 @@ class RetentionPlan:
     removed_runs: list[str] = field(default_factory=list)
     pruned_runs: dict[str, list[str]] = field(default_factory=dict)
     artifacts: list[str] = field(default_factory=list)
+    orphan_artifacts: bool | None = None
+    orphans: list[str] = field(default_factory=list)
+    orphan_bytes: int = 0
 
     def as_dict(self, applied: bool) -> dict[str, Any]:
-        return {
+        report: dict[str, Any] = {
             "applied": applied,
             "artifactDays": self.artifact_days,
             "eventDays": self.event_days,
@@ -50,6 +63,12 @@ class RetentionPlan:
             "artifactsRemoved": len(self.artifacts),
             "artifacts": self.artifacts,
         }
+        if self.orphan_artifacts is not None:
+            report["orphanArtifacts"] = self.orphan_artifacts
+            report["orphansRemoved"] = len(self.orphans)
+            report["orphanBytes"] = self.orphan_bytes
+            report["orphans"] = self.orphans
+        return report
 
 
 def _days(retention: dict[str, Any], key: str) -> int | None:
@@ -63,11 +82,15 @@ def _days(retention: dict[str, Any], key: str) -> int | None:
 
 
 def _artifact_refs(value: Any) -> set[str]:
-    """Every artifact URI inside a JSON value."""
+    """Every artifact URI inside a JSON value, including a JSON document held in a string (a
+    flag such as ``implstart:<run>`` or ``agentsnapshots:<run>``)."""
     found: set[str] = set()
     if isinstance(value, str):
         if value.startswith(_ARTIFACT_PREFIX):
             found.add(value)
+        elif value[:1] in {"{", "["} and _ARTIFACT_PREFIX in value:
+            with contextlib.suppress(ValueError):
+                found |= _artifact_refs(json.loads(value))
     elif isinstance(value, dict):
         for item in value.values():
             found |= _artifact_refs(item)
@@ -117,12 +140,46 @@ class RetentionCollector:
             for run_id, uris in plan.pruned_runs.items()
             if any(uri in removable for uri in uris)
         }
+        orphans = retention.get("orphanArtifacts")
+        if orphans is not None:
+            if not isinstance(orphans, bool):
+                raise ConfigurationError(
+                    f"retention.orphanArtifacts must be true or false: {orphans!r}"
+                )
+            plan.orphan_artifacts = orphans
+            if orphans:
+                self._plan_orphans(plan, moment, removable)
         return plan
+
+    def _plan_orphans(self, plan: RetentionPlan, moment: datetime, planned: set[str]) -> None:
+        referenced: set[str] = set()
+        connection = self.s.state.connection
+        for row in connection.execute("SELECT payload_json FROM records"):
+            if _ARTIFACT_PREFIX in row["payload_json"]:
+                referenced |= _artifact_refs(json.loads(row["payload_json"]))
+        for row in connection.execute("SELECT value FROM flags"):
+            referenced |= _artifact_refs(str(row["value"]))
+        for event in self.s.events.list_all():
+            referenced |= _artifact_refs(event.payload)
+        grace = (moment - timedelta(seconds=ORPHAN_GRACE_SECONDS)).timestamp()
+        for path in sorted(self.s.artifacts.meta_root.glob("*.json")):
+            uri = f"{_ARTIFACT_PREFIX}{path.stem}"
+            if uri in referenced or uri in planned:
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            if stat.st_mtime > grace:
+                continue
+            plan.orphans.append(uri)
+            blob = self.s.artifacts.blob_root / path.stem[:2] / path.stem[2:]
+            plan.orphan_bytes += blob.stat().st_size if blob.exists() else 0
 
     def apply(self, plan: RetentionPlan) -> None:
         from governed_harness.orchestration.engine import RunEngine
 
-        for uri in plan.artifacts:
+        for uri in [*plan.artifacts, *plan.orphans]:
             self.s.artifacts.delete(uri)
         engine = RunEngine(self.s)
         for run_id, uris in plan.pruned_runs.items():

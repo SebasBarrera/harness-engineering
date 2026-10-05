@@ -15,6 +15,14 @@ GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnul
 
 
 @pytest.fixture(autouse=True)
+def _isolated_git_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Git commands the harness itself runs (the closure commit, decider identity) must not
+    read the developer's global or system configuration either."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
+@pytest.fixture(autouse=True)
 def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
     # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
     # directory; tests keep them in a temporary one.

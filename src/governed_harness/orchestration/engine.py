@@ -20,13 +20,22 @@ from governed_harness.agents import (
     SimulatedAgentContext,
     SimulatedAgentProvider,
 )
+from governed_harness.agents.environment import (
+    ProviderEnvironment,
+    provider_environment,
+    secret_values,
+)
+from governed_harness.agents.native import native_provider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
+from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
     ResolvedConfiguration,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
+from governed_harness.delivery.closure import create_closure_commit
+from governed_harness.delivery.vcs import VcsError
 from governed_harness.domain.actors import (
     NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
 )
@@ -78,7 +87,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.events import AnchorStore, SQLiteEventStore
-from governed_harness.evidence import LocalArtifactStore, sha256_json
+from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
@@ -97,6 +106,7 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
@@ -109,7 +119,6 @@ from governed_harness.runtime import (
     SafeProcessRunner,
     WorkspaceDiff,
     WorkspaceSnapshot,
-    WorkspaceSnapshotter,
 )
 from governed_harness.runtime.guard import IGNORED_PATTERNS, ExcludedPathGuard
 from governed_harness.runtime.lease import terminate_process_group
@@ -119,6 +128,11 @@ from governed_harness.runtime.sandbox import (
     SandboxUnavailable,
     build_sandbox,
     denied_writes,
+)
+from governed_harness.runtime.snapshots import (
+    SNAPSHOT_CACHE_SEAL,
+    SnapshotSettings,
+    SnapshotStore,
 )
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
@@ -234,7 +248,13 @@ class EngineServices:
             paths=paths,
             state=SQLiteStateStore(paths.database),
             events=SQLiteEventStore(paths.database),
-            artifacts=LocalArtifactStore(paths.artifact_dir),
+            artifacts=LocalArtifactStore(
+                paths.artifact_dir,
+                SecretRedactor(
+                    literals=secret_values(resolved.project),
+                    extended=bool(resolved.project.runtime.extended_redaction),
+                ),
+            ),
         )
 
     def close(self) -> None:
@@ -258,6 +278,17 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
+        self.provenance = ProvenanceRecorder(self)
+        self.snapshots = SnapshotStore(
+            services.paths.workspace,
+            services.artifacts,
+            SnapshotSettings.from_config(services.resolved.project.workspace),
+            services.paths.harness_dir,
+            seal=(
+                lambda: services.state.get_flag(SNAPSHOT_CACHE_SEAL),
+                lambda digest: services.state.set_flag(SNAPSHOT_CACHE_SEAL, digest),
+            ),
+        )
         self._phase_deadline: float | None = None
 
     @property
@@ -928,16 +959,23 @@ class RunEngine:
         )
 
     def _phase_discovery(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        detections = detect_profiles(self.s.paths.workspace)
+        detections = detect_profiles(
+            self.s.paths.workspace,
+            [
+                profile
+                for profile in self.s.resolved.profiles
+                if profile.profile_id not in BUILTIN_PROFILE_IDS
+            ],
+        )
         selected = {profile.profile_id for profile in self.s.resolved.profiles}
         if not any(item.profile_id in selected and item.confidence > 0 for item in detections):
             return PhaseOutcome(
                 ResultStatus.BLOCKED, "Configured profile was not detected in workspace"
             )
         git = GitAdapter(self.s.paths.workspace).state()
-        snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-        snapshot_ref = self.s.artifacts.put_json(
-            self._snapshot_to_dict(snapshot),
+        snapshot = self.snapshots.take(for_storage=True)
+        snapshot_ref = self.snapshots.store(
+            snapshot,
             metadata={"kind": "workspace-baseline", "executionId": execution.execution_id},
         )
         self.s.state.set_flag(f"baseline:{execution.execution_id}", snapshot_ref.uri)
@@ -1069,9 +1107,9 @@ class RunEngine:
         if self._leases_workspace():
             # The workspace as this attempt found it: an interrupted attempt is undone to it
             # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
-            snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-            ref = self.s.artifacts.put_json(
-                self._snapshot_to_dict(snapshot),
+            snapshot = self.snapshots.take(for_storage=True)
+            ref = self.snapshots.store(
+                snapshot,
                 metadata={"kind": "implementation-start", "executionId": execution.execution_id},
             )
             self.s.state.set_flag(
@@ -1122,13 +1160,33 @@ class RunEngine:
                         f"Agent sandbox unavailable: {error}; the provider was not started",
                     )
                 sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
-            provider = CommandAgentProvider(
-                CommandAgentConfiguration(
-                    provider_id=provider_id,
-                    argv_prefix=provider_config.command,
-                    model=provider_config.model,
-                    sandbox_prefix=sandbox.prefix if sandbox else (),
+            environment = None
+            if provider_config.pass_env is not None or provider_config.env is not None:
+                environment = provider_environment(provider_config)
+                if environment.missing:
+                    return PhaseOutcome(
+                        ResultStatus.BLOCKED,
+                        f"Provider {provider_id!r} needs environment variable(s) "
+                        f"{', '.join(environment.missing)} (env fromEnv); the provider was not "
+                        "started",
+                    )
+                sandbox_refs = (
+                    *sandbox_refs,
+                    self._record_provider_environment(execution, phase, provider_id, environment),
                 )
+            configuration = CommandAgentConfiguration(
+                provider_id=provider_id,
+                argv_prefix=provider_config.effective_command,
+                model=provider_config.model,
+                sandbox_prefix=sandbox.prefix if sandbox else (),
+                environment=environment,
+                self_report=bool(self.s.resolved.project.provenance_settings.self_report),
+                extra_args=provider_config.args or (),
+            )
+            provider = (
+                native_provider(provider_config.kind, configuration)
+                if provider_config.native
+                else CommandAgentProvider(configuration)
             )
             actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
         grants = grants_from_rules(
@@ -1158,14 +1216,21 @@ class RunEngine:
             feedback=self._pending_feedback(execution, phase),
         )
         guard = (
-            ExcludedPathGuard(self.s.paths.workspace) if self._protects_excluded_paths() else None
+            ExcludedPathGuard(
+                self.s.paths.workspace,
+                include_ignored=self.snapshots.settings.git_listing,
+            )
+            if self._protects_excluded_paths()
+            else None
         )
         guard_before = guard.fingerprint() if guard else None
         retries = 0
         try:
             while True:
+                self.provenance.before_invocation(execution)
                 result = provider.implement(task, plan, context)
                 self._save_agent_result(execution, phase, result)
+                self.provenance.after_invocation(execution, result)
                 cause = (
                     self._transient_cause(result)
                     if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
@@ -1203,12 +1268,14 @@ class RunEngine:
         if result.status is not ResultStatus.PASSED:
             if sandbox is not None:
                 self._record_denied_writes(execution, result.tool_invocations)
+            self.provenance.record_self_report(execution, phase, result, None)
             return PhaseOutcome(
                 result.status,
                 result.summary,
                 ((result.output_ref,) if result.output_ref else ()) + sandbox_refs,
             )
         change_set = self._refresh_changeset(execution)
+        self.provenance.record_self_report(execution, phase, result, change_set)
         if not change_set.files and not bool(
             self.s.resolved.effective_policies.get("allowEmptyChangeSet", False)
         ):
@@ -1497,20 +1564,21 @@ class RunEngine:
         start = json.loads(raw)
         if start.get("phaseExecutionId") != phase.phase_execution_id:
             return [], []
-        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(start["snapshotRef"])))
-        snapshotter = WorkspaceSnapshotter(self.s.paths.workspace)
-        diff = snapshotter.diff(before, snapshotter.snapshot())
+        stored = self.snapshots.load(start["snapshotRef"])
+        before = stored.snapshot
+        diff = self.snapshots.diff(stored, self.snapshots.take())
         restored: list[str] = []
         unrestorable: list[str] = []
         for change in diff.changes:
             target = contained_path(self.s.paths.workspace, Path(change.path))
             previous = before.files.get(change.path)
+            content = self.snapshots.content(stored, change.path) if previous else None
             if previous is None:
                 target.unlink(missing_ok=True)
                 restored.append(change.path)
-            elif previous.text is not None:
+            elif content is not None:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(previous.text.encode("utf-8"))
+                target.write_bytes(content)
                 restored.append(change.path)
             else:
                 unrestorable.append(change.path)
@@ -1667,6 +1735,34 @@ class RunEngine:
                 "allowedPaths": [item.path for item in sandbox.allowed_paths],
                 "evidenceRef": evidence.artifact_ref,
             },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return evidence.artifact_ref
+
+    def _record_provider_environment(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider_id: str,
+        environment: ProviderEnvironment,
+    ) -> str:
+        """The names (never the values) of the variables the provider receives."""
+        record = {"provider": provider_id, **environment.evidence()}
+        ref = self.s.artifacts.put_json(
+            record, metadata={"kind": "provider-environment", "executionId": execution.execution_id}
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.CONFIGURATION,
+            ref,
+            f"Provider environment: {len(environment.passed)} passed, "
+            f"{len(environment.values)} set",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.environment.applied",
+            record,
             phase_execution_id=phase.phase_execution_id,
         )
         return evidence.artifact_ref
@@ -1904,6 +2000,7 @@ class RunEngine:
             else None
         )
         gate = self._current_or_evaluate_gate(execution, change_set)
+        self.provenance.attribute(execution, change_set, PhaseId.DECISION)
         execution = self.get_execution(execution.execution_id)
         if current_decision:
             if current_decision.change_set_digest != change_set.digest:
@@ -1960,6 +2057,9 @@ class RunEngine:
             decision.change_set_digest, execution.change_set_digest
         ):
             return PhaseOutcome(ResultStatus.BLOCKED, "Approval does not match current ChangeSet")
+        delivered = self._deliver(execution, phase, decision)
+        if delivered is not None:
+            return delivered
         self.s.events.verify_chain(execution.execution_id)
         trace = self.s.events.export_jsonl(execution.execution_id)
         trace_ref = self.s.artifacts.put(
@@ -2027,6 +2127,58 @@ class RunEngine:
             "Execution closed with verified trace and non-mutating retrospective",
             (evidence.artifact_ref, metrics_ref.uri, retrospective_ref.uri),
         )
+
+    def _deliver(
+        self, execution: Execution, phase: PhaseExecution, decision: HumanDecision
+    ) -> PhaseOutcome | None:
+        """``delivery.closureCommit``: write the approved ChangeSet as a commit with trailers.
+        ``None`` lets CLOSURE go on; an outcome stops it."""
+        delivery = self.s.resolved.project.delivery_settings
+        if delivery.mode == "off":
+            return None
+        change_set = self.current_change_set(execution.execution_id)
+        try:
+            commit = create_closure_commit(
+                self.s.paths.workspace,
+                delivery,
+                execution_id=execution.execution_id,
+                task=self.run_task(execution),
+                change_set=change_set,
+                decision=decision,
+            )
+        except VcsError as error:
+            self.s.events.append(
+                execution.execution_id,
+                "delivery.commit.failed",
+                {"mode": delivery.mode, "reason": str(error)},
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return PhaseOutcome(ResultStatus.BLOCKED, f"Closure commit not created: {error}")
+        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        ref = self.s.artifacts.put_json(
+            record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
+        )
+        summary = (
+            f"Closure commit {commit.commit[:12]} ({commit.status.lower()})"
+            + (f" on branch {commit.branch}" if commit.branch else " on the current branch")
+            if commit.commit
+            else f"Closure commit skipped: {commit.reason}"
+        )
+        self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.OTHER,
+            ref,
+            summary,
+            supports=(change_set.change_set_id, decision.decision_id),
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "delivery.commit.skipped" if commit.status == "SKIPPED" else "delivery.commit.created",
+            record,
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return None
 
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
@@ -2372,8 +2524,9 @@ class RunEngine:
         baseline_uri = self.s.state.get_flag(f"baseline:{execution.execution_id}")
         if not baseline_uri:
             raise NotFoundError("baseline snapshot is missing")
-        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(baseline_uri)))
-        after = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
+        stored = self.snapshots.load(baseline_uri)
+        before = stored.snapshot
+        after = self.snapshots.take()
         task = self.run_task(execution)
         owned_paths: set[str] | None = None
         if task.implementation.mode == "patch":
@@ -2395,7 +2548,16 @@ class RunEngine:
                 files=after_files,
                 digest=sha256_json({path: state.digest for path, state in after_files.items()}),
             )
-        return WorkspaceSnapshotter(self.s.paths.workspace).diff(before, after)
+        stored.snapshot = before
+        return self.snapshots.diff(stored, after)
+
+    def baseline_digests(self, execution: Execution) -> dict[str, str]:
+        """Path -> digest of the run's baseline snapshot."""
+        baseline_uri = self.s.state.get_flag(f"baseline:{execution.execution_id}")
+        if not baseline_uri:
+            raise NotFoundError("baseline snapshot is missing")
+        value = json.loads(self.s.artifacts.get(baseline_uri))
+        return {path: str(item["digest"]) for path, item in value["files"].items()}
 
     def _refresh_changeset(self, execution: Execution) -> ChangeSet:
         diff = self._compute_owned_diff(execution)

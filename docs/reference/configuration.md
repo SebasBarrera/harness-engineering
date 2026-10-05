@@ -15,6 +15,9 @@ projectId: project_quickstart
 workspace:
   root: ..
   units: []
+  snapshot: git
+  baseline: manifest
+  snapshotCache: true
 profiles:
 - auto
 workflow: default_development
@@ -48,9 +51,11 @@ runtime:
   unsupportedClaimSeverity: MEDIUM
   providerRetries: 3
   providerRetryDelaySeconds: 60
+  extendedRedaction: true
 retention:
   artifactDays: 30
   eventDays: 365
+  orphanArtifacts: true
 intake:
   criteriaPolicy: enforce
 verification:
@@ -77,6 +82,14 @@ governance:
   decisionExpiryHours: 72
   applyProfilePolicies: true
   applyNetworkPolicy: true
+toolchain:
+  profileDetection: all
+  interpreter: auto
+provenance:
+  agentSnapshots: true
+  selfReport: true
+delivery:
+  closureCommit: branch
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -91,6 +104,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `projectId` | required | Identifier used on tasks and runs. `init` derives it from the directory name. |
 | `workspace.root` | `..` | Workspace root, relative to `.harness/`. |
 | `workspace.units` | `[]` | Declared units (`unitId`, `root`, `profile`). **Declarative: not used by the engine.** |
+| `workspace.snapshot`, `workspace.baseline`, `workspace.snapshotCache` | 1.0.0 behaviour when absent; `init` writes `git`, `manifest`, `true` | How the workspace is listed, how the baseline is stored and whether file digests are cached. See [large repositories](#large-repositories). |
 | `profiles` | `["auto"]` | `auto` selects the detected profiles; otherwise list profile ids (`python_default`, `node_default`). |
 | `workflow` | `default_development` | The normative workflow. Only the built-in workflow exists; its phase order is fixed (see issue #3). |
 | `capabilities.default` | `deny` | Only `deny` is accepted. |
@@ -98,7 +112,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `validators` | `[]` | Validator ids to run; empty means the profile defaults. An id not defined by a selected profile is a configuration error. |
 | `policies` | see below | Policy overrides; locked policies can only be restated with their locked value. |
 | `agentProvider` | `simulated` | Default provider for `run start` (`--provider` overrides it). |
-| `agentProviders` | `{}` | Named command providers: `kind: command`, `command` (argv list, not empty), optional `model`. See [external agents](../guides/external-agents.md). |
+| `agentProviders` | `{}` | Named providers: `kind` (`command`, or since 1.1 a built-in adapter `claude-code`, `codex`, `gemini-cli`, `aider`), `command` (argv list, not empty; required for `command`, optional for an adapter), optional `model`, and since 1.1 `args` (extra arguments of an adapter), `passEnv` and `env`. See [external agents](../guides/external-agents.md). |
 | `runtime.commandTimeoutSeconds` | `900` | Timeout of agent-provider processes. Validators use their own `timeoutSeconds` from the profile. |
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
 | `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially); `x-declarative` in the schema. |
@@ -111,7 +125,8 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `runtime.providerRetries` | `0` when absent; `init` writes `3` | Repetitions (0 to 10) of a command-provider call that failed with a transient cause. |
 | `runtime.providerRetryDelaySeconds` | `0` when absent; `init` writes `60` | Wait before each repetition (0 to 3600 seconds). |
 | `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
-| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)). |
+| `runtime.extendedRedaction` | `false` when absent; `init` writes `true` | Also redact model-API keys (`sk-ant-`, `sk-`, `sk-proj-`, `AIza`), Slack tokens (`xox?-`), JSON Web Tokens and the password of a URL (`scheme://user:password@host`) from every stored artifact and from the agent's summary. |
+| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)); since 1.1 `orphanArtifacts` (see [large repositories](#large-repositories)). |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 | `governance.*` | 1.0.0 behaviour when absent; `init` writes every key | Decider identity and confirmation, trusted API hosts and the other integrity settings. See [governance](#governance). |
@@ -120,6 +135,9 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
 | `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
+| `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
+| `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
+| `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |
 
 ## Located findings
 
@@ -643,6 +661,87 @@ Still declarative: `workspace.units`, `runtime.maxParallel`, the policies
 `repositoryContentTrusted`, `destructiveActionsDefault` and `ambiguousPackageManager`, and the
 workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase `validators` and
 `invariants`.
+
+## Large repositories
+
+In 1.0.0 every snapshot walked the whole workspace, hashed every file, read the text of every
+file and stored the baseline as one artifact with all of it, `.env` included. On a generated Git
+repository of 10,001 tracked files (9,996 text files of about 11.7 kB, plus 500 ignored build
+files and an ignored `.env`), one patch task of two files with the simulated provider and
+`python.pytest` only, `harness run start` took 16.47 s with a maximum resident set of
+700,841,984 bytes, `.harness` held 119,291,675 bytes and its largest blob 119,112,913 bytes, with
+the `.env` secret in it. With the three workspace keys below it took 4.27 s, 94,109,696 bytes,
+3,654,966 bytes and 1,911,156 bytes (the manifest), without `.env` (macOS arm64, Python 3.12.11;
+measured for the commit that added the keys).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `workspace.snapshot` | `walk` | `git` | `git`: the files are listed through Git (`git ls-files --cached --others --exclude-standard`): tracked files and untracked files `.gitignore` does not exclude, minus the directories the ChangeSet always excludes and symbolic links. Ignored files are never read, hashed or stored, and a change to one is not in the ChangeSet: under `governance.protectExcludedPaths` the guard also fingerprints the ignored files outside those directories, so an agent's write to an ignored `.env` is a `CRITICAL` `workspace.out-of-changeset-write` finding. A workspace that is not a Git repository is walked. |
+| `workspace.baseline` | `text` | `manifest` | `manifest`: the baseline (and the snapshot an `IMPLEMENTATION` attempt starts from) is stored as a manifest of digests with the Git `HEAD`; the text is kept only for files Git cannot give back (untracked or modified at that moment). The text of any other file is read from that `HEAD` when, and only when, the file enters a diff; a blob whose SHA-256 is not the recorded digest (a Git filter changed it) diffs as binary. |
+| `workspace.snapshotCache` | `false` | `true` | The digest of each file is kept in `.harness/cache/snapshot-cache.json` with its size, modification time, change time and inode, and a file whose four values did not change is not hashed again. A process cannot set the change time (`utime` updates it), so restoring a file's modification time does not hide an edit. The digest of the cache file is kept in the state database after every write, and a cache file that does not match it is ignored. Entries younger than two seconds are not cached. |
+| `retention.orphanArtifacts` | `false` | `true` | `harness gc` also deletes the artifacts that no record, flag or event of any run or of the project references (left by an interrupted write or by runs removed earlier). An artifact written in the last hour is never an orphan. The report lists them under `orphans`, with `orphansRemoved` and `orphanBytes`. |
+
+The same change produces the same ChangeSet digest under either baseline when no stored text was
+redacted (a test runs one task on two copies of a workspace and compares the digests). Under
+`text` the baseline stores redacted text, so a file holding a secret-like string is diffed from its
+redacted form; under `manifest` it is diffed from the content Git has.
+
+## Project toolchain
+
+The `toolchain` section lets a repository declare its own profiles and validators. Every key is
+optional; absent keys keep the 1.0.0 behaviour and the configuration digest.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `profilePaths` | none | none | YAML files, or directories of `*.yaml` files, relative to the workspace root, each a profile in the format of the built-in ones (`profileVersion`, `profileId`, `technology`, `detectors`, `validators`, `defaultValidators`, `policies`, `capabilities`). `profiles` may name them by `profileId`, and `auto` detects them by their `detectors` (a profile without detectors applies to every workspace). The id of a built-in profile (`python`, `python_default`, `node`, `node_default`) is refused. |
+| `profileDetection` | `best` | `all` | Under `profiles: [auto]`, `all` selects every detected profile (several profiles per repository: a Python service with a Node.js front end gets both sets of validators); `best` selects the one with the highest confidence. |
+| `interpreter` | `system` | `auto` | `auto` runs the validators whose command starts with `python` or `python3` with the project's interpreter: `.venv` or `venv` in the workspace (by absolute path), else `uv run --no-sync python` with `uv.lock` and `uv` on `PATH`, else `poetry run python` with `poetry.lock` and `poetry` on `PATH`. The interpreter prefix gets its own `process.execute` grant. |
+| `validators` | none | none | Validators of the project. An entry with the id of a selected validator replaces it (for example `python.pytest` with `[uv, run, pytest, tests/unit]`); any other entry is added. Each needs a `command`; besides the keys of a profile validator (`mandatory`, `whenAvailable`, `timeoutSeconds`) it may set `parser`, `severity`, `failureSeverity` and `passEnv`. The exact command gets a `process.execute` grant. |
+
+The keys a validator of a profile or of the project may set since 1.1:
+
+| Key | Default | Effect |
+|---|---|---|
+| `parser` | follow `verification.outputParsers` | Parse the output of a failing run with one format: `sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`; `auto` recognizes every format; `none` never parses. See [located findings](#located-findings). |
+| `severity` | error as the failure finding, warning `LOW`, note `INFO` | Severity of a parsed issue by its level, for example `{error: HIGH, warning: MEDIUM}`. |
+| `failureSeverity` | `HIGH` when mandatory, `MEDIUM` otherwise | Severity of the finding of a failing run. |
+| `passEnv` | none | Variables of the harness's environment the command receives as they are; their values are redacted from every artifact. |
+
+```yaml
+toolchain:
+  interpreter: auto
+  validators:
+    - id: project.bandit
+      command: [bandit, -r, src, -f, sarif, -o, bandit.sarif]
+      mandatory: false
+      parser: sarif
+      severity: {error: HIGH, warning: MEDIUM}
+```
+
+## Provenance
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `agentSnapshots` | `false` | `true` | Before and after every agent invocation the harness records the files of the ChangeSet scope that differ from the baseline, as a manifest of digests (`provenance.agent.snapshot` events). A difference that appears between two invocations, or after the last one, was made by no invocation: each such file is a `provenance.out-of-band-edit` event. When the run reaches `DECISION`, the provenance of every ChangeSet file (`AGENT` with the invocation that wrote it, or `OUT_OF_BAND`) is recorded as `DECISION` evidence and a `component_provenance` record (`schemas/v1/component-provenance.schema.json`), and `harness review` shows it. It is attribution, not a gate condition: an edit by the person who reviews is legitimate, and the record says that it happened. |
+| `selfReport` | `false` | `true` | The request asks the agent for a self-report: assumptions, alternatives discarded, low-confidence areas and unrequested changes. A command provider receives `selfReport` in the request and may answer `selfReport` next to `status`; a built-in adapter asks for a fenced JSON block with `harnessSelfReport` at the end of the answer. The report is stored as data of quality `REPORTED` (`agent_self_report` record, `schemas/v1/agent-self-report.schema.json`), contrasted with the ChangeSet of the same invocation (declared paths that are not in it, unrequested changes that are) and shown by `harness review`; what could not be read is listed under `problems`. It is never a check. |
+
+## Delivery
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `closureCommit` | `off` | `branch` | At `CLOSURE` the approved ChangeSet is written as one commit whose parent is `HEAD`, built in a temporary index from `HEAD` plus the ChangeSet files. `branch` creates the branch `branch` (default `harness/{runId}`) and does not touch the working tree, the index or the current branch; `head` moves the current branch to the commit and refreshes the index entries of the ChangeSet paths. The commit carries the trailers `Harness-Run`, `Harness-Task`, `Harness-ChangeSet`, `Harness-Decision` (`<decision id> <decision>`) and, for `APPROVE_EXCEPTION`, `Harness-Exception` with the rationale. Its diff against `HEAD` is recomputed before any ref points to it and must be the approved digest. |
+| `branch` | `harness/{runId}` | none | Branch of `closureCommit: branch`; `{runId}` and `{taskId}` are replaced. |
+| `publisher` | `{kind: github, transport: gh}` | none | Defaults of `harness pr publish`: `transport` (`gh` or `api`), `repository` (`owner/name`; default: the `origin` remote), `tokenEnv` (default `GITHUB_TOKEN`, read by `api`), `apiUrl` and `sarif`. |
+
+The commit uses the repository's Git configuration (identity and signing). In a repository without
+an identity it is written by `Governed Agent Harness <harness@localhost.invalid>`. When the
+workspace is not a Git repository, has no commit, or its `HEAD` does not hold the baseline of a
+ChangeSet file (the run started on uncommitted changes, for example those of an earlier run), no
+commit is written and a `delivery.commit.skipped` event says why: a commit on `HEAD` would carry
+more than the approved ChangeSet. When the workspace no longer holds the approved content, a
+branch of the same name holds another commit, or Git refuses an operation, `CLOSURE` is `BLOCKED`
+with the reason (exit 6) and `run continue` tries again. See [CI integration](../guides/ci-integration.md)
+for `harness verify-approval`, the evidence bundle and `harness pr publish`.
 
 ## Technology profiles
 

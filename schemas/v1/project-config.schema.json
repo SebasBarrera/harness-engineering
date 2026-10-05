@@ -2,17 +2,69 @@
   "$defs": {
     "AgentProviderConfiguration": {
       "additionalProperties": false,
+      "description": "An agent provider.\n\nSince 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra\ncommand-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's\nenvironment passed as they are) and ``env`` (variables set for the provider, as a literal\nvalue or ``{fromEnv: NAME}``). Values that come from the environment are redacted from\nevery artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized\nconfiguration.",
       "properties": {
+        "args": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Args"
+        },
         "command": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Command",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "env": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/ProviderEnvReference"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Env"
         },
         "kind": {
-          "const": "command",
           "default": "command",
+          "enum": [
+            "command",
+            "claude-code",
+            "codex",
+            "gemini-cli",
+            "aider"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -27,11 +79,23 @@
           ],
           "default": null,
           "title": "Model"
+        },
+        "passEnv": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passenv"
         }
       },
-      "required": [
-        "command"
-      ],
       "title": "AgentProviderConfiguration",
       "type": "object"
     },
@@ -86,6 +150,54 @@
         "scope"
       ],
       "title": "CapabilityRule",
+      "type": "object"
+    },
+    "DeliveryConfig": {
+      "additionalProperties": false,
+      "description": "What CLOSURE delivers to version control (since 1.1).\n\n* ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch\n  (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the\n  working tree, the index or the current branch; ``head`` commits it on the current branch\n  (only the ChangeSet paths). The commit carries the trailers ``Harness-Run``,\n  ``Harness-ChangeSet`` and ``Harness-Decision`` (and ``Harness-Exception`` for an\n  ``APPROVE_EXCEPTION``), and is created only if its diff recomputes to the approved\n  ChangeSet digest. ``off`` (or absent): the harness never commits, as in 1.0.0.\n* ``publisher``: defaults of ``harness pr publish``.",
+      "properties": {
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "closureCommit": {
+          "anyOf": [
+            {
+              "enum": [
+                "off",
+                "branch",
+                "head"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Closurecommit"
+        },
+        "publisher": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublisherConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "DeliveryConfig",
       "type": "object"
     },
     "FindingSeverity": {
@@ -299,6 +411,103 @@
       "title": "NotificationsConfig",
       "type": "object"
     },
+    "ProvenanceConfig": {
+      "additionalProperties": false,
+      "description": "Provenance per component (since 1.1).\n\n* ``agentSnapshots``: after each agent invocation the harness records a manifest of the\n  digests of the files in the ChangeSet scope. A later difference that no invocation\n  produced is attributed, per file, as an out-of-band edit, and the provenance of every\n  ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as\n  evidence.\n* ``selfReport``: the request asks the agent for a structured self-report (assumptions,\n  alternatives discarded, low-confidence areas, unrequested changes); the answer is stored\n  as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "properties": {
+        "agentSnapshots": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentsnapshots"
+        },
+        "selfReport": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selfreport"
+        }
+      },
+      "title": "ProvenanceConfig",
+      "type": "object"
+    },
+    "ProviderEnvReference": {
+      "additionalProperties": false,
+      "description": "A provider environment variable whose value is read from the harness's environment\nwhen the provider starts: the value never appears in ``project.yaml`` or the snapshot.",
+      "properties": {
+        "fromEnv": {
+          "title": "Fromenv",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fromEnv"
+      ],
+      "title": "ProviderEnvReference",
+      "type": "object"
+    },
+    "PublisherConfig": {
+      "additionalProperties": false,
+      "description": "Where ``harness pr publish`` posts the decision brief and the SARIF report.",
+      "properties": {
+        "apiUrl": {
+          "default": "https://api.github.com",
+          "title": "Apiurl",
+          "type": "string"
+        },
+        "kind": {
+          "const": "github",
+          "default": "github",
+          "title": "Kind",
+          "type": "string"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "sarif": {
+          "default": true,
+          "title": "Sarif",
+          "type": "boolean"
+        },
+        "tokenEnv": {
+          "default": "GITHUB_TOKEN",
+          "title": "Tokenenv",
+          "type": "string"
+        },
+        "transport": {
+          "default": "gh",
+          "enum": [
+            "gh",
+            "api"
+          ],
+          "title": "Transport",
+          "type": "string"
+        }
+      },
+      "title": "PublisherConfig",
+      "type": "object"
+    },
     "RetrospectiveConfig": {
       "additionalProperties": false,
       "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
@@ -384,6 +593,18 @@
           "minimum": 1,
           "title": "Commandtimeoutseconds",
           "type": "integer"
+        },
+        "extendedRedaction": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extendedredaction"
         },
         "maxOutputBytes": {
           "default": 1000000,
@@ -499,6 +720,212 @@
       "title": "RuntimeConfig",
       "type": "object"
     },
+    "ToolchainConfig": {
+      "additionalProperties": false,
+      "description": "Project-defined profiles, validators and interpreter (since 1.1).\n\n* ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology\n  profiles in the format of the built-in ones, relative to the workspace root. ``profiles``\n  may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.\n* ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``\n  (several profiles per repository); ``best`` (or absent) selects the best one.\n* ``interpreter: auto`` runs the validators whose command starts with ``python`` with the\n  project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync\n  python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``\n  (or absent) keeps ``python`` from ``PATH``.\n* ``validators``: validators of the project. An entry with the id of a selected validator\n  replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other\n  entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,\n  ``failureSeverity`` and ``passEnv``.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "properties": {
+        "interpreter": {
+          "anyOf": [
+            {
+              "enum": [
+                "system",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interpreter"
+        },
+        "profileDetection": {
+          "anyOf": [
+            {
+              "enum": [
+                "best",
+                "all"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profiledetection"
+        },
+        "profilePaths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profilepaths"
+        },
+        "validators": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ValidatorDefinition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validators"
+        }
+      },
+      "title": "ToolchainConfig",
+      "type": "object"
+    },
+    "ValidatorDefinition": {
+      "additionalProperties": false,
+      "description": "A validator of a profile or, since 1.1, of the project (``toolchain.validators``).\n\nThe keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "failureSeverity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mandatory": {
+          "default": true,
+          "title": "Mandatory",
+          "type": "boolean"
+        },
+        "parser": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "sarif",
+                "junit",
+                "ruff",
+                "mypy",
+                "eslint",
+                "tsc",
+                "pytest",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parser"
+        },
+        "passEnv": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passenv"
+        },
+        "script": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Script"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FindingSeverity"
+              },
+              "propertyNames": {
+                "enum": [
+                  "error",
+                  "warning",
+                  "note"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeoutseconds"
+        },
+        "whenAvailable": {
+          "default": false,
+          "title": "Whenavailable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ValidatorDefinition",
+      "type": "object"
+    },
     "VerificationConfig": {
       "additionalProperties": false,
       "description": "What VERIFICATION does with identified requirements that no test names.\n\n``enforce`` records each one as a ``HIGH`` finding, which fails the gate under the default\n``findingBlockSeverities``; ``warn`` records it as a ``LOW`` finding; ``off`` skips the\ncheck.",
@@ -593,11 +1020,56 @@
     },
     "WorkspaceConfig": {
       "additionalProperties": false,
+      "description": "The workspace root and, since 1.1, how the workspace is read for large repositories.\n\n* ``snapshot: git`` lists the files through Git (tracked plus untracked files that\n  ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are\n  neither hashed nor stored; ``walk`` (or absent) walks every file as in 1.0.0.\n* ``baseline: manifest`` stores the baseline as a manifest of digests; the text of a file\n  is stored only when it enters the ChangeSet (taken from Git or from a per-file blob kept\n  for untracked files), instead of the text of every file.\n* ``snapshotCache: true`` reuses the digest of a file whose size and modification time did\n  not change since the last snapshot of the run.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "enum": [
+                "text",
+                "manifest"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
         "root": {
           "default": "..",
           "title": "Root",
           "type": "string"
+        },
+        "snapshot": {
+          "anyOf": [
+            {
+              "enum": [
+                "walk",
+                "git"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot"
+        },
+        "snapshotCache": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshotcache"
         },
         "units": {
           "default": [],
@@ -669,6 +1141,17 @@
       "title": "Configversion",
       "type": "string"
     },
+    "delivery": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DeliveryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "governance": {
       "anyOf": [
         {
@@ -721,6 +1204,17 @@
       "title": "Projectid",
       "type": "string"
     },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProvenanceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "retention": {
       "additionalProperties": true,
       "description": "artifactDays and eventDays: what harness gc removes for runs that ended longer ago.",
@@ -751,6 +1245,17 @@
     },
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig"
+    },
+    "toolchain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolchainConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "validators": {
       "default": [],

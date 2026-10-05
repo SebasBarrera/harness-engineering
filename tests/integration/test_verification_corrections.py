@@ -247,6 +247,11 @@ def test_absent_loop_settings_keep_the_previous_behaviour(
     python_workspace: Path, tmp_path: Path
 ) -> None:
     log = configure(python_workspace, tmp_path, "always-buggy", dict.fromkeys(LOOP_KEYS))
+    # A 1.0.0 file has no provenance section either (selfReport adds a request key).
+    config_path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    config.pop("provenance", None)
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     application, run = start(python_workspace, tmp_path)
     status = application.status(python_workspace, run)
     assert status["execution"]["currentPhase"] == "VERIFICATION"

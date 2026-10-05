@@ -67,7 +67,7 @@ jobs:
           missing = [n for n in required if n not in names]
           print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas")
           assert not missing, f"missing from wheel: {missing}"
-          assert len(schemas) == 31, f"expected 31 schemas, found {len(schemas)}"
+          assert len(schemas) == 34, f"expected 34 schemas, found {len(schemas)}"
           PY
       - name: Install the wheel in a clean environment
         run: |

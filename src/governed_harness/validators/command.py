@@ -78,6 +78,7 @@ class CommandValidator:
                 argv=context.definition.command,
                 cwd=context.workspace,
                 timeout_seconds=float(context.definition.timeout_seconds or 900),
+                allowed_environment=context.definition.pass_env or (),
                 max_output_bytes=context.max_output_bytes,
             ),
             actor=actor,
@@ -156,9 +157,10 @@ class CommandValidator:
                 validator_id=self.validator_id,
                 rule_id=f"{self.validator_id}.failed",
                 category="validation",
-                severity=FindingSeverity.HIGH
-                if context.definition.mandatory
-                else FindingSeverity.MEDIUM,
+                severity=context.definition.failure_severity
+                or (
+                    FindingSeverity.HIGH if context.definition.mandatory else FindingSeverity.MEDIUM
+                ),
                 message=summary,
                 location=FindingLocation(),
                 evidence_refs=(report.uri, stdout.uri, stderr.uri),
@@ -194,7 +196,12 @@ class CommandValidator:
         Errors keep the severity of the summary finding (so the gate outcome is the one the
         summary already decides) and warnings are ``LOW``; the rule is
         ``<validator>.<tool rule>``."""
-        if not context.parse_output:
+        parser = context.definition.parser
+        if parser is None:
+            if not context.parse_output:
+                return []
+            parser = "auto"
+        if parser == "none":
             return []
         reports = []
         for path in report_files(context.definition.command or (), context.workspace):
@@ -207,11 +214,13 @@ class CommandValidator:
             process.stderr.decode("utf-8", "replace"),
             context.workspace,
             tuple(reports),
+            parser,
         )
         severities = {
             "error": summary.severity,
             "warning": FindingSeverity.LOW,
             "note": FindingSeverity.INFO,
+            **(context.definition.severity or {}),
         }
         findings = [
             Finding(
@@ -221,7 +230,7 @@ class CommandValidator:
                 rule_id=f"{self.validator_id}.{issue.rule}",
                 category="validation",
                 severity=severities[issue.level],
-                message=issue.message,
+                message=context.artifact_store.redactor.redact_configured_text(issue.message),
                 location=FindingLocation(
                     path=issue.path,
                     start_line=issue.line,

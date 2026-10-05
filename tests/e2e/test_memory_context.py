@@ -130,9 +130,11 @@ def test_command_provider_receives_memory_only_when_there_is_any(
     app = HarnessApplication()
 
     first = app.start_run(python_workspace, app.create_task(python_workspace, task_path).task_id)
+    # selfReport: harness init enables provenance.selfReport (since 1.1).
     assert json.loads((python_workspace / "request-keys.json").read_text()) == [
         "plan",
         "schemaVersion",
+        "selfReport",
         "task",
     ]
     assert manifest_of(app, python_workspace, first.execution_id)["records"] == []
