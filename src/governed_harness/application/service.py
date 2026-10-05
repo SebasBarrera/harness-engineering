@@ -194,8 +194,45 @@ class HarnessApplication:
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
             "governance": self._governance(resolved.project.governance_settings),
+            **self._wave4_settings(resolved),
             "declarative": declarative,
             "warnings": warnings,
+        }
+
+    @staticmethod
+    def _wave4_settings(resolved: Any) -> dict[str, Any]:
+        """Effective workspace, toolchain, provenance and delivery settings (since 1.1;
+        absent keys resolve to the 1.0.0 behaviour)."""
+        project = resolved.project
+        workspace = project.workspace
+        toolchain = project.toolchain_settings
+        provenance = project.provenance_settings
+        delivery = project.delivery_settings
+        return {
+            "snapshots": {
+                "snapshot": workspace.snapshot or "walk",
+                "baseline": workspace.baseline or "text",
+                "snapshotCache": bool(workspace.snapshot_cache),
+            },
+            "toolchain": {
+                "profileDetection": toolchain.profile_detection or "best",
+                "interpreter": toolchain.interpreter or "system",
+                "projectProfiles": [
+                    item for item in resolved.source_files if not item.startswith("builtin:")
+                ][1:],
+                "commands": {
+                    item.validator_id: list(item.command or ())
+                    for item in resolved.effective_validators
+                },
+            },
+            "provenance": {
+                "agentSnapshots": bool(provenance.agent_snapshots),
+                "selfReport": bool(provenance.self_report),
+            },
+            "delivery": {
+                "closureCommit": delivery.mode,
+                "branch": delivery.branch_template if delivery.mode == "branch" else None,
+            },
         }
 
     @staticmethod
