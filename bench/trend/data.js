@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791171116628,
+  "lastUpdate": 1791171793737,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2365,6 +2365,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 5.084,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "1573f17da1356beb08240e006c28b1ba8419eef2",
+          "message": "Merge branch 'feat/requirement-traceability' into develop\n\nVERIFICATION now relates requirements to tests when\nverification.requirementTraceability is enforce (written by harness init): every\nrequirement with an explicit identifier (A1., [B12], or a given requirementId)\nmust be named by some test (function, class or file name, docstring, string or\nbody), otherwise it gets a traceability.requirement-untested finding, HIGH under\nenforce so the gate fails, LOW under warn. The requirement-to-tests map is\nrecorded as evidence (requirement-traceability.schema.json). A project.yaml\nwithout the key keeps the 1.0.0 behavior and its configuration digest.\n\nCloses #35\n\nVerification on the branch head 3cb7408ac7f9: 21 CI job(s) succeeded, no blocking job failed.\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272561\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272578\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272581\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272589\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272629\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37260272631\nFiles of the v0.8.0 cut in the tree: matched: 115/232  mismatched: 93  missing: 24",
+          "timestamp": "2026-10-04T22:42:42-05:00",
+          "tree_id": "a18a1bf4a6c500cb665283100eba56f99b4499af",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/1573f17da1356beb08240e006c28b1ba8419eef2"
+        },
+        "date": 1791171793248,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000902,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001392,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.008853,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.045058,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.182199,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.50625,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.818924,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.181,
             "unit": "%"
           }
         ]
