@@ -31,6 +31,14 @@ from governed_harness.configuration.agent_results import (
     TestQualityConfig,
     off_from_yaml,
 )
+from governed_harness.configuration.engineering import (
+    ArchitectureSettings,
+    ForgeConfig,
+    PrinciplesConfig,
+    ProjectSetupMode,
+    StandardsConfig,
+    TestingConfig,
+)
 from governed_harness.domain.enums import FindingSeverity, PhaseId
 
 
@@ -428,8 +436,12 @@ class IntakeConfig(ConfigModel):
     ambiguity_review: AmbiguityReview | None = Field(default=None, alias="ambiguityReview")
     clarify_agent: AgentCallConfig | None = Field(default=None, alias="clarifyAgent")
     validate_answers: bool | None = Field(default=None, alias="validateAnswers")
+    project_setup: ProjectSetupMode | None = Field(default=None, alias="projectSetup")
+    """Since 1.1 (#56): ``ask`` makes INTENT ask, once per project, the architecture, the
+    testing strategy and the standards of a new project, and of an existing project whatever
+    detection could not establish (rule ``P1``)."""
 
-    @field_validator("ambiguity_review", mode="before")
+    @field_validator("ambiguity_review", "project_setup", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
         return off_from_yaml(value)
@@ -441,7 +453,7 @@ class IntakeConfig(ConfigModel):
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for name in ("ambiguity_review", "clarify_agent", "validate_answers"):
+        for name in ("ambiguity_review", "clarify_agent", "validate_answers", "project_setup"):
             if getattr(self, name) is None:
                 data.pop(name, None)
                 data.pop(type(self).model_fields[name].alias or name, None)
@@ -494,6 +506,10 @@ class VerificationConfig(ConfigModel):
     sarif: tuple[SarifInput, ...] | None = None
     risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
     acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")
+    principles: PrinciplesConfig | None = None
+    """Since 1.1 (#56): engineering principles as deterministic proxies (duplication, size and
+    complexity, dependency direction, inheritance depth, unused public API, Boy Scout scope) and
+    a checklist inside the existing review call."""
 
     @field_validator("interface", "constraints", "ratchet", "weakened_controls", mode="before")
     @classmethod
@@ -752,6 +768,9 @@ class ProjectConfiguration(ConfigModel):
     toolchain: ToolchainConfig | None = None
     provenance: ProvenanceConfig | None = None
     delivery: DeliveryConfig | None = None
+    standards: StandardsConfig | None = None
+    testing: TestingConfig | None = None
+    architecture: ArchitectureSettings | None = None
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -836,6 +855,9 @@ class ProjectConfiguration(ConfigModel):
             "toolchain",
             "provenance",
             "delivery",
+            "standards",
+            "testing",
+            "architecture",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)
@@ -1161,6 +1183,9 @@ class DeliveryConfig(ConfigModel):
     closure_commit: ClosureCommitMode | None = Field(default=None, alias="closureCommit")
     branch: str | None = None
     publisher: PublisherConfig | None = None
+    forge: ForgeConfig | None = None
+    """Since 1.1 (#56): the forge of ``harness pr publish`` and ``harness pr create`` (GitHub,
+    GitLab, Bitbucket, Azure DevOps, Gitea), detected from ``origin`` unless set."""
 
     @field_validator("branch")
     @classmethod
