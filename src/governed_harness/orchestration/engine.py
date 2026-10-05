@@ -24,6 +24,7 @@ from governed_harness.agents.environment import (
 )
 from governed_harness.agents.native import native_provider
 from governed_harness.capabilities import grants_from_rules
+from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
 from governed_harness.domain.enums import (
     ActorType,
@@ -789,7 +790,14 @@ class RunEngine:
         )
 
     def _phase_discovery(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        detections = detect_profiles(self.s.paths.workspace)
+        detections = detect_profiles(
+            self.s.paths.workspace,
+            [
+                profile
+                for profile in self.s.resolved.profiles
+                if profile.profile_id not in BUILTIN_PROFILE_IDS
+            ],
+        )
         selected = {profile.profile_id for profile in self.s.resolved.profiles}
         if not any(item.profile_id in selected and item.confidence > 0 for item in detections):
             return PhaseOutcome(

@@ -4,19 +4,23 @@ import shutil
 from pathlib import Path
 
 from governed_harness.configuration.loader import (
+    BUILTIN_PROFILE_IDS,
     find_project_config,
     load_builtin_profile,
     load_builtin_workflow,
     load_project_config,
+    load_yaml,
 )
 from governed_harness.configuration.models import (
     CapabilityRule,
     ResolvedConfiguration,
     TechnologyProfileDefinition,
+    ToolchainConfig,
     ValidatorDefinition,
 )
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.profiles.detectors import detect_profiles
+from governed_harness.profiles.interpreter import discover_python, with_interpreter
 
 CORE_POLICIES = {
     "requireHumanDecision": True,
@@ -34,19 +38,46 @@ class ConfigurationResolver:
         config_path = find_project_config(start)
         project = load_project_config(config_path)
         workspace_root = (config_path.parent / project.workspace.root).resolve(strict=True)
+        toolchain = project.toolchain_settings
+        project_profiles, profile_files = load_project_profiles(
+            workspace_root, toolchain.profile_paths or ()
+        )
         requested = list(project.profiles)
         if requested == ["auto"] or "auto" in requested:
             detections = [
-                result for result in detect_profiles(workspace_root) if result.confidence > 0
+                result
+                for result in detect_profiles(workspace_root, project_profiles.values())
+                if result.confidence > 0
             ]
             if not detections:
                 raise ConfigurationError("no supported technology profile detected")
-            best = detections[0]
-            requested = [best.profile_id]
-        profiles = tuple(load_builtin_profile(profile_id) for profile_id in requested)
+            if toolchain.profile_detection == "all":
+                requested = [item.profile_id for item in detections]
+            else:
+                requested = [detections[0].profile_id]
+        profiles = tuple(
+            project_profiles[profile_id]
+            if profile_id in project_profiles
+            else load_builtin_profile(profile_id)
+            for profile_id in dict.fromkeys(requested)
+        )
         workflow = load_builtin_workflow(project.workflow)
         capabilities = self._resolve_capabilities(project.capabilities.grants, profiles)
         validators = self._resolve_validators(project.validators, profiles)
+        if toolchain.validators or toolchain.interpreter == "auto":
+            validators, extra_scopes = self._project_toolchain(
+                validators, toolchain, workspace_root
+            )
+            capabilities = self._resolve_capabilities(
+                (
+                    *project.capabilities.grants,
+                    *(
+                        CapabilityRule(capability="process.execute", scope=(scope,))
+                        for scope in extra_scopes
+                    ),
+                ),
+                profiles,
+            )
         policies = self._resolve_policies(project.policies, profiles)
         return ResolvedConfiguration(
             project=project,
@@ -59,7 +90,12 @@ class ConfigurationResolver:
             source_files=(
                 str(config_path),
                 "builtin:workflow/default",
-                *(f"builtin:profile/{p.profile_id}" for p in profiles),
+                *(
+                    f"builtin:profile/{p.profile_id}"
+                    for p in profiles
+                    if p.profile_id not in project_profiles
+                ),
+                *profile_files,
             ),
         )
 
@@ -98,6 +134,33 @@ class ConfigurationResolver:
         return tuple(available[validator_id] for validator_id in dict.fromkeys(selected))
 
     @staticmethod
+    def _project_toolchain(
+        validators: tuple[ValidatorDefinition, ...],
+        toolchain: ToolchainConfig,
+        workspace_root: Path,
+    ) -> tuple[tuple[ValidatorDefinition, ...], tuple[str, ...]]:
+        """Apply ``toolchain.validators`` (replace a selected validator with the same id, add
+        the others) and ``toolchain.interpreter``. Returns the validators and the
+        ``process.execute`` scopes their commands need: the exact command of each project
+        validator and the discovered interpreter prefix."""
+        by_id = {item.validator_id: item for item in validators}
+        scopes: list[str] = []
+        for item in toolchain.validators or ():
+            by_id[item.validator_id] = item
+            scopes.append(" ".join(item.command or ()))
+        interpreter = discover_python(workspace_root) if toolchain.interpreter == "auto" else None
+        resolved = tuple(
+            item.model_copy(update={"command": with_interpreter(item.command, interpreter)})
+            for item in by_id.values()
+        )
+        if interpreter is not None and any(
+            item.command and item.command[: len(interpreter.argv)] == interpreter.argv
+            for item in resolved
+        ):
+            scopes.append(interpreter.grant_scope)
+        return resolved, tuple(dict.fromkeys(scope for scope in scopes if scope))
+
+    @staticmethod
     def _resolve_policies(
         project_policies: dict[str, object], profiles: tuple[TechnologyProfileDefinition, ...]
     ) -> dict[str, object]:
@@ -118,6 +181,41 @@ class ConfigurationResolver:
                 raise ConfigurationError("retrospectiveAutoApply is a locked false policy")
             resolved[key] = value
         return resolved
+
+
+def load_project_profiles(
+    workspace_root: Path, paths: tuple[str, ...]
+) -> tuple[dict[str, TechnologyProfileDefinition], tuple[str, ...]]:
+    """The profiles of ``toolchain.profilePaths`` by id, and the files they came from."""
+    files: list[Path] = []
+    for item in paths:
+        target = (workspace_root / item).resolve()
+        try:
+            target.relative_to(workspace_root)
+        except ValueError as error:
+            raise ConfigurationError(f"profile path leaves the workspace: {item}") from error
+        if target.is_dir():
+            files.extend(sorted(target.glob("*.yaml")))
+        elif target.is_file():
+            files.append(target)
+        else:
+            raise ConfigurationError(f"profile path not found: {item}")
+    profiles: dict[str, TechnologyProfileDefinition] = {}
+    for path in files:
+        try:
+            profile = TechnologyProfileDefinition.model_validate(load_yaml(path))
+        except ConfigurationError:
+            raise
+        except Exception as error:
+            raise ConfigurationError(f"invalid project profile {path}: {error}") from error
+        if profile.profile_id in BUILTIN_PROFILE_IDS:
+            raise ConfigurationError(
+                f"project profile {path} uses the built-in profile id {profile.profile_id!r}"
+            )
+        if profile.profile_id in profiles:
+            raise ConfigurationError(f"profile id {profile.profile_id!r} is declared twice")
+        profiles[profile.profile_id] = profile
+    return profiles, tuple(str(path) for path in files)
 
 
 def executable_available(argv0: str) -> bool:
