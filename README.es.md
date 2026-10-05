@@ -278,7 +278,12 @@ están **bloqueadas** y no se pueden debilitar: `requireHumanDecision`, `approva
 nada los aplica**. `intake.criteriaPolicy` decide qué hace `INTENT` con criterios de aceptación que
 no se pueden observar ("It works."): `enforce` (lo escribe `init`) bloquea hasta que una persona
 responda las preguntas con `harness task clarify`, `warn` (un archivo sin la clave) las registra como
-evidencia y hallazgos `LOW`, y `off` omite la verificación. Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
+evidencia y hallazgos `LOW`, y `off` omite la verificación.
+`verification.requirementTraceability` decide qué hace `VERIFICATION` con un requisito que tiene
+identificador (`A1. ...`, `[B12] ...` o un `requirementId` explícito) y que ninguna prueba nombra:
+`enforce` (lo escribe `init`) registra un hallazgo `HIGH`, por lo que la compuerta queda `FAILED`;
+`warn` registra un hallazgo `LOW`; `off` (un archivo sin la clave) omite la verificación.
+Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
 

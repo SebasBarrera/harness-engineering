@@ -28,3 +28,19 @@ the questions, the answers, the actor and the previous and new task digests are 
 events of the same run. With `warn` the questions are recorded as evidence and `LOW` findings and
 the phase passes; with `off` the check is skipped. See the
 [configuration reference](../reference/configuration.md#acceptance-criteria-policy).
+
+## Tracing requirements to tests
+
+After the technology validators, `VERIFICATION` relates every identified requirement of the task to
+the tests of the workspace (validator `traceability.requirements`, no language model, nothing
+executed). A requirement is identified by the token that starts its text (`A1. `, `[B12] `,
+`X8: `) or by a `requirementId` written in the task file; requirements without one are skipped
+and counted. A test names a requirement when its file, class or function name contains the
+identifier as a token (`test_a1_rounding`, `TestA1`) or when its source, docstring or string
+constants (a `parametrize` id) contain the identifier as a whole word. The mapping is recorded as
+`VERIFICATION` evidence (`requirement-traceability.schema.json`) and the check appears in the
+validation summary like any validator. With `verification.requirementTraceability: enforce`
+(written by `init`) each untraced requirement is a `HIGH` finding, so the gate is `FAILED` and the
+person deciding sees which requirement lacks a test before approving or requesting changes; with
+`warn` it is a `LOW` finding; with `off` the check does not run. See the
+[configuration reference](../reference/configuration.md#requirement-traceability).

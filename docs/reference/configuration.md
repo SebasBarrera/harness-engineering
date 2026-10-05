@@ -38,6 +38,8 @@ retention:
   eventDays: 365
 intake:
   criteriaPolicy: enforce
+verification:
+  requirementTraceability: enforce
 ```
 
 ## Fields
@@ -62,6 +64,7 @@ intake:
 | `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. See [acceptance-criteria policy](#acceptance-criteria-policy). |
+| `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 
 ## Policies
 
@@ -138,6 +141,58 @@ task, when the file adds no requirement or criterion, becomes a requirement with
 task without an open request (exit 3), and a task that has a run past INTENT or an actor id in a
 namespace the harness uses for agents, validators or itself (`agent.`, `validator.`, `harness.`)
 (exit 5). Actor ids are recorded, not authenticated.
+
+## Requirement traceability
+
+Agents tend to report that every requirement has tests. With
+`verification.requirementTraceability` set, `VERIFICATION` checks it: after the technology
+validators it relates each identified requirement of the task to the tests of the workspace,
+deterministically and without running anything.
+
+**Identifier of a requirement.** The token that starts its text, matching
+`^\s*(?:\[ID\][.:)]?|ID[.:)])\s` with `ID` = `[A-Z]{1,3}\d{1,3}(?:\.\d+)?`: `A1. Round to
+cents.`, `[B12] Reject an empty basket.`, `X8: ...`, `C3.1) ...`. A requirement without such a token
+is identified by its `requirementId` when the task file sets one (`requirementId: req_discount`);
+the id the harness generates when the file gives none (`req_` followed by 32 hexadecimal digits)
+does not count. When both exist, the text token is used. Requirements without an identifier are
+skipped; the report counts them.
+
+**Test files.** Anywhere in the workspace: for the Python profile, `test_*.py` and `*_test.py`;
+for the Node profile, `*.test.*`, `*-test.*`, `*_test.*`, the same with `spec`, `test-*`, `test.*`
+and every file under a `test`, `tests` or `__tests__` directory (extensions `js`, `cjs`, `mjs`,
+`ts`, `cts`, `mts`, `jsx`, `tsx`). Hidden directories, `node_modules`, `__pycache__`, `venv`, `site-packages`, `build`,
+`dist` and symbolic links are not searched; a file larger than 2,000,000 bytes is listed as unread.
+
+**A test names a requirement** when
+
+- the name of its file, class or function contains the identifier as a token, in any case:
+  `test_a1_rounding`, `test_A1`, `TestA1`, `TestA1Rounding`, `tests/test_a1.py`
+  (`test_a12` does not name `A1`; a dot becomes an underscore: `test_c3_1_...` names `C3.1`); or
+- its docstring, string constants (a `pytest.param(..., id="A1")`, a Node `test('A1: ...')`
+  title) or source lines, comments included, contain the identifier as a whole word, case
+  sensitive (`A1` matches `A1:` and `[A1]`, not `A12`, `A1.2` or `a1`).
+
+Python tests (functions named `test*`, classes named `Test*` and their methods) are read with
+`ast`; a module docstring counts for the file. A Python file that does not parse and every Node
+file are read as text, and a Node match outside a test title is attributed to the file.
+
+| Policy | Identified requirement that no test names |
+|---|---|
+| `enforce` | One `HIGH` finding `traceability.requirement-untested` per requirement. With the default `findingBlockSeverities` the gate is `FAILED`: `APPROVE` exits with 5, and the person decides `REQUEST_CHANGES`, `APPROVE_EXCEPTION` with a rationale, or `REJECT`. |
+| `warn` | One `LOW` finding per requirement; the gate does not count it. |
+| `off` | No check: VERIFICATION behaves as in 1.0.0. |
+
+The finding names the identifier and the first 80 characters of the requirement text, for example
+`No test names requirement A2: A2. A subtotal below the threshold is unchanged.` With `enforce` and
+`warn` the check is recorded as a validation result of `traceability.requirements` (`PASSED` when
+the check ran, mandatory under `enforce`, so it appears in `validationSummary`) and the mapping,
+each requirement with its identifier, where it came from and the tests that name it (node id, file,
+how it matched), is stored as `VERIFICATION` evidence of kind `TEST_REPORT` (schema
+`requirement-traceability.schema.json`). The plan of `PLANNING` lists the validator.
+
+A `project.yaml` written before this section existed has no `verification` key and runs with
+`off`; its configuration snapshot is serialized without the section, so its digest does not
+change.
 
 ## Technology profiles
 
