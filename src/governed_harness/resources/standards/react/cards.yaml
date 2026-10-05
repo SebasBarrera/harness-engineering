@@ -1,0 +1,45 @@
+pack: react
+title: React
+extends: [javascript]
+cards:
+  - id: react.rules-of-hooks
+    title: Rules of hooks
+    rule: Call hooks only at the top level of function components and custom hooks, never in conditions, loops or nested functions.
+    rationale: React matches hook state by call order.
+    appliesTo: ["**/*.jsx", "**/*.tsx", "**/use*.js", "**/use*.ts"]
+    verifiedBy: ["eslint:react-hooks/rules-of-hooks"]
+  - id: react.exhaustive-deps
+    title: Complete effect dependencies
+    rule: List every value an effect, memo or callback reads in its dependency array.
+    rationale: A missing dependency gives stale values; an extra one re-runs the effect.
+    exceptions:
+      - A value documented as stable (a ref, a setState function).
+    appliesTo: ["**/*.jsx", "**/*.tsx"]
+    verifiedBy: ["eslint:react-hooks/exhaustive-deps"]
+  - id: react.keys
+    title: Stable keys in lists
+    rule: Give every element of a rendered list a stable, unique key from the data, not the array index.
+    rationale: Index keys mix up state when items move.
+    appliesTo: ["**/*.jsx", "**/*.tsx"]
+    verifiedBy: ["eslint:react/jsx-key", "eslint:react/no-array-index-key"]
+  - id: react.no-direct-dom
+    title: No direct DOM writes
+    rule: Do not write to the DOM directly or with dangerouslySetInnerHTML; render through state and props.
+    rationale: Direct writes bypass React and open cross-site scripting.
+    exceptions:
+      - Sanitized HTML from a trusted renderer, isolated in one component.
+    appliesTo: ["**/*.jsx", "**/*.tsx"]
+    verifiedBy: ["eslint:react/no-danger", "review"]
+  - id: react.composition
+    title: Composition over inheritance
+    rule: Reuse behaviour through components, props, children and hooks; do not extend component classes.
+    rationale: Composition keeps components independent and testable.
+    appliesTo: ["**/*.jsx", "**/*.tsx"]
+    verifiedBy: ["review"]
+    principle: composition-over-inheritance
+  - id: react.accessible-elements
+    title: Accessible elements
+    rule: Use semantic elements; give interactive elements a label and keyboard support, images an alt text.
+    rationale: Assistive technology reads the semantics, not the styling.
+    appliesTo: ["**/*.jsx", "**/*.tsx"]
+    verifiedBy: ["eslint:jsx-a11y/alt-text", "eslint:jsx-a11y/click-events-have-key-events"]

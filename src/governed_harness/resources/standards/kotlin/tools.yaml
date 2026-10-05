@@ -1,0 +1,35 @@
+pack: kotlin
+detect:
+  markers: [build.gradle.kts, settings.gradle.kts]
+  extensions: [.kt]
+runner:
+  test: [./gradlew, test]
+  testFiles: false
+  bdd: [./gradlew, test]
+bddFrameworks:
+  - name: cucumber-jvm
+    dependencies: [cucumber-java, cucumber-junit-platform-engine]
+  - name: kotest
+    dependencies: [kotest-runner-junit5]
+tools:
+  - id: detekt
+    title: detekt
+    configFiles: [detekt.yml, config/detekt/detekt.yml, config/detekt.yml]
+    command: [./gradlew, detekt, -Pdetekt.reports.sarif.required=true]
+    parser: sarif
+    principles: [kiss, yagni]
+    recommended: |
+      # detekt.yml
+      complexity:
+        LongMethod: {active: true, threshold: 60}
+        CyclomaticComplexMethod: {active: true, threshold: 10}
+      potential-bugs:
+        UnsafeCallOnNullableType: {active: true}
+      coroutines:
+        GlobalCoroutineUsage: {active: true}
+  - id: ktlint
+    title: ktlint
+    configFiles: [.editorconfig]
+    command: [ktlint, --reporter=checkstyle]
+    parser: checkstyle
+    principles: [least-astonishment]

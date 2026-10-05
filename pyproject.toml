@@ -76,6 +76,7 @@ governed_harness = [
   "resources/profiles/*.yaml",
   "resources/workflows/*.yaml",
   "resources/schemas/v1/*.json",
+  "resources/standards/*/*.yaml",
 ]
 
 [tool.pytest.ini_options]

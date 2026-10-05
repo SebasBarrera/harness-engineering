@@ -3,6 +3,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from governed_harness.configuration.engineering import StandardsConfig
 from governed_harness.configuration.loader import (
     BUILTIN_PROFILE_IDS,
     find_project_config,
@@ -82,6 +83,18 @@ class ConfigurationResolver:
                 *(
                     CapabilityRule(capability="process.execute", scope=(scope,))
                     for scope in extra_scopes
+                ),
+            )
+        standards = project.standards
+        if standards is not None and standards.tools_enabled:
+            validators, tool_scopes = self._standards_tools(
+                validators, standards, workspace_root, profiles
+            )
+            grants = (
+                *grants,
+                *(
+                    CapabilityRule(capability="process.execute", scope=(scope,))
+                    for scope in tool_scopes
                 ),
             )
         capabilities = self._resolve_capabilities(grants, profiles)
@@ -186,6 +199,31 @@ class ConfigurationResolver:
         ):
             scopes.append(interpreter.grant_scope)
         return resolved, tuple(dict.fromkeys(scope for scope in scopes if scope))
+
+    @staticmethod
+    def _standards_tools(
+        validators: tuple[ValidatorDefinition, ...],
+        standards: StandardsConfig,
+        workspace_root: Path,
+        profiles: tuple[TechnologyProfileDefinition, ...],
+    ) -> tuple[tuple[ValidatorDefinition, ...], tuple[str, ...]]:
+        """``standards.tools: detect`` (#56): an optional validator for every pack tool the
+        repository configures and no selected validator runs already, with a
+        ``process.execute`` grant for its exact command."""
+        from governed_harness.standards import project_standards, tool_validators
+
+        packs = project_standards(
+            workspace_root,
+            packs=standards.packs,
+            overrides=standards.overrides_path,
+            disabled=standards.disabled or (),
+            technologies=tuple(item.technology for item in profiles),
+        )
+        added = tool_validators(packs, workspace_root, [item.validator_id for item in validators])
+        return (
+            (*validators, *(definition for _pack, _tool, definition in added)),
+            tuple(" ".join(definition.command or ()) for _pack, _tool, definition in added),
+        )
 
     @staticmethod
     def _resolve_policies(

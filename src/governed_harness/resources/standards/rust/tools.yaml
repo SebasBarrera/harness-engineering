@@ -1,0 +1,31 @@
+pack: rust
+detect:
+  markers: [Cargo.toml]
+  extensions: [.rs]
+runner:
+  test: [cargo, test]
+  testFiles: false
+  bdd: [cargo, test]
+bddFrameworks:
+  - name: cucumber-rs
+    dependencies: [cucumber]
+tools:
+  - id: clippy
+    title: Clippy
+    configFiles: [clippy.toml, .clippy.toml, "Cargo.toml#[lints"]
+    command: [cargo, clippy, --message-format=json, --, -D, warnings]
+    parser: cargo
+    principles: [kiss]
+    recommended: |
+      # Cargo.toml
+      [lints.clippy]
+      unwrap_used = "deny"
+      expect_used = "warn"
+      undocumented_unsafe_blocks = "deny"
+      cognitive_complexity = "warn"
+  - id: rustfmt
+    title: rustfmt
+    configFiles: [rustfmt.toml, .rustfmt.toml]
+    command: [cargo, fmt, --check]
+    parser: none
+    principles: [boy-scout]

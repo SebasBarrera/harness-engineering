@@ -1,0 +1,50 @@
+pack: go
+title: Go
+cards:
+  - id: go.check-errors
+    title: Check every error
+    rule: Check every returned error; wrap it with context (fmt.Errorf with %w) when returning it.
+    rationale: An ignored error turns a failure into wrong data.
+    exceptions:
+      - Close on a read-only file after a successful read, with a comment.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["golangci-lint:errcheck", "golangci-lint:wrapcheck"]
+  - id: go.context
+    title: Pass context.Context first
+    rule: Accept a context.Context as the first parameter of functions that do I/O or may block, and honour its cancellation.
+    rationale: Callers must be able to cancel and bound the work.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["golangci-lint:contextcheck", "review"]
+  - id: go.small-interfaces
+    title: Small interfaces at the consumer
+    rule: Define small interfaces in the package that uses them; accept interfaces, return concrete types.
+    rationale: Consumer-side interfaces keep dependencies inverted and mocks small.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["golangci-lint:interfacebloat", "review"]
+    principle: isp
+  - id: go.no-panic
+    title: No panic for expected errors
+    rule: Return errors for expected failures; panic only for programmer errors that cannot be recovered.
+    rationale: A panic in a library brings down its caller.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["review"]
+  - id: go.simple-functions
+    title: Simple functions
+    rule: Keep functions short with low cyclomatic complexity.
+    rationale: Complexity predicts defects.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["golangci-lint:gocyclo", "golangci-lint:funlen"]
+    principle: kiss
+  - id: go.exported-docs
+    title: Documented exported names
+    rule: Give every exported identifier a doc comment that starts with its name; use MixedCaps names.
+    rationale: go doc and readers rely on it.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["golangci-lint:revive"]
+    principle: least-astonishment
+  - id: go.race-free
+    title: No data races
+    rule: Share memory by communicating or guard it with a mutex; run the tests with -race.
+    rationale: Races are nondeterministic defects tests rarely catch.
+    appliesTo: ["**/*.go"]
+    verifiedBy: ["go:test-race", "golangci-lint:govet"]
