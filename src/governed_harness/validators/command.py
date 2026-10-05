@@ -61,7 +61,7 @@ class CommandValidator:
                 status=status,
                 kind=(
                     ValidationKind.CONFIGURATION_ERROR
-                    if status is ResultStatus.BLOCKED
+                    if status in {ResultStatus.BLOCKED, ResultStatus.FAILED}
                     else ValidationKind.INCONCLUSIVE
                 ),
                 mandatory=context.definition.mandatory,
@@ -266,6 +266,8 @@ class CommandValidator:
         self, context: ValidationContext, actor: Actor
     ) -> tuple[ResultStatus, str] | None:
         definition = context.definition
+        missing_command = context.missing_command_status or ResultStatus.BLOCKED
+        missing_script = context.missing_script_status or ResultStatus.BLOCKED
         if definition.command is None:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"validator {self.validator_id} has no configured command"
@@ -277,20 +279,16 @@ class CommandValidator:
             except (OSError, json.JSONDecodeError):
                 scripts = {}
             if definition.script not in scripts:
-                status = (
-                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                )
+                status = missing_script if definition.mandatory else ResultStatus.NOT_APPLICABLE
                 return status, f"package script {definition.script!r} is not defined"
         argv0 = definition.command[0]
         if shutil.which(argv0) is None:
-            status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
+            status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
         if len(definition.command) >= 3 and definition.command[1] == "-m":
             module = definition.command[2]
             if not self._module_available(context, actor, argv0, module):
-                status = (
-                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                )
+                status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
                 kind = "mandatory" if definition.mandatory else "optional"
                 return status, f"{kind} Python module {module!r} is not installed for {argv0!r}"
         return None

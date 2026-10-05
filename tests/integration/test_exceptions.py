@@ -204,6 +204,9 @@ def _disable(workspace: Path) -> None:
     path = workspace / ".harness" / "project.yaml"
     value = yaml.safe_load(path.read_text())
     value.pop("review", None)
+    # Without review.exceptions a decision expires only under governance.decisionExpiryHours,
+    # the one expiry mechanism of HumanDecision.expiresAt; drop it too for the 1.0.0 behaviour.
+    value.get("governance", {}).pop("decisionExpiryHours", None)
     path.write_text(yaml.safe_dump(value, sort_keys=False))
 
 

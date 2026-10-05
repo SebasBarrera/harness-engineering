@@ -10,7 +10,7 @@ import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, Protocol
 
 from governed_harness.capabilities.authorizer import (
     CapabilityAuthorizer,
@@ -99,12 +99,31 @@ def _write_stdin(stream: IO[bytes], data: bytes) -> None:
         stream.close()
 
 
+class ProcessObserver(Protocol):
+    """Told about every process the runner starts and finishes (``governance.workspaceLease``
+    records the process groups so that a recovery can terminate what a killed harness left)."""
+
+    def started(self, pid: int, argv: tuple[str, ...]) -> None: ...
+
+    def finished(self, pid: int) -> None: ...
+
+
 class SafeProcessRunner:
     def __init__(
-        self, workspace_root: Path, authorizer: CapabilityAuthorizer | None = None
+        self,
+        workspace_root: Path,
+        authorizer: CapabilityAuthorizer | None = None,
+        *,
+        observer: ProcessObserver | None = None,
+        terminate_on_exit: bool = False,
     ) -> None:
+        """``terminate_on_exit``: when the harness itself is interrupted while it waits
+        (``KeyboardInterrupt``, or ``SystemExit`` from a ``SIGTERM`` handler), terminate the
+        child's process group before the exception propagates."""
         self.workspace_root = workspace_root.resolve(strict=True)
         self.authorizer = authorizer or CapabilityAuthorizer()
+        self.observer = observer
+        self.terminate_on_exit = terminate_on_exit
 
     def run(
         self,
@@ -131,6 +150,32 @@ class SafeProcessRunner:
             shell=False,
             start_new_session=os.name != "nt",
         )
+        assert process.stdout is not None and process.stderr is not None
+        if self.observer is not None:
+            self.observer.started(process.pid, spec.argv)
+        try:
+            return self._wait(process, spec, start, cancellation)
+        except BaseException:
+            if self.terminate_on_exit:
+                self._terminate(process)
+                if os.name != "nt":
+                    # The leader may be gone while its children still run in its group.
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=_READER_JOIN_SECONDS)
+            raise
+        finally:
+            if self.observer is not None and process.poll() is not None:
+                self.observer.finished(process.pid)
+
+    def _wait(
+        self,
+        process: subprocess.Popen[bytes],
+        spec: CommandSpec,
+        start: float,
+        cancellation: CancellationToken | None,
+    ) -> ProcessResult:
         assert process.stdout is not None and process.stderr is not None
         # Read both streams while the process runs and keep at most max_output_bytes of each;
         # the rest is drained and discarded, so memory stays bounded whatever the output size.

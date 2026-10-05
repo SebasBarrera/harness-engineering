@@ -15,6 +15,9 @@ class ResultStatus(StrEnum):
     TIMED_OUT = "TIMED_OUT"
     ERROR = "ERROR"
     INCONCLUSIVE = "INCONCLUSIVE"
+    INTERRUPTED = "INTERRUPTED"
+    """The harness stopped while the phase ran (``governance.workspaceLease``); ``run
+    continue`` recovers the run and runs the phase again."""
 
     @property
     def terminal(self) -> bool:

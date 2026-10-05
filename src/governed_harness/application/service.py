@@ -11,8 +11,22 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness import __version__
-from governed_harness.configuration import ConfigurationResolver, RuntimeConfig, initialize_project
+from governed_harness.configuration import (
+    ConfigurationResolver,
+    GovernanceConfig,
+    RuntimeConfig,
+    initialize_project,
+)
+from governed_harness.configuration.declared import declared_settings_report
+from governed_harness.configuration.loader import find_project_config, load_yaml
 from governed_harness.configuration.models import ProjectConfiguration
+from governed_harness.domain.actors import (
+    DEFAULT_CLI_ACTOR,
+    IdentitySource,
+    actor_id_from_identity,
+    identity_display_name,
+    require_human_actor,
+)
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -20,7 +34,12 @@ from governed_harness.domain.enums import (
     RecommendationDecision,
     ResultStatus,
 )
-from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
+from governed_harness.domain.errors import (
+    ConfigurationError,
+    IntegrityError,
+    NotFoundError,
+    PolicyViolationError,
+)
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
@@ -42,9 +61,13 @@ from governed_harness.domain.models import (
 )
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
-from governed_harness.orchestration.engine import EngineServices, RunEngine
+from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
+from governed_harness.orchestration.retention import RetentionCollector
+from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
+from governed_harness.runtime import GitAdapter
+from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
@@ -74,6 +97,11 @@ from .task_loader import load_task_file
 
 
 class HarnessApplication:
+    def __init__(self) -> None:
+        self.notices: list[str] = []
+        """Warnings for the person (the CLI prints them on standard error)."""
+        self.last_identity_source: IdentitySource = "default"
+
     def init(
         self,
         path: Path,
@@ -130,7 +158,12 @@ class HarnessApplication:
         }
 
     def validate_config(self, path: Path) -> dict[str, Any]:
+        """The resolved configuration, the settings that are declared but not applied
+        (``declarative``) and a warning for each one this project relies on."""
         resolved = ConfigurationResolver().resolve(path)
+        declarative, warnings = declared_settings_report(
+            resolved, load_yaml(find_project_config(path))
+        )
         return {
             "status": "PASSED",
             "projectId": resolved.project.project_id,
@@ -151,6 +184,27 @@ class HarnessApplication:
                 "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
+            "governance": self._governance(resolved.project.governance_settings),
+            "declarative": declarative,
+            "warnings": warnings,
+        }
+
+    @staticmethod
+    def _governance(settings: GovernanceConfig) -> dict[str, Any]:
+        """Effective governance settings (absent keys resolve to the 1.0.0 behaviour)."""
+        return {
+            "deciderIdentity": settings.decider_identity or "default",
+            "confirmDecisionDigest": bool(settings.confirm_decision_digest),
+            "trustedHosts": list(settings.trusted_hosts) if settings.trusted_hosts else None,
+            "verifyRecords": bool(settings.verify_records),
+            "chainAnchor": settings.chain_anchor or "off",
+            "pinTaskRevision": bool(settings.pin_task_revision),
+            "protectExcludedPaths": bool(settings.protect_excluded_paths),
+            "workspaceLease": bool(settings.workspace_lease),
+            "applyWorkflowSettings": bool(settings.apply_workflow_settings),
+            "decisionExpiryHours": settings.decision_expiry_hours,
+            "applyProfilePolicies": bool(settings.apply_profile_policies),
+            "applyNetworkPolicy": bool(settings.apply_network_policy),
         }
 
     @staticmethod
@@ -196,6 +250,20 @@ class HarnessApplication:
             task = load_task_file(
                 source, project_id=project.project_id, criteria_policy=project.criteria_policy
             )
+            if project.governance_settings.pin_task_revision:
+                open_runs = [
+                    item.execution_id
+                    for item in services.state.list(
+                        "execution", Execution, project_id=project.project_id
+                    )
+                    if item.task_id == task.task_id and run_is_open(item)
+                ]
+                if open_runs:
+                    raise PolicyViolationError(
+                        f"task {task.task_id} has open run(s) {', '.join(open_runs)}; its task "
+                        "cannot be replaced while they run. Create the task under a new id, "
+                        "cancel the run, or revise it with harness task clarify during INTENT"
+                    )
             services.state.put(
                 "task",
                 task.task_id,
@@ -220,7 +288,7 @@ class HarnessApplication:
         *,
         task_id: str,
         answers_file: Path,
-        actor_id: str,
+        actor_id: str | None = None,
         actor_type: ActorType = ActorType.HUMAN,
     ) -> dict[str, Any]:
         """Answer the clarification questions INTENT asked about a task.
@@ -234,11 +302,13 @@ class HarnessApplication:
         (exit code 2), as is a task with a run past INTENT (exit code 5)."""
         clarification = load_clarification_file(answers_file)
         with self._services(path) as services:
-            record, task = RunEngine(services).clarify(
-                task_id=task_id,
-                clarification=clarification,
-                actor=Actor(actor_type=actor_type, actor_id=actor_id),
-            )
+            decider, display_name = self._decider(services, actor_id)
+            with self._leased(services, "task clarify"):
+                record, task = RunEngine(services).clarify(
+                    task_id=task_id,
+                    clarification=clarification,
+                    actor=Actor(actor_type=actor_type, actor_id=decider, display_name=display_name),
+                )
             return {
                 "clarification": record.model_dump(mode="json", by_alias=True),
                 "task": task.model_dump(mode="json", by_alias=True),
@@ -283,21 +353,26 @@ class HarnessApplication:
             }
 
     def start_run(self, path: Path, task_id: str, provider: str | None = None) -> Execution:
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "run start") as lease:
             engine = RunEngine(services)
             task = engine.get_task(task_id)
             execution = engine.create_execution(task, provider=provider)
+            if lease is not None:
+                lease.bind(execution.execution_id)
             return self._after(services, engine.continue_execution(execution.execution_id))
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "run continue") as lease:
             execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
             return self._after(services, RunEngine(services).continue_execution(execution_id))
 
-    def cancel_run(self, path: Path, execution_id: str, actor_id: str) -> Execution:
+    def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
-            return self._after(services, RunEngine(services).cancel(execution_id, actor_id))
+            decider = self._decider(services, actor_id)[0]
+            return self._after(services, RunEngine(services).cancel(execution_id, decider))
 
     @classmethod
     def _after(cls, services: EngineServices, execution: Execution) -> Execution:
@@ -334,12 +409,13 @@ class HarnessApplication:
         execution_id: str,
         kind: str,
         summary: str,
-        actor_id: str,
+        actor_id: str | None = None,
         reference: str | None = None,
         observed_at: str | None = None,
     ) -> OutcomeRecord:
         """Link an incident, revert, hotfix or regression to a run (a person only)."""
         with self._services(path) as services:
+            actor_id = self._decider(services, actor_id)[0]
             return record_outcome(
                 services,
                 execution_id=self._run_id(services, execution_id),
@@ -367,19 +443,27 @@ class HarnessApplication:
         execution_id: str,
         decision: DecisionKind,
         change_set_digest: str,
-        actor_id: str,
+        actor_id: str | None = None,
         rationale: str,
         continue_after: bool = True,
+        default_actor: str = DEFAULT_CLI_ACTOR,
         exception: ExceptionOptions | None = None,
     ) -> tuple[HumanDecision, Execution]:
         """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
         records an exception with an expiry (``expires_in``/``expires_at``, else
         ``review.exceptionDays``), a scope (``rule[:path]`` entries, else the blocking findings
-        of the gate), alternative evidence and a follow-up (``exception``)."""
+        of the gate), alternative evidence and a follow-up (``exception``).
+
+        Without ``actor_id`` the decider is the Git user under ``governance.deciderIdentity:
+        git`` (``default_actor`` with a notice when Git has no identity) and ``default_actor``
+        otherwise; an actor id of an agent, a validator or the harness is refused (exit 5)."""
         options = exception or ExceptionOptions()
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "gate decide") as lease:
             execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
             engine = RunEngine(services)
+            decider, display_name = self._decider(services, actor_id, default_actor)
             project = services.resolved.project
             records_exception = (
                 decision is DecisionKind.APPROVE_EXCEPTION and project.exceptions_enabled
@@ -405,8 +489,12 @@ class HarnessApplication:
                 execution_id=execution_id,
                 decision=decision,
                 change_set_digest=change_set_digest,
-                actor_id=actor_id,
+                actor_id=decider,
                 rationale=rationale,
+                actor_display_name=display_name,
+                identity_source=self.last_identity_source
+                if services.resolved.project.governance_settings.git_decider
+                else None,
                 expires_at=expiry,
             )
             if records_exception:
@@ -432,6 +520,38 @@ class HarnessApplication:
             )
             return record, self._after(services, execution)
 
+    def decision_summary(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """What a person is about to decide on: the phase, the gate result and the ChangeSet the
+        decision would be bound to (read-only; used by the interactive confirmation)."""
+        with self._services(path) as services:
+            execution = services.state.get("execution", execution_id, Execution)
+            gate = (
+                services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
+                if execution.gate_evaluation_id
+                else None
+            )
+            files: list[dict[str, Any]] = []
+            if execution.change_set_digest:
+                try:
+                    change_set = RunEngine(services).current_change_set(execution_id)
+                    files = [
+                        item.model_dump(mode="json", by_alias=True) for item in change_set.files
+                    ]
+                except NotFoundError:
+                    files = []
+            return {
+                "executionId": execution_id,
+                "taskId": execution.task_id,
+                "currentPhase": execution.current_phase.value,
+                "changeSetDigest": execution.change_set_digest,
+                "gateStatus": gate.status.value if gate else None,
+                "gateReasonCodes": list(gate.reason_codes) if gate else [],
+                "files": files,
+                "confirmDigest": bool(
+                    services.resolved.project.governance_settings.confirm_decision_digest
+                ),
+            }
+
     def status(self, path: Path, execution_id: str) -> dict[str, Any]:
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
@@ -453,6 +573,16 @@ class HarnessApplication:
             )
             events = services.events.list(execution_id)
             metrics = MetricsProjector(services.state).project(execution_id, events)
+            # A broken chain is reported, not raised: status is how a person finds out.
+            chain = services.events.check_chain(execution_id)
+            integrity: dict[str, Any] = {}
+            if not chain.valid:
+                integrity["eventChainError"] = chain.error
+            if services.resolved.project.governance_settings.verify_records:
+                verification = RunVerifier(services).verify(execution_id)
+                integrity["recordsValid"] = verification.valid
+                if not verification.valid:
+                    integrity["verificationSummary"] = verification.summary()
             return {
                 "execution": execution.model_dump(mode="json", by_alias=True),
                 "phases": [item.model_dump(mode="json", by_alias=True) for item in phases],
@@ -469,8 +599,23 @@ class HarnessApplication:
                 if decision
                 else None,
                 "eventCount": len(events),
-                "eventChainValid": services.events.verify_chain(execution_id),
+                "eventChainValid": chain.valid,
+                **integrity,
                 "metrics": {key: value.as_dict() for key, value in metrics.items()},
+            }
+
+    def verify(self, path: Path, execution_id: str | None = None) -> dict[str, Any]:
+        """Verify one run, or every run of the workspace when ``execution_id`` is ``None``:
+        the event chain, the anchor of its head, the records against the events and the
+        artifacts against their digests. Never raises on a failed check; ``valid`` is false."""
+        with self._services(path) as services:
+            verifier = RunVerifier(services)
+            ids = [execution_id] if execution_id else verifier.execution_ids()
+            runs = [verifier.verify(item).as_dict() for item in ids]
+            return {
+                "valid": all(item["valid"] for item in runs),
+                "runCount": len(runs),
+                "runs": runs,
             }
 
     def list_runs(self, path: Path) -> list[Execution]:
@@ -483,8 +628,17 @@ class HarnessApplication:
             )
 
     def trace(self, path: Path, execution_id: str, format: str = "markdown") -> bytes:
+        """Export the trace of a run. Under ``governance.verifyRecords`` the run is verified
+        first and a run that does not verify is not exported (exit code 6)."""
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
+            if services.resolved.project.governance_settings.verify_records:
+                verification = RunVerifier(services).verify(execution_id)
+                if not verification.valid:
+                    raise IntegrityError(
+                        f"run {execution_id} does not verify ({verification.summary()}); "
+                        "inspect it with harness verify --run"
+                    )
             execution = services.state.get("execution", execution_id, Execution)
             task = services.state.get("task", execution.task_id, Task)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
@@ -529,6 +683,16 @@ class HarnessApplication:
             if format != "markdown":
                 raise ConfigurationError(f"unsupported trace format: {format}")
             return reporter.render_markdown(**kwargs)
+
+    def gc(self, path: Path, *, apply: bool = False) -> dict[str, Any]:
+        """Apply ``retention.artifactDays`` and ``retention.eventDays`` to the runs that
+        ended; without ``apply`` only report what would be removed."""
+        with self._services(path) as services, self._leased(services, "gc"):
+            collector = RetentionCollector(services)
+            plan = collector.plan()
+            if apply:
+                collector.apply(plan)
+            return plan.as_dict(applied=apply)
 
     def list_evidence(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         with self._services(path) as services:
@@ -590,7 +754,7 @@ class HarnessApplication:
         level: MemoryLevel,
         key: str,
         value: dict[str, Any],
-        actor_id: str,
+        actor_id: str | None = None,
         task_id: str | None = None,
         execution_id: str | None = None,
         valid_until: datetime | None = None,
@@ -601,6 +765,9 @@ class HarnessApplication:
         """Record a memory entry. Normative, project and retrospective entries only enter a
         context once approved; the approval is an explicit act of the recorded actor."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            if approved:
+                require_human_actor(actor_id, "approve a memory record")
             store = MemoryStore(services.state)
             project_id = services.resolved.project.project_id
             if not key.strip():
@@ -624,7 +791,9 @@ class HarnessApplication:
                 key=key.strip(),
                 value=value,
                 provenance=self._human_provenance(
-                    actor_id, source_refs=(supersedes,) if supersedes else ()
+                    actor_id,
+                    source_refs=(supersedes,) if supersedes else (),
+                    display_name=display_name,
                 ),
                 valid_until=valid_until,
                 supersedes=supersedes,
@@ -676,10 +845,14 @@ class HarnessApplication:
             manifest: dict[str, Any] = json.loads(services.artifacts.get(reference))
             return {"executionId": execution_id, "manifestRef": reference, **manifest}
 
-    def approve_memory(self, path: Path, *, memory_id: str, actor_id: str) -> MemoryRecord:
+    def approve_memory(
+        self, path: Path, *, memory_id: str, actor_id: str | None = None
+    ) -> MemoryRecord:
         """Approve a normative, project or retrospective record. The approval is a new record
         that supersedes the proposal, so the proposal and its approver both stay on record."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "approve a memory record")
             store = MemoryStore(services.state)
             target = self._project_memory(store, memory_id, services.resolved.project.project_id)
             if target.level not in APPROVAL_REQUIRED:
@@ -694,18 +867,22 @@ class HarnessApplication:
                     "created_at": datetime.now(UTC),
                     "supersedes": target.memory_id,
                     "approved": True,
-                    "provenance": self._human_provenance(actor_id, source_refs=(target.memory_id,)),
+                    "provenance": self._human_provenance(
+                        actor_id, source_refs=(target.memory_id,), display_name=display_name
+                    ),
                 }
             )
             store.put(record)
             return record
 
     def invalidate_memory(
-        self, path: Path, *, memory_id: str, actor_id: str, reason: str
+        self, path: Path, *, memory_id: str, actor_id: str | None = None, reason: str
     ) -> MemoryRecord:
         """Invalidate a record without deleting it: an approved, already expired record
         supersedes it and keeps who invalidated it and why."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "invalidate a memory record")
             store = MemoryStore(services.state)
             target = self._project_memory(store, memory_id, services.resolved.project.project_id)
             if not reason.strip():
@@ -719,7 +896,9 @@ class HarnessApplication:
                 level=target.level,
                 key=target.key,
                 value={"invalidated": True, "reason": reason.strip()},
-                provenance=self._human_provenance(actor_id, source_refs=(target.memory_id,)),
+                provenance=self._human_provenance(
+                    actor_id, source_refs=(target.memory_id,), display_name=display_name
+                ),
                 created_at=now,
                 valid_until=now,
                 supersedes=target.memory_id,
@@ -759,7 +938,7 @@ class HarnessApplication:
         execution_id: str,
         recommendation_id: str,
         decision: RecommendationDecision,
-        actor_id: str,
+        actor_id: str | None = None,
         rationale: str,
         statement: str | None = None,
     ) -> MemoryRecord:
@@ -771,6 +950,8 @@ class HarnessApplication:
         modified by a person through a versioned change."""
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "decide on a recommendation")
             retrospective = self._retrospective(services, execution_id)
             recommendation = next(
                 (
@@ -816,7 +997,9 @@ class HarnessApplication:
                 key=key,
                 value=value,
                 provenance=self._human_provenance(
-                    actor_id, source_refs=(retrospective.retrospective_id,)
+                    actor_id,
+                    source_refs=(retrospective.retrospective_id,),
+                    display_name=display_name,
                 ),
                 created_at=now,
                 valid_until=now if rejected else None,
@@ -867,6 +1050,23 @@ class HarnessApplication:
             else "FAILED"
         )
         return {"status": status, "version": __version__, "checks": checks}
+
+    @staticmethod
+    @contextmanager
+    def _leased(services: EngineServices, command: str) -> Iterator[WorkspaceLease | None]:
+        """Hold the workspace lease while a command executes phases or records a decision
+        (``governance.workspaceLease``); a second process gets exit code 5. ``SIGTERM`` then
+        stops the command like Ctrl-C, so the runner terminates the agent's process group and
+        the phase is recorded as interrupted."""
+        if not services.resolved.project.governance_settings.workspace_lease:
+            yield None
+            return
+        lease = WorkspaceLease(services.paths.harness_dir, command).acquire()
+        try:
+            with interruptible():
+                yield lease
+        finally:
+            lease.release()
 
     def resolve_run(self, path: Path, reference: str) -> str:
         """The run id a reference names: an exact id, ``latest`` or a unique prefix."""
@@ -987,10 +1187,41 @@ class HarnessApplication:
     def _recommendation_key(recommendation_id: str) -> str:
         return f"recommendation/{recommendation_id}"
 
+    def _decider(
+        self, services: EngineServices, actor_id: str | None, default: str = DEFAULT_CLI_ACTOR
+    ) -> tuple[str, str | None]:
+        """The actor id (and display name) of the person acting: the explicit ``--actor``, else
+        the Git user under ``governance.deciderIdentity: git``, else ``default``.
+
+        Where it came from is kept in ``last_identity_source``: ``explicit``, ``git``,
+        ``fallback`` (the Git user was asked for but Git has no usable ``user.email`` or
+        ``user.name``: the 1.0.0 default is used and a notice says so) or ``default``."""
+        if actor_id:
+            self.last_identity_source = "explicit"
+            return actor_id, None
+        if services.resolved.project.governance_settings.git_decider:
+            name, email = GitAdapter(services.paths.workspace).user_identity()
+            try:
+                decider = actor_id_from_identity(name, email)
+            except ConfigurationError:
+                self.last_identity_source = "fallback"
+                self.notices.append(
+                    f"governance.deciderIdentity is git but Git has no usable user.email or "
+                    f"user.name; recorded the actor as {default}. Set them with git config "
+                    f"user.email / user.name, or pass --actor"
+                )
+                return default, None
+            self.last_identity_source = "git"
+            return decider, identity_display_name(name, email)
+        self.last_identity_source = "default"
+        return default, None
+
     @staticmethod
-    def _human_provenance(actor_id: str, *, source_refs: tuple[str, ...] = ()) -> Provenance:
+    def _human_provenance(
+        actor_id: str, *, source_refs: tuple[str, ...] = (), display_name: str | None = None
+    ) -> Provenance:
         return Provenance(
-            actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+            actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=display_name),
             core_version=__version__,
             source_refs=source_refs,
         )

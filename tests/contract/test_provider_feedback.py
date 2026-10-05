@@ -68,7 +68,8 @@ def test_project_schema_accepts_the_loop_settings_and_their_absence(
         "commandTimeoutSeconds": 900,
         "maxOutputBytes": 1000000,
         "maxParallel": 2,
-        "allowNetwork": False,
+        # init writes true since governance.applyNetworkPolicy enforces it (#51).
+        "allowNetwork": True,
         "verificationCorrections": 2,
         "providerFeedback": True,
         "unsupportedClaimSeverity": "MEDIUM",

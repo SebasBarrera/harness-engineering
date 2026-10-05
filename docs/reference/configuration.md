@@ -32,7 +32,7 @@ runtime:
   commandTimeoutSeconds: 900
   maxOutputBytes: 1000000
   maxParallel: 2
-  allowNetwork: false
+  allowNetwork: true
   agentSandbox: enforce
   sandboxWritePaths:
   - /tmp
@@ -61,6 +61,22 @@ review:
   exceptionDays: 30
 retrospective:
   causal: true
+governance:
+  deciderIdentity: git
+  confirmDecisionDigest: true
+  trustedHosts:
+  - 127.0.0.1
+  - localhost
+  - ::1
+  verifyRecords: true
+  chainAnchor: file
+  pinTaskRevision: true
+  protectExcludedPaths: true
+  workspaceLease: true
+  applyWorkflowSettings: true
+  decisionExpiryHours: 72
+  applyProfilePolicies: true
+  applyNetworkPolicy: true
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -85,8 +101,8 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `agentProviders` | `{}` | Named command providers: `kind: command`, `command` (argv list, not empty), optional `model`. See [external agents](../guides/external-agents.md). |
 | `runtime.commandTimeoutSeconds` | `900` | Timeout of agent-provider processes. Validators use their own `timeoutSeconds` from the profile. |
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
-| `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially). |
-| `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
+| `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially); `x-declarative` in the schema. |
+| `runtime.allowNetwork` | `false`; `init` writes `true` | Under `governance.applyNetworkPolicy` and `runtime.agentSandbox: enforce`, `false` denies the agent outbound network connections (see [declared settings](#declared-settings)); otherwise **declarative**. Validators are never confined. `init` writes `true` because agent CLIs call their model API. |
 | `runtime.agentSandbox` | `off` when the key is absent; `init` writes `enforce` | Write confinement of command-provider (agent) processes: `enforce` or `off`. See [agent sandbox](#agent-sandbox). |
 | `runtime.sandboxWritePaths` | none when absent; `init` writes the list above | Paths the agent may write besides the workspace and `$TMPDIR`: absolute or starting with `~/`, no `$` variables, an optional single trailing `*` for a name prefix. |
 | `runtime.verificationCorrections` | `0` when absent; `init` writes `2` | Automatic corrections (0 to 10) after a failed `VERIFICATION` of a command provider's change. Its presence, with any value, also turns on the unsupported-claim check. See [provider feedback loop](#provider-feedback-loop). |
@@ -95,9 +111,10 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `runtime.providerRetries` | `0` when absent; `init` writes `3` | Repetitions (0 to 10) of a command-provider call that failed with a transient cause. |
 | `runtime.providerRetryDelaySeconds` | `0` when absent; `init` writes `60` | Wait before each repetition (0 to 3600 seconds). |
 | `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
-| `retention` | written by `init` | **Declarative: no retention job exists.** |
+| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)). |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
+| `governance.*` | 1.0.0 behaviour when absent; `init` writes every key | Decider identity and confirmation, trusted API hosts and the other integrity settings. See [governance](#governance). |
 | `verification.outputParsers` | `false` when the key is absent; `init` writes `true` | Parse the output of a failing command validator into one finding per reported problem, with path, line and the tool's rule. See [located findings](#located-findings). |
 | `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
@@ -237,8 +254,8 @@ Resolution order: core policies, then profile policies, then project policies.
 | `retrospectiveAutoApply` | `false` | **No** (locked `false`) |
 | `findingBlockSeverities` | `["HIGH", "CRITICAL"]` | Yes: severities whose findings make the gate `FAILED` |
 | `allowEmptyChangeSet` | not set (false) | Yes: allow a run whose implementation produced no change |
-| `repositoryContentTrusted` | `false` | Declared; **not read by any component** (issue #5) |
-| `destructiveActionsDefault` | `deny` | Declared; **not read by any component** (issue #5) |
+| `repositoryContentTrusted` | `false` | Declared; **not read by any component** (issue #5); reported by `config validate` |
+| `destructiveActionsDefault` | `deny` | Declared; **not read by any component** (issue #5); reported by `config validate` |
 
 Setting a locked policy to any other value fails with a configuration error (exit code 2), for
 example `project configuration may not weaken locked policy requireHumanDecision`.
@@ -501,6 +518,131 @@ stays recorded as an agent invocation. Repetitions count in `agent.transient_ret
 correction cycles or implementation attempts. The default patterns are `timed out`,
 `connection reset`, `went to sleep`, `overloaded`, `429`, `529`, `rate limit` and `usage limit`; a
 pattern that starts or ends with a digit does not match inside a longer number.
+
+## Governance
+
+The `governance` section protects the human decision, the workspace and the record. Every key is
+optional and `harness init` writes all of them; a `project.yaml` without the section (or without
+a key) keeps the 1.0.0 behaviour, and its configuration snapshot is serialized without them, so
+its digest does not change. `harness config validate` shows the effective values under
+`governance`.
+
+### Who decides
+
+A human decision (`gate decide`, including `APPROVE_EXCEPTION`, `recommendation decide`,
+`memory approve`, `memory invalidate`, `memory add --approve`, `task clarify`) is refused with exit
+code 5 when its actor id is in the namespace the harness gives to agents (`agent.*`), validators
+(`validator.*`) or itself (`harness.*`), or is one of those words alone. The local API answers the
+same request with 403. This rule applies to every project, with or without the section: it closes
+a defect where `gate decide --actor agent.claude-code --decision APPROVE_EXCEPTION` was recorded
+as a human decision and closed the run. The actor id is still not authenticated: the rule stops a
+process with access to the terminal from deciding under its own identity, not a person or a
+process that types another one.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `deciderIdentity` | `default` | `git` | `git`: when a human act has no `--actor` (API: no `actor_id`), the actor is the Git user of the workspace, recorded as `actorId` (the e-mail address in lower case, characters outside `[a-z0-9_.-]` replaced by `-`) and `displayName` (`Name <email>`). A gate decision records where the id came from as `identitySource`: `explicit` (`--actor`), `git`, or `fallback` when Git has no usable `user.email` or `user.name` (a CI runner, a fresh machine): the default id below is recorded instead and a warning on standard error (API: `warnings` in the response) says how to set the identity; the command does not fail. `default`: `human.local` (CLI) and `human.web` (API). |
+| `confirmDecisionDigest` | `false` | `true` | On a terminal, `gate decide` always goes through the interactive confirmation of `--interactive`, even when every option is given: it shows the decision brief and asks for the first 12 hexadecimal characters of the ChangeSet digest; a wrong answer exits with 5 and records nothing. Without a terminal (scripts, CI) nothing is asked. |
+| `trustedHosts` | every host | `127.0.0.1`, `localhost`, `::1` | The local API answers only requests whose `Host` header is one of these names (400 otherwise), which stops DNS rebinding from a web page. |
+
+### The record
+
+The events of a run are the audit authority; the `records` table that `status`, the API and the
+gate read is a projection of them. `harness verify --run <id>` (or every run without `--run`)
+checks, without repairing anything:
+
+- the event chain: no sequence gap, each event linked to the digest of the one before it, each
+  digest recomputed from its envelope;
+- the anchor of the chain head (below), when one is configured: `matched`, `absent`, `truncated`
+  (the chain no longer contains the anchored event) or `rewritten` (it contains another one);
+- every record that has an event of its own (decisions, gates, ChangeSets, validations,
+  findings, evidence, tool and agent invocations, clarification requests and records), rebuilt
+  from the event and compared with the stored record (`differs`, `missing`, `no-event`), the run's
+  pointers (task, configuration digests, decision, gate, ChangeSet digest) and the phase results;
+- every artifact the run's artifact and evidence records reference: present and with the digest
+  of its URI (`missing`, `content-differs`, `digest-differs`).
+
+It prints a JSON report and exits with 0 when everything verifies and 6 otherwise.
+`harness status` no longer aborts on a broken chain in any project: it reports `eventChainValid: false` and
+the reason in `eventChainError` (before, an edited event made it exit with 1).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `verifyRecords` | `false` | `true` | `harness trace` (every format, and the API trace route) verifies the run first and refuses to export a run that does not verify (exit 6, API 409); `status` adds `recordsValid` and, when false, `verificationSummary`. |
+| `chainAnchor` | `off` | `file` | After every command that appends events to a run (`run start`, `run continue`, `gate decide`, `run cancel`, `task clarify`), the sequence and digest of the chain head are copied outside `.harness`. `file`: a JSON file per workspace under `$HARNESS_ANCHOR_DIR`, else `$XDG_DATA_HOME/governed-harness/anchors`, else `~/Library/Application Support/governed-harness/anchors` (macOS), `%LOCALAPPDATA%\governed-harness\anchors` (Windows) or `~/.local/share/governed-harness/anchors`. `git-note`: a Git note under `refs/notes/governed-harness` of the workspace repository, attached to a blob named after the run. `off`: no anchor. A chain that does not verify is never anchored, and a failed write does not stop the run (verify then reports `absent`). |
+
+Neither anchor is tamper-proof: a process with your permissions can rewrite the anchor as well as
+`state.db`. It turns a silent truncation into an edit of two places, and a deleted anchor shows up
+as `absent`.
+
+### The task of a run
+
+In 1.0.0 every phase re-read the stored task, so `harness task create` with the id of a task whose
+run waited in `DECISION` replaced the task under the run, silently.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `pinTaskRevision` | `false` | `true` | `run start` stores the task revision as an artifact and records its digest (`taskDigest`, `taskRevisionRef`) in `run.created`; every phase works on that revision, and only `task clarify` (during `INTENT`) replaces it. `task create` with the id of a task that has an open run (not closed, cancelled or rejected) exits with 5 and names the run. `SPECIFICATION` freezes the acceptance-contract digest (requirements, acceptance criteria and constraints); `gate decide` records it in the decision as `acceptanceContractDigest` and refuses with 5 when the run's task no longer produces it, and a decision bound to another contract does not let `DECISION` pass. |
+
+### What the ChangeSet leaves out
+
+The ChangeSet excludes `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist`, `build`,
+caches and symbolic links. In an evaluation an agent wrote `.git/hooks/pre-commit`,
+`venv/lib/dep.py` and `dist/payload.py`; the ChangeSet showed one file and the gate reached
+`DECISION` with two `MEDIUM` findings. A Git hook runs the agent's code when the person commits,
+and a changed dependency changes what the tests run.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `protectExcludedPaths` | `false` | `true` | Before and after the agent invocations of every `IMPLEMENTATION` attempt (simulated and command providers, with or without the sandbox) the harness fingerprints every file below `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist` and `build` at any depth and every symbolic link in the workspace (size, modification time and SHA-256 of the first 8 KiB; the target of a link). The comparison is `IMPLEMENTATION` evidence. Any added, modified or deleted path is a `CRITICAL` finding `workspace.out-of-changeset-write` of `harness.workspace-guard` that names the paths, and every later gate of the run gets a failed mandatory validation `harness.workspace-guard` carrying it: the gate is `FAILED`, `APPROVE` exits with 5 and only `REJECT`, `REQUEST_CHANGES` or `APPROVE_EXCEPTION` with a rationale remain. Under `runtime.agentSandbox: enforce` the sandbox also keeps `.harness` and `.git` read-only (a `deny file-write*` after the allowed paths on macOS, a read-only bind on Linux), recorded as `protectedPaths` in the sandbox evidence; and the profiles' `filesystem.write` grants on `.harness/**` and `.git/**` are dropped from the resolved capabilities. |
+
+The harness's own files are not watched: `.harness/state.db*`, `.harness/artifacts/`,
+`.harness/lease.json*`, Git's `index`, `*.lock` files, `.git/objects/` and the
+`refs/notes/governed-harness` notes. Caches such as `__pycache__` are rewritten by every test run
+and are not watched either. A build the agent runs on purpose (`dist`, `build`) is reported too:
+inspect it and decide with an exception. A write that restores size, modification time and the
+first 8 KiB of a file is not detected.
+
+### One harness at a time, and recovery after a crash
+
+Two `run start` on one workspace overwrote each other's files and both runs failed; a `SIGTERM`
+during `IMPLEMENTATION` left the phase `RUNNING` while the agent kept writing, and `run continue`
+implemented the change again on top of it.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `workspaceLease` | `false` | `true` | `run start`, `run continue`, `gate decide` and `task clarify` hold `.harness/lease.json` (token, pid, host, command, run, heartbeat every 10 s) while they run. Another process that finds it exits with 5 and names the holder; a lease whose process no longer exists on this host, or whose heartbeat is more than 60 s old, is taken over. `run cancel` and the read-only commands take no lease. While the lease is held, `SIGTERM` stops the command like Ctrl-C: the agent's or validator's process group is terminated, the phase and the run are recorded as `INTERRUPTED` and the command exits with 143. The runner records each process group it starts (flag `process:<run>`). `run continue` on a run that a killed harness left first recovers it: a phase still `RUNNING` becomes `INTERRUPTED`, the recorded process groups that still run on this host are terminated, and the files an interrupted `IMPLEMENTATION` attempt changed are restored to the snapshot taken when that attempt started (deleted when they did not exist), all recorded in a `run.recovered` event; then the phase runs again as a new attempt. A changed binary file cannot be restored from the snapshot: the run is then `BLOCKED` with the paths. |
+
+Restoring undoes every change to the workspace since the interrupted attempt started, including
+one a person made meanwhile.
+
+### Declared settings
+
+Several settings were declared, written by `init` or shipped in the built-in workflow and profiles,
+and read by nothing. The ones with a clear meaning now take effect behind these keys; the rest are
+marked `x-declarative` in the generated JSON Schema, and `harness config validate` lists them under
+`declarative` and adds a line to `warnings` for each one the project relies on (for example
+`runtime.maxParallel`, or `maxAttempts` while `applyWorkflowSettings` is off).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `applyWorkflowSettings` | `false` | `true` | The built-in workflow's per-phase settings apply. `maxAttempts`: once a phase has that many failed attempts (`FAILED`, `ERROR`, `TIMED_OUT`, `INTERRUPTED`; a `BLOCKED` wait in `DECISION` is not a failure), it is not started again: the run is `BLOCKED` with the reason and a `phase.attempts.exhausted` event (for example a fourth `VERIFICATION` after two automatic corrections). `timeoutSeconds`: the wall-clock budget of one attempt; the agent process and each validator get at most the time left, and an attempt that ends after it is `TIMED_OUT`. `exitGate`: recorded with every attempt in `phase.completed` (`exitGate`, `exitGateMet`, with `timeoutSeconds` and `maxAttempts`); the condition itself is evaluated by the phase. |
+| `decisionExpiryHours` | none | `72` | A human decision gets `expiresAt` that many hours after it is recorded (1 to 8760), unless it records an exception under `review.exceptions`, whose expiry (`--expires-in`, `--expires-at` or `review.exceptionDays`) is then the decision's `expiresAt`: there is one expiry per decision; a decision that expired before `DECISION` used it (for example one recorded with `--no-continue`) leaves `DECISION` `BLOCKED` until a new decision is recorded. |
+| `applyProfilePolicies` | `false` | `true` | The profile policies `missingTestCommand` (Python: a missing executable or module of a mandatory validator) and `missingTestScript` (Node.js: a missing package script) set the status of the unavailable mandatory validator, `BLOCKED` (the profiles' value) or `FAILED`; any other value is a configuration error. A project policy `coverage: {minimumPercent: N}` (0 to 100) adds the mandatory validator `python.coverage` to `VERIFICATION` of a Python project: it runs `python -m coverage run -m pytest -q` (the tests run a second time) and `python -m coverage report --fail-under=N`, keeping the data under `.harness/coverage/`; without the `coverage` package it is `BLOCKED` (or the `missingTestCommand` status). The profile's `coverage: optional_for_research_prototype` is not a threshold and stays declarative. |
+| `applyNetworkPolicy` | `false` | `true` | `runtime.allowNetwork: false` denies the agent outbound IP connections under `runtime.agentSandbox: enforce`: `(deny network-outbound (remote ip "*:*"))` in the Seatbelt profile (local sockets stay allowed), `--unshare-net` with `bwrap`, and `network: denied` in the sandbox evidence. |
+
+`harness gc` applies `retention` to runs that ended (closed, cancelled or rejected) longer ago than
+the setting, counted from the run's last update; open runs and memory records are never touched.
+`artifactDays` deletes the run's artifacts that no kept run references and records a
+`retention.artifacts.pruned` event listing them, so `harness verify` treats them as pruned, not
+missing; `eventDays` removes the run with its events, records, flags and artifacts. Without
+`--apply` it only prints what it would remove. `gc` is a command a person runs; nothing runs it
+automatically.
+
+Still declarative: `workspace.units`, `runtime.maxParallel`, the policies
+`repositoryContentTrusted`, `destructiveActionsDefault` and `ambiguousPackageManager`, and the
+workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase `validators` and
+`invariants`.
 
 ## Technology profiles
 

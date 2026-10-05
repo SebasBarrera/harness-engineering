@@ -178,7 +178,9 @@ every step:
 4. `harness task create --file task.yaml`, then `harness run start --task <id>` → exit **4**.
 5. `harness status --run <id>`, `harness findings list`, `harness evidence list`.
 6. `harness gate decide … --change-set-digest <current digest>` → exit **0**.
-7. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (recommendations are
+7. `harness verify --run <id>` checks the event chain, the records and the artifacts of the run
+   (exit 0 or 6).
+8. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (recommendations are
    never applied automatically; `harness recommendation decide` records whether a person accepts,
    edits or rejects each one). The harness never commits: review `git diff` and commit yourself.
 

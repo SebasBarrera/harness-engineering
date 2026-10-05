@@ -14,6 +14,13 @@ GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM":
 GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnull}")
 
 
+@pytest.fixture(autouse=True)
+def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
+    # directory; tests keep them in a temporary one.
+    monkeypatch.setenv("HARNESS_ANCHOR_DIR", str(tmp_path_factory.mktemp("anchors")))
+
+
 def git_init(path: Path) -> None:
     def git(*args: str) -> None:
         subprocess.run(["git", *GIT_ISOLATION, *args], cwd=path, check=True, env=GIT_ENV)

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import socket
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -24,10 +27,19 @@ from governed_harness.agents.environment import (
 )
 from governed_harness.agents.native import native_provider
 from governed_harness.capabilities import grants_from_rules
+from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
-from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.configuration.models import (
+    ResolvedConfiguration,
+    ValidatorDefinition,
+    WorkflowPhaseDefinition,
+)
 from governed_harness.delivery.closure import create_closure_commit
 from governed_harness.delivery.vcs import VcsError
+from governed_harness.domain.actors import (
+    NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
+)
+from governed_harness.domain.actors import IdentitySource, require_human_actor
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -35,6 +47,7 @@ from governed_harness.domain.enums import (
     FindingSeverity,
     PhaseId,
     ResultStatus,
+    ValidationKind,
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
@@ -73,7 +86,7 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
-from governed_harness.events import SQLiteEventStore
+from governed_harness.events import AnchorStore, SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
@@ -108,6 +121,8 @@ from governed_harness.runtime import (
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
 )
+from governed_harness.runtime.guard import IGNORED_PATTERNS, ExcludedPathGuard
+from governed_harness.runtime.lease import terminate_process_group
 from governed_harness.runtime.sandbox import (
     SandboxHost,
     SandboxPlan,
@@ -125,14 +140,77 @@ from governed_harness.validators import (
     ValidationContext,
     ValidatorRegistry,
 )
+from governed_harness.validators.base import ValidatorOutput
+from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
 
-NON_HUMAN_ACTOR_PREFIXES = ("agent.", "validator.", "harness.")
-"""Actor id namespaces the harness assigns to agents, validators and itself."""
+FAILED_ATTEMPT_STATUSES = frozenset(
+    {
+        ResultStatus.FAILED,
+        ResultStatus.ERROR,
+        ResultStatus.TIMED_OUT,
+        ResultStatus.INTERRUPTED,
+    }
+)
+"""Phase results that use up one of the workflow's ``maxAttempts``."""
+DEFAULT_VALIDATOR_TIMEOUT_SECONDS = 900
+
+WORKSPACE_GUARD_ID = "harness.workspace-guard"
+"""Validator id of the excluded-path check (``governance.protectExcludedPaths``)."""
+OUT_OF_CHANGESET_RULE = "workspace.out-of-changeset-write"
 
 UNSUPPORTED_CLAIM_RULE = "agent.unsupported-claim"
 """Rule id of the finding recorded when an agent reported success and verification failed."""
 CLAIM_CHECK_ID = "harness.claim-check"
 """Validator id of that finding: the harness compares the claim with recorded results."""
+
+
+REJECTED_REASON = "Rejected by human decision"
+
+
+def run_is_open(execution: Execution) -> bool:
+    """Whether a run may still change: not closed, not cancelled and not rejected. A run that
+    failed or is blocked can be resumed with ``run continue`` and stays open."""
+    if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
+        return False
+    return not (
+        execution.status is ResultStatus.FAILED and execution.terminal_reason == REJECTED_REASON
+    )
+
+
+def acceptance_contract_digest(task: Task) -> str:
+    """Digest of the acceptance contract SPECIFICATION freezes: requirements, acceptance
+    criteria and constraints of a task revision."""
+    return sha256_json(
+        {
+            "requirements": [item.model_dump(mode="json") for item in task.requirements],
+            "acceptance": [item.model_dump(mode="json") for item in task.acceptance_criteria],
+            "constraints": list(task.constraints),
+        }
+    )
+
+
+class _ProcessLedger:
+    """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
+    recovery after a killed harness can terminate the ones still running."""
+
+    def __init__(self, state: SQLiteStateStore, execution_id: str) -> None:
+        self.state = state
+        self.key = f"process:{execution_id}"
+
+    def started(self, pid: int, argv: tuple[str, ...]) -> None:
+        recorded = json.loads(self.state.get_flag(self.key) or "{}")
+        recorded[str(pid)] = {
+            "pgid": pid,
+            "host": socket.gethostname(),
+            "argv0": argv[0] if argv else "",
+            "startedAt": utc_now().isoformat(),
+        }
+        self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
+
+    def finished(self, pid: int) -> None:
+        recorded = json.loads(self.state.get_flag(self.key) or "{}")
+        if recorded.pop(str(pid), None) is not None:
+            self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
 @dataclass(frozen=True)
@@ -197,6 +275,7 @@ class RunEngine:
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
         self.provenance = ProvenanceRecorder(self)
+        self._phase_deadline: float | None = None
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -261,18 +340,17 @@ class RunEngine:
         self.s.state.set_flag(
             f"provider:{execution_id}", provider or self.s.resolved.project.agent_provider
         )
-        self.s.events.append(
-            execution_id,
-            "run.created",
-            {
-                "taskId": task.task_id,
-                "projectId": task.project_id,
-                "configurationDigest": configuration_digest,
-                "workflowDigest": workflow_digest,
-                "policyDigest": policy_digest,
-                "provider": provider or self.s.resolved.project.agent_provider,
-            },
-        )
+        created: dict[str, Any] = {
+            "taskId": task.task_id,
+            "projectId": task.project_id,
+            "configurationDigest": configuration_digest,
+            "workflowDigest": workflow_digest,
+            "policyDigest": policy_digest,
+            "provider": provider or self.s.resolved.project.agent_provider,
+        }
+        if self._pins_task():
+            created.update(self._pin_task_revision(execution_id, task))
+        self.s.events.append(execution_id, "run.created", created)
         self._record_artifact(
             execution,
             config_ref,
@@ -288,11 +366,36 @@ class RunEngine:
         return execution
 
     def continue_execution(self, execution_id: str) -> Execution:
+        try:
+            return self._continue_execution(execution_id)
+        finally:
+            self.anchor_chain(execution_id)
+
+    def anchor_chain(self, execution_id: str) -> None:
+        """Copy the head of the run's event chain to the place ``governance.chainAnchor``
+        names, so that ``harness verify`` detects a chain whose last events were deleted. A
+        chain that does not verify is never anchored, and a failed write never stops a run:
+        ``harness verify`` reports the anchor as absent."""
+        mode = self.s.resolved.project.governance_settings.chain_anchor
+        if not mode or mode == "off":
+            return
+        check = self.s.events.check_chain(execution_id)
+        if not check.valid or check.head_sequence is None or check.head_digest is None:
+            return
+        store = AnchorStore(mode, self.s.paths.workspace, self.s.resolved.project.project_id)
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            store.record(execution_id, check.head_sequence, check.head_digest)
+
+    def _continue_execution(self, execution_id: str) -> Execution:
         execution = self.get_execution(execution_id)
         if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
             return execution
         if self.is_cancelled(execution_id):
             return self._cancel_execution(execution)
+        if self._leases_workspace():
+            blocked = self.recover_interrupted(execution_id)
+            if blocked is not None:
+                return blocked
         while True:
             execution = self.get_execution(execution_id)
             if execution.current_phase is PhaseId.DECISION:
@@ -334,7 +437,10 @@ class RunEngine:
         self.s.state.set_flag(f"cancel:{execution_id}", "1")
         actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
         self.s.events.append(execution_id, "run.cancellation.requested", {}, actor=actor)
-        return self._cancel_execution(execution)
+        try:
+            return self._cancel_execution(execution)
+        finally:
+            self.anchor_chain(execution_id)
 
     def decide(
         self,
@@ -344,8 +450,11 @@ class RunEngine:
         change_set_digest: str,
         actor_id: str,
         rationale: str,
+        actor_display_name: str | None = None,
+        identity_source: IdentitySource | None = None,
         expires_at: datetime | None = None,
     ) -> HumanDecision:
+        require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
@@ -370,7 +479,12 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
-        actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
+        contract_digest = self._current_contract_digest(execution)
+        decided_at = utc_now()
+        expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
+        actor = Actor(
+            actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
+        )
         record = HumanDecision(
             decision_id=new_id("decision"),
             execution_id=execution_id,
@@ -381,7 +495,15 @@ class RunEngine:
             change_set_digest=change_set_digest,
             configuration_digest=execution.configuration_digest,
             policy_digest=execution.policy_digest,
-            expires_at=expires_at,
+            acceptance_contract_digest=contract_digest,
+            identity_source=identity_source,
+            decided_at=decided_at,
+            # One expiry, HumanDecision.expires_at: the exception's when one is recorded
+            # (review.exceptions, which the exception ledger reuses), otherwise the decision's
+            # validity (governance.decisionExpiryHours).
+            expires_at=expires_at
+            if expires_at is not None
+            else (decided_at + timedelta(hours=expiry) if expiry else None),
         )
         self.s.state.put(
             "decision",
@@ -445,7 +567,7 @@ class RunEngine:
             updated = updated.model_copy(
                 update={
                     "status": ResultStatus.FAILED,
-                    "terminal_reason": "Rejected by human decision",
+                    "terminal_reason": REJECTED_REASON,
                     "updated_at": utc_now(),
                 }
             )
@@ -454,6 +576,7 @@ class RunEngine:
                 update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
             )
         self._save_execution(updated)
+        self.anchor_chain(execution_id)
         return record
 
     def clarify(
@@ -463,10 +586,9 @@ class RunEngine:
 
         The answers and the revision are recorded on the event chain of the run whose INTENT
         asked the questions; ``continue_execution`` then assesses the revised task."""
-        if actor.actor_type is not ActorType.HUMAN or actor.actor_id.startswith(
-            NON_HUMAN_ACTOR_PREFIXES
-        ):
+        if actor.actor_type is not ActorType.HUMAN:
             raise PolicyViolationError("only a human actor can answer clarification questions")
+        require_human_actor(actor.actor_id, "answer clarification questions")
         task = self.get_task(task_id)
         executions = [
             item
@@ -531,6 +653,9 @@ class RunEngine:
             task_ref=revised_ref.uri,
         )
         self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
+        if self._pins_task():
+            # A revision through clarify is the one way the task of an open run may change.
+            self.s.state.set_flag(f"taskrev:{execution.execution_id}", revised_ref.uri)
         self.s.state.put(
             "clarification",
             record.clarification_id,
@@ -556,6 +681,7 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
+        self.anchor_chain(execution.execution_id)
         return record, revision.task
 
     # ----- phases -----------------------------------------------------------------
@@ -563,15 +689,22 @@ class RunEngine:
         self, execution: Execution, handler: Callable[[Execution, PhaseExecution], PhaseOutcome]
     ) -> PhaseOutcome:
         phase_id = execution.current_phase
-        attempt = 1 + len(
-            [
-                phase
-                for phase in self.s.state.list(
-                    "phase", PhaseExecution, execution_id=execution.execution_id
-                )
-                if phase.phase_id is phase_id
-            ]
-        )
+        previous = [
+            phase
+            for phase in self.s.state.list(
+                "phase", PhaseExecution, execution_id=execution.execution_id
+            )
+            if phase.phase_id is phase_id
+        ]
+        attempt = 1 + len(previous)
+        definition = self._phase_definition(phase_id)
+        if definition is not None:
+            failed = sum(1 for item in previous if item.status in FAILED_ATTEMPT_STATUSES)
+            if failed >= definition.max_attempts:
+                return self._attempts_exhausted(execution, definition, failed)
+            self._phase_deadline = time.monotonic() + definition.timeout_seconds
+        else:
+            self._phase_deadline = None
         phase = PhaseExecution(
             phase_execution_id=new_id("phase"),
             execution_id=execution.execution_id,
@@ -602,6 +735,16 @@ class RunEngine:
                 outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
             else:
                 outcome = handler(running, phase)
+        except (KeyboardInterrupt, SystemExit) as interruption:
+            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
+            # record the phase as interrupted so that a later run continue recovers it.
+            if self._leases_workspace():
+                self._mark_interrupted(
+                    execution.execution_id,
+                    phase,
+                    f"The harness was interrupted ({type(interruption).__name__})",
+                )
+            raise
         except Exception as error:
             outcome = PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
             self.s.events.append(
@@ -610,6 +753,8 @@ class RunEngine:
                 {"phaseId": phase_id, "errorType": type(error).__name__, "message": str(error)},
                 phase_execution_id=phase.phase_execution_id,
             )
+        if definition is not None:
+            outcome = self._apply_phase_settings(definition, phase, outcome)
         completed = phase.model_copy(
             update={
                 "status": outcome.status,
@@ -633,16 +778,24 @@ class RunEngine:
             execution_id=execution.execution_id,
             project_id=execution.project_id,
         )
+        completed_payload: dict[str, Any] = {
+            "phaseId": phase_id,
+            "attempt": attempt,
+            "status": outcome.status,
+            "summary": outcome.summary,
+            "evidenceRefs": list(outcome.evidence_refs),
+        }
+        if definition is not None:
+            # The exit gate the attempt met (PASSED) or did not meet; the condition itself is
+            # evaluated by the phase.
+            completed_payload["exitGate"] = definition.exit_gate
+            completed_payload["exitGateMet"] = outcome.status is ResultStatus.PASSED
+            completed_payload["timeoutSeconds"] = definition.timeout_seconds
+            completed_payload["maxAttempts"] = definition.max_attempts
         self.s.events.append(
             execution.execution_id,
             "phase.completed",
-            {
-                "phaseId": phase_id,
-                "attempt": attempt,
-                "status": outcome.status,
-                "summary": outcome.summary,
-                "evidenceRefs": list(outcome.evidence_refs),
-            },
+            completed_payload,
             phase_execution_id=phase.phase_execution_id,
         )
         latest = self.get_execution(execution.execution_id)
@@ -674,7 +827,7 @@ class RunEngine:
         return outcome
 
     def _phase_intent(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         task_ref = self.s.artifacts.put_json(
             task.model_dump(mode="json"), metadata={"kind": "task-intent"}
         )
@@ -838,7 +991,8 @@ class RunEngine:
         )
 
     def _phase_specification(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
+        digest = acceptance_contract_digest(task)
         contract = {
             "taskId": task.task_id,
             "requirements": [item.model_dump(mode="json") for item in task.requirements],
@@ -846,17 +1000,11 @@ class RunEngine:
                 item.model_dump(mode="json") for item in task.acceptance_criteria
             ],
             "constraints": list(task.constraints),
-            "digest": sha256_json(
-                {
-                    "requirements": [item.model_dump(mode="json") for item in task.requirements],
-                    "acceptance": [
-                        item.model_dump(mode="json") for item in task.acceptance_criteria
-                    ],
-                    "constraints": list(task.constraints),
-                }
-            ),
+            "digest": digest,
         }
         contract_ref = self.s.artifacts.put_json(contract, metadata={"kind": "acceptance-contract"})
+        if self._pins_task():
+            self.s.state.set_flag(f"contract:{execution.execution_id}", digest)
         evidence = self._record_evidence(
             execution,
             phase.phase_id,
@@ -870,7 +1018,7 @@ class RunEngine:
         )
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         selection = MemoryStore(self.s.state).select(
             project_id=execution.project_id,
             task_id=task.task_id,
@@ -942,7 +1090,19 @@ class RunEngine:
         )
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        if self._leases_workspace():
+            # The workspace as this attempt found it: an interrupted attempt is undone to it
+            # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
+            snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
+            ref = self.s.artifacts.put_json(
+                self._snapshot_to_dict(snapshot),
+                metadata={"kind": "implementation-start", "executionId": execution.execution_id},
+            )
+            self.s.state.set_flag(
+                f"implstart:{execution.execution_id}",
+                json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
+            )
+        task = self.run_task(execution)
         plan_id = self.s.state.get_flag(f"plan:{execution.execution_id}")
         if not plan_id:
             return PhaseOutcome(ResultStatus.BLOCKED, "No approved plan exists")
@@ -966,6 +1126,8 @@ class RunEngine:
                         self.s.paths.workspace,
                         self.s.resolved.project.runtime.sandbox_write_paths or (),
                         self.sandbox_host,
+                        protected=self._protected_paths(),
+                        allow_network=self._agent_network_allowed(),
                     )
                 except SandboxUnavailable as error:
                     self._record_sandbox_finding(
@@ -1017,7 +1179,7 @@ class RunEngine:
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
-        runner = SafeProcessRunner(self.s.paths.workspace)
+        runner = self._runner(execution)
         context_uri = self.s.state.get_flag(f"context:{execution.execution_id}")
         memory_context: dict[str, Any] | None = None
         if context_uri:
@@ -1032,34 +1194,42 @@ class RunEngine:
             process_runner=runner,
             patch_applier=PatchApplier(self.s.paths.workspace),
             provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-            timeout_seconds=runtime.command_timeout_seconds,
+            timeout_seconds=self._bounded_timeout(runtime.command_timeout_seconds),
             max_output_bytes=runtime.max_output_bytes,
             cancellation=cancellation,
             context_manifest_ref=context_uri,
             memory_context=memory_context,
             feedback=self._pending_feedback(execution, phase),
         )
+        guard = (
+            ExcludedPathGuard(self.s.paths.workspace) if self._protects_excluded_paths() else None
+        )
+        guard_before = guard.fingerprint() if guard else None
         retries = 0
-        while True:
-            self.provenance.before_invocation(execution)
-            result = provider.implement(task, plan, context)
-            self._save_agent_result(execution, phase, result)
-            self.provenance.after_invocation(execution, result)
-            cause = (
-                self._transient_cause(result)
-                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                else None
-            )
-            if cause is None:
-                break
-            retries += 1
-            # The repeated call runs through the same provider, so under the same sandbox
-            # prefix; a write the sandbox denied on the failed call is still reported.
-            if sandbox is not None:
-                self._record_denied_writes(execution, result.tool_invocations)
-            self._record_provider_retry(execution, phase, result, cause, retries)
-            if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+        try:
+            while True:
+                self.provenance.before_invocation(execution)
+                result = provider.implement(task, plan, context)
+                self._save_agent_result(execution, phase, result)
+                self.provenance.after_invocation(execution, result)
+                cause = (
+                    self._transient_cause(result)
+                    if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+                    else None
+                )
+                if cause is None:
+                    break
+                retries += 1
+                # The repeated call runs through the same provider, so under the same sandbox
+                # prefix; a write the sandbox denied on the failed call is still reported.
+                if sandbox is not None:
+                    self._record_denied_writes(execution, result.tool_invocations)
+                self._record_provider_retry(execution, phase, result, cause, retries)
+                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                    return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+        finally:
+            if guard is not None and guard_before is not None:
+                self._check_excluded_paths(execution, phase, guard, guard_before)
         if (
             result.status is ResultStatus.PASSED
             and runtime.claim_check_enabled
@@ -1097,6 +1267,426 @@ class RunEngine:
             ResultStatus.PASSED,
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
+        )
+
+    # ----- declared settings (#51) -------------------------------------------------------
+    def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:
+        """The workflow definition of a phase when ``governance.applyWorkflowSettings`` is on."""
+        if not self.s.resolved.project.governance_settings.apply_workflow_settings:
+            return None
+        return next(
+            (item for item in self.s.resolved.workflow.phases if item.phase_id is phase_id), None
+        )
+
+    def _attempts_exhausted(
+        self, execution: Execution, definition: WorkflowPhaseDefinition, failed: int
+    ) -> PhaseOutcome:
+        reason = (
+            f"{definition.phase_id} is not started again: {failed} failed attempt(s) reached its "
+            f"maxAttempts ({definition.max_attempts})"
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "phase.attempts.exhausted",
+            {
+                "phaseId": definition.phase_id,
+                "failedAttempts": failed,
+                "maxAttempts": definition.max_attempts,
+            },
+        )
+        latest = self.get_execution(execution.execution_id)
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": reason,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        return PhaseOutcome(ResultStatus.BLOCKED, reason)
+
+    def _apply_phase_settings(
+        self, definition: WorkflowPhaseDefinition, phase: PhaseExecution, outcome: PhaseOutcome
+    ) -> PhaseOutcome:
+        """An attempt that outlived ``timeoutSeconds`` is ``TIMED_OUT``."""
+        started = phase.started_at or utc_now()
+        elapsed = (utc_now() - started).total_seconds()
+        if outcome.status is ResultStatus.PASSED and elapsed > definition.timeout_seconds:
+            return PhaseOutcome(
+                ResultStatus.TIMED_OUT,
+                f"{definition.phase_id} took {elapsed:.0f} s, more than its timeoutSeconds "
+                f"({definition.timeout_seconds})",
+                outcome.evidence_refs,
+                outcome.artifact_refs,
+            )
+        return outcome
+
+    def _remaining_budget(self) -> float | None:
+        deadline = self._phase_deadline
+        if deadline is None:
+            return None
+        return max(1.0, deadline - time.monotonic())
+
+    def _bounded_timeout(self, seconds: int) -> int:
+        remaining = self._remaining_budget()
+        return seconds if remaining is None else max(1, min(seconds, int(remaining)))
+
+    def _bounded_definition(self, definition: ValidatorDefinition) -> ValidatorDefinition:
+        if self._remaining_budget() is None:
+            return definition
+        own = definition.timeout_seconds or DEFAULT_VALIDATOR_TIMEOUT_SECONDS
+        return definition.model_copy(update={"timeout_seconds": self._bounded_timeout(own)})
+
+    def _profile_policies_apply(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.apply_profile_policies)
+
+    def _unavailable_status(self, key: str) -> ResultStatus | None:
+        """``missingTestCommand`` or ``missingTestScript`` as the status of an unavailable
+        mandatory validator (``governance.applyProfilePolicies``); ``None`` keeps BLOCKED."""
+        if not self._profile_policies_apply():
+            return None
+        value = self.s.resolved.effective_policies.get(key)
+        return ResultStatus(str(value)) if value is not None else None
+
+    def _coverage_minimum(self) -> float | None:
+        if not self._profile_policies_apply():
+            return None
+        return coverage_minimum(self.s.resolved.effective_policies)
+
+    def _verify_coverage(
+        self, execution: Execution, change_set: ChangeSet, minimum: float
+    ) -> ValidatorOutput:
+        validator = CoverageValidator(minimum)
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id=f"validator.{validator.validator_id}", version="1"
+        )
+        data_dir = self.s.paths.harness_dir / "coverage"
+        data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        output = validator.execute(
+            ValidationContext(
+                execution_id=execution.execution_id,
+                workspace=self.s.paths.workspace,
+                task=self.run_task(execution),
+                change_set=change_set,
+                definition=self._bounded_definition(validator.definition()),
+                grants=grants_from_rules(
+                    execution.execution_id, actor, self.s.resolved.effective_capabilities
+                ),
+                artifact_store=self.s.artifacts,
+                process_runner=self._runner(execution),
+                provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+                cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+                max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                missing_command_status=self._unavailable_status("missingTestCommand"),
+                missing_script_status=self._unavailable_status("missingTestScript"),
+            ),
+            data_file=data_dir / f"{execution.execution_id}.coverage",
+        )
+        self._save_validator_output(execution, output)
+        return output
+
+    def _agent_network_allowed(self) -> bool:
+        """``runtime.allowNetwork`` reaches the agent sandbox under
+        ``governance.applyNetworkPolicy``; otherwise network access stays allowed (1.0.0)."""
+        if not self.s.resolved.project.governance_settings.apply_network_policy:
+            return True
+        return self.s.resolved.project.runtime.allow_network
+
+    # ----- interruption and recovery (governance.workspaceLease) ----------------------
+    def _leases_workspace(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.workspace_lease)
+
+    def _runner(self, execution: Execution) -> SafeProcessRunner:
+        if not self._leases_workspace():
+            return SafeProcessRunner(self.s.paths.workspace)
+        return SafeProcessRunner(
+            self.s.paths.workspace,
+            observer=_ProcessLedger(self.s.state, execution.execution_id),
+            terminate_on_exit=True,
+        )
+
+    def _mark_interrupted(
+        self, execution_id: str, phase: PhaseExecution, reason: str
+    ) -> PhaseExecution:
+        interrupted = phase.model_copy(
+            update={
+                "status": ResultStatus.INTERRUPTED,
+                "finished_at": utc_now(),
+                "summary": reason,
+            }
+        )
+        latest = self.get_execution(execution_id)
+        self.s.state.put(
+            "phase",
+            interrupted.phase_execution_id,
+            interrupted,
+            execution_id=execution_id,
+            project_id=latest.project_id,
+        )
+        self.s.events.append(
+            execution_id,
+            "phase.completed",
+            {
+                "phaseId": phase.phase_id,
+                "attempt": phase.attempt,
+                "status": ResultStatus.INTERRUPTED,
+                "summary": reason,
+                "evidenceRefs": [],
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.INTERRUPTED,
+                    "terminal_reason": reason,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        return interrupted
+
+    def recover_interrupted(self, execution_id: str) -> Execution | None:
+        """Recover a run a harness left behind before its phases run again (under the
+        workspace lease, no other harness process is executing them):
+
+        * a phase still ``RUNNING`` is marked ``INTERRUPTED``;
+        * the process groups the killed harness started and that still run are terminated;
+        * the workspace is restored to the state an interrupted IMPLEMENTATION attempt found,
+          so the change is not implemented twice on top of itself.
+
+        Returns the run when it cannot be recovered safely (it is then ``BLOCKED``), ``None``
+        when the phases may run."""
+        orphans = [
+            item
+            for item in self.s.state.list("phase", PhaseExecution, execution_id=execution_id)
+            if item.status is ResultStatus.RUNNING
+        ]
+        terminated = self._terminate_orphans(execution_id)
+        for phase in orphans:
+            self._mark_interrupted(
+                execution_id, phase, "The harness stopped while the phase was running"
+            )
+        interrupted = [
+            item
+            for item in self.s.state.list("phase", PhaseExecution, execution_id=execution_id)
+            if item.status is ResultStatus.INTERRUPTED
+            and not self.s.state.get_flag(f"recovered:{item.phase_execution_id}")
+        ]
+        if not interrupted and not terminated:
+            return None
+        restored: list[str] = []
+        unrestorable: list[str] = []
+        for phase in interrupted:
+            if phase.phase_id is PhaseId.IMPLEMENTATION:
+                done, failed = self._restore_implementation_start(execution_id, phase)
+                restored.extend(done)
+                unrestorable.extend(failed)
+            self.s.state.set_flag(f"recovered:{phase.phase_execution_id}", "1")
+        self.s.events.append(
+            execution_id,
+            "run.recovered",
+            {
+                "interruptedPhases": [
+                    {"phaseExecutionId": item.phase_execution_id, "phaseId": item.phase_id}
+                    for item in interrupted
+                ],
+                "terminatedProcessGroups": terminated,
+                "restoredPaths": restored,
+                "unrestorablePaths": unrestorable,
+            },
+        )
+        latest = self.get_execution(execution_id)
+        if unrestorable:
+            blocked = latest.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": (
+                        "An interrupted IMPLEMENTATION left files the harness cannot restore: "
+                        + ", ".join(unrestorable[:10])
+                    ),
+                    "updated_at": utc_now(),
+                }
+            )
+            self._save_execution(blocked)
+            return blocked
+        if latest.status in {ResultStatus.INTERRUPTED, ResultStatus.RUNNING}:
+            self._save_execution(
+                latest.model_copy(
+                    update={
+                        "status": ResultStatus.PENDING,
+                        "terminal_reason": None,
+                        "updated_at": utc_now(),
+                    }
+                )
+            )
+        return None
+
+    def _terminate_orphans(self, execution_id: str) -> list[int]:
+        key = f"process:{execution_id}"
+        recorded = json.loads(self.s.state.get_flag(key) or "{}")
+        host = socket.gethostname()
+        terminated = [
+            int(entry["pgid"])
+            for entry in recorded.values()
+            if entry.get("host") == host and terminate_process_group(int(entry["pgid"]))
+        ]
+        if recorded:
+            self.s.state.set_flag(key, "{}")
+        return terminated
+
+    def _restore_implementation_start(
+        self, execution_id: str, phase: PhaseExecution
+    ) -> tuple[list[str], list[str]]:
+        raw = self.s.state.get_flag(f"implstart:{execution_id}")
+        if not raw:
+            return [], []
+        start = json.loads(raw)
+        if start.get("phaseExecutionId") != phase.phase_execution_id:
+            return [], []
+        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(start["snapshotRef"])))
+        snapshotter = WorkspaceSnapshotter(self.s.paths.workspace)
+        diff = snapshotter.diff(before, snapshotter.snapshot())
+        restored: list[str] = []
+        unrestorable: list[str] = []
+        for change in diff.changes:
+            target = contained_path(self.s.paths.workspace, Path(change.path))
+            previous = before.files.get(change.path)
+            if previous is None:
+                target.unlink(missing_ok=True)
+                restored.append(change.path)
+            elif previous.text is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(previous.text.encode("utf-8"))
+                restored.append(change.path)
+            else:
+                unrestorable.append(change.path)
+        return restored, unrestorable
+
+    # ----- excluded paths (governance.protectExcludedPaths) ---------------------------
+    def _protects_excluded_paths(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.protect_excluded_paths)
+
+    def _protected_paths(self) -> tuple[Path, ...]:
+        """Workspace paths the agent sandbox keeps read-only: the harness state and Git."""
+        if not self._protects_excluded_paths():
+            return ()
+        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git")
+
+    def _check_excluded_paths(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        guard: ExcludedPathGuard,
+        before: dict[str, str],
+    ) -> None:
+        """Compare the fingerprints of what the ChangeSet excludes before and after the agent
+        ran. The comparison is IMPLEMENTATION evidence; a change is a CRITICAL finding that the
+        gate of every later ChangeSet of the run receives."""
+        after = guard.fingerprint()
+        changes = guard.compare(before, after)
+        record = {
+            "guardedDirectories": sorted(guard.guarded),
+            "ignoredPatterns": list(IGNORED_PATTERNS),
+            "before": {"files": len(before), "digest": sha256_json(before)},
+            "after": {"files": len(after), "digest": sha256_json(after)},
+            "changes": [{"path": item.path, "status": item.status} for item in changes],
+        }
+        ref = self.s.artifacts.put_json(
+            record,
+            metadata={"kind": "excluded-path-fingerprint", "executionId": execution.execution_id},
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.CONFIGURATION,
+            ref,
+            f"Paths outside the ChangeSet: {len(after)} fingerprinted, {len(changes)} changed",
+        )
+        if not changes:
+            return
+        shown = ", ".join(f"{item.path} ({item.status})" for item in changes[:10])
+        more = f" and {len(changes) - 10} more" if len(changes) > 10 else ""
+        finding = Finding(
+            finding_id=new_id("finding"),
+            execution_id=execution.execution_id,
+            validator_id=WORKSPACE_GUARD_ID,
+            rule_id=OUT_OF_CHANGESET_RULE,
+            category="workspace-integrity",
+            severity=FindingSeverity.CRITICAL,
+            message=(
+                f"The agent changed {len(changes)} path(s) the ChangeSet does not show: "
+                f"{shown}{more}"
+            ),
+            location=FindingLocation(path=changes[0].path),
+            evidence_refs=(evidence.artifact_ref,),
+            recommendation=(
+                "Inspect these paths (a Git hook runs on the next commit; a changed dependency "
+                "changes what the tests run) and restore them before deciding; only approve an "
+                "exception for a change you made on purpose."
+            ),
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "finding",
+            finding.finding_id,
+            finding,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "finding.recorded",
+            finding.model_dump(mode="json"),
+            actor=finding.provenance.actor,
+        )
+        key = f"guard:{execution.execution_id}"
+        recorded = json.loads(self.s.state.get_flag(key) or "[]")
+        self.s.state.set_flag(key, json.dumps([*recorded, finding.finding_id]))
+
+    def _workspace_guard_validation(self, execution: Execution, digest: str) -> None:
+        """A failed mandatory validation for the ChangeSet the gate evaluates, carrying every
+        out-of-ChangeSet write of the run, so the gate fails until a person decides."""
+        finding_ids = tuple(
+            json.loads(self.s.state.get_flag(f"guard:{execution.execution_id}") or "[]")
+        )
+        if not finding_ids:
+            return
+        if any(
+            item.validator_id == WORKSPACE_GUARD_ID and item.finding_ids == finding_ids
+            for item in self._latest_validations(execution.execution_id, digest)
+        ):
+            return
+        findings = [self.s.state.get("finding", item, Finding) for item in finding_ids]
+        now = utc_now()
+        result = ValidationResult(
+            validation_result_id=new_id("validation"),
+            execution_id=execution.execution_id,
+            validator_id=WORKSPACE_GUARD_ID,
+            change_set_digest=digest,
+            status=ResultStatus.FAILED,
+            kind=ValidationKind.POLICY_VIOLATION,
+            mandatory=True,
+            summary=f"{len(finding_ids)} agent invocation(s) wrote outside the ChangeSet",
+            finding_ids=finding_ids,
+            evidence_refs=tuple(ref for item in findings for ref in item.evidence_refs),
+            started_at=now,
+            finished_at=now,
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "validation",
+            result.validation_result_id,
+            result,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "validation.completed",
+            result.model_dump(mode="json"),
+            actor=result.provenance.actor,
         )
 
     def _record_sandbox_evidence(
@@ -1238,22 +1828,27 @@ class RunEngine:
                 ValidationContext(
                     execution_id=execution.execution_id,
                     workspace=self.s.paths.workspace,
-                    task=self.get_task(execution.task_id),
+                    task=self.run_task(execution),
                     change_set=change_set,
-                    definition=definition,
+                    definition=self._bounded_definition(definition),
                     grants=grants,
                     artifact_store=self.s.artifacts,
-                    process_runner=SafeProcessRunner(self.s.paths.workspace),
+                    process_runner=self._runner(execution),
                     provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                     cancellation=CancellationToken(
                         lambda: self.is_cancelled(execution.execution_id)
                     ),
                     max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                    missing_command_status=self._unavailable_status("missingTestCommand"),
+                    missing_script_status=self._unavailable_status("missingTestScript"),
                     parse_output=self.s.resolved.project.output_parsers_enabled,
                 )
             )
             self._save_validator_output(execution, output)
             outputs.append(output)
+        coverage = self._coverage_minimum()
+        if coverage is not None:
+            outputs.append(self._verify_coverage(execution, change_set, coverage))
         policy = self.s.resolved.project.requirement_traceability
         if policy != "off":
             outputs.append(
@@ -1283,7 +1878,7 @@ class RunEngine:
     ) -> TraceabilityOutput:
         """Relate the task's identified requirements to the tests of the workspace; the mapping
         is recorded as VERIFICATION evidence and each untraced requirement as a finding."""
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         validator = RequirementTraceabilityValidator(
             policy, (profile.technology for profile in self.s.resolved.profiles)
         )
@@ -1303,7 +1898,7 @@ class RunEngine:
                     execution.execution_id, actor, self.s.resolved.effective_capabilities
                 ),
                 artifact_store=self.s.artifacts,
-                process_runner=SafeProcessRunner(self.s.paths.workspace),
+                process_runner=self._runner(execution),
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
@@ -1336,12 +1931,12 @@ class RunEngine:
             ValidationContext(
                 execution_id=execution.execution_id,
                 workspace=self.s.paths.workspace,
-                task=self.get_task(execution.task_id),
+                task=self.run_task(execution),
                 change_set=change_set,
                 definition=definition,
                 grants=grants,
                 artifact_store=self.s.artifacts,
-                process_runner=SafeProcessRunner(self.s.paths.workspace),
+                process_runner=self._runner(execution),
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
@@ -1392,15 +1987,31 @@ class RunEngine:
                 return PhaseOutcome(
                     ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
                 )
+            if current_decision.acceptance_contract_digest is not None:
+                try:
+                    contract = self._current_contract_digest(execution)
+                except PolicyViolationError as error:
+                    return PhaseOutcome(ResultStatus.BLOCKED, str(error))
+                if contract != current_decision.acceptance_contract_digest:
+                    return PhaseOutcome(
+                        ResultStatus.BLOCKED,
+                        "Human decision is stale: it is bound to another acceptance contract",
+                    )
             if (
-                current_decision.decision is DecisionKind.APPROVE_EXCEPTION
-                and current_decision.expires_at is not None
+                current_decision.expires_at is not None
                 and current_decision.expires_at <= utc_now()
+                and current_decision.decision is not DecisionKind.REJECT
             ):
-                # Only a decision taken under review.exceptions carries an expiry.
+                # The expiry of an exception (review.exceptions) or of any decision
+                # (governance.decisionExpiryHours): a new decision is required.
+                kind = (
+                    "Exception"
+                    if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
+                    else "Human decision"
+                )
                 return PhaseOutcome(
                     ResultStatus.BLOCKED,
-                    f"Exception {current_decision.decision_id} expired at "
+                    f"{kind} {current_decision.decision_id} expired at "
                     f"{current_decision.expires_at.isoformat()}; a new decision is required",
                 )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
@@ -1511,7 +2122,7 @@ class RunEngine:
                 self.s.paths.workspace,
                 delivery,
                 execution_id=execution.execution_id,
-                task=self.get_task(execution.task_id),
+                task=self.run_task(execution),
                 change_set=change_set,
                 decision=decision,
             )
@@ -1895,7 +2506,7 @@ class RunEngine:
             raise NotFoundError("baseline snapshot is missing")
         before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(baseline_uri)))
         after = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         owned_paths: set[str] | None = None
         if task.implementation.mode == "patch":
             owned_paths = {patch.path for patch in task.implementation.patches}
@@ -2007,6 +2618,7 @@ class RunEngine:
             in_force = {item.exception_id for item in exceptions if item.active_at(now)}
             if gate.change_set_digest == change_set.digest and relied_on <= in_force:
                 return gate
+        self._workspace_guard_validation(execution, change_set.digest)
         validations = self._latest_validations(execution.execution_id, change_set.digest)
         findings = [
             item
@@ -2220,6 +2832,40 @@ class RunEngine:
 
     def get_task(self, task_id: str) -> Task:
         return self.s.state.get("task", task_id, Task)
+
+    def run_task(self, execution: Execution) -> Task:
+        """The task revision a run works on: the revision pinned when the run was created (or
+        revised through ``task clarify``) under ``governance.pinTaskRevision``, otherwise the
+        stored task, re-read by every phase as in 1.0.0."""
+        uri = self.s.state.get_flag(f"taskrev:{execution.execution_id}")
+        if uri:
+            return Task.model_validate_json(self.s.artifacts.get(uri))
+        return self.get_task(execution.task_id)
+
+    def _pins_task(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.pin_task_revision)
+
+    def _pin_task_revision(self, execution_id: str, task: Task) -> dict[str, Any]:
+        ref = self.s.artifacts.put_json(
+            task.model_dump(mode="json"), metadata={"kind": "task-revision"}
+        )
+        self.s.state.set_flag(f"taskrev:{execution_id}", ref.uri)
+        return {"taskDigest": task_digest(task), "taskRevisionRef": ref.uri}
+
+    def _current_contract_digest(self, execution: Execution) -> str | None:
+        """Under ``governance.pinTaskRevision``, the digest of the acceptance contract frozen in
+        SPECIFICATION after checking that the run's task still produces it; ``None`` without the
+        setting (or for a run created without it)."""
+        frozen = self.s.state.get_flag(f"contract:{execution.execution_id}")
+        if not self._pins_task() or not frozen:
+            return None
+        current = acceptance_contract_digest(self.run_task(execution))
+        if current != frozen:
+            raise PolicyViolationError(
+                "the acceptance contract of the run changed after SPECIFICATION "
+                f"(frozen {frozen}, now {current}); a decision cannot be bound to it"
+            )
+        return frozen
 
     def current_change_set(self, execution_id: str) -> ChangeSet:
         execution = self.get_execution(execution_id)

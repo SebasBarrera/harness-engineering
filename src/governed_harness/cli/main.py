@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sys
+import weakref
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -54,6 +55,13 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(exceptions_app, name="exceptions")
 app.add_typer(rules_app, name="rules")
 app.add_typer(outcome_app, name="outcome")
+
+
+ACTOR_HELP = (
+    "Identifier of the person acting (recorded, not authenticated). Defaults to the Git user "
+    "under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators "
+    "and the harness (agent.*, validator.*, harness.*) are refused with exit code 5."
+)
 
 
 JSON_OPTION: Any = typer.Option(
@@ -123,6 +131,26 @@ def _emit(value: object, json_output: bool | None = None, kind: str | None = Non
         typer.echo(render_human(value, kind))
 
 
+_ACTING: weakref.WeakSet[HarnessApplication] = weakref.WeakSet()
+
+
+def _acting() -> HarnessApplication:
+    """The application for a human act; its notices (for example a Git identity that could
+    not be used) are printed on standard error by ``_call``."""
+    application = HarnessApplication()
+    _ACTING.add(application)
+    return application
+
+
+def _flush_notices() -> None:
+    # One application may serve several calls (gate decide resolves the run first), so its
+    # notices are printed and cleared, and it stays registered while it is in use.
+    for application in list(_ACTING):
+        for notice in application.notices:
+            typer.echo(f"warning: {notice}", err=True)
+        application.notices.clear()
+
+
 Hint = Callable[[BaseException], str | None]
 
 
@@ -148,6 +176,8 @@ def _call[T](operation: Callable[[], T], hint: Hint | None = None) -> T:
     except Exception as error:
         _report_error({"status": "ERROR", "errorType": type(error).__name__, "error": str(error)})
         raise typer.Exit(code=1) from error
+    finally:
+        _flush_notices()
 
 
 def _exit_for_execution(status: ResultStatus, phase: str) -> None:
@@ -166,6 +196,8 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
         raise typer.Exit(code=6)
     if status is ResultStatus.ERROR:
         raise typer.Exit(code=1)
+    if status is ResultStatus.INTERRUPTED:
+        raise typer.Exit(code=6)
 
 
 @app.command()
@@ -240,7 +272,8 @@ def config_validate(
     json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Validate the project configuration and print the resolved profiles, workflow,
-    validators, capabilities and policies."""
+    validators, capabilities and policies, the settings that are declared but not applied
+    (`declarative`) and a warning for each one the project relies on (`warnings`)."""
     _emit(_call(lambda: HarnessApplication().validate_config(path)), json_output)
 
 
@@ -257,7 +290,9 @@ def task_create(
     """Validate a task file (YAML or JSON) and persist it as a versioned task. A task needs
     at least one acceptance criterion (exit code 2 otherwise), except under
     `intake.criteriaPolicy: enforce`: there a task without criteria is stored with
-    `criteriaPending: true` and INTENT asks for its criteria (rule C0)."""
+    `criteriaPending: true` and INTENT asks for its criteria (rule C0). Under
+    `governance.pinTaskRevision: true` a task id that has an open run is refused with exit code 5:
+    revise it with `task clarify` during INTENT or use a new id."""
     _emit(_call(lambda: HarnessApplication().create_task(path, file)), json_output)
 
 
@@ -306,10 +341,11 @@ def task_clarify(
         help="Answers file (YAML or JSON): answers by question id, optional criteria and "
         "requirement changes",
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -320,11 +356,7 @@ def task_clarify(
     or an empty answer exits with 2, no open request with 3, and a task with a run past INTENT
     or an actor id of an agent, validator or the harness with 5."""
     _emit(
-        _call(
-            lambda: HarnessApplication().clarify_task(
-                path, task_id=task, answers_file=file, actor_id=actor
-            )
-        )
+        _call(lambda: _acting().clarify_task(path, task_id=task, answers_file=file, actor_id=actor))
     )
 
 
@@ -365,10 +397,11 @@ def run_continue(
 @run_app.command("cancel")
 def run_cancel(
     run: str = RUN_OPTION,
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -376,7 +409,7 @@ def run_cancel(
 ) -> None:
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
     event."""
-    execution = _call(lambda: HarnessApplication().cancel_run(path, run, actor))
+    execution = _call(lambda: _acting().cancel_run(path, run, actor))
     _emit(execution, kind="execution")
 
 
@@ -414,7 +447,9 @@ def trace(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
-    """Export the trace of a run as Markdown, JSON, JSONL or SARIF."""
+    """Export the trace of a run as Markdown, JSON, JSONL or SARIF. Under
+    `governance.verifyRecords: true` the run is verified first (as `harness verify`) and a run
+    that does not verify is not exported (exit code 6)."""
     data = _call(lambda: HarnessApplication().trace(path, run, format))
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -422,6 +457,43 @@ def trace(
         typer.echo(str(output))
     else:
         typer.echo(data.decode("utf-8", "replace"), nl=False)
+
+
+@app.command()
+def verify(
+    run: str | None = typer.Option(
+        None, "--run", help="Run (execution) identifier; without it, every run of the workspace"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Verify the record of a run (or of every run): the event chain, the head of the chain
+    against its anchor outside .harness (`governance.chainAnchor`), every record that has an
+    event against that event, the execution's pointers and every referenced artifact against its
+    digest. Prints a report and never repairs anything. Exit code 0 when everything verifies, 6
+    when any check fails, 3 for an unknown run."""
+    report = _call(lambda: HarnessApplication().verify(path, run))
+    _emit(report)
+    if not report["valid"]:
+        raise typer.Exit(code=6)
+
+
+@app.command()
+def gc(
+    apply: bool = typer.Option(
+        False, "--apply", help="Delete what the report lists; without it nothing is deleted"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Apply the retention settings to runs that ended (closed, cancelled or rejected) longer
+    ago than them: `retention.artifactDays` deletes the run's artifacts that no kept run uses and
+    records a `retention.artifacts.pruned` event; `retention.eventDays` removes the run, its
+    events, records and artifacts. Open runs and memory records are never touched. Without
+    --apply only the report is printed."""
+    _emit(_call(lambda: HarnessApplication().gc(path, apply=apply)))
 
 
 @evidence_app.command("list")
@@ -488,10 +560,11 @@ def memory_add(
     approve: bool = typer.Option(
         False, "--approve", help="Record the entry as approved by the acting person"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -501,7 +574,7 @@ def memory_add(
     enter a context only once approved."""
     _emit(
         _call(
-            lambda: HarnessApplication().add_memory(
+            lambda: _acting().add_memory(
                 path,
                 level=level,
                 key=key,
@@ -546,10 +619,11 @@ def memory_manifest(
 @memory_app.command("approve")
 def memory_approve(
     memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -557,19 +631,18 @@ def memory_approve(
 ) -> None:
     """Approve a proposed record. The approval is a new record that supersedes the proposal;
     approving a record that needs no approval or is already approved exits with code 5."""
-    _emit(
-        _call(lambda: HarnessApplication().approve_memory(path, memory_id=memory, actor_id=actor))
-    )
+    _emit(_call(lambda: _acting().approve_memory(path, memory_id=memory, actor_id=actor)))
 
 
 @memory_app.command("invalidate")
 def memory_invalidate(
     memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
     reason: str = typer.Option(..., "--reason", help="Why the record no longer applies"),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -579,7 +652,7 @@ def memory_invalidate(
     the reason stay on record."""
     _emit(
         _call(
-            lambda: HarnessApplication().invalidate_memory(
+            lambda: _acting().invalidate_memory(
                 path, memory_id=memory, actor_id=actor, reason=reason
             )
         )
@@ -606,10 +679,11 @@ def gate_decide(
         "--rationale",
         help="Justification recorded with the decision; asked interactively when omitted",
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
@@ -653,8 +727,12 @@ def gate_decide(
     terminal, omitting --decision, --change-set-digest or --rationale shows the decision brief,
     asks for the missing values and asks the person to type the start of the digest the decision
     binds to; a digest that is not confirmed records nothing (exit 5). Without a terminal the
-    three options are required (exit 2)."""
-    application = HarnessApplication()
+    three options are required (exit 2). Under `governance.confirmDecisionDigest: true` the
+    same confirmation is asked on a terminal even when every option is given. An actor id of an
+    agent, validator or the harness is refused with exit 5; without --actor the decider is the
+    Git user under `governance.deciderIdentity: git` (human.local, with a warning, when Git has
+    no identity)."""
+    application = _acting()
     run_id = _call(lambda: application.resolve_run(path, run))
     missing = decision is None or change_set_digest is None or rationale is None
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
@@ -675,7 +753,8 @@ def gate_decide(
         alternative_evidence=alternative_evidence,
         follow_up=follow_up,
     )
-    if missing or interactive:
+    confirm = terminal and _digest_confirmation_configured(path)
+    if missing or interactive or confirm:
         decision, change_set_digest, rationale = _interactive_decision(
             application, path, run_id, decision, change_set_digest, rationale
         )
@@ -704,6 +783,16 @@ def gate_decide(
         kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
+
+
+def _digest_confirmation_configured(path: Path) -> bool:
+    """``governance.confirmDecisionDigest``: confirm the digest on a terminal every time."""
+    try:
+        return bool(
+            HarnessApplication().validate_config(path)["governance"]["confirmDecisionDigest"]
+        )
+    except Exception:  # noqa: BLE001 - decide reports configuration errors itself
+        return False
 
 
 def _exceptions_enabled(path: Path) -> bool:
@@ -871,10 +960,11 @@ def outcome_record(
     observed_at: str | None = typer.Option(
         None, "--observed-at", help="ISO 8601 instant it happened (default: now)"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     json_output: bool | None = JSON_OPTION,
     path: Path = typer.Option(
@@ -886,7 +976,7 @@ def outcome_record(
     applied. An actor id of an agent, validator or the harness exits with 5."""
     _emit(
         _call(
-            lambda: HarnessApplication().record_outcome(
+            lambda: _acting().record_outcome(
                 path,
                 execution_id=run,
                 kind=kind,
@@ -1018,10 +1108,11 @@ def recommendation_decide(
     statement: str | None = typer.Option(
         None, "--statement", help="Edited text of the recommendation; required with EDIT"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -1033,7 +1124,7 @@ def recommendation_decide(
     with code 5; nothing is applied to rules, gates or configuration."""
     _emit(
         _call(
-            lambda: HarnessApplication().decide_recommendation(
+            lambda: _acting().decide_recommendation(
                 path,
                 execution_id=run,
                 recommendation_id=recommendation,

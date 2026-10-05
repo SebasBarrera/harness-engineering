@@ -6,18 +6,24 @@ from typing import Literal
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ConfigDict
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from governed_harness import __version__
 from governed_harness.application import HarnessApplication
 from governed_harness.application.exceptions import ExceptionOptions
+from governed_harness.configuration import ConfigurationResolver
+from governed_harness.domain.actors import DEFAULT_API_ACTOR
 from governed_harness.domain.enums import DecisionKind
+from governed_harness.domain.errors import HarnessError, IntegrityError, NonHumanActorError
 
 
 class DecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     decision: DecisionKind
     change_set_digest: str
-    actor_id: str = "human.web"
+    actor_id: str | None = None
+    """The person deciding; without it, the Git user under ``governance.deciderIdentity: git``,
+    otherwise ``human.web``. Agent, validator and harness ids are refused (403)."""
     rationale: str
     continue_after: bool = True
     expires_in: str | None = None
@@ -25,6 +31,16 @@ class DecisionRequest(BaseModel):
     scope: tuple[str, ...] = ()
     alternative_evidence: str | None = None
     follow_up: str | None = None
+
+
+def trusted_hosts(workspace: Path) -> tuple[str, ...] | None:
+    """``governance.trustedHosts`` of the project, ``None`` when it is not set (or there is no
+    valid configuration, which every endpoint then reports)."""
+    try:
+        project = ConfigurationResolver().resolve(workspace).project
+    except (HarnessError, OSError):
+        return None
+    return project.governance_settings.trusted_hosts
 
 
 def create_app(workspace: Path) -> FastAPI:
@@ -35,6 +51,11 @@ def create_app(workspace: Path) -> FastAPI:
         version=__version__,
         description="Local observability and human-decision API for a governed harness workspace.",
     )
+    hosts = trusted_hosts(root)
+    if hosts is not None:
+        # A page on another origin can reach a loopback server through DNS rebinding; requests
+        # whose Host header is not a configured name are answered with 400.
+        api.add_middleware(TrustedHostMiddleware, allowed_hosts=list(hosts))
 
     @api.get("/api/health")
     def health() -> dict[str, object]:
@@ -69,6 +90,8 @@ def create_app(workspace: Path) -> FastAPI:
     ) -> Response:
         try:
             data = application.trace(root, execution_id, format)
+        except IntegrityError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         media = {
@@ -106,7 +129,8 @@ def create_app(workspace: Path) -> FastAPI:
     @api.post("/api/runs/{execution_id}/decision")
     def decide(execution_id: str, request: DecisionRequest) -> dict[str, object]:
         try:
-            decision, execution = application.decide_gate(
+            acting = HarnessApplication()  # its notices belong to this request only
+            decision, execution = acting.decide_gate(
                 root,
                 execution_id=execution_id,
                 decision=request.decision,
@@ -114,6 +138,7 @@ def create_app(workspace: Path) -> FastAPI:
                 actor_id=request.actor_id,
                 rationale=request.rationale,
                 continue_after=request.continue_after,
+                default_actor=DEFAULT_API_ACTOR,
                 exception=ExceptionOptions(
                     expires_in=request.expires_in,
                     expires_at=request.expires_at,
@@ -122,10 +147,15 @@ def create_app(workspace: Path) -> FastAPI:
                     follow_up=request.follow_up,
                 ),
             )
-            return {
+            body: dict[str, object] = {
                 "decision": decision.model_dump(mode="json", by_alias=True),
                 "execution": execution.model_dump(mode="json", by_alias=True),
             }
+            if acting.notices:
+                body["warnings"] = list(acting.notices)
+            return body
+        except NonHumanActorError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
@@ -254,7 +284,7 @@ function renderDecision(id, b){
  if(!b.run.awaitingDecision || !b.run.changeSetDigest){ return; }
  target.innerHTML=`<h3>Human gate</h3>
  <div class="notice">The decision will be bound to <code>${esc(b.run.changeSetDigest)}</code> (${b.changed.files.length} file(s)). Any later change invalidates it.</div>
- <label>Actor<input id="actor" value="human.web"></label>
+ <label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>
  <label>Rationale<textarea id="rationale" placeholder="Explain the evidence considered and the reason for the decision. For REQUEST_CHANGES, say what must change."></textarea></label>
  <div class="actions">
   <button data-decision="APPROVE">Approve</button>
