@@ -119,6 +119,10 @@ class AgentResults:
         self.gate = GateContract(self)
         self.corrections = Corrections(self)
         self.agent_review = AgentReview(self)
+        # Wave 7 (#57): the review panel replaces the single reviewer under review.panel.
+        from governed_harness.orchestration.review_panel import PanelReview
+
+        self.panel = PanelReview(self)
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
@@ -236,6 +240,7 @@ class AgentResults:
                     review.agent_review is not None
                     or review.reviewer is not None
                     or review.structured_changes is not None
+                    or review.panel is not None
                 ),
                 runtime.gate_contract is not None or runtime.reproduce_first is not None,
                 governance.stop_the_line is not None or governance.phase_permissions is not None,
@@ -1058,6 +1063,9 @@ class AgentResults:
             for item in review
             for finding_id in item.finding_ids
         ]
+        if self.panel.configured:
+            # #57: under scoped auto-fix only the errors on lines the agent wrote go back.
+            findings = self.panel.scoped_findings(execution, findings)
         feedback_ref: str | None = None
         if engine._feedback_applies(execution.execution_id):
             feedback_ref = engine._record_feedback(

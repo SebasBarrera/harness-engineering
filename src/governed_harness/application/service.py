@@ -139,10 +139,11 @@ from .onboarding import (
     write_example_task,
 )
 from .review import build_brief
+from .review_code import ReviewCodeCommands
 from .task_loader import load_task_file
 
 
-class HarnessApplication:
+class HarnessApplication(ReviewCodeCommands):
     def __init__(self) -> None:
         self.notices: list[str] = []
         """Warnings for the person (the CLI prints them on standard error)."""

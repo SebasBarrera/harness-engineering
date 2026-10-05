@@ -233,7 +233,7 @@ def pack_rules(packs: Iterable[Any]) -> list[Rule]:
 
 
 # ----- layer C ----------------------------------------------------------------------------------
-_HEADING = re.compile(r"^##\s+([^\s:]+)\s*(?::\s*(.*))?$")
+_HEADING = re.compile(r"^##\s+([^:]+?)\s*(?::\s*(.*))?$")
 _FIELD = re.compile(r"^[-*]\s+([A-Za-z_]+)\s*:\s*(.*)$")
 _LIST_FIELDS = {"exceptions", "appliesTo", "applies_to", "supersedes", "requires", "verifiedBy"}
 _ALIASES = {

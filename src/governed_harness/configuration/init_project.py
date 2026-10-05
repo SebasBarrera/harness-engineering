@@ -34,6 +34,16 @@ from governed_harness.configuration.models import (
     DEFAULT_SANDBOX_WRITE_PATHS,
     DEFAULT_TRUSTED_HOSTS,
 )
+from governed_harness.configuration.review import (
+    DEFAULT_AUTOFIX_ATTEMPTS,
+    DEFAULT_BASE_TOKENS,
+    DEFAULT_CACHE_ENTRIES,
+    DEFAULT_CACHE_TTL_DAYS,
+    DEFAULT_MAX_FINDINGS,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_PARALLEL,
+    DEFAULT_TOKENS_PER_LINE,
+)
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -156,6 +166,24 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "agentReview": "enforce",
             "structuredChanges": True,
             "manualChecklist": True,
+            # Wave 7 (#57): the review panel replaces the single reviewer.
+            "panel": {
+                "mode": "enforce",
+                "maxFindings": DEFAULT_MAX_FINDINGS,
+                "parallel": DEFAULT_PARALLEL,
+                "budget": {
+                    "baseTokens": DEFAULT_BASE_TOKENS,
+                    "tokensPerLine": DEFAULT_TOKENS_PER_LINE,
+                    "maxTokens": DEFAULT_MAX_TOKENS,
+                },
+                "cache": {"ttlDays": DEFAULT_CACHE_TTL_DAYS, "maxEntries": DEFAULT_CACHE_ENTRIES},
+                "runTools": True,
+                "autoFix": {"mode": "scoped", "maxAttempts": DEFAULT_AUTOFIX_ATTEMPTS},
+                "secondOpinion": {"mode": "off"},
+                "evidenceRefs": True,
+                "comment": False,
+                "mcpServers": [],
+            },
         },
         "retrospective": {"causal": True},
         "planning": {
