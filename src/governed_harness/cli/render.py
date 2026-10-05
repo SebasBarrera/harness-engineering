@@ -425,10 +425,71 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
             for item in report["unrequestedChanges"]
         )
         lines.extend(f"  problem: {item}" for item in report["problems"])
+    lines.extend(_ladder_sections(brief))
     if brief.get("next"):
         lines.extend(["", "Next:", *(f"  {step}" for step in brief["next"])])
     if changed.get("diff"):
         lines.extend(["", "Diff", changed["diff"]])
+    return lines
+
+
+def _ladder_sections(brief: Mapping[str, Any]) -> list[str]:
+    """Certification, preflight, deferred items, checklist, contract and interruptions (#55)."""
+    lines: list[str] = []
+    certification = brief.get("certification")
+    if certification:
+        lines.extend(["", f"Certification {certification['status']} ({certification['trigger']})"])
+        for item in certification["criteria"]:
+            declared = "" if item["declared"] else " (default level)"
+            lines.append(
+                f"  {item['status']:<14} {item['criterionId']}: requires {item['required']}"
+                f"{declared}, reached {item['achieved'] or 'no rung'}"
+            )
+    preflight = brief.get("preflight")
+    if preflight:
+        lines.extend(["", f"Preflight {preflight['status']}"])
+        lines.extend(f"  - {short(reason, 100)}" for reason in preflight.get("reasons") or [])
+        decision = preflight.get("decision")
+        if decision:
+            lines.append(
+                f"  continued uncertified by {decision['actorId']}: {short(decision['rationale'], 70)}"
+            )
+    for item in brief.get("deferred") or []:
+        if item is brief["deferred"][0]:
+            lines.extend(["", "Deferred verification"])
+        lines.append(
+            f"  {item['status']:<8} {item['itemId']} ({short(item['where'], 40)}), expires "
+            f"{item['expiresAt'][:19]}"
+        )
+    checklist = brief.get("checklist") or []
+    if checklist:
+        lines.extend(["", "Checklist (ticked by the person who decides)"])
+        for item in checklist:
+            mark = "x" if item["checked"] else " "
+            files = f" [{', '.join(item['attachments'])}]" if item["attachments"] else ""
+            lines.append(f"  [{mark}] {item['itemId']}: {short(item['text'], 80)}{files}")
+    contract = brief.get("contract")
+    if contract:
+        state = "confirmed" if contract.get("confirmed") else "not confirmed"
+        lines.extend(["", f"Operational contract ({state}, {contract['digest'][:19]})"])
+        for item in contract.get("items", []):
+            value = item["value"]
+            shown = ", ".join(map(str, value)) if isinstance(value, list) else _scalar(value)
+            lines.append(f"  {label(item['field']):<20} {short(shown, 70)} ({item['source']})")
+    interruptions = brief.get("interruptions")
+    if interruptions:
+        budget = "over budget" if interruptions["overBudget"] else "within budget"
+        lines.extend(
+            [
+                "",
+                f"Interruptions: {interruptions['count']} of a target of "
+                f"{interruptions['target']} ({budget})",
+            ]
+        )
+        lines.extend(
+            f"  stop: {item['condition']} - {short(item.get('detail') or '', 70)}"
+            for item in interruptions.get("stops") or []
+        )
     return lines
 
 
@@ -457,6 +518,12 @@ def _inbox(items: Sequence[Mapping[str, Any]]) -> list[str]:
     for item in items:
         if item["kind"] == "decision":
             detail = f"gate {item['gateStatus']}, {item['blockingFindings']} blocking finding(s)"
+        elif item["kind"] == "deferred":
+            detail = f"{item['itemId']} ({short(item['where'], 30)}) {item['status']}" + (
+                f", {item['warning']}" if item.get("warning") else ""
+            )
+        elif item["kind"] == "preflight":
+            detail = "preflight UNAVAILABLE: continue uncertified or fix the environment"
         else:
             detail = f"{item['questions']} question(s)"
         rows.append(

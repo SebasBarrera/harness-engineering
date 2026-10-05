@@ -65,9 +65,24 @@ _BUILTIN_PROFILES = {
 BUILTIN_PROFILE_IDS = frozenset(_BUILTIN_PROFILES)
 """Ids (and aliases) of the built-in profiles; a project profile cannot reuse them."""
 
+EXTENDED_PROFILES = {
+    "go_default": "go.yaml",
+    "rust_default": "rust.yaml",
+    "jvm_gradle": "jvm_gradle.yaml",
+    "jvm_maven": "jvm_maven.yaml",
+    "swift_default": "swift.yaml",
+    "android_default": "android.yaml",
+}
+"""Built-in profiles detected only under ``toolchain.extendedProfiles`` (since #55); a project
+may also name them in ``profiles``."""
+
+
+def load_extended_profiles() -> dict[str, TechnologyProfileDefinition]:
+    return {profile_id: load_builtin_profile(profile_id) for profile_id in EXTENDED_PROFILES}
+
 
 def load_builtin_profile(profile_id: str) -> TechnologyProfileDefinition:
-    filename = _BUILTIN_PROFILES.get(profile_id)
+    filename = _BUILTIN_PROFILES.get(profile_id) or EXTENDED_PROFILES.get(profile_id)
     if filename is None:
         raise ConfigurationError(f"unknown built-in profile: {profile_id}")
     try:

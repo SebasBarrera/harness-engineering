@@ -39,6 +39,7 @@ from governed_harness.domain.models import (
 from governed_harness.evidence import LocalArtifactStore
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.runtime.snapshots import SnapshotSettings, SnapshotStore
+from governed_harness.runtime.state_location import resolve_state_location
 from governed_harness.validators import CommandValidator, ValidationContext
 from governed_harness.validators.review import RULES
 
@@ -101,6 +102,14 @@ class GateContract:
                 )
             if verification.risk_factors is not None:
                 checks["riskFactors"] = self.results.verification.risk_actions()
+            if verification.principles is not None:
+                checks["principles"] = verification.principles.model_dump(
+                    mode="json", by_alias=True
+                )
+        if self.results.engineering.configured:
+            layers = self.results.architecture.rules()
+            if layers is not None and layers.layers:
+                checks["layers"] = layers.as_dict()
         skipped = {"review.possible-secret"} if self.results.secrets_in_context else set()
         return {
             "workspace": workspace,
@@ -177,6 +186,8 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
+    from governed_harness.configuration.models import VerificationConfig
+    from governed_harness.orchestration.architecture import effective_rules
     from governed_harness.orchestration.verification_checks import (
         current_files,
         pure_checks,
@@ -197,9 +208,13 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     if isinstance(baseline_ref, str):
         # Read-only: the artifact store and the snapshot listing without the snapshot cache,
         # so the check runs inside the agent sandbox, which keeps .harness read-only.
+        # The registry may live outside the workspace (runtime.stateDir, #55); it is only read.
+        location = resolve_state_location(
+            workspace, resolved.project.project_id, resolved.project.runtime.state_dir, create=False
+        )
         snapshots = SnapshotStore(
             workspace,
-            LocalArtifactStore(workspace / ".harness" / "artifacts"),
+            LocalArtifactStore(location.artifacts),
             replace(SnapshotSettings.from_config(resolved.project.workspace), cache=False),
         )
         stored = snapshots.load(baseline_ref)
@@ -258,15 +273,23 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             )
     checks: list[dict[str, Any]] = []
     verification = resolved.project.verification
-    if verification is not None and task is not None and baseline_text is not None:
+    architecture = resolved.project.architecture
+    layers = effective_rules(architecture, workspace / ".harness")
+    if (
+        (verification is not None or layers is not None)
+        and task is not None
+        and (baseline_text is not None)
+    ):
         parsed = parse_unified_diff(diff_text)
         for item in pure_checks(
-            verification,
+            verification or VerificationConfig(),
             task,
             parsed,
             current_files(workspace, parsed),
             workspace,
             baseline_text,
+            layers=layers,
+            layer_policy=architecture.policy if architecture is not None else "enforce",
         ):
             checks.append(
                 {

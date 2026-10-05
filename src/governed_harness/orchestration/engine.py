@@ -26,6 +26,7 @@ from governed_harness.agents.environment import (
     secret_values,
 )
 from governed_harness.agents.native import native_provider
+from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
@@ -34,7 +35,7 @@ from governed_harness.configuration.models import (
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
-from governed_harness.delivery.closure import create_closure_commit
+from governed_harness.delivery.closure import ClosureCommit, create_closure_commit
 from governed_harness.delivery.vcs import VcsError
 from governed_harness.domain.actors import (
     NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
@@ -137,6 +138,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
+from governed_harness.runtime.state_location import isolation_marker, resolve_state_location
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -226,6 +228,9 @@ class EnginePaths:
     harness_dir: Path
     database: Path
     artifact_dir: Path
+    state_root: Path | None = None
+    """The run registry outside the workspace (``runtime.stateDir`` or an isolated run's
+    origin, #55); ``None`` when the state lives in ``.harness/`` as in 1.0.0."""
 
     @classmethod
     def from_workspace(cls, workspace: Path) -> EnginePaths:
@@ -233,6 +238,24 @@ class EnginePaths:
         harness_dir = root / ".harness"
         harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         return cls(root, harness_dir, harness_dir / "state.db", harness_dir / "artifacts")
+
+    @classmethod
+    def for_project(cls, resolved: ResolvedConfiguration) -> EnginePaths:
+        """The paths of a resolved project: ``.harness/`` for the workspace's own files and the
+        state location ``runtime.stateDir`` (or an isolation marker) names for the registry."""
+        paths = cls.from_workspace(resolved.workspace_root)
+        location = resolve_state_location(
+            paths.workspace, resolved.project.project_id, resolved.project.runtime.state_dir
+        )
+        if not location.external:
+            return paths
+        return cls(
+            paths.workspace,
+            paths.harness_dir,
+            location.database,
+            location.artifacts,
+            location.root,
+        )
 
 
 @dataclass
@@ -245,7 +268,7 @@ class EngineServices:
 
     @classmethod
     def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
-        paths = EnginePaths.from_workspace(resolved.workspace_root)
+        paths = EnginePaths.for_project(resolved)
         return cls(
             resolved=resolved,
             paths=paths,
@@ -294,6 +317,11 @@ class RunEngine:
         )
         self._phase_deadline: float | None = None
         self.results = AgentResults(self)
+        # Imported here: the ladder modules type against the engine, so a module-level import
+        # would close an import cycle.
+        from governed_harness.orchestration.ladder import VerificationLadder
+
+        self.ladder = VerificationLadder(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -303,7 +331,9 @@ class RunEngine:
         return self._sandbox_host
 
     # ----- creation and lifecycle -------------------------------------------------
-    def create_execution(self, task: Task, provider: str | None = None) -> Execution:
+    def create_execution(
+        self, task: Task, provider: str | None = None, *, execution_id: str | None = None
+    ) -> Execution:
         if task.project_id != self.s.resolved.project.project_id:
             raise ConfigurationError(
                 f"task project {task.project_id} does not match {self.s.resolved.project.project_id}"
@@ -311,7 +341,7 @@ class RunEngine:
         if self.results.active:
             # governance.stopTheLine: block refuses a run on top of unapproved changes.
             self.results.stop_line.check_new_run(task.project_id)
-        execution_id = new_id("run")
+        execution_id = execution_id or new_id("run")
         resolved_dict = self.s.resolved.model_dump(mode="json", by_alias=True)
         config_ref = self.s.artifacts.put_json(
             resolved_dict,
@@ -496,6 +526,7 @@ class RunEngine:
         expires_at: datetime | None = None,
         acknowledged_risks: tuple[str, ...] = (),
         change_requests: tuple[ChangeRequestItem, ...] = (),
+        checked_items: tuple[str, ...] = (),
     ) -> HumanDecision:
         require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
@@ -527,6 +558,9 @@ class RunEngine:
             self.results.check_decision(
                 execution, decision, change_set_digest, acknowledged_risks, change_requests
             )
+        if checked_items or self.ladder.active:
+            # The manual checklist (review.manualChecklist, #55).
+            self.ladder.check_decision(execution, decision, checked_items)
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
@@ -554,6 +588,7 @@ class RunEngine:
             else (decided_at + timedelta(hours=expiry) if expiry else None),
             acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
             change_requests=change_requests,
+            checked_items=tuple(dict.fromkeys(checked_items)),
         )
         self.s.state.put(
             "decision",
@@ -568,6 +603,11 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
+        if self.ladder.active and decision in {
+            DecisionKind.APPROVE,
+            DecisionKind.APPROVE_EXCEPTION,
+        }:
+            self.ladder.after_decision(execution, record)
         updated = execution.model_copy(
             update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
         )
@@ -713,6 +753,7 @@ class RunEngine:
             task_digest=task_digest(revision.task),
             previous_task_ref=previous_ref.uri,
             task_ref=revised_ref.uri,
+            contract_answers=dict(clarification.contract or {}),
         )
         self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
         if self._pins_task():
@@ -743,6 +784,12 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
+        if clarification.confirm_contract and self.ladder.active:
+            # The person confirms the operational contract with the answers (#55).
+            self.ladder.intake.confirm_revision(execution, revision.task, actor)
+        if self.results.active:
+            # intake.projectSetup (#56): answers to P1 questions become the project's setup.
+            self.results.project_setup.store_answers(execution, record)
         self.anchor_chain(execution.execution_id)
         return record, revision.task
 
@@ -918,15 +965,44 @@ class RunEngine:
                     ResultStatus.BLOCKED, review.blocked, (evidence.artifact_ref, *review_refs)
                 )
             questions = questions + review.questions
-        if not questions:
+        contract: dict[str, Any] | None = None
+        ladder_block: str | None = None
+        if self.ladder.active:
+            # Localisation, the operational contract and the interruption budget (#55).
+            intake = self.ladder.intent(execution, phase, task, questions)
+            review_refs = (*review_refs, *intake.evidence_refs)
+            questions = questions + intake.questions
+            contract = intake.contract
+            ladder_block = intake.blocked
+            if ladder_block is not None and contract is None:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
+                )
+        if not questions and ladder_block is None:
+            if self.results.active:
+                # architecture.mode: agent (#56): options for a new project, chosen by a person.
+                advised = self.results.architecture.advise(execution, phase, task)
+                if advised is not None:
+                    return advised
             return PhaseOutcome(
                 ResultStatus.PASSED,
                 "Intent is structured and identifiable",
                 (evidence.artifact_ref, *review_refs),
             )
         request_evidence = self._request_clarification(
-            execution, phase, task, questions, "enforce" if policy == "enforce" else "warn"
+            execution,
+            phase,
+            task,
+            questions,
+            "enforce" if policy == "enforce" or ladder_block else "warn",
+            contract=contract,
         )
+        if ladder_block is not None and not (questions and policy == "enforce"):
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                ladder_block,
+                (evidence.artifact_ref, request_evidence.artifact_ref),
+            )
         if policy == "enforce":
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
@@ -949,6 +1025,8 @@ class RunEngine:
         task: Task,
         questions: tuple[ClarificationQuestion, ...],
         policy: Literal["enforce", "warn"],
+        *,
+        contract: dict[str, Any] | None = None,
     ) -> Evidence:
         request = ClarificationRequest(
             request_id=new_id("clarifyrequest"),
@@ -957,6 +1035,7 @@ class RunEngine:
             task_digest=task_digest(task),
             policy=policy,
             questions=questions,
+            contract=contract,
         )
         self.s.state.put(
             "clarification_request",
@@ -974,8 +1053,10 @@ class RunEngine:
             phase.phase_id,
             EvidenceKind.INTENT,
             request_ref,
-            f"Clarification request: {len(questions)} question(s)",
-            supports=tuple(dict.fromkeys(question.target for question in questions)),
+            f"Clarification request: {len(questions)} question(s)"
+            + (" and the operational contract" if contract is not None else ""),
+            supports=tuple(dict.fromkeys(question.target for question in questions))
+            or (task.task_id,),
         )
         self.s.events.append(
             execution.execution_id,
@@ -1057,6 +1138,20 @@ class RunEngine:
             update={"baseline_revision": git.head or snapshot.digest, "updated_at": utc_now()}
         )
         self._save_execution(updated)
+        if self.ladder.active:
+            # The environment preflight (environment, #55).
+            blocked = self.ladder.discovery(updated, phase, snapshot.digest)
+            if blocked is not None:
+                return PhaseOutcome(
+                    blocked.status,
+                    blocked.summary,
+                    (evidence.artifact_ref, snapshot_ref.uri, *blocked.evidence_refs),
+                )
+        if self.results.active:
+            # architecture.mode: agent (#56): one cached survey per existing project.
+            surveyed = self.results.architecture.survey(updated, phase, self.run_task(updated))
+            if surveyed is not None:
+                return surveyed
         return PhaseOutcome(
             ResultStatus.PASSED,
             "Workspace and baseline discovered",
@@ -1100,6 +1195,11 @@ class RunEngine:
         if self.results.active:
             # planning.decomposition (#39): a large task waits for an approved plan.
             blocked = self.results.decomposition.plan(execution, phase, task)
+            if blocked is not None:
+                return blocked
+        if self.ladder.active:
+            # The verification plan and the preflight on the baseline (#55).
+            blocked = self.ladder.planning(execution, phase, task)
             if blocked is not None:
                 return blocked
         selection = MemoryStore(self.s.state).select(
@@ -1221,6 +1321,12 @@ class RunEngine:
             request_extra = self.results.implement_extras(
                 execution, phase, task, provider_id, actor, grants
             )
+        if self.ladder.active:
+            # Locations of the locate call and a person's intake attachments, only when there
+            # are any (#55).
+            ladder_extra = self.ladder.implement_extras(execution, task)
+            if ladder_extra:
+                request_extra = {**(request_extra or {}), **ladder_extra}
         context = SimulatedAgentContext(
             execution_id=execution.execution_id,
             workspace=self.s.paths.workspace,
@@ -1325,6 +1431,14 @@ class RunEngine:
             provider: AgentProvider = SimulatedAgentProvider()
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
             return provider, actor, sandbox, sandbox_refs
+        if provider_id == SESSION_PROVIDER:
+            # Embedded mode (#56): the agent session that drives the harness implements.
+            def changed() -> list[str]:
+                diff = self._compute_owned_diff(execution)
+                return [item.path for item in diff.changes]
+
+            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.session", version="1")
+            return SessionAgentProvider(changed), actor, sandbox, sandbox_refs
         provider_config = self.s.resolved.project.agent_providers.get(provider_id)
         if provider_config is None:
             return PhaseOutcome(
@@ -1689,10 +1803,13 @@ class RunEngine:
         return bool(self.s.resolved.project.governance_settings.protect_excluded_paths)
 
     def _protected_paths(self) -> tuple[Path, ...]:
-        """Workspace paths the agent sandbox keeps read-only: the harness state and Git."""
+        """Paths the agent sandbox keeps read-only: the harness state and Git of the workspace
+        (``governance.protectExcludedPaths``) and the run registry when it lives outside the
+        workspace (``runtime.stateDir``, #55)."""
+        external = (self.s.paths.state_root,) if self.s.paths.state_root is not None else ()
         if not self._protects_excluded_paths():
-            return ()
-        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git")
+            return external
+        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git", *external)
 
     def _check_excluded_paths(
         self,
@@ -1979,6 +2096,9 @@ class RunEngine:
             # failing validators with the baseline (verification.differential, #7).
             outputs.extend(self.results.verification.run(execution, phase, change_set))
             outputs = self.results.after_verification(execution, phase, change_set, outputs)
+        if self.ladder.active:
+            # Probes, light mutation and the certification of the ChangeSet (#55).
+            outputs.extend(self.ladder.verification(execution, phase, change_set, outputs))
         mandatory_non_passed = [
             output.result
             for output in outputs
@@ -2256,9 +2376,20 @@ class RunEngine:
         """``delivery.closureCommit``: write the approved ChangeSet as a commit with trailers.
         ``None`` lets CLOSURE go on; an outcome stops it."""
         delivery = self.s.resolved.project.delivery_settings
-        if delivery.mode == "off":
-            return None
         change_set = self.current_change_set(execution.execution_id)
+        if delivery.mode == "off":
+            if self.ladder.active:
+                # Stage the run's files when nothing is committed (delivery.stage, #55).
+                skipped = ClosureCommit(mode="off", status="SKIPPED", reason="closureCommit off")
+                return self.ladder.delivery.deliver(execution, phase, decision, skipped, change_set)
+            return None
+        task = self.run_task(execution)
+        if isolation_marker(self.s.paths.workspace) is not None:
+            # An isolated run (#55) commits on its own worktree's branch.
+            delivery = delivery.model_copy(update={"closure_commit": "head"})
+        elif self.ladder.active and task.contract is not None and task.contract.branch:
+            # The branch the operational contract names (#55).
+            delivery = delivery.model_copy(update={"branch": task.contract.branch})
         try:
             commit = create_closure_commit(
                 self.s.paths.workspace,
@@ -2300,13 +2431,22 @@ class RunEngine:
             record,
             phase_execution_id=phase.phase_execution_id,
         )
+        if self.ladder.active:
+            # Deferred verifications are bound to the commit; push, pull request, comment or
+            # staging follow the operational contract (#55).
+            if commit.commit:
+                self.ladder.bind_commit(execution, change_set.digest, commit.commit)
+            return self.ladder.delivery.deliver(execution, phase, decision, commit, change_set)
         return None
 
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
         """Whether the run uses a configured command provider. The simulated provider is
-        deterministic and reads no feedback: the correction loop does not apply to it."""
-        return (self.s.state.get_flag(f"provider:{execution_id}") or "simulated") != "simulated"
+        deterministic and reads no feedback: the correction loop does not apply to it. Nor does
+        it to the embedded ``session`` provider (#56): the session reads the findings and edits
+        before it continues the run."""
+        provider = self.s.state.get_flag(f"provider:{execution_id}") or "simulated"
+        return provider not in {"simulated", SESSION_PROVIDER}
 
     def _feedback_applies(self, execution_id: str) -> bool:
         return self.s.resolved.project.runtime.feedback_enabled and self._external_provider(
@@ -2814,6 +2954,13 @@ class RunEngine:
                     ),
                 }
             )
+        if self.ladder.active:
+            # The certification of the ChangeSet (verification.ladder, #55).
+            certification = self.ladder.gate_reasons(execution, change_set.digest)
+            if certification:
+                gate = gate.model_copy(
+                    update={"reason_codes": (*gate.reason_codes, *certification)}
+                )
         self.s.state.put(
             "gate",
             gate.gate_evaluation_id,

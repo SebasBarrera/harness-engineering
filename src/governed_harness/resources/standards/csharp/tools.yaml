@@ -1,0 +1,34 @@
+pack: csharp
+detect:
+  markers: ["*.sln", "*.csproj", "**/*.csproj"]
+  extensions: [.cs]
+runner:
+  test: [dotnet, test]
+  testFiles: false
+  bdd: [dotnet, test]
+bddFrameworks:
+  - name: reqnroll
+    dependencies: [Reqnroll]
+  - name: specflow
+    dependencies: [SpecFlow]
+tools:
+  - id: dotnet-analyzers
+    title: .NET analyzers
+    configFiles: [.editorconfig, Directory.Build.props, .globalconfig]
+    command: [dotnet, build, --no-incremental, -consoleLoggerParameters:NoSummary]
+    parser: msbuild
+    principles: [yagni, least-astonishment]
+    recommended: |
+      # Directory.Build.props
+      <PropertyGroup>
+        <Nullable>enable</Nullable>
+        <AnalysisLevel>latest-recommended</AnalysisLevel>
+        <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+        <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+      </PropertyGroup>
+  - id: dotnet-format
+    title: dotnet format
+    configFiles: [.editorconfig]
+    command: [dotnet, format, --verify-no-changes]
+    parser: none
+    principles: [boy-scout]

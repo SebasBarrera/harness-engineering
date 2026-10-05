@@ -31,7 +31,28 @@ from governed_harness.configuration.agent_results import (
     TestQualityConfig,
     off_from_yaml,
 )
+from governed_harness.configuration.engineering import (
+    ArchitectureSettings,
+    ForgeConfig,
+    PrinciplesConfig,
+    ProjectSetupMode,
+    StandardsConfig,
+    TestingConfig,
+)
+from governed_harness.configuration.ladder import (
+    CommentPolicy,
+    ContractMode,
+    EnvironmentConfig,
+    InstructionsConfig,
+    InterruptionConfig,
+    IsolationConfig,
+    LadderConfig,
+    MutationConfig,
+    ProfileVerification,
+    PullRequestConfig,
+)
 from governed_harness.domain.enums import FindingSeverity, PhaseId
+from governed_harness.domain.models import ProbeDefinition
 
 
 class ConfigModel(BaseModel):
@@ -71,6 +92,8 @@ class WorkspaceConfig(ConfigModel):
     snapshot: SnapshotMode | None = None
     baseline: BaselineMode | None = None
     snapshot_cache: bool | None = Field(default=None, alias="snapshotCache")
+    isolation: IsolationConfig | None = None
+    """Since #55: worktree isolation per run (``mode: worktree``)."""
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -79,6 +102,7 @@ class WorkspaceConfig(ConfigModel):
             ("snapshot", "snapshot"),
             ("baseline", "baseline"),
             ("snapshot_cache", "snapshotCache"),
+            ("isolation", "isolation"),
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
@@ -125,6 +149,7 @@ _OPTIONAL_RUNTIME_FIELDS = {
     "gate_contract": "gateContract",
     "reproduce_first": "reproduceFirst",
     "extended_redaction": "extendedRedaction",
+    "state_dir": "stateDir",
 }
 """Optional runtime keys left out of the serialized configuration while they are unset."""
 
@@ -247,6 +272,22 @@ class RuntimeConfig(ConfigModel):
     reproduce_first: bool | None = Field(default=None, alias="reproduceFirst")
     """Since 1.1 (#52): a correction attempt that changes nothing is a finding, and a correction
     after REQUEST_CHANGES must add a test that fails before it and passes after it."""
+    state_dir: str | None = Field(default=None, alias="stateDir")
+    """Since #55: where the run registry (state database and artifacts) lives. ``auto`` is the
+    user's data directory (``$HARNESS_STATE_DIR``, else the platform's application-data
+    directory); an absolute path or one starting with ``~/`` is used as given. Absent: the
+    1.0.0 ``.harness/state.db`` of the workspace."""
+
+    @field_validator("state_dir")
+    @classmethod
+    def _state_dir(cls, value: str | None) -> str | None:
+        if value is None or value == "auto":
+            return value
+        if not (value.startswith("/") or value.startswith("~/")) or "$" in value:
+            raise ValueError(
+                f"stateDir is auto, an absolute path or a path that starts with ~/: {value!r}"
+            )
+        return value
 
     @field_validator("provider_transient_patterns")
     @classmethod
@@ -428,8 +469,20 @@ class IntakeConfig(ConfigModel):
     ambiguity_review: AmbiguityReview | None = Field(default=None, alias="ambiguityReview")
     clarify_agent: AgentCallConfig | None = Field(default=None, alias="clarifyAgent")
     validate_answers: bool | None = Field(default=None, alias="validateAnswers")
+    operational_contract: ContractMode | None = Field(default=None, alias="operationalContract")
+    """Since #55: the operational contract at intake. ``batch`` adds the contract questions to
+    the one clarification request INTENT sends anyway and records the contract summary bound to
+    the task digest; ``enforce`` also asks for every missing item and needs a person to confirm
+    the summary (``harness task confirm``); ``off`` records nothing."""
+    interruptions: InterruptionConfig | None = None
+    """Since #55: the interruption budget and the stop conditions of a run."""
 
-    @field_validator("ambiguity_review", mode="before")
+    project_setup: ProjectSetupMode | None = Field(default=None, alias="projectSetup")
+    """Since 1.1 (#56): ``ask`` makes INTENT ask, once per project, the architecture, the
+    testing strategy and the standards of a new project, and of an existing project whatever
+    detection could not establish (rule ``P1``)."""
+
+    @field_validator("ambiguity_review", "operational_contract", "project_setup", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
         return off_from_yaml(value)
@@ -441,7 +494,14 @@ class IntakeConfig(ConfigModel):
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for name in ("ambiguity_review", "clarify_agent", "validate_answers"):
+        for name in (
+            "ambiguity_review",
+            "clarify_agent",
+            "validate_answers",
+            "operational_contract",
+            "interruptions",
+            "project_setup",
+        ):
             if getattr(self, name) is None:
                 data.pop(name, None)
                 data.pop(type(self).model_fields[name].alias or name, None)
@@ -494,6 +554,25 @@ class VerificationConfig(ConfigModel):
     sarif: tuple[SarifInput, ...] | None = None
     risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
     acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")
+    # ----- since #55: the verification ladder ----------------------------------------------
+    ladder: LadderConfig | None = None
+    probes: tuple[ProbeDefinition, ...] | None = None
+    """Behaviour probes of the project (each task may declare more)."""
+    mutation: MutationConfig | None = None
+    principles: PrinciplesConfig | None = None
+    """Since 1.1 (#56): engineering principles as deterministic proxies (duplication, size and
+    complexity, dependency direction, inheritance depth, unused public API, Boy Scout scope) and
+    a checklist inside the existing review call."""
+
+    @field_validator("probes")
+    @classmethod
+    def _unique_probes(
+        cls, value: tuple[ProbeDefinition, ...] | None
+    ) -> tuple[ProbeDefinition, ...] | None:
+        ids = [item.probe_id for item in value or ()]
+        if len(set(ids)) != len(ids):
+            raise ValueError("probe ids must be unique")
+        return value
 
     @field_validator("interface", "constraints", "ratchet", "weakened_controls", mode="before")
     @classmethod
@@ -545,6 +624,9 @@ class ReviewConfig(ConfigModel):
     structured_changes: bool | None = Field(default=None, alias="structuredChanges")
     """Since 1.1 (#52): REQUEST_CHANGES may carry blocking items with a verifiable condition
     that VERIFICATION checks until the run closes."""
+    manual_checklist: bool | None = Field(default=None, alias="manualChecklist")
+    """Since #55: items only a person can verify (``manual`` criteria and the task's
+    ``checklist``) are ticked in DECISION (``gate decide --check``); APPROVE needs them all."""
 
     @field_validator("agent_review", mode="before")
     @classmethod
@@ -752,6 +834,13 @@ class ProjectConfiguration(ConfigModel):
     toolchain: ToolchainConfig | None = None
     provenance: ProvenanceConfig | None = None
     delivery: DeliveryConfig | None = None
+    environment: EnvironmentConfig | None = None
+    """Since #55: the generic environment preflight of DISCOVERY and ``harness doctor``."""
+    instructions: InstructionsConfig | None = None
+    """Since #55: the agent instruction files ``harness config lint`` reads."""
+    standards: StandardsConfig | None = None
+    testing: TestingConfig | None = None
+    architecture: ArchitectureSettings | None = None
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -836,6 +925,11 @@ class ProjectConfiguration(ConfigModel):
             "toolchain",
             "provenance",
             "delivery",
+            "environment",
+            "instructions",
+            "standards",
+            "testing",
+            "architecture",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)
@@ -850,7 +944,21 @@ class DetectorMarker(ConfigModel):
     weight: float = Field(gt=0, le=1)
 
 
-OutputParser = Literal["auto", "sarif", "junit", "ruff", "mypy", "eslint", "tsc", "pytest", "none"]
+OutputParser = Literal[
+    "auto",
+    "sarif",
+    "junit",
+    "ruff",
+    "mypy",
+    "eslint",
+    "tsc",
+    "pytest",
+    "checkstyle",
+    "rubocop",
+    "cargo",
+    "msbuild",
+    "none",
+]
 IssueLevel = Literal["error", "warning", "note"]
 
 
@@ -915,6 +1023,16 @@ class TechnologyProfileDefinition(ConfigModel):
     validators: tuple[ValidatorDefinition, ...] = ()
     policies: dict[str, Any] = Field(default_factory=dict)
     capabilities: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    verification: ProfileVerification | None = None
+    """Since #55: the profile's verification capabilities per rung of the ladder. Left out of
+    the serialized profile when absent."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.verification is None:
+            data.pop("verification", None)
+        return data
 
 
 class WorkflowPhaseDefinition(ConfigModel):
@@ -1055,6 +1173,9 @@ class ToolchainConfig(ConfigModel):
     profile_detection: ProfileDetection | None = Field(default=None, alias="profileDetection")
     interpreter: InterpreterMode | None = None
     validators: tuple[ValidatorDefinition, ...] | None = None
+    extended_profiles: bool | None = Field(default=None, alias="extendedProfiles")
+    """Since #55: also detect the built-in profiles of Go, Rust, Java/Kotlin (Gradle and
+    Maven), Swift and Android."""
 
     @field_validator("profile_paths")
     @classmethod
@@ -1161,6 +1282,20 @@ class DeliveryConfig(ConfigModel):
     closure_commit: ClosureCommitMode | None = Field(default=None, alias="closureCommit")
     branch: str | None = None
     publisher: PublisherConfig | None = None
+    # ----- since #55: complete delivery -----------------------------------------------------
+    stage: bool | None = None
+    """When the operational contract does not authorise a push, stage the run's files (only
+    them, never ``add -A``) so the change waits in the index for the person."""
+    push: bool | None = None
+    """Push the closure commit's branch, honouring the repository's hooks (never
+    ``--no-verify``); the task's contract may say otherwise."""
+    pull_request: PullRequestConfig | None = Field(default=None, alias="pullRequest")
+    comment: CommentPolicy | None = None
+    """Comment the decision brief on the pull request: ``notClean`` (exceptions, findings,
+    partial certification), ``always`` or ``never``."""
+    forge: ForgeConfig | None = None
+    """Since 1.1 (#56): the forge of ``harness pr publish`` and ``harness pr create`` (GitHub,
+    GitLab, Bitbucket, Azure DevOps, Gitea), detected from ``origin`` unless set."""
 
     @field_validator("branch")
     @classmethod

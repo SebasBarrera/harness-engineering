@@ -11,11 +11,51 @@ from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     AcceptanceCriterion,
+    ChecklistItem,
+    CriterionVerification,
     FilePatch,
     ImplementationInstruction,
+    OperationalContract,
+    ProbeDefinition,
     Requirement,
     Task,
 )
+
+
+def _verification(item: dict[str, Any], where: str) -> CriterionVerification | None:
+    """The ``verification`` of a criterion (since #55): its rung and how it is reached."""
+    raw = item.get("verification")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{where}: verification must be an object with a level")
+    try:
+        return CriterionVerification.model_validate(raw)
+    except Exception as error:
+        raise ConfigurationError(f"{where}: invalid verification: {error}") from error
+
+
+def _ladder_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """The probes, checklist and operational contract of a task file (since #55)."""
+    fields: dict[str, Any] = {}
+    try:
+        if raw.get("probes"):
+            fields["probes"] = tuple(
+                ProbeDefinition.model_validate(item) for item in raw["probes"] or []
+            )
+        if raw.get("checklist"):
+            fields["checklist"] = tuple(
+                ChecklistItem.model_validate(
+                    {"id": f"CL-{index}", "text": item} if isinstance(item, str) else item
+                )
+                for index, item in enumerate(raw["checklist"] or [], start=1)
+            )
+        if raw.get("contract"):
+            fields["contract"] = OperationalContract.model_validate(raw["contract"])
+    except Exception as error:
+        raise ConfigurationError(f"invalid task definition: {error}") from error
+    return fields
+
 
 _KNOWN_FIELDS = frozenset(
     {
@@ -31,6 +71,9 @@ _KNOWN_FIELDS = frozenset(
         "acceptance_criteria",
         "implementation",
         "metadata",
+        "probes",
+        "checklist",
+        "contract",
     }
 )
 
@@ -107,6 +150,7 @@ def load_task_file(
                         Literal["MUST", "SHOULD", "COULD"],
                         str(_first(item, "priority", default="MUST")).upper(),
                     ),
+                    verification=_verification(item, "an acceptance criterion"),
                 )
             )
         else:
@@ -146,6 +190,9 @@ def load_task_file(
             acceptance_criteria=tuple(criteria),
             implementation=implementation,
             metadata=dict(_first(raw, "metadata", default={}) or {}),
+            **_ladder_fields(raw),
         )
+    except ConfigurationError:
+        raise
     except Exception as error:
         raise ConfigurationError(f"invalid task definition: {error}") from error

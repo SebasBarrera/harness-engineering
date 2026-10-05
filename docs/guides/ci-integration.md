@@ -158,10 +158,25 @@ jobs:
             --bundle approval.tar.gz --no-workspace
 ```
 
+## Evidence only CI can produce
+
+A criterion that only CI, staging or a device lab can verify declares
+`verification: {level: L4, deferred: "CI job e2e"}`. The run leaves a pending item `D-<criterion>`
+bound to the ChangeSet digest and the closure commit; a job closes it with its report:
+
+```bash
+harness evidence attach --run "$RUN" --item D-ac_e2e --file e2e-junit.xml
+```
+
+JUnit, SARIF and a CI status JSON (`state`, `sha`) are read; evidence about another commit is
+refused. See [verification ladder](verification-ladder.md#deferred-verification).
+
 ## Limits to keep in mind
 
-- **State is local to the runner.** `.harness/` (SQLite state, event chain, artifacts) lives in the
-  job workspace. The run stops at `DECISION`; a person can download the `harness-state` artifact and
+- **State is local to the runner.** The SQLite state, the event chain and the artifacts live in
+  the job workspace's `.harness/`, or, under `runtime.stateDir: auto` (written by `harness init`),
+  in `$HARNESS_STATE_DIR` or the runner's data directory: set `HARNESS_STATE_DIR` to a path you
+  upload with the job's artifacts. The run stops at `DECISION`; a person can download the `harness-state` artifact and
   decide locally with `harness gate decide`, or the pattern can run on a persistent (self-hosted)
   workspace. A hosted runner cannot keep a run open between jobs; what it can check without the
   state is an evidence bundle (`harness verify --bundle`, `harness verify-approval`).

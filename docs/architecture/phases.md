@@ -39,6 +39,27 @@ without criteria never passes `INTENT`, whatever the policy is when the run star
 stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
 [tasks without acceptance criteria](../reference/configuration.md#tasks-without-acceptance-criteria).
 
+## Engineering settings (#56)
+
+No phase is added. Under the optional wave 6 settings (see
+[standards, principles, testing and architecture](../guides/engineering.md)):
+
+- `INTENT` decides deterministically whether the project is new or existing and, under
+  `intake.projectSetup: ask`, asks once per project the architecture, the testing strategy and
+  the standards it cannot establish (rule `P1`); for a new project with `architecture.mode:
+  agent` it asks one architecture call for options and waits until a person chooses one, which
+  is recorded as an ADR.
+- `DISCOVERY` surveys an existing project once with one architecture call, cached in
+  `.harness/architecture.md`, and waits until a person approves or rejects the layer rules it
+  inferred.
+- `SPECIFICATION` writes the criteria as Gherkin scenarios under `testing.strategy: bdd`.
+- `IMPLEMENTATION` gives the agent the standards cards of its files, the testing strategy and the
+  layers; with the `session` provider it waits for the agent session that drives the harness
+  (embedded mode).
+- `VERIFICATION` adds the principles proxies, the layer rules and, under `tdd`, the red, green
+  and refactor evidence; `INDEPENDENT_REVIEW` gives the reviewer the checklist of what no tool
+  verifies.
+
 ## Tracing requirements to tests
 
 After the technology validators, `VERIFICATION` relates every identified requirement of the task to
@@ -54,6 +75,26 @@ validation summary like any validator. With `verification.requirementTraceabilit
 person deciding sees which requirement lacks a test before approving or requesting changes; with
 `warn` it is a `LOW` finding; with `off` the check does not run. See the
 [configuration reference](../reference/configuration.md#requirement-traceability).
+
+## The verification ladder
+
+Since #55 every acceptance criterion may declare the rung of the ladder it requires (`L0` static,
+`L1` unit, `L2` integration with the repository's own doubles, `L3` executable behaviour, `L4`
+external environment, `L5` human). No phase is added; each phase does a part:
+
+| Phase | What it adds |
+|---|---|
+| INTENT | The operational contract in the one clarification message, the interruption budget, and a read-only `locate` call for M and L tasks. |
+| DISCOVERY | The environment preflight: tools, variables, Git hooks, the dirty tree and the baseline's validators. |
+| PLANNING | The verification plan (required and reachable rungs per criterion, and why) and the preflight of probes and frozen acceptance tests on the baseline: `READY`, `PARTIAL` or `UNAVAILABLE`, which waits for a person. |
+| VERIFICATION | Behaviour probes, discriminating evidence and light mutation, and the certification of the ChangeSet (a declared rung not reached fails the verification). |
+| DECISION | The manual checklist, ticked by the person who decides; the gate carries the certification. |
+| CLOSURE | Deferred items bound to the closure commit; staging, push, pull request and comment as the contract authorises. |
+
+A rung is reached only by evidence recorded for the criterion, never by omission; an unavailable
+check is `BLOCKED`, never `PASSED`. See the
+[configuration reference](../reference/configuration.md#verification-ladder) and the
+[guide](../guides/verification-ladder.md).
 
 ## Correcting a failed verification
 

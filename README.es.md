@@ -286,6 +286,13 @@ criterios de aceptación; `INTENT` los pide entonces (regla `C0`) antes de que s
 identificador (`A1. ...`, `[B12] ...` o un `requirementId` explícito) y que ninguna prueba nombra:
 `enforce` (lo escribe `init`) registra un hallazgo `HIGH`, por lo que la compuerta queda `FAILED`;
 `warn` registra un hallazgo `LOW`; `off` (un archivo sin la clave) omite la verificación.
+Cada criterio de aceptación puede declarar el peldaño de evidencia que exige en la **escalera de
+verificación** (`L0` estático a `L5` humano): sondas del comportamiento del programa, evidencia
+diferida de CI que se cierra con `harness evidence attach` y una lista de chequeo que se marca en
+la decisión; el arnés certifica el ChangeSet solo con evidencia registrada (ver
+[docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Con
+`runtime.stateDir: auto` (lo escribe `init`) la base de estado y los artefactos viven en el
+directorio de datos del usuario, no en `.harness/`.
 Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
@@ -294,6 +301,7 @@ Referencia completa: [docs/reference/configuration.md](docs/reference/configurat
 |---|---|---|---|
 | Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check .`, `python -m mypy .` |
 | Node.js | `package.json` y lockfiles | `npm test --silent` (necesita un script `test`) | `npm run lint`, `npm run typecheck` (si están definidos) |
+| Go, Rust, Java/Kotlin (Gradle, Maven), Swift, Android | `go.mod`, `Cargo.toml`, `build.gradle`, `pom.xml`, `Package.swift`, `AndroidManifest.xml` (con `toolchain.extendedProfiles`) | el comando de pruebas de la herramienta | su verificación estática |
 
 Un validador opcional ausente queda en `NOT_APPLICABLE`; un ejecutable obligatorio ausente queda en
 `BLOCKED`.
@@ -309,6 +317,14 @@ petición también la lleva en `context` ([guía de memoria](docs/guides/memory.
 Claude Code, Codex ni ninguna API de modelos**: se conectan mediante un envoltorio de ese tipo; hay
 una plantilla en la [guía de agentes externos](docs/guides/external-agents.md). El proveedor solo
 propone un cambio; la verificación, la revisión, el gate y la decisión siguen en manos del harness.
+
+Desde 1.1 una sesión de agente también puede conducir el flujo (**modo embebido**:
+`harness mcp serve` y `harness init --agent-skills`, ver la
+[guía de modo embebido](docs/guides/embedded-mode.md)),
+la ejecución puede llevar los estándares de lenguaje, los principios de ingeniería, la estrategia de
+pruebas y la arquitectura del equipo ([guía](docs/guides/engineering.md)), y el resultado puede
+publicarse en GitHub, GitLab, Bitbucket, Azure DevOps o Gitea
+([forjas y plantillas de CI](docs/guides/forges.md)).
 
 ## Tablero web y API
 

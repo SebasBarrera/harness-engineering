@@ -18,6 +18,34 @@ from governed_harness.domain.models import (
 from governed_harness.events.sqlite_store import StoredEvent
 from governed_harness.storage.sqlite import SQLiteStateStore
 
+HUMAN_INTERACTION_EVENTS: dict[str, str] = {
+    "human.decision.recorded": "decision",
+    "intent.clarified": "clarification",
+    "planning.decomposition.decided": "plan",
+    "acceptance.tests.decided": "acceptance",
+    "budget.raised": "budget",
+    "workspace.quarantine.requested": "quarantine",
+    "verification.preflight.decided": "preflight",
+    "contract.confirmed": "contract",
+    "evidence.attached": "evidence",
+    "verification.deferred.closed": "evidence",
+}
+"""Events a person causes on a run, by the kind of interruption they count as (#55)."""
+
+
+def human_interactions(events: list[StoredEvent]) -> dict[str, int]:
+    """The human interactions of a run by kind: events of the types above recorded with a
+    human actor. A contract confirmed in the answers to a clarification (``withAnswers``) is part
+    of that one interaction and is not counted again."""
+    counts: dict[str, int] = {}
+    for event in events:
+        kind = HUMAN_INTERACTION_EVENTS.get(event.event_type)
+        if event.payload.get("withAnswers") is True:
+            continue
+        if kind is not None and event.actor.get("actorType") == "HUMAN":
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
+
 
 @dataclass(frozen=True)
 class MetricValue:
@@ -270,6 +298,16 @@ class MetricsProjector:
                 MetricQuality.OBSERVED,
                 "Number of persisted human decisions.",
                 "decision records",
+            ),
+            "human.interactions": MetricValue(
+                "human.interactions",
+                sum(human_interactions(events).values()),
+                "count",
+                MetricQuality.OBSERVED,
+                "Events a person caused on the run: decisions, clarification answers, plan, "
+                "acceptance and preflight decisions, budget raises, quarantines, contract "
+                "confirmations and attached evidence.",
+                "run events with a human actor",
             ),
             "tokens.input": self._token_metric("tokens.input", input_tokens, "input_tokens"),
             "tokens.output": self._token_metric("tokens.output", output_tokens, "output_tokens"),

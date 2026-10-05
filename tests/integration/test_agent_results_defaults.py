@@ -78,6 +78,8 @@ def test_a_file_without_the_settings_keeps_its_serialized_form() -> None:
     raw = {"configVersion": "1.0", "projectId": "p", "workspace": {"root": ".."}}
     dumped = ProjectConfiguration.model_validate(raw).model_dump(mode="json", by_alias=True)
     assert not {"planning", "context", "budget", "memory", "agentRouting"} & set(dumped)
+    assert not {"standards", "testing", "architecture"} & set(dumped)
+    assert "forge" not in dumped.get("delivery", {})
     assert set(dumped["runtime"]) == {
         "commandTimeoutSeconds",
         "maxOutputBytes",
@@ -89,3 +91,23 @@ def test_a_file_without_the_settings_keeps_its_serialized_form() -> None:
     ).model_dump(mode="json", by_alias=True)
     assert with_sections["verification"] == {"requirementTraceability": "warn"}
     assert with_sections["review"] == {}
+
+
+def test_init_writes_the_engineering_settings(python_workspace: Path) -> None:
+    """Wave 6 (#56): standards, principles, testing strategy, architecture, project setup."""
+    HarnessApplication().init(python_workspace, force=True)
+    config = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
+    assert config["standards"] == {
+        "packs": ["auto"],
+        "cards": "auto",
+        "maxCards": 12,
+        "tools": "detect",
+    }
+    assert config["testing"]["strategy"] == "auto"
+    assert config["architecture"]["mode"] == "agent"
+    assert config["intake"]["projectSetup"] == "ask"
+    assert config["verification"]["principles"]["mode"] == "enforce"
+    engineering = HarnessApplication().validate_config(python_workspace)["engineering"]
+    assert engineering["standards"]["packs"] == ["python"]
+    assert engineering["testing"]["strategy"] == "conventional"
+    assert engineering["projectKind"] == "existing"

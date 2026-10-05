@@ -68,6 +68,7 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
+from governed_harness.forges import render_code_quality
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
@@ -93,6 +94,14 @@ from .agent_results import (
     routing_calibration,
 )
 from .clarification_loader import load_clarification_file
+from .engineering import (
+    architecture_report,
+    decide_architecture,
+    engineering_summary,
+    project_report,
+    refresh_architecture,
+    standards_report,
+)
 from .exceptions import (
     ExceptionOptions,
     brief_exceptions,
@@ -101,8 +110,23 @@ from .exceptions import (
     parse_scope,
     record_exception,
 )
+from .forges import create_on_forge, forge_report, publish_on_forge, status_on_forge
 from .health import list_outcomes, record_outcome, rule_health
 from .hints import default_hint
+from .isolation import (
+    cleanup_worktree,
+    isolation_record,
+    retry_isolation,
+    start_isolated,
+)
+from .ladder import (
+    attach_evidence,
+    config_lint,
+    confirm_contract,
+    decide_preflight,
+    inbox_entries,
+    verification_state,
+)
 from .notifications import inbox, notify, notify_transition
 from .onboarding import (
     EXAMPLE_TASK_NAME,
@@ -131,12 +155,19 @@ class HarnessApplication:
         force: bool = False,
         gitignore: bool = False,
         example_task: bool = False,
+        agent_skills: bool = False,
     ) -> dict[str, Any]:
         """Write .harness/project.yaml. The CLI also asks for the .gitignore entry and the
         example task (``gitignore``/``example_task``); the Python API leaves the workspace
-        untouched beyond .harness/ unless asked."""
+        untouched beyond .harness/ unless asked. ``agent_skills`` (#56) also writes the skill
+        of the governed flow for Claude Code and Codex."""
         config = initialize_project(path, force=force)
         workspace = config.parent.parent
+        skills: list[dict[str, str]] | None = None
+        if agent_skills:
+            from governed_harness.embedded.skills import write_agent_skills
+
+            skills = write_agent_skills(workspace, force=force)
         detections = [item for item in detect_profiles(workspace) if item.confidence > 0]
         result: dict[str, Any] = {
             "status": "PASSED",
@@ -147,6 +178,8 @@ class HarnessApplication:
         }
         if gitignore:
             result["gitignore"] = ensure_gitignore(workspace)
+        if skills is not None:
+            result["agentSkills"] = skills
         example: Path | None = None
         if example_task:
             example = write_example_task(
@@ -209,6 +242,8 @@ class HarnessApplication:
             "governance": self._governance(resolved.project.governance_settings),
             "agentResults": agent_results_summary(resolved.project),
             **self._wave4_settings(resolved),
+            "ladder": self._ladder_settings(resolved),
+            "engineering": engineering_summary(resolved),
             "declarative": declarative,
             "warnings": warnings,
         }
@@ -246,6 +281,58 @@ class HarnessApplication:
             "delivery": {
                 "closureCommit": delivery.mode,
                 "branch": delivery.branch_template if delivery.mode == "branch" else None,
+            },
+        }
+
+    @staticmethod
+    def _ladder_settings(resolved: Any) -> dict[str, Any]:
+        """Effective settings of the verification ladder and delivery hygiene (#55; absent
+        keys resolve to the earlier behaviour)."""
+        from governed_harness.runtime.state_location import resolve_state_location
+
+        project = resolved.project
+        verification = project.verification
+        ladder = verification.ladder if verification else None
+        mutation = verification.mutation if verification else None
+        intake = project.intake
+        delivery = project.delivery_settings
+        isolation = project.workspace.isolation
+        location = resolve_state_location(
+            resolved.workspace_root, project.project_id, project.runtime.state_dir, create=False
+        )
+        context = project.context
+        return {
+            "ladder": {
+                "mode": (ladder.mode if ladder else None) or "off",
+                "defaultLevel": ladder.required_default.value if ladder else None,
+                "deferredExpiryDays": ladder.expiry_days if ladder else None,
+                "preflight": bool(ladder and ladder.preflight),
+                "capabilityDetection": bool(ladder and ladder.capability_detection),
+            },
+            "probes": [
+                item.probe_id for item in (verification.probes if verification else None) or ()
+            ],
+            "mutation": (mutation.mode if mutation else None) or "off",
+            "manualChecklist": bool(project.review and project.review.manual_checklist),
+            "operationalContract": (intake.operational_contract if intake else None) or "off",
+            "interruptions": intake.interruptions.model_dump(mode="json", by_alias=True)
+            if intake and intake.interruptions
+            else None,
+            "isolation": isolation.effective_mode if isolation else "none",
+            "environment": project.environment.model_dump(mode="json", by_alias=True)
+            if project.environment
+            else None,
+            "locate": bool(context and context.locate and context.locate.enabled),
+            "delivery": {
+                "stage": bool(delivery.stage),
+                "push": bool(delivery.push),
+                "pullRequest": bool(delivery.pull_request and delivery.pull_request.create),
+                "comment": delivery.comment or "never",
+            },
+            "state": {
+                "stateDir": project.runtime.state_dir,
+                "database": str(location.database),
+                "external": location.external,
             },
         }
 
@@ -350,8 +437,12 @@ class HarnessApplication:
         answers_file: Path,
         actor_id: str | None = None,
         actor_type: ActorType = ActorType.HUMAN,
+        relayed: bool = False,
     ) -> dict[str, Any]:
         """Answer the clarification questions INTENT asked about a task.
+
+        ``relayed`` (embedded mode, #56): the person's answers reached the harness through an
+        agent session (the MCP server); the record names the person and says so.
 
         The answers file maps question ids to answers and may replace criteria, add criteria
         and add requirements. The harness stores the revised task and a clarification record
@@ -363,6 +454,8 @@ class HarnessApplication:
         clarification = load_clarification_file(answers_file)
         with self._services(path) as services:
             decider, display_name = self._decider(services, actor_id)
+            if relayed:
+                display_name = f"{display_name or decider} (relayed by an agent session)"
             with self._leased(services, "task clarify"):
                 record, task = RunEngine(services).clarify(
                     task_id=task_id,
@@ -412,7 +505,44 @@ class HarnessApplication:
                 ],
             }
 
-    def start_run(self, path: Path, task_id: str, provider: str | None = None) -> Execution:
+    def start_run(
+        self,
+        path: Path,
+        task_id: str,
+        provider: str | None = None,
+        *,
+        isolate: str | None = None,
+    ) -> Execution:
+        """Create a run and execute the phases. With ``isolate`` ``worktree`` (or
+        ``workspace.isolation.mode: worktree``) the run happens in a Git worktree of its own on a
+        new branch (#55)."""
+        from governed_harness.configuration.ladder import IsolationConfig
+
+        if isolate not in {None, "none", "worktree"}:
+            raise ConfigurationError(f"--isolate is none or worktree, got {isolate!r}")
+        with self._services(path) as services:
+            settings = services.resolved.project.workspace.isolation
+            mode = isolate or (settings.effective_mode if settings else "none")
+            if mode == "worktree":
+                engine = RunEngine(services)
+                task = engine.get_task(task_id)
+                execution, isolated = start_isolated(
+                    self._open_services,
+                    services,
+                    task,
+                    provider,
+                    settings or IsolationConfig(mode="worktree"),
+                )
+                if isolated is None:
+                    return execution
+                try:
+                    with self._leased(isolated, "run start") as lease:
+                        if lease is not None:
+                            lease.bind(execution.execution_id)
+                        result = RunEngine(isolated).continue_execution(execution.execution_id)
+                        return self._after(isolated, result)
+                finally:
+                    isolated.close()
         with self._services(path) as services, self._leased(services, "run start") as lease:
             engine = RunEngine(services)
             task = engine.get_task(task_id)
@@ -422,17 +552,152 @@ class HarnessApplication:
             return self._after(services, engine.continue_execution(execution.execution_id))
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
-        with self._services(path) as services, self._leased(services, "run continue") as lease:
-            execution_id = self._run_id(services, execution_id)
-            if lease is not None:
-                lease.bind(execution_id)
-            return self._after(services, RunEngine(services).continue_execution(execution_id))
+        with self._run_services(path, execution_id) as (services, execution_id):
+            record = isolation_record(services, execution_id)
+            if record is not None and record.get("status") == "COLLISION":
+                # The run waits for its worktree (#55): try again.
+                execution, isolated = retry_isolation(
+                    self._open_services,
+                    services,
+                    services.state.get("execution", execution_id, Execution),
+                )
+                if isolated is None:
+                    return execution
+                try:
+                    with self._leased(isolated, "run continue") as lease:
+                        if lease is not None:
+                            lease.bind(execution_id)
+                        result = RunEngine(isolated).continue_execution(execution_id)
+                        return self._after(isolated, result)
+                finally:
+                    isolated.close()
+            with self._leased(services, "run continue") as lease:
+                if lease is not None:
+                    lease.bind(execution_id)
+                return self._after(services, RunEngine(services).continue_execution(execution_id))
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
-        with self._services(path) as services:
-            execution_id = self._run_id(services, execution_id)
+        with self._run_services(path, execution_id) as (services, execution_id):
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    def cleanup_run(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """Remove the worktree of a finished isolated run (never its branch, #55)."""
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id)
+            return cleanup_worktree(services, services.state.get("execution", run_id, Execution))
+
+    # ----- the verification ladder (#55) -----------------------------------------------------
+    def verification(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """The verification plan, preflight, certification, deferred items and checklist of a
+        run."""
+        with self._services(path) as services:
+            return verification_state(services, self._run_id(services, execution_id))
+
+    def decide_verification(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """A person decides to continue a run whose preflight is UNAVAILABLE, uncertified for
+        what cannot be verified here."""
+        with self._run_services(path, execution_id) as (services, execution_id):
+            decider, display_name = self._decider(services, actor_id)
+            require_human_actor(decider, "continue a run uncertified")
+            actor = Actor(actor_type=ActorType.HUMAN, actor_id=decider, display_name=display_name)
+            with self._leased(services, "verification decide") as lease:
+                if lease is not None:
+                    lease.bind(execution_id)
+                decision = decide_preflight(
+                    services, execution_id, actor=actor, rationale=rationale
+                )
+                result: dict[str, Any] = {"decision": decision}
+                if continue_after:
+                    execution = self._after(
+                        services, RunEngine(services).continue_execution(execution_id)
+                    )
+                    result["execution"] = execution.model_dump(mode="json", by_alias=True)
+                return result
+
+    def confirm_contract(
+        self, path: Path, *, task_id: str, digest: str, actor_id: str | None = None
+    ) -> dict[str, Any]:
+        """A person confirms the operational contract of a task's revision (#55)."""
+        with self._services(path) as services:
+            decider, display_name = self._decider(services, actor_id)
+            require_human_actor(decider, "confirm the operational contract")
+            actor = Actor(actor_type=ActorType.HUMAN, actor_id=decider, display_name=display_name)
+            return confirm_contract(services, task_id=task_id, digest=digest, actor=actor)
+
+    def attach_evidence(
+        self,
+        path: Path,
+        *,
+        file: Path,
+        execution_id: str | None = None,
+        task_id: str | None = None,
+        item: str | None = None,
+        manual: bool = False,
+        evidence_format: str = "auto",
+        case: str | None = None,
+        commit: str | None = None,
+        note: str | None = None,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Close a deferred verification with external evidence, or attach a person's evidence
+        to a run (checklist) or a task (intake context) (#55)."""
+        with self._services(path) as services:
+            decider, display_name = self._decider(services, actor_id)
+            require_human_actor(decider, "attach evidence")
+            actor = Actor(actor_type=ActorType.HUMAN, actor_id=decider, display_name=display_name)
+            run_id = self._run_id(services, execution_id) if execution_id else None
+            return attach_evidence(
+                services,
+                file=file,
+                actor=actor,
+                execution_id=run_id,
+                task_id=task_id,
+                item=item,
+                manual=manual,
+                evidence_format=evidence_format,
+                case=case,
+                commit=commit,
+                note=note,
+            )
+
+    def config_lint(self, path: Path) -> dict[str, Any]:
+        """Contradictions between the configuration and the agent instruction files (#55)."""
+        return config_lint(ConfigurationResolver().resolve(path))
+
+    def registry(self, path: Path | None = None) -> dict[str, Any]:
+        """The projects whose run registry lives in the state directory (``runtime.stateDir:
+        auto``), with their latest runs: one dashboard for several repositories (#55)."""
+        from governed_harness.runtime.state_location import default_state_root, registered_projects
+        from governed_harness.storage import SQLiteStateStore
+
+        projects = []
+        for entry in registered_projects():
+            database = Path(entry["database"])
+            runs: list[dict[str, Any]] = []
+            if database.is_file():
+                with SQLiteStateStore(database) as store:
+                    executions = store.list("execution", Execution, newest_first=True)
+                runs = [
+                    {
+                        "executionId": item.execution_id,
+                        "taskId": item.task_id,
+                        "status": item.status.value,
+                        "currentPhase": item.current_phase.value,
+                        "updatedAt": item.updated_at.isoformat(),
+                    }
+                    for item in executions[:20]
+                ]
+            projects.append({**entry, "runs": runs})
+        return {"stateRoot": str(default_state_root()), "projects": projects}
 
     def routing_calibration(self, path: Path) -> dict[str, Any]:
         """Cost per approved task of the routing decisions recorded in the project (#44)."""
@@ -606,9 +871,12 @@ class HarnessApplication:
             return list_outcomes(services, run_id)
 
     def inbox(self, path: Path) -> list[dict[str, Any]]:
-        """Runs of the project waiting for a person (decision or clarification answers)."""
+        """Runs of the project waiting for a person (decision or clarification answers) and,
+        since #55, deferred verifications waiting for evidence and preflights waiting for a
+        decision."""
         with self._services(path) as services:
-            return inbox(services)
+            entries = inbox(services) + inbox_entries(services)
+            return sorted(entries, key=lambda item: item["waitingSince"])
 
     def decide_gate(
         self,
@@ -624,6 +892,7 @@ class HarnessApplication:
         exception: ExceptionOptions | None = None,
         acknowledged_risks: tuple[str, ...] = (),
         change_requests: tuple[str, ...] = (),
+        checked_items: tuple[str, ...] = (),
     ) -> tuple[HumanDecision, Execution]:
         """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
         records an exception with an expiry (``expires_in``/``expires_at``, else
@@ -634,8 +903,10 @@ class HarnessApplication:
         git`` (``default_actor`` with a notice when Git has no identity) and ``default_actor``
         otherwise; an actor id of an agent, a validator or the harness is refused (exit 5)."""
         options = exception or ExceptionOptions()
-        with self._services(path) as services, self._leased(services, "gate decide") as lease:
-            execution_id = self._run_id(services, execution_id)
+        with (
+            self._run_services(path, execution_id) as (services, execution_id),
+            self._leased(services, "gate decide") as lease,
+        ):
             if lease is not None:
                 lease.bind(execution_id)
             engine = RunEngine(services)
@@ -674,6 +945,7 @@ class HarnessApplication:
                 expires_at=expiry,
                 acknowledged_risks=acknowledged_risks,
                 change_requests=parse_change_requests(change_requests),
+                checked_items=checked_items,
             )
             if records_exception:
                 granted = record_exception(
@@ -848,10 +1120,32 @@ class HarnessApplication:
         sarif: bool | None = None,
         commit_sha: str | None = None,
         transport_override: Transport | None = None,
+        forge: str | None = None,
     ) -> dict[str, Any]:
-        """Post the decision brief of a run on a pull request and upload its SARIF report."""
+        """Post the decision brief of a run on a pull request and upload its SARIF report.
+
+        Since #56 any forge: with ``forge`` (or ``delivery.forge``), or when ``origin`` is not
+        a GitHub remote, the forge layer posts the comment and the forge's quality report."""
         with self._services(path) as services:
             run_id = self._run_id(services, execution_id)
+            use_forge = forge is not None or (
+                services.resolved.project.delivery_settings.forge is not None
+            )
+            if not use_forge and repository is None:
+                detected = forge_report(services)
+                use_forge = detected.get("status") == "DETECTED" and detected["kind"] != "github"
+            if use_forge:
+                return publish_on_forge(
+                    services,
+                    run_id,
+                    pull_request=pull_request,
+                    kind=forge,
+                    repository=repository,
+                    transport={"gh": "cli", "glab": "cli"}.get(transport or "", transport),
+                    reports=sarif,
+                    commit_sha=commit_sha,
+                    transport_override=transport_override,
+                )
             settings = services.resolved.project.delivery_settings.publisher or PublisherConfig()
             updates: dict[str, Any] = {}
             if repository is not None:
@@ -887,6 +1181,132 @@ class HarnessApplication:
                 sarif=report,
                 commit_sha=commit_sha,
             )
+
+    def create_pull_request(
+        self,
+        path: Path,
+        execution_id: str,
+        *,
+        head: str | None = None,
+        base: str | None = None,
+        title: str | None = None,
+        labels: tuple[str, ...] = (),
+        draft: bool | None = None,
+        forge: str | None = None,
+        repository: str | None = None,
+        transport: str | None = None,
+        transport_override: Transport | None = None,
+    ) -> dict[str, Any]:
+        """Open a pull or merge request from the run's closure branch on its forge (#56)."""
+        with self._services(path) as services:
+            return create_on_forge(
+                services,
+                self._run_id(services, execution_id),
+                head=head,
+                base=base,
+                title=title,
+                labels=labels,
+                draft=draft,
+                kind=forge,
+                repository=repository,
+                transport=transport,
+                transport_override=transport_override,
+            )
+
+    def pull_request_status(
+        self,
+        path: Path,
+        execution_id: str,
+        *,
+        commit_sha: str,
+        target_url: str | None = None,
+        forge: str | None = None,
+        repository: str | None = None,
+        transport: str | None = None,
+        transport_override: Transport | None = None,
+    ) -> dict[str, Any]:
+        """Set the commit status of the run on its forge (#56)."""
+        with self._services(path) as services:
+            return status_on_forge(
+                services,
+                self._run_id(services, execution_id),
+                commit_sha=commit_sha,
+                target_url=target_url,
+                kind=forge,
+                repository=repository,
+                transport=transport,
+                transport_override=transport_override,
+            )
+
+    def standards(
+        self, path: Path, *, pack: str | None = None, files: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
+        """The language standards packs of the project (#56): detected and effective packs,
+        their cards, the tools the repository configures and, for ``files``, the cards an
+        implement call and the review checklist would get. Works without a project too."""
+        try:
+            resolved = ConfigurationResolver().resolve(path)
+        except ConfigurationError:
+            return standards_report(path.resolve(), None, (), [], pack=pack, files=files)
+        return standards_report(
+            resolved.workspace_root,
+            resolved.project.standards,
+            tuple(item.technology for item in resolved.profiles),
+            [item.validator_id for item in resolved.effective_validators],
+            pack=pack,
+            files=files,
+        )
+
+    def architecture(self, path: Path) -> dict[str, Any]:
+        """The architecture of the project: configuration, survey or ADR, rules in force."""
+        with self._services(path) as services:
+            return architecture_report(services)
+
+    def decide_architecture(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        digest: str,
+        rationale: str,
+        decision: DecisionKind | None = None,
+        option: str | None = None,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject inferred layer rules, or choose an architecture option (#56)."""
+        with (
+            self._services(path) as services,
+            self._leased(services, "architecture decide") as lease,
+        ):
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_architecture(
+                services,
+                execution_id,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                decision=decision,
+                option=option,
+                continue_after=continue_after,
+            )
+
+    def refresh_architecture(self, path: Path) -> dict[str, Any]:
+        with self._services(path) as services:
+            return refresh_architecture(services)
+
+    def project(self, path: Path) -> dict[str, Any]:
+        """New or existing, packs, testing strategy, architecture and forge, without a call."""
+        with self._services(path) as services:
+            return project_report(services)
+
+    def forge(self, path: Path) -> dict[str, Any]:
+        """The forge the workspace resolves to, without calling it."""
+        with self._services(path) as services:
+            return forge_report(services)
 
     def list_runs(self, path: Path) -> list[Execution]:
         with self._services(path) as services:
@@ -948,6 +1368,8 @@ class HarnessApplication:
                 return reporter.render_json(**kwargs)
             if format == "sarif":
                 return reporter.render_sarif(findings)
+            if format == "codequality":
+                return render_code_quality(findings)
             if format == "jsonl":
                 return services.events.export_jsonl(execution_id)
             if format != "markdown":
@@ -1278,7 +1700,7 @@ class HarnessApplication:
             store.put(record)
             return record
 
-    def doctor(self, path: Path | None = None) -> dict[str, Any]:
+    def doctor(self, path: Path | None = None, *, install_hooks: bool = False) -> dict[str, Any]:
         checks: dict[str, Any] = {
             "python": {"status": "PASSED", "version": sys.version.split()[0]},
             "git": {"status": "PASSED" if shutil.which("git") else "FAILED"},
@@ -1307,6 +1729,7 @@ class HarnessApplication:
                 checks.update(provider_checks(resolved))
                 checks["agentSandbox"] = sandbox_check(resolved)
                 checks["validators"] = validator_checks(resolved)
+                checks.update(self._ladder_checks(resolved, install_hooks=install_hooks))
             except Exception as error:
                 checks["configuration"] = {
                     "status": "FAILED",
@@ -1320,6 +1743,76 @@ class HarnessApplication:
             else "FAILED"
         )
         return {"status": status, "version": __version__, "checks": checks}
+
+    @staticmethod
+    def _ladder_checks(resolved: Any, *, install_hooks: bool) -> dict[str, Any]:
+        """The run registry, the environment preflight and the instruction files (#55)."""
+        from governed_harness.application.ladder import config_lint
+        from governed_harness.orchestration.ladder_environment import environment_checks
+        from governed_harness.runtime.state_location import resolve_state_location
+
+        checks: dict[str, Any] = {}
+        project = resolved.project
+        workspace = resolved.workspace_root
+        if project.runtime.state_dir is not None:
+            location = resolve_state_location(
+                workspace, project.project_id, project.runtime.state_dir, create=False
+            )
+            root = location.root
+            existing = next(
+                (item for item in (root, *root.parents) if item.exists()), Path(root.anchor)
+            )
+            writable = os.access(existing, os.W_OK)
+            checks["stateDir"] = {
+                "status": "PASSED" if writable else "FAILED",
+                "path": str(root),
+            }
+            if not writable:
+                checks["stateDir"]["hint"] = f"Make {root} writable, or set runtime.stateDir."
+        environment = project.environment
+        if environment is not None:
+            hooks = environment.git_hooks
+            if install_hooks and hooks and hooks.install:
+                import subprocess
+
+                completed = subprocess.run(  # nosec B603 - the project's own declared command
+                    list(hooks.install),
+                    cwd=workspace,
+                    capture_output=True,
+                    check=False,
+                    timeout=600,
+                    stdin=subprocess.DEVNULL,
+                )
+                checks["hooksInstall"] = {
+                    "status": "PASSED" if completed.returncode == 0 else "FAILED",
+                    "command": list(hooks.install),
+                    "message": completed.stderr.decode("utf-8", "replace").strip()[-300:],
+                }
+            report = environment_checks(environment, workspace)
+            problems = report["problems"]
+            checks["environment"] = {
+                "status": "FAILED" if problems else "PASSED",
+                "message": "; ".join(problems[:3]) if problems else None,
+                "tools": report["tools"],
+                "variables": report["variables"],
+                "gitHooks": report["gitHooks"],
+                "dirtyTree": report["dirtyTree"],
+            }
+            if problems:
+                checks["environment"]["hint"] = (
+                    "Install the tools and set the variables the project declares in "
+                    "environment; `harness doctor --install-hooks` runs the declared hook "
+                    "installation."
+                )
+        if project.instructions is not None:
+            lint = config_lint(resolved)
+            checks["instructions"] = {
+                "status": "PASSED" if lint["status"] == "PASSED" else "WARNING",
+                "message": f"{len(lint['issues'])} issue(s) in {len(lint['files'])} file(s)",
+            }
+            if lint["issues"]:
+                checks["instructions"]["hint"] = "`harness config lint` lists them."
+        return checks
 
     @staticmethod
     @contextmanager
@@ -1347,8 +1840,7 @@ class HarnessApplication:
         self, path: Path, execution_id: str, *, include_diff: bool = False
     ) -> dict[str, Any]:
         """The decision brief of a run (see ``application.review``)."""
-        with self._services(path) as services:
-            run_id = self._run_id(services, execution_id)
+        with self._run_services(path, execution_id) as (services, run_id):
             execution = services.state.get("execution", run_id, Execution)
             return build_brief(
                 services,
@@ -1444,6 +1936,32 @@ class HarnessApplication:
             yield services
         finally:
             services.close()
+
+    @staticmethod
+    def _open_services(path: Path) -> EngineServices:
+        return EngineServices.open(ConfigurationResolver().resolve(path))
+
+    @contextmanager
+    def _run_services(self, path: Path, reference: str) -> Iterator[tuple[EngineServices, str]]:
+        """The services of a run's own workspace: the worktree of an isolated run (#55), else
+        the workspace of ``path``."""
+        with self._services(path) as services:
+            run_id = self._run_id(services, reference)
+            record = isolation_record(services, run_id)
+            target = Path(services.state.get("execution", run_id, Execution).workspace)
+            if (
+                record is not None
+                and record.get("status") == "CREATED"
+                and target.is_dir()
+                and target.resolve() != services.paths.workspace
+            ):
+                isolated = self._open_services(target)
+                try:
+                    yield isolated, run_id
+                finally:
+                    isolated.close()
+                return
+            yield services, run_id
 
     @staticmethod
     def _retrospective(services: EngineServices, execution_id: str) -> Retrospective:

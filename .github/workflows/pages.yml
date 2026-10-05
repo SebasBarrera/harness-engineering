@@ -58,6 +58,8 @@ jobs:
       - name: Process-metrics report of the demonstration flows
         run: |
           mkdir -p site/metrics-report
+          # The run registry (runtime.stateDir: auto) both scripts read.
+          export HARNESS_STATE_DIR="$RUNNER_TEMP/demo-state"
           python scripts/demo_flows.py all --workdir "$RUNNER_TEMP/demo" --transcript site/metrics-report/transcript.json
           python scripts/metrics_report.py "$RUNNER_TEMP"/demo/* --output site/metrics-report/index.html \
             --json site/metrics-report/summary.json

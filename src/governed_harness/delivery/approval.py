@@ -30,8 +30,26 @@ from governed_harness.domain.models import utc_now
 from governed_harness.events.sqlite_store import SQLiteEventStore
 
 
+def local_database(root: Path) -> Path:
+    """The workspace's state database: ``.harness/state.db``, or the registry
+    ``runtime.stateDir`` names (#55) when the workspace has a project configuration."""
+    config = root / ".harness" / "project.yaml"
+    if config.is_file():
+        try:
+            from governed_harness.configuration.loader import load_project_config
+            from governed_harness.runtime.state_location import resolve_state_location
+
+            project = load_project_config(config)
+            return resolve_state_location(
+                root, project.project_id, project.runtime.state_dir, create=False
+            ).database
+        except Exception:  # noqa: BLE001 - an unreadable configuration keeps the 1.0.0 path
+            pass
+    return root / ".harness" / "state.db"
+
+
 def _local_approvals(root: Path, now: datetime) -> list[dict[str, Any]]:
-    database = root / ".harness" / "state.db"
+    database = local_database(root)
     if not database.is_file():
         return []
     found: list[dict[str, Any]] = []

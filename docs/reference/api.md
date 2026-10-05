@@ -20,7 +20,9 @@ harness api serve --path . --host 127.0.0.1 --port 8765
 | `GET` | `/api/runs` | Runs of the project, newest first | 400 |
 | `GET` | `/api/runs/{run}` | Status projection: execution, phases, validation summary, findings summary, gate, human decision, event count, event-chain check, metrics | 404 |
 | `GET` | `/api/runs/{run}/review?diff=false` | The decision brief (what was asked, what changed, risks, what was verified on which digest and what was not, exceptions, history, delta since the last decision, next commands); `diff=true` adds the redacted diff | 404 |
-| `GET` | `/api/inbox` | Runs waiting for a person (decision or clarification), oldest first | 400 |
+| `GET` | `/api/inbox` | What waits for a person, oldest first: a decision, clarification answers and, since #55, a deferred verification waiting for evidence or a preflight waiting for a decision | 400 |
+| `GET` | `/api/runs/{run}/verification` | The verification plan, preflight, certification, deferred items and checklist of a run (#55) | 404 |
+| `GET` | `/api/registry` | The projects of the run registry outside the workspaces (`runtime.stateDir`) with their latest runs (#55) | 400 |
 | `GET` | `/api/exceptions?status=all\|active\|expired` | The exception ledger (`review.exceptions`) | 400 |
 | `GET` | `/api/runs/{run}/trace?format=json\|markdown\|jsonl\|sarif` | The trace in the requested format (`application/json`, `text/markdown`, `application/x-ndjson`, `application/sarif+json`); default `json` | 404, 409 (run does not verify under `governance.verifyRecords`) |
 | `GET` | `/api/runs/{run}/evidence` | Evidence records with artifact references | 404 |
@@ -56,6 +58,7 @@ curl -s -X POST http://127.0.0.1:8765/api/runs/<run>/decision \
 | `actor_id` | string | the Git user under `governance.deciderIdentity: git` (`human.web` with a `warnings` entry in the response when Git has no identity), otherwise `human.web` |
 | `continue_after` | boolean | `true` |
 | `expires_in`, `expires_at`, `scope`, `alternative_evidence`, `follow_up` | exception options of `APPROVE_EXCEPTION` under `review.exceptions` (see [configuration](configuration.md#exceptions)) | none |
+| `checked_items` | checklist items the person verified (`review.manualChecklist`, see [configuration](configuration.md#manual-checklist-and-attachments)) | none |
 
 Every policy violation of `harness gate decide` (stale digest, `APPROVE` over a gate that did not
 pass, run not in `DECISION`, exception without rationale) is returned as **409** with the reason in
@@ -74,6 +77,8 @@ status projection is under a collapsed section) and lets a person record `APPROV
 `REQUEST_CHANGES`, `APPROVE_EXCEPTION` or `REJECT` against the current ChangeSet digest, with an
 actor and a rationale; a confirmation shows the decision, the digest and the files before it is
 sent. Its left column lists what waits for a person (`/api/inbox`) and the page refreshes every
-5 seconds without discarding a rationale being typed. It contains no policy or workflow logic: it calls the routes
+5 seconds without discarding a rationale being typed. Since #55 the brief shows the certification
+and the deferred items, the decision form lists the checklist items to tick, and a section lists
+the repositories of the run registry (`/api/registry`). It contains no policy or workflow logic: it calls the routes
 above. The static prototype that lived in `web/` targeted routes that never existed and was
 removed in v0.8.1 (issue #12).

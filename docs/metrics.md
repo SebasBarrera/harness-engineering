@@ -45,6 +45,7 @@ The list below is the complete set computed by `MetricsProjector.project` in
 | `changesets.count` | count | OBSERVED | Number of distinct persisted ChangeSet records. | ChangeSet records | |
 | `changeset.files` | count | DERIVED | Unique paths appearing in persisted ChangeSets. | ChangeSet records | |
 | `human.decisions` | count | OBSERVED | Number of persisted human decisions. | decision records | |
+| `human.interactions` | count | OBSERVED | Events a person caused on the run: decisions, clarification answers, plan, acceptance and preflight decisions, budget raises, quarantines, contract confirmations (one confirmed with the clarification answers counts with them) and attached evidence (since #55; reported against `intake.interruptions.target`). | run events with a human actor | |
 | `tokens.input` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported input tokens; no estimation. | resource usage records | See below. |
 | `tokens.output` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported output tokens; no estimation. | resource usage records | See below. |
 | `tokens.reasoning` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported reasoning tokens; no estimation. | resource usage records | See below. |

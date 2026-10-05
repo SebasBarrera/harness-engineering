@@ -8,7 +8,12 @@ rules cannot give:
 * ``review`` (INDEPENDENT_REVIEW): findings of a second reviewer on the ChangeSet;
 * ``plan`` (PLANNING): ordered sub-tasks that partition the task's requirements;
 * ``acceptance`` (SPECIFICATION): acceptance tests written from the criteria by a separate
-  call, returned as files that the harness writes and freezes once a person approves them.
+  call, returned as files that the harness writes and freezes once a person approves them;
+* ``locate`` (INTENT, since #55): where to intervene, as ``path:line`` with evidence, for a
+  task the router classifies M or L; ambiguous places come back as questions.
+* ``architecture`` (since #56; INTENT for a new project, DISCOVERY for an existing one): one
+  call per project that either surveys the patterns in use (``mode: survey``) or proposes
+  architecture options with trade-offs (``mode: advise``); a person approves or chooses.
 
 These kinds are read-only by contract: the request says so (``readOnly: true``) and the harness
 compares the workspace before and after the call; a provider that changed it gets a HIGH
@@ -22,10 +27,20 @@ from __future__ import annotations
 
 from typing import Any, Final, Literal
 
-CallKind = Literal["implement", "clarify", "review", "plan", "acceptance"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance", "architecture", "locate"]
 
-CALL_KINDS: Final[tuple[CallKind, ...]] = ("implement", "clarify", "review", "plan", "acceptance")
-READ_ONLY_KINDS: Final[frozenset[str]] = frozenset({"clarify", "review", "plan", "acceptance"})
+CALL_KINDS: Final[tuple[CallKind, ...]] = (
+    "implement",
+    "clarify",
+    "review",
+    "plan",
+    "acceptance",
+    "architecture",
+    "locate",
+)
+READ_ONLY_KINDS: Final[frozenset[str]] = frozenset(
+    {"clarify", "review", "plan", "acceptance", "architecture", "locate"}
+)
 REQUEST_SCHEMA_VERSION = "1.1"
 """Version of a request that carries ``kind`` and ``instructions``; an implement request sent
 without any agent-results key keeps the 1.0 form (and its prompt digest)."""
@@ -139,7 +154,78 @@ INSTRUCTIONS: Final[dict[CallKind, str]] = {
             '{{"tests": [{{"path": "{directory}/test_<name>.py", "content": "<file>"}}]}}',
         )
     ),
+    "locate": (
+        "Find where the task below must be implemented in the workspace at {workspace}, before "
+        "anyone changes it. Read the files the task references and search the code for its "
+        "requirements and criteria. Return at most {maxLocations} locations, most relevant "
+        "first, each with the file, the line, the evidence (the code or text that shows it is "
+        "the place) and why it must change. When the task could be implemented in clearly "
+        "different places and the task does not say which, ask instead of guessing. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"locations": [{{"path": "<file>", "line": 1, "evidence": "<code>", '
+            '"reason": "<why>"}}], "questions": [{{"text": "<question>"}}]}}',
+        )
+    ),
 }
+
+
+ARCHITECTURE_INSTRUCTIONS: Final[dict[str, str]] = {
+    "survey": (
+        "Survey the architecture of the existing project in the workspace at {workspace}, once: "
+        "read the directory layout (layout below) and a few representative files, not the whole "
+        "code base. Describe the patterns in use (style, layers or modules and the direction of "
+        "their dependencies, naming and testing conventions) in short Markdown, and infer the "
+        "layer rules a tool can enforce: each layer with path globs and/or dotted module "
+        "prefixes, and the layers each layer may depend on. Infer only what the code shows; "
+        "return no layers when no layering is visible. The style is one of: {styles}. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"style": "<style>", "summary": "<markdown>", "layers": [{{"name": "<layer>", '
+            '"paths": ["<glob>"], "modules": ["<prefix>"]}}], "allow": {{"<layer>": '
+            '["<layer>"]}}}}',
+        )
+    ),
+    "advise": (
+        "The project in the workspace at {workspace} is new. From the task below and the "
+        "project's scaffolding, propose two to four architecture options, each one of: "
+        "{styles}. Give each option an id, its style, a title, its trade-offs (benefits, costs, "
+        "when it fits this task and team), the layers with path globs and/or dotted module "
+        "prefixes, and the layers each layer may depend on. Mark exactly one as recommended. "
+        "A person chooses; the harness records the choice as an ADR and enforces its layers. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"options": [{{"id": "<id>", "style": "<style>", "title": "<title>", '
+            '"benefits": ["<text>"], "costs": ["<text>"], "fit": "<text>", "recommended": true, '
+            '"layers": [{{"name": "<layer>", "paths": ["<glob>"], "modules": ["<prefix>"]}}], '
+            '"allow": {{"<layer>": ["<layer>"]}}}}]}}',
+        )
+    ),
+}
+"""Instructions of the ``architecture`` call by its mode (#56)."""
+
+ACCEPTANCE_GHERKIN: Final[str] = (
+    "Write the acceptance criteria and requirements of the task below as Gherkin feature files "
+    "(behaviour-driven development), before any implementation exists, for the workspace at "
+    "{workspace}. Put every file under {directory}/ with the .feature extension; each Scenario "
+    "names the criterion or requirement id it covers and uses Given, When, Then steps that "
+    "state observable behaviour, not implementation details. Write no step definitions: a "
+    "person approves the scenarios, the harness freezes them, and the implementation then "
+    "writes the step definitions and the code. "
+    + _READ_ONLY
+    + " "
+    + _JSON.replace(
+        "RESULT",
+        '{{"tests": [{{"path": "{directory}/<name>.feature", "content": "<Feature: ...>"}}]}}',
+    )
+)
+"""Instructions of the ``acceptance`` call under ``testing.strategy: bdd`` (#56)."""
 
 
 def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str:
@@ -149,8 +235,14 @@ def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str
         "categories": ", ".join(CLARIFY_CATEGORIES),
         "maxSubtasks": 12,
         "directory": "tests/acceptance",
+        "maxLocations": 20,
+        "styles": "",
     }
     fields.update(values)
+    if kind == "acceptance" and fields.get("format") == "gherkin":
+        return ACCEPTANCE_GHERKIN.format(**fields)
+    if kind == "architecture":
+        return ARCHITECTURE_INSTRUCTIONS[str(fields.get("mode") or "survey")].format(**fields)
     return INSTRUCTIONS[kind].format(**fields)
 
 
@@ -162,4 +254,6 @@ def phase_of(kind: CallKind) -> str:
         "review": "INDEPENDENT_REVIEW",
         "plan": "PLANNING",
         "acceptance": "SPECIFICATION",
+        "locate": "INTENT",
+        "architecture": "DISCOVERY",
     }[kind]

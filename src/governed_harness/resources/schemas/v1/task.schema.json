@@ -23,6 +23,17 @@
           "title": "Text",
           "type": "string"
         },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CriterionVerification"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "verificationHint": {
           "anyOf": [
             {
@@ -42,6 +53,92 @@
         "text"
       ],
       "title": "AcceptanceCriterion",
+      "type": "object"
+    },
+    "ChecklistItem": {
+      "additionalProperties": false,
+      "description": "Something only a person can verify (a layout, a sound, a device behaviour), ticked in\nDECISION with ``harness gate decide --check ID``.",
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "text": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "text"
+      ],
+      "title": "ChecklistItem",
+      "type": "object"
+    },
+    "CriterionVerification": {
+      "additionalProperties": false,
+      "description": "How an acceptance criterion must be verified: the rung of the ladder it requires and,\nfor the rungs that need one, how that rung is reached.\n\n* ``probe``: the id of a probe (task or project) whose assertions show the behaviour (L3,\n  or L2/L4 when the probe declares that level);\n* ``tests``: names (or parts of names) of the tests that verify the criterion (L1/L2);\n* ``deferred``: where the criterion is verified after the run (a CI job, staging, a device\n  lab); it stays pending, bound to the ChangeSet digest, until evidence is attached;\n* ``manual``: what a person checks; ticked in DECISION (L5).",
+      "properties": {
+        "deferred": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deferred"
+        },
+        "level": {
+          "$ref": "#/$defs/VerificationLevel"
+        },
+        "manual": {
+          "anyOf": [
+            {
+              "maxLength": 2000,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manual"
+        },
+        "probe": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probe"
+        },
+        "tests": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Tests",
+          "type": "array"
+        }
+      },
+      "required": [
+        "level"
+      ],
+      "title": "CriterionVerification",
       "type": "object"
     },
     "FilePatch": {
@@ -131,6 +228,387 @@
       "title": "ImplementationInstruction",
       "type": "object"
     },
+    "OperationalContract": {
+      "additionalProperties": false,
+      "description": "The operational contract of a task (#55): what the person and the harness agreed on\nbefore work starts. Every field is optional in the task file; the harness fills the rest\nfrom the project configuration and records the resulting summary, bound to the task\ndigest, at INTENT.",
+      "properties": {
+        "branch": {
+          "anyOf": [
+            {
+              "maxLength": 200,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "coverageThreshold": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coveragethreshold"
+        },
+        "createPullRequest": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Createpullrequest"
+        },
+        "definitionOfDone": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Definitionofdone",
+          "type": "array"
+        },
+        "examples": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Examples",
+          "type": "array"
+        },
+        "objective": {
+          "anyOf": [
+            {
+              "maxLength": 4000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Objective"
+        },
+        "outOfScope": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Outofscope",
+          "type": "array"
+        },
+        "push": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Push"
+        },
+        "scope": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Scope",
+          "type": "array"
+        },
+        "scopePaths": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Scopepaths",
+          "type": "array"
+        },
+        "verificationLevel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "OperationalContract",
+      "type": "object"
+    },
+    "ProbeAssertion": {
+      "additionalProperties": false,
+      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.",
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        },
+        "equals": {
+          "default": null,
+          "title": "Equals"
+        },
+        "kind": {
+          "enum": [
+            "exitCode",
+            "jsonPath",
+            "differs",
+            "order",
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "matches": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matches"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Present"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ProbeAssertion",
+      "type": "object"
+    },
+    "ProbeDefinition": {
+      "additionalProperties": false,
+      "description": "A command whose observable output shows a behaviour (a CLI, a script, a local server,\na simulator test), with assertions on that output, run once per variant of its matrix:\non the baseline (preflight) and after the change (VERIFICATION). The command runs without\na shell; ``{name}`` placeholders are filled from the variant. A probe that cannot run is\n``BLOCKED``, never ``PASSED``.",
+      "properties": {
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/ProbeAssertion"
+          },
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "criteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Criteria",
+          "type": "array"
+        },
+        "cwd": {
+          "default": ".",
+          "title": "Cwd",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/VerificationLevel",
+          "default": "L3"
+        },
+        "matrix": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "object"
+        },
+        "output": {
+          "default": "text",
+          "enum": [
+            "json",
+            "text"
+          ],
+          "title": "Output",
+          "type": "string"
+        },
+        "passEnv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Passenv",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProbeVariant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "assertions"
+      ],
+      "title": "ProbeDefinition",
+      "type": "object"
+    },
+    "ProbeVariant": {
+      "additionalProperties": false,
+      "description": "One combination of the variant matrix: the values of the command's placeholders and\nenvironment variables set for this run of the probe.",
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Values",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ProbeVariant",
+      "type": "object"
+    },
     "Requirement": {
       "additionalProperties": false,
       "properties": {
@@ -156,6 +634,19 @@
       ],
       "title": "Requirement",
       "type": "object"
+    },
+    "VerificationLevel": {
+      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "title": "VerificationLevel",
+      "type": "string"
     }
   },
   "$id": "https://example.org/governed-harness/schemas/v1/task.schema.json",
@@ -170,6 +661,14 @@
       "title": "Acceptancecriteria",
       "type": "array"
     },
+    "checklist": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ChecklistItem"
+      },
+      "title": "Checklist",
+      "type": "array"
+    },
     "constraints": {
       "default": [],
       "items": {
@@ -177,6 +676,17 @@
       },
       "title": "Constraints",
       "type": "array"
+    },
+    "contract": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OperationalContract"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "createdAt": {
       "format": "date-time",
@@ -201,6 +711,14 @@
       "additionalProperties": true,
       "title": "Metadata",
       "type": "object"
+    },
+    "probes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ProbeDefinition"
+      },
+      "title": "Probes",
+      "type": "array"
     },
     "projectId": {
       "title": "Projectid",

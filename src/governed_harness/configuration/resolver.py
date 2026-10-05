@@ -3,11 +3,14 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
+from governed_harness.configuration.engineering import StandardsConfig
 from governed_harness.configuration.loader import (
     BUILTIN_PROFILE_IDS,
+    EXTENDED_PROFILES,
     find_project_config,
     load_builtin_profile,
     load_builtin_workflow,
+    load_extended_profiles,
     load_project_config,
     load_yaml,
 )
@@ -49,13 +52,20 @@ class ConfigurationResolver:
         workspace_root = (config_path.parent / project.workspace.root).resolve(strict=True)
         toolchain = project.toolchain_settings
         project_profiles, profile_files = load_project_profiles(
-            workspace_root, toolchain.profile_paths or ()
+            workspace_root,
+            toolchain.profile_paths or (),
+            reserved=frozenset(EXTENDED_PROFILES) if toolchain.extended_profiles else frozenset(),
         )
+        # Since #55: the built-in Go, Rust, JVM, Swift and Android profiles are detected under
+        # toolchain.extendedProfiles; without it detection is the 1.0.0 one.
+        extended = load_extended_profiles() if toolchain.extended_profiles else {}
         requested = list(project.profiles)
         if requested == ["auto"] or "auto" in requested:
             detections = [
                 result
-                for result in detect_profiles(workspace_root, project_profiles.values())
+                for result in detect_profiles(
+                    workspace_root, [*project_profiles.values(), *extended.values()]
+                )
                 if result.confidence > 0
             ]
             if not detections:
@@ -82,6 +92,18 @@ class ConfigurationResolver:
                 *(
                     CapabilityRule(capability="process.execute", scope=(scope,))
                     for scope in extra_scopes
+                ),
+            )
+        standards = project.standards
+        if standards is not None and standards.tools_enabled:
+            validators, tool_scopes = self._standards_tools(
+                validators, standards, workspace_root, profiles
+            )
+            grants = (
+                *grants,
+                *(
+                    CapabilityRule(capability="process.execute", scope=(scope,))
+                    for scope in tool_scopes
                 ),
             )
         capabilities = self._resolve_capabilities(grants, profiles)
@@ -188,6 +210,31 @@ class ConfigurationResolver:
         return resolved, tuple(dict.fromkeys(scope for scope in scopes if scope))
 
     @staticmethod
+    def _standards_tools(
+        validators: tuple[ValidatorDefinition, ...],
+        standards: StandardsConfig,
+        workspace_root: Path,
+        profiles: tuple[TechnologyProfileDefinition, ...],
+    ) -> tuple[tuple[ValidatorDefinition, ...], tuple[str, ...]]:
+        """``standards.tools: detect`` (#56): an optional validator for every pack tool the
+        repository configures and no selected validator runs already, with a
+        ``process.execute`` grant for its exact command."""
+        from governed_harness.standards import project_standards, tool_validators
+
+        packs = project_standards(
+            workspace_root,
+            packs=standards.packs,
+            overrides=standards.overrides_path,
+            disabled=standards.disabled or (),
+            technologies=tuple(item.technology for item in profiles),
+        )
+        added = tool_validators(packs, workspace_root, [item.validator_id for item in validators])
+        return (
+            (*validators, *(definition for _pack, _tool, definition in added)),
+            tuple(" ".join(definition.command or ()) for _pack, _tool, definition in added),
+        )
+
+    @staticmethod
     def _resolve_policies(
         project_policies: dict[str, object], profiles: tuple[TechnologyProfileDefinition, ...]
     ) -> dict[str, object]:
@@ -211,7 +258,7 @@ class ConfigurationResolver:
 
 
 def load_project_profiles(
-    workspace_root: Path, paths: tuple[str, ...]
+    workspace_root: Path, paths: tuple[str, ...], reserved: frozenset[str] = frozenset()
 ) -> tuple[dict[str, TechnologyProfileDefinition], tuple[str, ...]]:
     """The profiles of ``toolchain.profilePaths`` by id, and the files they came from."""
     files: list[Path] = []
@@ -235,7 +282,7 @@ def load_project_profiles(
             raise
         except Exception as error:
             raise ConfigurationError(f"invalid project profile {path}: {error}") from error
-        if profile.profile_id in BUILTIN_PROFILE_IDS:
+        if profile.profile_id in BUILTIN_PROFILE_IDS | reserved:
             raise ConfigurationError(
                 f"project profile {path} uses the built-in profile id {profile.profile_id!r}"
             )

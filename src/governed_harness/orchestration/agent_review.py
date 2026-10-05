@@ -120,7 +120,15 @@ class AgentReview:
             },
             "severities": list(REVIEW_SEVERITIES),
         }
-        outcome = results.call_agent(execution, phase, "review", payload, task=task)
+        suffix = ""
+        if results.engineering.configured:
+            # The standards cards no tool verifies and the principles checklist ride on this
+            # call (#56): no extra agent call.
+            checklist, suffix = results.engineering.review_extra(execution, change_set)
+            payload.update(checklist)
+        outcome = results.call_agent(
+            execution, phase, "review", payload, task=task, instructions_suffix=suffix
+        )
         provider = results.provider_for(execution, "review")
         actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider}", version="1")
         enforce = self.policy == "enforce"

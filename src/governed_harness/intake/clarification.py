@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Any
 
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
@@ -461,6 +462,10 @@ class ClarificationInput:
     replace_criteria: tuple[AcceptanceCriterion, ...] = ()
     add_criteria: tuple[AcceptanceCriterion, ...] = ()
     add_requirements: tuple[Requirement, ...] = ()
+    contract: dict[str, Any] | None = None
+    """Answers to the operational-contract section of the request (since #55), by item."""
+    confirm_contract: bool = False
+    """The person confirms the contract summary the request showed (since #55)."""
 
 
 @dataclass(frozen=True)
@@ -498,7 +503,7 @@ def revise_task(
     unknown = sorted(set(clarification.answers) - set(by_id))
     if unknown:
         raise ConfigurationError(f"unknown question id(s): {', '.join(unknown)}")
-    if not clarification.answers:
+    if not clarification.answers and not clarification.contract:
         raise ConfigurationError("the answers file must answer at least one question")
     blank = sorted(qid for qid, text in clarification.answers.items() if not text.strip())
     if blank:
@@ -555,6 +560,12 @@ def revise_task(
                     requirements.append(requirement)
                     added_requirements.append(requirement.requirement_id)
             continue
+        if question.rule_id == "P1":
+            # A project setup answer (#56) is a decision about the project; the task keeps it
+            # as a constraint so the agent sees it.
+            part = question.target.removeprefix("project:")
+            constraints.append(f"Project setup ({part}): {' '.join(answer.split())}")
+            continue
         if question.rule_id == "A1" and question.category == "out-of-scope":
             # An agent's out-of-scope question is answered with what the task leaves out.
             constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
@@ -581,6 +592,13 @@ def revise_task(
         )
         criteria[index] = current.model_copy(update={"verification_hint": hint})
 
+    contract: dict[str, Any] = {}
+    if clarification.contract:
+        # The operational-contract section (since #55): answers update the task's contract.
+        contract = {
+            **(task.contract.model_dump(mode="json", by_alias=True) if task.contract else {}),
+            **{key: _contract_value(key, value) for key, value in clarification.contract.items()},
+        }
     try:
         revised = Task.model_validate(
             {
@@ -589,6 +607,7 @@ def revise_task(
                 "requirements": [item.model_dump(by_alias=True) for item in requirements],
                 "criteriaPending": not criteria,
                 "acceptanceCriteria": [item.model_dump(by_alias=True) for item in criteria],
+                **({"contract": contract} if contract else {}),
             }
         )
     except Exception as error:
@@ -602,6 +621,38 @@ def revise_task(
 
 
 _LIST_MARKER = re.compile(r"^(?:[-*+\u2022]|\d+[.)])(?:\s+|$)")
+
+_CONTRACT_LISTS = frozenset({"examples", "scope", "scopePaths", "outOfScope", "definitionOfDone"})
+_CONTRACT_FLAGS = frozenset({"push", "createPullRequest", "comment"})
+_CONTRACT_KEYS = (
+    _CONTRACT_LISTS
+    | _CONTRACT_FLAGS
+    | {
+        "objective",
+        "verificationLevel",
+        "branch",
+        "coverageThreshold",
+    }
+)
+
+
+def _contract_value(key: str, value: Any) -> Any:
+    """An answer to a contract item in the form the task's contract stores it: a list from a
+    text answer, one item per line; a flag from yes or no."""
+    if key not in _CONTRACT_KEYS:
+        raise ConfigurationError(
+            f"unknown contract item {key!r}; known: {', '.join(sorted(_CONTRACT_KEYS))}"
+        )
+    if key in _CONTRACT_LISTS and isinstance(value, str):
+        return _answer_lines(value)
+    if key in _CONTRACT_FLAGS and isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"yes", "y", "true"}:
+            return True
+        if lowered in {"no", "n", "false"}:
+            return False
+        raise ConfigurationError(f"contract item {key} is yes or no, got {value!r}")
+    return value
 
 
 def _answer_lines(answer: str) -> list[str]:

@@ -7,8 +7,10 @@ checked against the documented expectation. The script is used by CI in three wa
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
-  clarification, traceability, corrections, integrity, delivery and agent-results flows,
-  leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
+  clarification, traceability, corrections, integrity, delivery, agent-results and ladder flows,
+  and the gitlab, tdd and bdd flows of wave 6, leaving the projects in ``--workdir`` so
+  ``scripts/metrics_report.py`` can read them (with ``HARNESS_STATE_DIR`` pointing at the same
+  run registry: ``runtime.stateDir: auto``, written by init, keeps it outside the workspaces);
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
@@ -29,7 +31,9 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import Sequence
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
@@ -136,11 +140,21 @@ class Transcript:
         self.ok = True
 
     def run(
-        self, flow: str, cwd: Path, args: Sequence[str], expect: int
+        self,
+        flow: str,
+        cwd: Path,
+        args: Sequence[str],
+        expect: int,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         argv = [self.harness, *args]
         proc = subprocess.run(
-            argv, cwd=cwd, capture_output=True, text=True, check=False, env=ISOLATED_GIT_ENV
+            argv,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**isolated_env(), **(env or {})},
         )
         matched = proc.returncode == expect
         self.ok &= matched
@@ -161,8 +175,15 @@ class Transcript:
             print(proc.stdout[-2000:], proc.stderr[-2000:], sep="\n", file=sys.stderr)
         return proc
 
-    def json(self, flow: str, cwd: Path, args: Sequence[str], expect: int) -> Any:
-        return json.loads(self.run(flow, cwd, args, expect).stdout)
+    def json(
+        self,
+        flow: str,
+        cwd: Path,
+        args: Sequence[str],
+        expect: int,
+        env: dict[str, str] | None = None,
+    ) -> Any:
+        return json.loads(self.run(flow, cwd, args, expect, env).stdout)
 
     def check(self, flow: str, condition: bool, description: str) -> None:
         """Record an assertion on the output of a step, next to its exit code."""
@@ -171,12 +192,16 @@ class Transcript:
         print(f"[{mark}] {flow:<14} check: {description}")
 
 
-ISOLATED_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+def isolated_env() -> dict[str, str]:
+    """The environment of every command: the current one (read when the command runs, so the
+    anchor and state directories ``main`` sets reach the harness) without the developer's global
+    or system Git configuration."""
+    return {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 
 def git_output(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=ISOLATED_GIT_ENV
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=isolated_env()
     ).stdout.strip()
 
 
@@ -249,7 +274,7 @@ def node_project(root: Path) -> Path:
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
     "verification": (
         "interface",
         "architecture",
@@ -264,6 +289,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "sarif",
         "riskFactors",
         "acceptanceTests",
+        "principles",
     ),
     "review": ("agentReview", "reviewer", "structuredChanges"),
     "runtime": ("gateContract", "reproduceFirst"),
@@ -282,7 +308,16 @@ def without_agent_results(root: Path) -> None:
     for section, keys in AGENT_RESULTS_KEYS.items():
         for key in keys:
             config.get(section, {}).pop(key, None)
-    for section in ("planning", "context", "budget", "memory", "agentRouting"):
+    for section in (
+        "planning",
+        "context",
+        "budget",
+        "memory",
+        "agentRouting",
+        "standards",
+        "testing",
+        "architecture",
+    ):
         config.pop(section, None)
     path.write_text(yaml.safe_dump(config, sort_keys=False))
 
@@ -1139,7 +1174,8 @@ def flow_integrity(t: Transcript, root: Path) -> None:
     t.run(flow, root, ["verify", *here, "--run", run_id], 0)
     approve(t, flow, root, run_id, "Discount rule reviewed")
     t.run(flow, root, ["verify", *here], 0)
-    database = root / ".harness" / "state.db"
+    # runtime.stateDir (written by init) keeps the registry outside the workspace.
+    database = Path(validated["ladder"]["state"]["database"])
     with sqlite3.connect(database) as connection:
         connection.execute(
             "UPDATE events SET payload_json=? WHERE execution_id=? AND event_type=?",
@@ -1264,6 +1300,512 @@ def flow_agent_results(t: Transcript, root: Path) -> None:
     t.check(flow, "1 - rate" not in pricing, "the rejected change was quarantined")
 
 
+LADDER_CLI = """\
+import json
+import sys
+
+from sample import apply_discount
+
+print(json.dumps({"total": apply_discount(float(sys.argv[1]), 100, 0.1)}))
+"""
+
+LADDER_PROBE = """\
+  - id: cli
+    command: [python, -m, sample.cli, "{amount}"]
+    output: json
+    variants:
+      - {name: below, values: {amount: "50"}, env: {PYTHONPATH: src}}
+      - {name: above, values: {amount: "200"}, env: {PYTHONPATH: src}}
+    assertions:
+      - {kind: exitCode, equals: 0}
+      - {kind: jsonPath, path: "$.total", present: true}
+      - {kind: differs, path: "$.total"}
+"""
+
+LADDER_TASK = (
+    """\
+taskId: task_ladder
+title: Discount at the threshold, certified
+intent: Apply a percentage discount only when the subtotal reaches the threshold.
+acceptanceCriteria:
+  - criterionId: ac_unit
+    text: apply_discount(100, 100, 0.1) returns 90.
+    verification: {level: L1}
+  - criterionId: ac_cli
+    text: The command line prints the discounted total as JSON.
+    verification: {level: L3, probe: cli}
+  - criterionId: ac_e2e
+    text: The checkout flow shows the discount end to end.
+    verification: {level: L4, deferred: CI job e2e}
+  - criterionId: ac_look
+    text: The receipt shows the discount line.
+    verification: {level: L5, manual: The receipt layout shows the discount line}
+probes:
+"""
+    + LADDER_PROBE
+    + """\
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            return subtotal * (1 - rate) if subtotal >= threshold else subtotal
+    - path: tests/test_pricing.py
+      operation: append
+      content: |
+
+        def test_ac_unit_at_threshold() -> None:
+            assert apply_discount(100, 100, 0.1) == 90
+"""
+)
+
+UNREACHED_TASK = """\
+taskId: task_unreached
+title: Rounding to cents
+intent: Round the discounted total to cents.
+acceptanceCriteria:
+  - criterionId: ac_rounding
+    text: apply_discount(10.005, 1, 0.1) returns 9.0.
+    verification: {level: L1}
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            value = subtotal * (1 - rate) if subtotal >= threshold else subtotal
+            return round(value, 2)
+"""
+
+DEVICE_TASK = """\
+taskId: task_device
+title: The total on a device
+intent: Show the discounted total on the device screen.
+acceptanceCriteria:
+  - criterionId: ac_screen_total
+    text: apply_discount(200, 100, 0.1) returns 180.
+  - criterionId: ac_device
+    text: The device screen shows the total.
+    verification: {level: L3, probe: device}
+probes:
+  - id: device
+    command: [device-lab, run, total-screen]
+    assertions:
+      - {kind: exitCode, equals: 0}
+implementation:
+  mode: patch
+  patches:
+    - path: tests/test_screen.py
+      operation: create
+      content: |
+        from sample import apply_discount
+
+
+        def test_ac_screen_total() -> None:
+            assert apply_discount(200, 100, 0.1) == 180
+"""
+
+LADDER_JUNIT = """\
+<?xml version="1.0"?>
+<testsuites><testsuite name="e2e" tests="1">
+<testcase classname="checkout" name="test_ac_e2e_discount"/>
+</testsuite></testsuites>
+"""
+
+
+def flow_ladder(t: Transcript, root: Path) -> None:
+    """Wave 5, with the defaults init writes: a task declares the rung of each criterion (a unit
+    test, a probe of the command line with two variants, an end-to-end check only CI runs, a
+    check only a person makes). The run reaches DECISION certified PARTIAL; APPROVE without the
+    checklist exits 5 and with it the run closes; a JUnit report closes the deferred item and
+    the run is CERTIFIED. A task whose declared L1 rung no test reaches (no test names the
+    criterion) stops in VERIFICATION, not certified (exit 6); a task whose probe cannot run waits
+    for a person in
+    PLANNING (exit 6) and continues uncertified (exit 4). config lint reports an instruction
+    file that tells the agent to skip the hooks (exit 6)."""
+    flow = "ladder"
+    python_project(root)
+    (root / "src" / "sample" / "cli.py").write_text(LADDER_CLI)
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "command line")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    (root / "task.yaml").write_text(LADDER_TASK)
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_ladder"], 4)["executionId"]
+    shown = t.json(flow, root, ["verification", "show", *here, "--run", run_id], 0)
+    t.check(
+        flow,
+        shown["preflight"]["status"] == "PARTIAL" and shown["certification"]["status"] == "PARTIAL",
+        "the preflight and the certification are PARTIAL: CI and a person are still to come",
+    )
+    digest = current_digest(t, flow, root, run_id)
+    decide = ["gate", "decide", *here, "--run", run_id, "--change-set-digest", digest]
+    decide += ["--actor", "human.reviewer", "--decision", "APPROVE", "--rationale", "Checked"]
+    t.run(flow, root, decide, 5)
+    t.run(flow, root, [*decide, "--check", "ac_look"], 0)
+    (root / "e2e.xml").write_text(LADDER_JUNIT)
+    attach = ["evidence", "attach", *here, "--run", run_id, "--item", "D-ac_e2e"]
+    t.run(flow, root, [*attach, "--file", "e2e.xml", "--actor", "human.ci"], 0)
+    shown = t.json(flow, root, ["verification", "show", *here, "--run", run_id], 0)
+    t.check(
+        flow,
+        shown["certification"]["status"] == "CERTIFIED",
+        "the attached JUnit report closed the deferred item: CERTIFIED",
+    )
+
+    (root / "unreached.yaml").write_text(UNREACHED_TASK)
+    t.run(flow, root, ["task", "create", *here, "--file", "unreached.yaml"], 0)
+    unreached = t.json(flow, root, ["run", "start", *here, "--task", "task_unreached"], 6)
+    shown = t.json(
+        flow, root, ["verification", "show", *here, "--run", unreached["executionId"]], 0
+    )
+    t.check(
+        flow,
+        shown["certification"]["status"] == "NOT_CERTIFIED"
+        and unreached["currentPhase"] == "VERIFICATION",
+        "a declared L1 rung no test reaches stops VERIFICATION, not certified",
+    )
+
+    # The device lab's command is granted to the probes, but this machine does not have it.
+    config = root / ".harness" / "project.yaml"
+    config.write_text(
+        config.read_text().replace(
+            "  grants: []",
+            "  grants:\n  - capability: process.execute\n    scope: [device-lab]",
+        )
+    )
+    (root / "device.yaml").write_text(DEVICE_TASK)
+    t.run(flow, root, ["task", "create", *here, "--file", "device.yaml"], 0)
+    device = t.json(flow, root, ["run", "start", *here, "--task", "task_device"], 6)
+    t.check(
+        flow,
+        device["currentPhase"] == "PLANNING" and device["status"] == "BLOCKED",
+        "a probe that cannot run makes the preflight UNAVAILABLE before any change",
+    )
+    t.run(
+        flow,
+        root,
+        [
+            "verification",
+            "decide",
+            *here,
+            "--run",
+            device["executionId"],
+            "--continue-uncertified",
+            "--actor",
+            "human.lead",
+            "--rationale",
+            "No device here; the device lab verifies it",
+        ],
+        4,
+    )
+    (root / "AGENTS.md").write_text("Commit with git commit --no-verify when the hooks are slow.\n")
+    t.run(flow, root, ["config", "lint", *here], 6)
+
+
+class _FakeForge(BaseHTTPRequestHandler):
+    """A GitLab REST v4 stand-in on 127.0.0.1: it records every request and answers like
+    GitLab would, so the forge flow reaches no network."""
+
+    calls: list[tuple[str, str, Any]] = []
+
+    def _answer(self, status: int, value: Any) -> None:
+        data = json.dumps(value).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _record(self) -> Any:
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length)) if length else None
+        self.calls.append((self.command, self.path, body))
+        return body
+
+    def do_GET(self) -> None:  # noqa: N802 - http.server API
+        self._record()
+        self._answer(200, [])
+
+    def do_POST(self) -> None:  # noqa: N802 - http.server API
+        self._record()
+        if self.path.endswith("/merge_requests"):
+            self._answer(201, {"iid": 42, "web_url": "https://gitlab.example.invalid/mr/42"})
+        else:
+            self._answer(201, {"id": 1})
+
+    def do_PUT(self) -> None:  # noqa: N802 - http.server API
+        self._record()
+        self._answer(200, {"id": 1})
+
+    def log_message(self, format: str, *args: Any) -> None:  # noqa: A002 - http.server API
+        return
+
+
+def flow_gitlab(t: Transcript, root: Path) -> None:
+    """A project whose origin is on GitLab (#56): the forge is detected from the remote, the
+    decision brief is published as a merge request note, a merge request is opened from the
+    closure branch with the labels, the commit status follows the run and the findings are
+    exported as a GitLab Code Quality report. The REST API is a local fake server: no
+    network."""
+    flow = "gitlab"
+    python_project(root)
+    git(root, "remote", "add", "origin", "https://gitlab.example.com/team/shop.git")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    without_agent_results(root)
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FakeForge)
+    _FakeForge.calls = []
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.server_address[1]
+        config = root / ".harness" / "project.yaml"
+        config.write_text(
+            config.read_text().replace(
+                "delivery:\n",
+                "delivery:\n  forge:\n"
+                f"    apiUrl: http://127.0.0.1:{port}/api/v4\n"
+                "    baseBranch: main\n    labels: [governed]\n",
+            )
+        )
+        env = {"GITLAB_TOKEN": "demo-placeholder"}
+        (root / "task.yaml").write_text(PY_TASK)
+        t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+        run_id = t.json(
+            flow, root, ["run", "start", *here, "--task", "task_python_add_discount"], 4
+        )["executionId"]
+        shown = t.json(flow, root, ["pr", "forge", *here], 0)
+        t.check(flow, shown["kind"] == "gitlab", "the forge is detected from the origin remote")
+        published = t.json(flow, root, ["pr", "publish", *here, "--pr", "7"], 0, env)
+        t.check(
+            flow,
+            published["comment"]["action"] == "created"
+            and any(
+                call[0] == "POST" and call[1].endswith("/merge_requests/7/notes")
+                for call in _FakeForge.calls
+            ),
+            "the brief is a note on merge request 7",
+        )
+        created = t.json(flow, root, ["pr", "create", *here, "--run", run_id], 0, env)
+        t.check(
+            flow,
+            created["pullRequest"]["number"] == 42 and created["head"] == f"harness/{run_id}",
+            "a merge request is opened from the closure branch",
+        )
+        head = git_output(root, "rev-parse", "HEAD")
+        status = t.json(flow, root, ["pr", "status", *here, "--commit", head], 0, env)
+        t.check(flow, status["state"] == "pending", "the commit status waits for the decision")
+        t.run(
+            flow,
+            root,
+            ["trace", *here, "--format", "codequality", "--output", "gl-code-quality-report.json"],
+            0,
+        )
+        issues = json.loads((root / "gl-code-quality-report.json").read_text())
+        t.check(flow, isinstance(issues, list), "the Code Quality report is a JSON array")
+        t.run(flow, root, ["pr", "publish", *here, "--pr", "7"], 2, {"GITLAB_TOKEN": ""})
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+TDD_TASK = """\
+taskId: {task_id}
+title: Threshold discount, test first
+intent: Apply the configured discount at or above the threshold.
+acceptanceCriteria:
+  - criterionId: AC-1
+    text: apply_discount(100, 100, 0.1) returns 90.
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            return {body}
+    - path: tests/test_pricing.py
+      operation: append
+      content: |
+
+        def test_{test}() -> None:
+            assert apply_discount({subtotal}, 100, 0.1) == {expected}
+"""
+
+
+TDD_BODY = "subtotal * (1 - rate) if subtotal >= threshold else subtotal"
+TDD_LATE_BODY = "subtotal - subtotal * rate if subtotal >= threshold else subtotal"
+
+
+def flow_tdd(t: Transcript, root: Path) -> None:
+    """testing.strategy: tdd (#56) with the simulated provider. A change whose new test fails
+    on the code before it (red), passes after it (green) and leaves the principles checks clean
+    (refactor) reaches DECISION; a change whose test already passes before it stops in
+    VERIFICATION with tdd.not-red. The standards cards for the touched file are shown."""
+    flow = "tdd"
+    python_project(root)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    config = root / ".harness" / "project.yaml"
+    config.write_text(config.read_text().replace("strategy: auto", "strategy: tdd"))
+    shown = t.json(flow, root, ["standards", "show", *here, "--file", "src/sample/pricing.py"], 0)
+    t.check(
+        flow,
+        any(item["id"].startswith("python.") for item in shown["selection"]["implement"]),
+        "the python cards apply to the touched file",
+    )
+    (root / "red.yaml").write_text(
+        TDD_TASK.format(
+            task_id="task_red", test="at_threshold", subtotal=100, expected=90, body=TDD_BODY
+        )
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "red.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_red"], 4)["executionId"]
+    trace = t.json(flow, root, ["trace", *here, "--run", run_id, "--format", "json"], 0)
+    tdd = [item for item in trace["validations"] if item["validatorId"] == "harness.tdd"]
+    t.check(flow, bool(tdd) and tdd[-1]["status"] == "PASSED", "red, green and refactor recorded")
+    approve(t, flow, root, run_id, "Test written first")
+    (root / "green.yaml").write_text(
+        TDD_TASK.format(
+            task_id="task_after", test="far_below", subtotal=10, expected=10, body=TDD_LATE_BODY
+        )
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "green.yaml"], 0)
+    late = t.json(flow, root, ["run", "start", *here, "--task", "task_after"], 6)["executionId"]
+    rules = {
+        item["ruleId"] for item in t.json(flow, root, ["findings", "list", *here, "--run", late], 0)
+    }
+    t.check(flow, "tdd.not-red" in rules, "a test that passes before the change is not TDD")
+
+
+BDD_AGENT = """\
+import json, sys
+from pathlib import Path
+
+request = json.load(sys.stdin)
+kind = request.get("kind", "implement")
+feature = (
+    "Feature: Threshold discount\\n"
+    "  Scenario: AC-1 a subtotal at the threshold is discounted\\n"
+    "    Given a subtotal of 100 and a threshold of 100\\n"
+    "    When the discount of 10 percent applies\\n"
+    "    Then the total is 90\\n"
+)
+results = {
+    "clarify": {"questions": []},
+    "review": {"findings": []},
+    "acceptance": {"tests": [{"path": "features/discount.feature", "content": feature}]},
+    "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}},
+}
+if kind in results:
+    print(json.dumps({"status": "PASSED", "summary": kind, "result": results[kind]}))
+    sys.exit(0)
+Path("features/steps").mkdir(parents=True, exist_ok=True)
+Path("features/steps/discount_steps.py").write_text(
+    "STEPS = ['a subtotal of 100 and a threshold of 100', "
+    "'the discount of 10 percent applies', 'the total is 90']\\n"
+)
+Path("src/sample/pricing.py").write_text(
+    "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
+    "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n"
+)
+print(json.dumps({"status": "PASSED", "summary": "step definitions and code"}))
+"""
+
+FEATURE_RUNNER = """\
+import re, sys
+from pathlib import Path
+
+steps_dir = Path("features/steps")
+steps = "\\n".join(p.read_text() for p in steps_dir.glob("*.py")) if steps_dir.is_dir() else ""
+missing = [
+    match.group(2)
+    for feature in Path("features").glob("*.feature")
+    for line in feature.read_text().splitlines()
+    if (match := re.match(r"\\s*(Given|When|Then|And) (.+)", line)) and match.group(2) not in steps
+]
+print("undefined steps:", missing)
+sys.exit(1 if missing else 0)
+"""
+
+BDD_TASK = """\
+taskId: task_bdd
+title: Threshold discount, behaviour first
+intent: Apply the configured discount at or above the threshold.
+acceptanceCriteria:
+  - criterionId: AC-1
+    text: apply_discount(100, 100, 0.1) returns 90.
+metadata:
+  ownedPaths: [src/sample/pricing.py, features/steps/discount_steps.py]
+"""
+
+
+def flow_bdd(t: Transcript, root: Path) -> None:
+    """testing.strategy: bdd (#56) with a fixture command provider. The acceptance call writes
+    the criterion as a Gherkin scenario; SPECIFICATION waits for a person (exit 6); the
+    approval freezes the feature file and runs the BDD runner before the change (it fails: no
+    step is defined); the agent then writes the step definitions and the code, and the run
+    reaches DECISION (exit 4). The runner here is a small fixture script; a project uses
+    behave, pytest-bdd, Cucumber, SpecFlow or its pack's runner."""
+    flow = "bdd"
+    python_project(root)
+    (root / "agent.py").write_text(BDD_AGENT)
+    (root / "run_features.py").write_text(FEATURE_RUNNER)
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "agent and runner fixtures")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    config = root / ".harness" / "project.yaml"
+    config.write_text(
+        config.read_text()
+        .replace("strategy: auto", "strategy: bdd\n  bddCommand: [python, run_features.py]")
+        .replace("agentSandbox: enforce", "agentSandbox: 'off'")
+        .replace("agentProvider: simulated", "agentProvider: bdd_agent")
+        .replace("providerRetryDelaySeconds: 60", "providerRetryDelaySeconds: 0")
+        + "agentProviders:\n  bdd_agent:\n    kind: command\n    command: [python, agent.py]\n"
+    )
+    (root / "task.yaml").write_text(BDD_TASK)
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_bdd"], 6)["executionId"]
+    proposal = t.json(flow, root, ["acceptance", "show", *here, "--run", run_id], 0)
+    t.check(
+        flow,
+        proposal["format"] == "gherkin"
+        and proposal["tests"][0]["path"] == "features/discount.feature",
+        "the acceptance call proposed a Gherkin scenario",
+    )
+    decided = t.json(
+        flow,
+        root,
+        [
+            "acceptance",
+            "decide",
+            *here,
+            "--run",
+            run_id,
+            "--decision",
+            "APPROVE",
+            "--digest",
+            proposal["digest"],
+            "--actor",
+            "human.reviewer",
+            "--rationale",
+            "The scenario states the criterion",
+        ],
+        4,
+    )
+    t.check(
+        flow,
+        decided["acceptanceTests"]["failBefore"]["status"] == "FAILED",
+        "the frozen scenario fails before the step definitions exist",
+    )
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -1277,6 +1819,10 @@ FLOWS = {
     "integrity": flow_integrity,
     "delivery": flow_delivery,
     "agent-results": flow_agent_results,
+    "ladder": flow_ladder,
+    "gitlab": flow_gitlab,
+    "tdd": flow_tdd,
+    "bdd": flow_bdd,
 }
 
 
@@ -1310,6 +1856,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if "HARNESS_ANCHOR_DIR" not in os.environ:
         anchors = tempfile.mkdtemp(prefix="harness-anchors-")
         os.environ["HARNESS_ANCHOR_DIR"] = anchors
+    # runtime.stateDir: auto (written by init) keeps the run registry under the user's data
+    # directory; the demonstration keeps it in a directory of its own, which metrics_report.py
+    # reads when HARNESS_STATE_DIR points at it (set it before running both to keep it).
+    state = None
+    if "HARNESS_STATE_DIR" not in os.environ:
+        state = tempfile.mkdtemp(prefix="harness-state-")
+        os.environ["HARNESS_STATE_DIR"] = state
     try:
         for name in names:
             target = workdir.resolve() / name
@@ -1321,6 +1874,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             shutil.rmtree(temp, ignore_errors=True)
         if anchors:
             shutil.rmtree(anchors, ignore_errors=True)
+        if state:
+            shutil.rmtree(state, ignore_errors=True)
     if args.transcript:
         args.transcript.write_text(json.dumps(transcript.steps, indent=2) + "\n", encoding="utf-8")
     failed = [step for step in transcript.steps if not step["ok"]]

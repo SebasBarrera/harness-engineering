@@ -38,7 +38,7 @@ class _Section(BaseModel):
 
 
 Policy = Literal["enforce", "warn", "off"]
-CallKind = Literal["implement", "clarify", "review", "plan", "acceptance"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance", "architecture", "locate"]
 
 
 class AgentCallConfig(_Section):
@@ -232,12 +232,42 @@ DEFAULT_CONTEXT_MAX_FILES = 40
 DEFAULT_CONTEXT_MAX_BYTES = 400_000
 
 
+LocateMode = Literal["agent", "off"]
+DEFAULT_LOCATE_MAX = 20
+
+
+class LocateConfig(_Section):
+    """Localisation with evidence (#55, item 11): a read-only ``locate`` call that returns
+    where to intervene (``path:line`` with evidence) before IMPLEMENTATION. It runs only for
+    tasks the router classifies M or L, once per task revision (cached by its digest), on the
+    cheapest rung of the router; its answer feeds the context manifest."""
+
+    mode: LocateMode | None = None
+    agent: AgentCallConfig | None = None
+    max_locations: int | None = Field(default=None, alias="maxLocations", ge=1, le=200)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "agent"
+
+    @property
+    def limit(self) -> int:
+        return self.max_locations or DEFAULT_LOCATE_MAX
+
+
 class ContextConfig(_Section):
-    """The bounded context manifest sent to the agent (#41)."""
+    """The bounded context manifest sent to the agent (#41) and, since #55, the localisation
+    call that feeds it (``locate``)."""
 
     manifest: ContextManifestMode | None = None
     max_files: int | None = Field(default=None, alias="maxFiles", ge=1, le=1000)
     max_bytes: int | None = Field(default=None, alias="maxBytes", ge=1024)
+    locate: LocateConfig | None = None
 
     @field_validator("manifest", mode="before")
     @classmethod
@@ -326,6 +356,9 @@ class FamilyTable(_Section):
     clarify: Rung | None = None
     plan: Rung | None = None
     review: Rung | None = None
+    locate: Rung | None = None
+    """Since #55: the rung of the read-only ``locate`` call; without it the cheapest rung of
+    the ladder (its first entry) is used."""
     ladder: tuple[Rung, ...] | None = None
 
 
