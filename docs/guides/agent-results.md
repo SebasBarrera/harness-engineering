@@ -14,7 +14,8 @@ configuration digest; `harness init` writes them all (see
 
 ## Request kinds (provider protocol 1.1)
 
-Besides `implement`, a command provider may receive four read-only request kinds. The request
+Besides `implement`, a command provider may receive five read-only request kinds (the fifth,
+`architecture`, since #56; see [standards, principles, testing and architecture](engineering.md)). The request
 says `"kind"`, `"readOnly": true` and carries rendered `"instructions"`; the response is the 1.0
 object (`status`, `summary`, optional `usage`) with a `result` object:
 
@@ -24,6 +25,7 @@ object (`status`, `summary`, optional `usage`) with a `result` object:
 | `acceptance` | SPECIFICATION | `{"tests": [{"path", "content"}]}` | `verification.acceptanceTests.mode: agent` |
 | `plan` | PLANNING | `{"subtasks": [{"title", "requirements", "criteria", "constraints"}]}` | `planning.decomposition: agent` |
 | `review` | INDEPENDENT_REVIEW | `{"findings": [{"severity", "rule", "path", "line", "message", "evidence"}]}` | `review.agentReview` |
+| `architecture` (#56) | INTENT (`mode: advise`) or DISCOVERY (`mode: survey`) | advise: `{"options": [{"id", "style", "title", "benefits", "costs", "fit", "recommended", "layers", "allow"}]}`; survey: `{"style", "summary", "layers", "allow"}` | `architecture.mode: agent` |
 
 A read-only call that changes the workspace is undone, recorded as a HIGH
 `agent.read-only-violation` finding and its answer is discarded. A `result` that does not match

@@ -62,6 +62,7 @@ intake:
   criteriaPolicy: enforce
   ambiguityReview: agent
   validateAnswers: true
+  projectSetup: ask
 verification:
   requirementTraceability: enforce
   outputParsers: true
@@ -94,6 +95,14 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+  principles:
+    mode: enforce
+    duplicationWindow: 6
+    maxInheritanceDepth: 3
+    unusedPublic: true
+    boyScout: true
+    checklist: true
+    severity: MEDIUM
 review:
   exceptions: true
   exceptionDays: 30
@@ -166,6 +175,19 @@ provenance:
   selfReport: true
 delivery:
   closureCommit: branch
+standards:
+  packs:
+  - auto
+  cards: auto
+  maxCards: 12
+  tools: detect
+testing:
+  strategy: auto
+  featuresDirectory: features
+architecture:
+  mode: agent
+  refresh: manual
+  enforce: enforce
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -220,6 +242,12 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |
+| `delivery.forge` | GitHub through `delivery.publisher` when absent; `init` writes none (the forge is detected from `origin`) | The forge of `harness pr publish`, `pr create` and `pr status`: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea. See [forges](../guides/forges.md). |
+| `standards.*` | off when absent; `init` writes `packs: [auto]`, `cards: auto`, `maxCards: 12`, `tools: detect` | Language standards packs: cards for the agent, the review checklist and the validators of the tools the repository configures. See [engineering standards](../guides/engineering.md#standards-packs). |
+| `verification.principles` | off when absent; `init` writes `mode: enforce` with every proxy on and `severity: MEDIUM` | Engineering principles as deterministic proxies and a checklist in the review call. See [engineering principles](../guides/engineering.md#engineering-principles). |
+| `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
+| `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
+| `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 
 ## Located findings
 
@@ -231,7 +259,9 @@ with rule `<validator>.<tool rule>` (for example `python.ruff.F401`, `python.myp
 recognized by content: SARIF 2.1.0, ESLint JSON, Ruff JSON, JUnit XML (printed, or written to a
 file named with `--junitxml`, `--junit-xml`, `--output-file` or `-o` inside the workspace), and
 the text output of Ruff (concise and full), Mypy, TypeScript `tsc` and pytest (`FAILED`/`ERROR`
-summary lines, with the line of the test taken from the traceback). Errors keep the severity of
+summary lines, with the line of the test taken from the traceback). Since #56 also Checkstyle
+XML (Checkstyle, ktlint, detekt, golangci-lint, SwiftLint, PHPStan), RuboCop JSON and Cargo JSON
+messages (Clippy); MSBuild diagnostics (`dotnet build`) only with `parser: msbuild`. Errors keep the severity of
 the summary finding, so the gate status is the one the summary already decides; warnings are
 `LOW` and notes are not recorded. At most 200 findings are kept per validator run, and an `INFO`
 finding counts the rest. A validator that passes is not parsed. The SARIF export
@@ -784,7 +814,7 @@ The keys a validator of a profile or of the project may set since 1.1:
 
 | Key | Default | Effect |
 |---|---|---|
-| `parser` | follow `verification.outputParsers` | Parse the output of a failing run with one format: `sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`; `auto` recognizes every format; `none` never parses. See [located findings](#located-findings). |
+| `parser` | follow `verification.outputParsers` | Parse the output of a failing run with one format: `sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`, `checkstyle`, `rubocop`, `cargo`, `msbuild`; `auto` recognizes every format but `msbuild`; `none` never parses. See [located findings](#located-findings). |
 | `severity` | error as the failure finding, warning `LOW`, note `INFO` | Severity of a parsed issue by its level, for example `{error: HIGH, warning: MEDIUM}`. |
 | `failureSeverity` | `HIGH` when mandatory, `MEDIUM` otherwise | Severity of the finding of a failing run. |
 | `passEnv` | none | Variables of the harness's environment the command receives as they are; their values are redacted from every artifact. |

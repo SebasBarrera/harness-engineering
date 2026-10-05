@@ -64,10 +64,12 @@ jobs:
               "governed_harness/resources/profiles/node.yaml",
           ]
           schemas = [n for n in names if n.startswith("governed_harness/resources/schemas/v1/")]
+          standards = [n for n in names if n.startswith("governed_harness/resources/standards/")]
           missing = [n for n in required if n not in names]
-          print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas")
+          print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas, {len(standards)} standards files")
           assert not missing, f"missing from wheel: {missing}"
           assert len(schemas) == 34, f"expected 34 schemas, found {len(schemas)}"
+          assert len(standards) == 30, f"expected 30 standards files (15 packs), found {len(standards)}"
           PY
       - name: Install the wheel in a clean environment
         run: |

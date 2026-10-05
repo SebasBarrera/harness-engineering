@@ -11,7 +11,8 @@ tool's rule id. Supported formats, recognized by content:
   summary (``FAILED``/``ERROR`` lines, with the line taken from the traceback);
 * since #56, for the tools of the language standards packs: Checkstyle XML (Checkstyle, ktlint,
   detekt, golangci-lint, SwiftLint, PHPStan and ESLint can all write it), RuboCop JSON
-  (``--format json``) and Cargo JSON messages (``cargo clippy --message-format=json``).
+  (``--format json``) and Cargo JSON messages (``cargo clippy --message-format=json``); the
+  MSBuild diagnostics of ``dotnet build`` only with ``parser: msbuild``.
 
 Parsing never runs a command and never changes a validator's status; a format it does not
 recognize yields no issue. XML is parsed without DTDs or entity expansion."""

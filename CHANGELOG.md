@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+- Forges, standards, principles, testing strategy, architecture and embedded mode, wave 6
+  (#56). Every setting is optional: a `project.yaml` without it keeps the 1.0.0 behaviour and
+  configuration digest, and `harness init` writes them (`harness config validate` shows them
+  under `engineering`). Guides: `docs/guides/forges.md`, `docs/guides/engineering.md`,
+  `docs/guides/embedded-mode.md`.
+  - Forges: GitHub, GitLab (REST v4 or `glab`), Bitbucket (REST 2.0, Code Insights), Azure
+    DevOps and Gitea behind one interface, detected from the `origin` remote or set in
+    `delivery.forge`: `harness pr publish` on any forge, `harness pr create` (template, labels,
+    draft), `harness pr status` and `harness pr forge`; `harness trace --format codequality`
+    (GitLab Code Quality); CI templates for GitHub Actions, GitLab CI, Jenkins and Azure
+    Pipelines with `harness verify-approval`. Tokens only from the environment.
+  - Language standards packs for Python, JavaScript, TypeScript, Node.js, React, Angular, Vue,
+    Java, Kotlin, Go, Rust, Swift, C#, PHP and Ruby (96 cards), with repository overrides that
+    take precedence, `harness standards show`, the cards of the touched files in the implement
+    request, the cards no tool verifies in the review call, and optional validators for the pack
+    tools the repository configures; new parsers for Checkstyle XML, RuboCop JSON, Cargo JSON and
+    MSBuild diagnostics.
+  - Engineering principles as deterministic proxies (`verification.principles`: duplication,
+    nesting, module size, inheritance depth, unused public API, reformat-only files) and a
+    principles checklist inside the existing review call.
+  - Testing strategy (`testing.strategy`): detected or asked; TDD records red, green and
+    refactor evidence (`harness.tdd`); BDD writes the criteria as Gherkin scenarios a person
+    approves, frozen and run with the project's BDD runner.
+  - Architecture: one cached survey per existing project or options for a new one (provider call
+    kind `architecture`), a person's approval or choice (`harness architecture show`, `decide` and
+    `refresh`, an ADR for a new project) and layer rules enforced as forbidden dependencies in
+    every language the packs know (`architecture.layer-violation`).
+  - New and existing projects are told apart deterministically (`harness project show`), and
+    `intake.projectSetup: ask` asks what is not established (rule `P1`).
+  - Embedded mode: `harness mcp serve` (MCP over stdio; no tool decides for a person), the
+    `session` provider and `harness init --agent-skills` (skills for Claude Code and Codex).
+  - Token cost, measured with `scripts/measure_agent_tokens.py` (fixture provider, estimated
+    tokens recorded by the harness): 4670 and 4735 tokens per run before, 6359 (with the one
+    architecture survey) and 5575 after; no extra agent call besides the survey.
+  - Fixed: the frozen acceptance tests no longer count as changes outside a task's ownedPaths.
+
 - Better agent results, wave 2 (#52, closes #37, #38, #39, #40, #41, #42, #43, #44; implements
   the proposal of #7 behind a setting). The motivating figures come from the thesis evaluation
   (reported there, not re-measured here). Every setting is optional: a `project.yaml` without
