@@ -304,6 +304,12 @@ Claude Code, Codex or any model API**: they are connected through such a wrapper
 the [external agents guide](docs/guides/external-agents.md). The provider only proposes a change;
 verification, review, the gate and the decision stay with the harness.
 
+Since 1.1 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
+and `harness init --agent-skills`, see the [embedded mode guide](docs/guides/embedded-mode.md)),
+the run can carry the team's language standards, engineering principles, testing strategy and
+architecture ([guide](docs/guides/engineering.md)), and the result can be published on GitHub,
+GitLab, Bitbucket, Azure DevOps or Gitea ([forges and CI templates](docs/guides/forges.md)).
+
 ## Web dashboard and API
 
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requires the `api` extra) serves the

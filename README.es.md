@@ -310,6 +310,14 @@ Claude Code, Codex ni ninguna API de modelos**: se conectan mediante un envoltor
 una plantilla en la [guía de agentes externos](docs/guides/external-agents.md). El proveedor solo
 propone un cambio; la verificación, la revisión, el gate y la decisión siguen en manos del harness.
 
+Desde 1.1 una sesión de agente también puede conducir el flujo (**modo embebido**:
+`harness mcp serve` y `harness init --agent-skills`, ver la
+[guía de modo embebido](docs/guides/embedded-mode.md)),
+la ejecución puede llevar los estándares de lenguaje, los principios de ingeniería, la estrategia de
+pruebas y la arquitectura del equipo ([guía](docs/guides/engineering.md)), y el resultado puede
+publicarse en GitHub, GitLab, Bitbucket, Azure DevOps o Gitea
+([forjas y plantillas de CI](docs/guides/forges.md)).
+
 ## Tablero web y API
 
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requiere el extra `api`) sirve el
