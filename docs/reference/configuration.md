@@ -65,6 +65,7 @@ governance:
   verifyRecords: true
   chainAnchor: file
   pinTaskRevision: true
+  protectExcludedPaths: true
 ```
 
 ## Fields
@@ -441,6 +442,25 @@ run waited in `DECISION` replaced the task under the run, silently.
 | Key | Absent | `init` | Effect |
 |---|---|---|---|
 | `pinTaskRevision` | `false` | `true` | `run start` stores the task revision as an artifact and records its digest (`taskDigest`, `taskRevisionRef`) in `run.created`; every phase works on that revision, and only `task clarify` (during `INTENT`) replaces it. `task create` with the id of a task that has an open run (not closed, cancelled or rejected) exits with 5 and names the run. `SPECIFICATION` freezes the acceptance-contract digest (requirements, acceptance criteria and constraints); `gate decide` records it in the decision as `acceptanceContractDigest` and refuses with 5 when the run's task no longer produces it, and a decision bound to another contract does not let `DECISION` pass. |
+
+### What the ChangeSet leaves out
+
+The ChangeSet excludes `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist`, `build`,
+caches and symbolic links. In an evaluation an agent wrote `.git/hooks/pre-commit`,
+`venv/lib/dep.py` and `dist/payload.py`; the ChangeSet showed one file and the gate reached
+`DECISION` with two `MEDIUM` findings. A Git hook runs the agent's code when the person commits,
+and a changed dependency changes what the tests run.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `protectExcludedPaths` | `false` | `true` | Before and after the agent invocations of every `IMPLEMENTATION` attempt (simulated and command providers, with or without the sandbox) the harness fingerprints every file below `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist` and `build` at any depth and every symbolic link in the workspace (size, modification time and SHA-256 of the first 8 KiB; the target of a link). The comparison is `IMPLEMENTATION` evidence. Any added, modified or deleted path is a `CRITICAL` finding `workspace.out-of-changeset-write` of `harness.workspace-guard` that names the paths, and every later gate of the run gets a failed mandatory validation `harness.workspace-guard` carrying it: the gate is `FAILED`, `APPROVE` exits with 5 and only `REJECT`, `REQUEST_CHANGES` or `APPROVE_EXCEPTION` with a rationale remain. Under `runtime.agentSandbox: enforce` the sandbox also keeps `.harness` and `.git` read-only (a `deny file-write*` after the allowed paths on macOS, a read-only bind on Linux), recorded as `protectedPaths` in the sandbox evidence; and the profiles' `filesystem.write` grants on `.harness/**` and `.git/**` are dropped from the resolved capabilities. |
+
+The harness's own files are not watched: `.harness/state.db*`, `.harness/artifacts/`,
+`.harness/lease.json*`, Git's `index`, `*.lock` files, `.git/objects/` and the
+`refs/notes/governed-harness` notes. Caches such as `__pycache__` are rewritten by every test run
+and are not watched either. A build the agent runs on purpose (`dist`, `build`) is reported too:
+inspect it and decide with an exception. A write that restores size, modification time and the
+first 8 KiB of a file is not detected.
 
 ## Technology profiles
 

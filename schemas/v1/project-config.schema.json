@@ -101,7 +101,7 @@
     },
     "GovernanceConfig": {
       "additionalProperties": false,
-      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.",
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.",
       "properties": {
         "chainAnchor": {
           "anyOf": [
@@ -159,6 +159,18 @@
           ],
           "default": null,
           "title": "Pintaskrevision"
+        },
+        "protectExcludedPaths": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protectexcludedpaths"
         },
         "trustedHosts": {
           "anyOf": [

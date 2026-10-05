@@ -294,7 +294,12 @@ class GovernanceConfig(ConfigModel):
       chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.
     * ``pinTaskRevision``: a run works on the task revision it was created with (or a revision
       made through ``task clarify``), ``task create`` refuses a task id that has an open run, and
-      a decision is bound to the acceptance-contract digest frozen in SPECIFICATION."""
+      a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.
+    * ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual
+      environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted
+      around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;
+      the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants
+      on ``.harness/**`` and ``.git/**`` are dropped."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -302,6 +307,7 @@ class GovernanceConfig(ConfigModel):
     verify_records: bool | None = Field(default=None, alias="verifyRecords")
     chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
     pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
+    protect_excluded_paths: bool | None = Field(default=None, alias="protectExcludedPaths")
 
     @field_validator("trusted_hosts")
     @classmethod

@@ -31,6 +31,7 @@ from governed_harness.domain.enums import (
     FindingSeverity,
     PhaseId,
     ResultStatus,
+    ValidationKind,
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
@@ -99,6 +100,7 @@ from governed_harness.runtime import (
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
 )
+from governed_harness.runtime.guard import IGNORED_PATTERNS, ExcludedPathGuard
 from governed_harness.runtime.sandbox import (
     SandboxHost,
     SandboxPlan,
@@ -116,6 +118,10 @@ from governed_harness.validators import (
     ValidationContext,
     ValidatorRegistry,
 )
+
+WORKSPACE_GUARD_ID = "harness.workspace-guard"
+"""Validator id of the excluded-path check (``governance.protectExcludedPaths``)."""
+OUT_OF_CHANGESET_RULE = "workspace.out-of-changeset-write"
 
 UNSUPPORTED_CLAIM_RULE = "agent.unsupported-claim"
 """Rule id of the finding recorded when an agent reported success and verification failed."""
@@ -991,6 +997,7 @@ class RunEngine:
                         self.s.paths.workspace,
                         self.s.resolved.project.runtime.sandbox_write_paths or (),
                         self.sandbox_host,
+                        protected=self._protected_paths(),
                     )
                 except SandboxUnavailable as error:
                     self._record_sandbox_finding(
@@ -1044,25 +1051,33 @@ class RunEngine:
             memory_context=memory_context,
             feedback=self._pending_feedback(execution, phase),
         )
+        guard = (
+            ExcludedPathGuard(self.s.paths.workspace) if self._protects_excluded_paths() else None
+        )
+        guard_before = guard.fingerprint() if guard else None
         retries = 0
-        while True:
-            result = provider.implement(task, plan, context)
-            self._save_agent_result(execution, phase, result)
-            cause = (
-                self._transient_cause(result)
-                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                else None
-            )
-            if cause is None:
-                break
-            retries += 1
-            # The repeated call runs through the same provider, so under the same sandbox
-            # prefix; a write the sandbox denied on the failed call is still reported.
-            if sandbox is not None:
-                self._record_denied_writes(execution, result.tool_invocations)
-            self._record_provider_retry(execution, phase, result, cause, retries)
-            if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+        try:
+            while True:
+                result = provider.implement(task, plan, context)
+                self._save_agent_result(execution, phase, result)
+                cause = (
+                    self._transient_cause(result)
+                    if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+                    else None
+                )
+                if cause is None:
+                    break
+                retries += 1
+                # The repeated call runs through the same provider, so under the same sandbox
+                # prefix; a write the sandbox denied on the failed call is still reported.
+                if sandbox is not None:
+                    self._record_denied_writes(execution, result.tool_invocations)
+                self._record_provider_retry(execution, phase, result, cause, retries)
+                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                    return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+        finally:
+            if guard is not None and guard_before is not None:
+                self._check_excluded_paths(execution, phase, guard, guard_before)
         if (
             result.status is ResultStatus.PASSED
             and runtime.claim_check_enabled
@@ -1098,6 +1113,131 @@ class RunEngine:
             ResultStatus.PASSED,
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
+        )
+
+    # ----- excluded paths (governance.protectExcludedPaths) ---------------------------
+    def _protects_excluded_paths(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.protect_excluded_paths)
+
+    def _protected_paths(self) -> tuple[Path, ...]:
+        """Workspace paths the agent sandbox keeps read-only: the harness state and Git."""
+        if not self._protects_excluded_paths():
+            return ()
+        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git")
+
+    def _check_excluded_paths(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        guard: ExcludedPathGuard,
+        before: dict[str, str],
+    ) -> None:
+        """Compare the fingerprints of what the ChangeSet excludes before and after the agent
+        ran. The comparison is IMPLEMENTATION evidence; a change is a CRITICAL finding that the
+        gate of every later ChangeSet of the run receives."""
+        after = guard.fingerprint()
+        changes = guard.compare(before, after)
+        record = {
+            "guardedDirectories": sorted(guard.guarded),
+            "ignoredPatterns": list(IGNORED_PATTERNS),
+            "before": {"files": len(before), "digest": sha256_json(before)},
+            "after": {"files": len(after), "digest": sha256_json(after)},
+            "changes": [{"path": item.path, "status": item.status} for item in changes],
+        }
+        ref = self.s.artifacts.put_json(
+            record,
+            metadata={"kind": "excluded-path-fingerprint", "executionId": execution.execution_id},
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.CONFIGURATION,
+            ref,
+            f"Paths outside the ChangeSet: {len(after)} fingerprinted, {len(changes)} changed",
+        )
+        if not changes:
+            return
+        shown = ", ".join(f"{item.path} ({item.status})" for item in changes[:10])
+        more = f" and {len(changes) - 10} more" if len(changes) > 10 else ""
+        finding = Finding(
+            finding_id=new_id("finding"),
+            execution_id=execution.execution_id,
+            validator_id=WORKSPACE_GUARD_ID,
+            rule_id=OUT_OF_CHANGESET_RULE,
+            category="workspace-integrity",
+            severity=FindingSeverity.CRITICAL,
+            message=(
+                f"The agent changed {len(changes)} path(s) the ChangeSet does not show: "
+                f"{shown}{more}"
+            ),
+            location=FindingLocation(path=changes[0].path),
+            evidence_refs=(evidence.artifact_ref,),
+            recommendation=(
+                "Inspect these paths (a Git hook runs on the next commit; a changed dependency "
+                "changes what the tests run) and restore them before deciding; only approve an "
+                "exception for a change you made on purpose."
+            ),
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "finding",
+            finding.finding_id,
+            finding,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "finding.recorded",
+            finding.model_dump(mode="json"),
+            actor=finding.provenance.actor,
+        )
+        key = f"guard:{execution.execution_id}"
+        recorded = json.loads(self.s.state.get_flag(key) or "[]")
+        self.s.state.set_flag(key, json.dumps([*recorded, finding.finding_id]))
+
+    def _workspace_guard_validation(self, execution: Execution, digest: str) -> None:
+        """A failed mandatory validation for the ChangeSet the gate evaluates, carrying every
+        out-of-ChangeSet write of the run, so the gate fails until a person decides."""
+        finding_ids = tuple(
+            json.loads(self.s.state.get_flag(f"guard:{execution.execution_id}") or "[]")
+        )
+        if not finding_ids:
+            return
+        if any(
+            item.validator_id == WORKSPACE_GUARD_ID and item.finding_ids == finding_ids
+            for item in self._latest_validations(execution.execution_id, digest)
+        ):
+            return
+        findings = [self.s.state.get("finding", item, Finding) for item in finding_ids]
+        now = utc_now()
+        result = ValidationResult(
+            validation_result_id=new_id("validation"),
+            execution_id=execution.execution_id,
+            validator_id=WORKSPACE_GUARD_ID,
+            change_set_digest=digest,
+            status=ResultStatus.FAILED,
+            kind=ValidationKind.POLICY_VIOLATION,
+            mandatory=True,
+            summary=f"{len(finding_ids)} agent invocation(s) wrote outside the ChangeSet",
+            finding_ids=finding_ids,
+            evidence_refs=tuple(ref for item in findings for ref in item.evidence_refs),
+            started_at=now,
+            finished_at=now,
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "validation",
+            result.validation_result_id,
+            result,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "validation.completed",
+            result.model_dump(mode="json"),
+            actor=result.provenance.actor,
         )
 
     def _record_sandbox_evidence(
@@ -1908,6 +2048,7 @@ class RunEngine:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
             if gate.change_set_digest == change_set.digest:
                 return gate
+        self._workspace_guard_validation(execution, change_set.digest)
         validations = self._latest_validations(execution.execution_id, change_set.digest)
         findings = [
             item

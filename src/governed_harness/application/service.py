@@ -121,6 +121,7 @@ class HarnessApplication:
             "verifyRecords": bool(settings.verify_records),
             "chainAnchor": settings.chain_anchor or "off",
             "pinTaskRevision": bool(settings.pin_task_revision),
+            "protectExcludedPaths": bool(settings.protect_excluded_paths),
         }
 
     @staticmethod

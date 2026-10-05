@@ -139,6 +139,19 @@
   records it as `acceptanceContractDigest` (new optional field of `human-decision.schema.json`, left
   out of decisions recorded without the setting) and is refused with 5 when the run's task no
   longer produces it. Without the setting the 1.0.0 behaviour and digests are kept.
+- Writes outside the ChangeSet are detected and `.harness` and `.git` are protected from the agent
+  (#46). With the sandbox on, an agent wrote `.git/hooks/pre-commit`, `venv/lib/dep.py` and
+  `dist/payload.py`; the ChangeSet listed one file and the gate reached `DECISION` with two
+  `MEDIUM` findings. Under the new `governance.protectExcludedPaths` (written by `harness init`)
+  every file below `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist` and `build` and
+  every symbolic link is fingerprinted before and after the agent invocations of each
+  `IMPLEMENTATION` attempt (recorded as evidence); a change is a `CRITICAL` finding
+  `workspace.out-of-changeset-write` naming the paths, and each later gate of the run gets a
+  failed mandatory validation `harness.workspace-guard`, so `APPROVE` exits with 5. The agent
+  sandbox keeps `.harness` and `.git` read-only (`protectedPaths` in its evidence) and the
+  profiles' write grants on `.harness/**` are dropped from the resolved capabilities. The
+  harness's own state, Git's index, locks and objects are not watched. Without the setting the
+  1.0.0 behaviour, sandbox profile and configuration digest are kept.
 
 ## 1.0.0 - 2026-10-01
 
