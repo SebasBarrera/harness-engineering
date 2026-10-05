@@ -70,7 +70,8 @@ EXPECTED_USAGE = {
     "aider": {"input_tokens": 1200, "output_tokens": 345, "cost_usd": 0.0034},
 }
 
-SECRET = "sk-test-0123456789abcdef"
+# Any value of 8 or more characters is redacted; this one does not imitate a real key format.
+SECRET = "fake-agent-credential-for-redaction"
 
 
 def configure(
