@@ -1,0 +1,23 @@
+# Review metadata of the javascript pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: javascript
+domains:
+  javascript.handle-promises: resilience
+  javascript.no-eval: pipeline-security
+blocking:
+- javascript.no-eval
+signals:
+  concurrency:
+  - \bnew Worker\(
+  - \bSharedArrayBuffer\b
+  - \bAtomics\.
+  - \bworker_threads\b
+  external-calls:
+  - \bfetch\(
+  - \baxios\b
+  - \bhttps?\.request\(
+  - \bXMLHttpRequest\b
+  - \bchild_process\b
+pipeline:
+- .husky/**

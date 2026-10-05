@@ -51,6 +51,7 @@ from governed_harness.configuration.ladder import (
     ProfileVerification,
     PullRequestConfig,
 )
+from governed_harness.configuration.review import ReviewPanelConfig
 from governed_harness.domain.enums import FindingSeverity, PhaseId
 from governed_harness.domain.models import ProbeDefinition
 
@@ -627,6 +628,10 @@ class ReviewConfig(ConfigModel):
     manual_checklist: bool | None = Field(default=None, alias="manualChecklist")
     """Since #55: items only a person can verify (``manual`` criteria and the task's
     ``checklist``) are ticked in DECISION (``gate decide --check``); APPROVE needs them all."""
+    panel: ReviewPanelConfig | None = None
+    """Since #57: the review panel (reviewers by domain, layered rule catalog, output
+    contract, deterministic verdict) replaces the single reviewer in INDEPENDENT_REVIEW and runs
+    outside governed runs with ``harness review-code``."""
 
     @field_validator("agent_review", mode="before")
     @classmethod

@@ -1,0 +1,31 @@
+# Review metadata of the java pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: java
+domains:
+  java.specific-exceptions: resilience
+  java.resources: resilience
+  java.immutability: concurrency
+  java.dependency-injection: architecture
+blocking: []
+signals:
+  concurrency:
+  - \bsynchronized\b
+  - \bvolatile\b
+  - \bExecutorService\b
+  - \bCompletableFuture\b
+  - \bAtomic[A-Z]\w*\b
+  - \bConcurrentHashMap\b
+  - \bnew Thread\(
+  - \bReentrantLock\b
+  external-calls:
+  - \bHttpClient\b
+  - \bRestTemplate\b
+  - \bWebClient\b
+  - \bDriverManager\b
+  - \bProcessBuilder\b
+  - \bSocket\(
+pipeline:
+- mvnw
+- gradlew
+- .mvn/**

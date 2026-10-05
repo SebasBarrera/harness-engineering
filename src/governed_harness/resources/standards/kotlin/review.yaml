@@ -1,0 +1,28 @@
+# Review metadata of the kotlin pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: kotlin
+domains:
+  kotlin.specific-exceptions: resilience
+  kotlin.structured-concurrency: concurrency
+  kotlin.immutability: concurrency
+  kotlin.mvvm-state: architecture
+blocking:
+- kotlin.structured-concurrency
+signals:
+  concurrency:
+  - \blaunch\s*\{
+  - \basync\s*\{
+  - \bGlobalScope\b
+  - \bMutex\(\)
+  - '@Volatile'
+  - \bsynchronized\(
+  - \bAtomic[A-Z]\w*\b
+  - \bwithContext\(
+  external-calls:
+  - \bOkHttpClient\b
+  - \bRetrofit\b
+  - \bHttpURLConnection\b
+  - \bKtor\b
+pipeline:
+- gradlew

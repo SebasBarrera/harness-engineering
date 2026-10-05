@@ -1,0 +1,27 @@
+# Review metadata of the node pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: node
+domains:
+  node.errors-as-errors: resilience
+  node.validate-input: quality
+  node.config-from-env: pipeline-security
+  node.lockfile: pipeline-security
+blocking: []
+signals:
+  concurrency:
+  - \bnew Worker\(
+  - \bSharedArrayBuffer\b
+  - \bAtomics\.
+  - \bworker_threads\b
+  - \bcluster\.fork\(
+  external-calls:
+  - \bfetch\(
+  - \baxios\b
+  - \bhttps?\.request\(
+  - \bXMLHttpRequest\b
+  - \bchild_process\b
+  - \bnet\.connect\(
+pipeline:
+- .npmrc
+- .nvmrc

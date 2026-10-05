@@ -1,0 +1,22 @@
+# Review metadata of the php pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: php
+domains:
+  php.prepared-statements: pipeline-security
+  php.escape-output: pipeline-security
+  php.no-error-suppression: resilience
+blocking:
+- php.prepared-statements
+signals:
+  concurrency:
+  - \bpcntl_fork\(
+  - \bparallel\\
+  - \bSwoole\\
+  external-calls:
+  - \bcurl_exec\(
+  - '\bfile_get_contents\(\s*[''\"]https?:'
+  - \bnew PDO\(
+  - \bGuzzle
+  - \bshell_exec\(
+pipeline: []

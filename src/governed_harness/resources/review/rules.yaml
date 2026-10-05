@@ -1,0 +1,176 @@
+# Layer A of the review rule catalog (#57): language-neutral rules shipped with the harness.
+# Language rules come from the standards packs (layer B); framework and business rules from the
+# project (layer C, .harness/review/rules/DOMAIN.md). A rule verified by a tool
+# (verifiedBy: tool:harness:CHECK) is checked deterministically and never sent to a model.
+rules:
+  # ----- tests ------------------------------------------------------------------------------
+  - id: tests.tautological-assertion
+    domain: tests
+    title: Tautological assertion
+    rule: An assertion must be able to fail; asserting a constant or comparing a value with itself checks nothing.
+    severity: blocking
+    priority: 5
+    verifiedBy: tool:harness:tautological-assertion
+    bad: ["assert True", "expect(true).toBe(true)", "assertEquals(total, total)"]
+  - id: tests.mock-of-subject
+    domain: tests
+    title: Mock of the subject under test
+    rule: A test must not mock, stub or patch the unit whose behaviour it claims to check; replace only its collaborators.
+    when: A changed test replaces a function, method or class with a double.
+    severity: blocking
+    priority: 10
+    budget: {tool: read, maxReads: 2}
+    exceptions: ["Replacing a collaborator that the subject calls (clock, network, storage)."]
+  - id: tests.weak-assertion-complex-setup
+    domain: tests
+    title: Weak assertion after a complex setup
+    rule: A test that arranges many objects and then only asserts that a result exists, is truthy or has a length checks almost nothing; assert the specific value or state the requirement implies.
+    when: A changed test has a long arrangement and a single weak assertion.
+    severity: warning
+    priority: 30
+  - id: tests.verify-without-value
+    domain: tests
+    title: Verification without differential value
+    rule: Verifying an interaction that the stub setup already forces, or that the asserted result already proves, adds no evidence; verify only interactions the outcome does not show.
+    severity: warning
+    priority: 40
+  - id: tests.changed-branch-uncovered
+    domain: tests
+    title: Changed branch not covered on both sides
+    rule: Every branch the change adds or modifies (condition, guard, error path) must be exercised on both sides by the tests of the change.
+    when: The change adds or modifies a condition in code that the changed tests exercise.
+    severity: blocking
+    priority: 15
+    budget: {tool: read, maxReads: 2}
+  - id: tests.unused-mock
+    domain: tests
+    title: Unused mock
+    rule: A double configured in a test must be used by the code under test; remove configured stubs and mocks that nothing calls.
+    severity: warning
+    priority: 45
+  # ----- resilience -------------------------------------------------------------------------
+  - id: resilience.external-call-limits
+    domain: resilience
+    title: External call without timeout or retry limits
+    rule: A call to an external system (network, database, message broker, subprocess, file lock) needs an explicit timeout and, when it is retried, a bounded number of attempts with backoff.
+    when: The change adds or modifies a call that leaves the process.
+    severity: blocking
+    priority: 10
+    budget: {tool: read, maxReads: 2}
+    exceptions: ["A client whose timeout and retry policy are configured once where it is built, and the change uses that client."]
+  - id: resilience.swallowed-exception
+    domain: resilience
+    title: Swallowed exception
+    rule: An error that is caught must be handled, re-raised or logged with its context; an empty handler, or one that returns a success value, hides the failure.
+    severity: blocking
+    priority: 10
+    exceptions: ["A best-effort cleanup that documents why the error is irrelevant."]
+  # ----- concurrency ------------------------------------------------------------------------
+  - id: concurrency.shared-mutable-state
+    domain: concurrency
+    title: Shared mutable state without synchronization
+    rule: State that more than one thread, task or process can write must be confined, immutable or guarded by one synchronization mechanism used on every access.
+    when: The change adds or modifies state reachable from concurrent code.
+    severity: blocking
+    priority: 10
+    budget: {tool: read, maxReads: 2}
+  - id: concurrency.mutation-after-publication
+    domain: concurrency
+    title: Mutation after publication
+    rule: An object handed to another thread, task, cache or callback must not be mutated afterwards unless the receiver synchronizes on the same mechanism.
+    severity: blocking
+    priority: 15
+    budget: {tool: read, maxReads: 2}
+  # ----- pipeline security ------------------------------------------------------------------
+  - id: pipeline-security.command-injection
+    domain: pipeline-security
+    title: Command injection
+    rule: Untrusted values (event payloads, branch names, titles, user input, environment set by others) must not be interpolated into a shell command; pass them as arguments or through an environment variable read inside the script.
+    severity: blocking
+    priority: 5
+  - id: pipeline-security.quoting
+    domain: pipeline-security
+    title: Unquoted expansion
+    rule: Quote every variable and command expansion in shell code so that spaces and glob characters cannot split or expand it.
+    severity: warning
+    priority: 30
+  - id: pipeline-security.cache-integrity
+    domain: pipeline-security
+    title: Cache integrity
+    rule: A cache must be keyed by the digest of what it depends on (lock files, toolchain version) and must not be restored across a trust boundary into a privileged job.
+    severity: warning
+    priority: 30
+  - id: pipeline-security.weakened-gate
+    domain: pipeline-security
+    title: Weakened gate
+    rule: A pipeline or hook must not turn a failing check into a success (|| true, continue-on-error, allow_failure, --exit-zero, set +e, --no-verify).
+    severity: blocking
+    priority: 5
+    verifiedBy: tool:harness:weakened-gates
+  - id: pipeline-security.dangerous-paths
+    domain: pipeline-security
+    title: Dangerous path operation
+    rule: Recursive deletes and permission changes must target a checked, non-empty path inside the workspace; never the root, the home directory or an unguarded variable.
+    severity: blocking
+    priority: 5
+    verifiedBy: tool:harness:dangerous-paths
+  - id: pipeline-security.exposed-credentials
+    domain: pipeline-security
+    title: Exposed credential
+    rule: A credential must come from a secret store or the environment, never from a literal in the change.
+    severity: blocking
+    priority: 1
+    verifiedBy: tool:harness:secrets
+  - id: pipeline-security.temporary-files
+    domain: pipeline-security
+    title: Predictable temporary file
+    rule: Create temporary files and directories with mktemp (or the language's equivalent), not at a fixed path under /tmp.
+    severity: warning
+    priority: 35
+    verifiedBy: tool:harness:temporary-files
+  - id: pipeline-security.portability
+    domain: pipeline-security
+    title: Portability of scripts
+    rule: A script must run on the shells and systems it declares; do not use bash-only syntax under a sh shebang or flags only one platform's tools accept.
+    severity: warning
+    priority: 40
+  # ----- quality ----------------------------------------------------------------------------
+  - id: quality.misleading-name
+    domain: quality
+    title: Misleading name
+    rule: A name must say what the code does; a function, variable or type whose name contradicts its behaviour misleads every reader.
+    severity: warning
+    priority: 40
+  - id: quality.dead-code
+    domain: quality
+    title: Dead code
+    rule: Code the change makes unreachable or never calls must be removed, not left behind.
+    severity: warning
+    priority: 45
+  - id: quality.wrong-logic
+    domain: quality
+    title: Wrong formula or rule
+    rule: A computation or business rule must match what the surrounding code, its tests and its documentation say it does.
+    severity: blocking
+    priority: 5
+    budget: {tool: read, maxReads: 2}
+  # ----- architecture -----------------------------------------------------------------------
+  - id: architecture.dependency-direction
+    domain: architecture
+    title: Dependency direction
+    rule: A module must depend only on the layers the project's architecture allows it to depend on.
+    severity: blocking
+    priority: 10
+  - id: architecture.public-contract
+    domain: architecture
+    title: Broken public contract
+    rule: A change to a public signature, wire format or stored schema must keep its callers and stored data working, or change them in the same change.
+    severity: blocking
+    priority: 5
+    budget: {tool: read, maxReads: 2}
+  - id: architecture.leaky-abstraction
+    domain: architecture
+    title: Leaky abstraction
+    rule: A module must not expose the implementation details of what it wraps (types, errors, configuration) through its public interface.
+    severity: warning
+    priority: 40

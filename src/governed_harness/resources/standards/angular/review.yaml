@@ -1,0 +1,14 @@
+# Review metadata of the angular pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: angular
+domains:
+  angular.thin-components: architecture
+  angular.unsubscribe: resilience
+blocking: []
+signals:
+  concurrency: []
+  external-calls:
+  - \bHttpClient\b
+  - \.subscribe\(
+pipeline: []

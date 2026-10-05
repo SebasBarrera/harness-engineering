@@ -45,6 +45,7 @@ __all__ = [
     "flags_for",
     "provider_family",
     "select",
+    "select_reviewer",
     "suggest_table",
 ]
 
@@ -325,6 +326,38 @@ def select(
         )
     index_used = _ladder_index(ladder, base, by_model=False) if ladder else None
     return decision(f"tier:{call_kind}:{size}", base.model, base.effort, index_used)
+
+
+def select_reviewer(
+    reviewer_id: str,
+    policy: AgentRoutingConfig | None,
+    *,
+    family: ProviderFamily,
+) -> RoutingDecision:
+    """The model and effort of a reviewer of the review panel (#57): its own entry of the
+    family table (``reviewers``), else the ``review`` rung, else the implement rung of size M
+    with a warning (#59). Without a ``tiered`` policy the provider keeps its own model."""
+    signals = TaskSignals(requirements=0, files=0, loc=0)
+    decision = select("review", signals, RoutingHistory(), policy, family=family)
+    if policy is None or not _tiered(policy):
+        return decision
+    table = _table(policy, family)
+    rung = (table.reviewers or {}).get(reviewer_id) if table is not None else None
+    if rung is None:
+        return decision
+    return RoutingDecision(
+        call_kind="review",
+        mode=decision.mode,
+        family=family,
+        size=decision.size,
+        rule=f"tier:review:{reviewer_id}",
+        model=rung.model,
+        effort=rung.effort,
+        rung=_ladder_index(table.ladder, rung, by_model=False) if table and table.ladder else None,
+        escalations=0,
+        policy_digest=decision.policy_digest,
+        flags=flags_for(family, rung.model, rung.effort),
+    )
 
 
 # ----- Calibration (N14: cost per approved task) ------------------------------------------

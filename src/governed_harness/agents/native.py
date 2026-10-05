@@ -53,6 +53,8 @@ SUMMARY_CHARS = 2000
 STDERR_TAIL_CHARS = 400
 PROMPT_PLACEHOLDER = "<prompt>"
 """Recorded in place of a prompt passed on the command line (aider)."""
+MCP_PLACEHOLDER = "<mcp-config>"
+"""Recorded in place of the MCP configuration of a reviewer (it may carry credentials)."""
 
 DEFAULT_EXECUTABLES = NATIVE_DEFAULT_COMMANDS
 
@@ -156,7 +158,7 @@ def _feedback_lines(feedback: dict[str, Any]) -> list[str]:
     return lines
 
 
-_CALL_KEYS_LEFT_OUT = frozenset({"instructions", "schemaVersion", "kind", "readOnly"})
+_CALL_KEYS_LEFT_OUT = frozenset({"instructions", "schemaVersion", "kind", "readOnly", "isolation"})
 _IMPLEMENT_EXTRAS = ("gate", "permissions", "contextFiles", "lessons", "acceptanceTests", "budget")
 
 
@@ -263,6 +265,13 @@ class NativeAgentProvider(CommandAgentProvider):
     def base_args(self) -> tuple[str, ...]:
         raise NotImplementedError
 
+    def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
+        """The base arguments of a reviewer of the review panel (#57): read-only, with the
+        reviewer's tool allowlist and a strict MCP configuration. ``None``: the CLI has no such
+        options and keeps its base arguments (the agent sandbox and the workspace comparison
+        still keep the call read-only)."""
+        return None
+
     def model_args(self, routing: Mapping[str, str] | None = None) -> tuple[str, ...]:
         """``--model`` of the configured model, or of the model the router chose for the call
         (``agentRouting``, since 1.1), followed by the CLI's effort option."""
@@ -286,14 +295,19 @@ class NativeAgentProvider(CommandAgentProvider):
             prompt = render_call_prompt(request)
         else:
             prompt = render_prompt(request, self_report=self.configuration.self_report)
+        isolation = request.get("isolation")
+        isolated = self.isolated_args(isolation) if isinstance(isolation, Mapping) else None
         head = (
             *self.configuration.argv_prefix,
-            *self.base_args(),
+            *(isolated if isolated is not None else self.base_args()),
             *self.model_args(request_routing(request)),
             *self.configuration.extra_args,
         )
         tail = self.prompt_args(prompt)
-        recorded = (*head, *(PROMPT_PLACEHOLDER if item == prompt else item for item in tail))
+        recorded = (
+            *(MCP_PLACEHOLDER if item.startswith('{"mcpServers"') else item for item in head),
+            *(PROMPT_PLACEHOLDER if item == prompt else item for item in tail),
+        )
         stdin = prompt.encode("utf-8") if self.prompt_on_stdin else None
         return (*head, *tail), stdin, recorded
 
@@ -319,6 +333,25 @@ class ClaudeCodeProvider(NativeAgentProvider):
 
     def base_args(self) -> tuple[str, ...]:
         return ("-p", "--output-format", "json", "--permission-mode", "acceptEdits")
+
+    def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
+        tools = [str(item) for item in isolation.get("tools") or []]
+        servers = isolation.get("mcpConfig")
+        mcp = {"mcpServers": dict(servers) if isinstance(servers, Mapping) else {}}
+        return (
+            "-p",
+            "--output-format",
+            "json",
+            "--permission-mode",
+            "default",
+            "--allowedTools",
+            ",".join(tools),
+            "--strict-mcp-config",
+            "--mcp-config",
+            json.dumps(mcp, sort_keys=True),
+            "--setting-sources",
+            "project",
+        )
 
     def effort_args(self, effort: str) -> tuple[str, ...]:
         return ("--effort", effort)
@@ -373,6 +406,9 @@ class CodexProvider(NativeAgentProvider):
 
     def base_args(self) -> tuple[str, ...]:
         return ("exec", "--json", "--full-auto", "--skip-git-repo-check")
+
+    def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
+        return ("exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check")
 
     def effort_args(self, effort: str) -> tuple[str, ...]:
         return ("-c", f'model_reasoning_effort="{effort}"')

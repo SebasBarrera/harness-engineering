@@ -186,6 +186,9 @@ class SimulatedAgentProvider:
         result: dict[str, Any]
         if kind == "clarify":
             result = {"questions": []}
+        elif kind == "review" and "outputContract" in request:
+            # A reviewer of the review panel (#57) answers with its output contract.
+            result = {"verdict": "PASS", "findings": [], "summary": "Simulated review: no finding."}
         elif kind == "review":
             result = {"findings": []}
         elif kind == "acceptance":

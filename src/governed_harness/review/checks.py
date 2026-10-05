@@ -1,0 +1,218 @@
+"""The harness's own deterministic review checks (``verified_by: tool:harness:CHECK``, #57).
+
+They read the changed lines of the diff, never call a model and cost no token. Each one is
+language-neutral: test assertions that cannot fail, gates turned green in scripts and CI files,
+dangerous path operations, predictable temporary files, credentials (the secret scanner of the
+independent review) and, since #5, instructions addressed to an agent inside changed content."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass
+
+from governed_harness.checks.model import is_test_path
+from governed_harness.checks.secrets import scan_secrets
+from governed_harness.review.diff import FileChange
+from governed_harness.review.signals import is_doc_path, is_pipeline_path
+
+_QUOTE = 160
+
+
+@dataclass(frozen=True)
+class CheckHit:
+    check: str
+    path: str
+    side: str
+    line: int
+    message: str
+    evidence: str
+
+
+def _quote(text: str) -> str:
+    text = " ".join(text.split())
+    return text if len(text) <= _QUOTE else text[: _QUOTE - 3] + "..."
+
+
+_TAUTOLOGIES = (
+    re.compile(r"^\s*assert\s+(?:True|1)\s*(?:,|#|$)"),
+    re.compile(r"\bassert\s*\(\s*(?:true|1)\s*\)"),
+    re.compile(
+        r"\bexpect\s*\(\s*(true|false|\d+|null)\s*\)\s*\.\s*to(?:Be|Equal|StrictEqual)\s*\(\s*\1\s*\)"
+    ),
+    re.compile(r"\bassert(?:True|That)?\s*\(\s*true\s*\)"),
+    re.compile(r"\bXCTAssert(?:True)?\s*\(\s*true\s*\)"),
+    re.compile(r"\bassert(?:Equals?|_eq!?|Same)\s*\(\s*([A-Za-z_][\w.]*)\s*,\s*\1\s*\)"),
+    re.compile(r"^\s*assert\s+([A-Za-z_][\w.]*)\s*(?:==|is)\s*\1\s*(?:,|#|$)"),
+    re.compile(
+        r"\bexpect\s*\(\s*([A-Za-z_][\w.]*)\s*\)\s*\.\s*to(?:Be|Equal|StrictEqual)\s*\(\s*\1\s*\)"
+    ),
+)
+
+
+def tautological_assertions(files: Iterable[FileChange]) -> list[CheckHit]:
+    hits: list[CheckHit] = []
+    for item in files:
+        if item.is_deleted or not is_test_path(item.path):
+            continue
+        for line in item.added:
+            if any(pattern.search(line.text) for pattern in _TAUTOLOGIES):
+                hits.append(
+                    CheckHit(
+                        "tautological-assertion",
+                        item.path,
+                        "new",
+                        line.number,
+                        "The assertion cannot fail: it asserts a constant or compares a value "
+                        "with itself",
+                        _quote(line.text),
+                    )
+                )
+    return hits
+
+
+_WEAKENED = (
+    (re.compile(r"\|\|\s*(?:true|:)\s*(?:$|[;#)&|])"), "a failing command is turned into success"),
+    (re.compile(r"\bcontinue-on-error\s*:\s*true\b"), "a failing step is allowed to pass"),
+    (re.compile(r"\ballow_failure\s*:\s*true\b"), "a failing job is allowed to pass"),
+    (re.compile(r"--exit-zero\b"), "the tool always exits with success"),
+    (re.compile(r"^\s*set\s+\+e\b"), "the script keeps running after a failure"),
+    (re.compile(r"\bgit\s+(?:commit|push)\b[^#\n]*--no-verify\b"), "the Git hooks are skipped"),
+    (re.compile(r"\bcontinueOnError\s*:\s*true\b"), "a failing task is allowed to pass"),
+)
+
+
+def weakened_gates(files: Iterable[FileChange]) -> list[CheckHit]:
+    hits: list[CheckHit] = []
+    for item in files:
+        if item.is_deleted or not is_pipeline_path(item.path):
+            continue
+        for line in item.added:
+            text = line.text
+            if text.lstrip().startswith("#"):
+                continue
+            for pattern, why in _WEAKENED:
+                if pattern.search(text):
+                    hits.append(
+                        CheckHit(
+                            "weakened-gates",
+                            item.path,
+                            "new",
+                            line.number,
+                            f"Weakened gate: {why}",
+                            _quote(text),
+                        )
+                    )
+                    break
+    return hits
+
+
+_DANGEROUS = (
+    (
+        re.compile(
+            r"\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rR][A-Za-z]*\s+(?:--\s+)?[\"']?(?:/|~|\$HOME)[\"']?(?:\s|$|/\*)"
+        ),
+        "recursive delete of the root or the home directory",
+    ),
+    (
+        re.compile(
+            r"\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rR][A-Za-z]*\s+(?:--\s+)?[\"']?\$\{?[A-Za-z_]\w*\}?[\"']?/"
+        ),
+        "recursive delete under an unguarded variable (use ${VAR:?})",
+    ),
+    (re.compile(r"\bchmod\s+(?:-R\s+)?0?777\b"), "world-writable permissions"),
+    (
+        re.compile(r"\b(?:curl|wget)\b[^|#\n]*\|\s*(?:sudo\s+)?(?:ba|z)?sh\b"),
+        "a downloaded script is executed unverified",
+    ),
+)
+
+
+def dangerous_paths(files: Iterable[FileChange]) -> list[CheckHit]:
+    hits: list[CheckHit] = []
+    for item in files:
+        if item.is_deleted or is_doc_path(item.path):
+            continue
+        for line in item.added:
+            text = line.text
+            if text.lstrip().startswith("#"):
+                continue
+            for pattern, why in _DANGEROUS:
+                if pattern.search(text):
+                    hits.append(
+                        CheckHit(
+                            "dangerous-paths",
+                            item.path,
+                            "new",
+                            line.number,
+                            f"Dangerous path operation: {why}",
+                            _quote(text),
+                        )
+                    )
+                    break
+    return hits
+
+
+_TMP = re.compile(r"(?<![\w$])/tmp/[A-Za-z0-9_][A-Za-z0-9_.-]*")
+
+
+def temporary_files(files: Iterable[FileChange]) -> list[CheckHit]:
+    hits: list[CheckHit] = []
+    for item in files:
+        if item.is_deleted or not is_pipeline_path(item.path):
+            continue
+        for line in item.added:
+            text = line.text
+            if "mktemp" in text or text.lstrip().startswith("#") or not _TMP.search(text):
+                continue
+            hits.append(
+                CheckHit(
+                    "temporary-files",
+                    item.path,
+                    "new",
+                    line.number,
+                    "A fixed path under /tmp can be read or replaced by another user; use mktemp",
+                    _quote(text),
+                )
+            )
+    return hits
+
+
+def secrets(files: Iterable[FileChange]) -> list[CheckHit]:
+    changes = [item for item in files if not item.binary]
+    return [
+        CheckHit("secrets", issue.path or "", "new", issue.line or 1, issue.message, "")
+        for issue in scan_secrets([item.as_diff_file() for item in changes])
+        if issue.path and issue.line and issue.severity.value in {"HIGH", "CRITICAL"}
+    ]
+
+
+CHECKS: dict[str, Callable[[Iterable[FileChange]], list[CheckHit]]] = {
+    "tautological-assertion": tautological_assertions,
+    "weakened-gates": weakened_gates,
+    "dangerous-paths": dangerous_paths,
+    "temporary-files": temporary_files,
+    "secrets": secrets,
+}
+"""The checks a rule may name as ``tool:harness:CHECK``."""
+
+
+def run_checks(names: Iterable[str], files: list[FileChange]) -> list[CheckHit]:
+    hits: list[CheckHit] = []
+    for name in sorted(set(names)):
+        check = CHECKS.get(name)
+        if check is not None:
+            hits.extend(check(files))
+    return hits
+
+
+__all__ = [
+    "CHECKS",
+    "CheckHit",
+    "dangerous_paths",
+    "run_checks",
+    "secrets",
+    "tautological_assertions",
+    "temporary_files",
+    "weakened_gates",
+]

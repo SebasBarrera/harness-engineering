@@ -1,0 +1,14 @@
+# Review metadata of the react pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: react
+domains:
+  react.composition: architecture
+blocking:
+- react.rules-of-hooks
+signals:
+  concurrency: []
+  external-calls:
+  - \bfetch\(
+  - \buseQuery\(
+pipeline: []
