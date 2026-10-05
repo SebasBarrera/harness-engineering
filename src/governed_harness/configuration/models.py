@@ -39,6 +39,7 @@ from governed_harness.configuration.engineering import (
     StandardsConfig,
     TestingConfig,
 )
+from governed_harness.configuration.friction import FrictionConfig, MetricsConfig
 from governed_harness.configuration.ladder import (
     CommentPolicy,
     ContractMode,
@@ -841,6 +842,15 @@ class ProjectConfiguration(ConfigModel):
     standards: StandardsConfig | None = None
     testing: TestingConfig | None = None
     architecture: ArchitectureSettings | None = None
+    friction: FrictionConfig | None = None
+    """Since #58: the fast lane, pre-authorised approval, change types and friction targets."""
+    metrics: MetricsConfig | None = None
+    """Since #58: the price table and the narrative command of ``harness metrics``."""
+
+    @property
+    def friction_settings(self) -> FrictionConfig:
+        """The friction settings, all absent (1.0.0 behaviour) when the section is."""
+        return self.friction or FrictionConfig()
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -930,6 +940,8 @@ class ProjectConfiguration(ConfigModel):
             "standards",
             "testing",
             "architecture",
+            "friction",
+            "metrics",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)

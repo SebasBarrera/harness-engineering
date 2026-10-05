@@ -19,6 +19,11 @@ from governed_harness.configuration.engineering import (
     DEFAULT_INHERITANCE_DEPTH,
     DEFAULT_MAX_CARDS,
 )
+from governed_harness.configuration.friction import (
+    DEFAULT_FAST_LANE_SKIP,
+    DEFAULT_FRICTION_TARGETS,
+    DEFAULT_PRE_AUTHORIZATION_HOURS,
+)
 from governed_harness.configuration.ladder import (
     DEFAULT_DEFERRED_EXPIRY_DAYS,
     DEFAULT_INSTRUCTION_FILES,
@@ -225,6 +230,22 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
         "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
+        # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
+        # condition, documentation-only and configuration-only changes, friction targets.
+        "friction": {
+            "fastLane": {
+                "mode": "auto",
+                "skip": list(DEFAULT_FAST_LANE_SKIP),
+                "verification": {"affectedTestsFirst": True, "parallel": True, "cache": True},
+            },
+            "preAuthorization": {
+                "mode": "allow",
+                "defaultHours": DEFAULT_PRE_AUTHORIZATION_HOURS,
+                "maxHours": 72,
+            },
+            "changeTypes": True,
+            "targets": {size: dict(values) for size, values in DEFAULT_FRICTION_TARGETS.items()},
+        },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

@@ -992,6 +992,108 @@
       "title": "FamilyTable",
       "type": "object"
     },
+    "FastLaneConfig": {
+      "additionalProperties": false,
+      "description": "Risk-proportional governance (#58, item 1). ``mode: auto`` classifies each task at\nINTENT: size ``S`` by the router (#44) and no risk flag takes the fast lane, everything\nelse the full flow; the lane and why are recorded. ``skip`` lists what the fast lane leaves\nout. A run leaves the fast lane (``lane.escalated``) when its ChangeSet shows a risk factor\nor outgrows ``S``; the human decision and the mandatory validators are never skipped.",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "skip": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "ambiguityReview",
+                  "decomposition",
+                  "agentReview",
+                  "preflight",
+                  "mutation",
+                  "acceptanceTests"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skip"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastVerificationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "FastLaneConfig",
+      "type": "object"
+    },
+    "FastVerificationConfig": {
+      "additionalProperties": false,
+      "description": "Faster VERIFICATION in the fast lane (#58, item 5). Nothing here skips a mandatory\nvalidator before the decision: the affected tests run first and stop a failing attempt\nearly, the full suite still runs before the gate, independent validators run side by side,\nand a validator result is reused only for the same validator, ChangeSet, baseline and\nconfiguration.",
+      "properties": {
+        "affectedTestsFirst": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affectedtestsfirst"
+        },
+        "cache": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "parallel": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel"
+        }
+      },
+      "title": "FastVerificationConfig",
+      "type": "object"
+    },
     "FindingSeverity": {
       "enum": [
         "INFO",
@@ -1166,6 +1268,106 @@
         }
       },
       "title": "ForgeConfig",
+      "type": "object"
+    },
+    "FrictionConfig": {
+      "additionalProperties": false,
+      "description": "Low friction for small changes (#58, items 1, 3, 5, 6 and 7).",
+      "properties": {
+        "changeTypes": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changetypes"
+        },
+        "fastLane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastLaneConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "preAuthorization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreAuthorizationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FrictionTarget"
+              },
+              "propertyNames": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Targets"
+        }
+      },
+      "title": "FrictionConfig",
+      "type": "object"
+    },
+    "FrictionTarget": {
+      "additionalProperties": false,
+      "description": "The friction a task of one size should cost: human interactions and wall-clock\nminutes from the first event of its first run to the end of its last.",
+      "properties": {
+        "interactions": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interactions"
+        },
+        "minutes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 525600,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutes"
+        }
+      },
+      "title": "FrictionTarget",
       "type": "object"
     },
     "GitHooksConfig": {
@@ -1936,6 +2138,75 @@
       "title": "MemoryConfig",
       "type": "object"
     },
+    "MetricsConfig": {
+      "additionalProperties": false,
+      "description": "``harness metrics`` settings: the price table (by model id, or ``provider/model``) and\nthe narrative command.",
+      "properties": {
+        "narrative": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NarrativeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prices": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/ModelPrice"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prices"
+        }
+      },
+      "title": "MetricsConfig",
+      "type": "object"
+    },
+    "ModelPrice": {
+      "additionalProperties": false,
+      "description": "Prices in US dollars per million tokens. Used only to estimate the cost of calls whose\nprovider reported tokens without a cost; the estimate is labelled as such and never stored\non a run or counted against the budget.",
+      "properties": {
+        "cache": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "input": {
+          "minimum": 0,
+          "title": "Input",
+          "type": "number"
+        },
+        "output": {
+          "minimum": 0,
+          "title": "Output",
+          "type": "number"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "ModelPrice",
+      "type": "object"
+    },
     "MutationConfig": {
       "additionalProperties": false,
       "description": "Discriminating evidence and light mutation (#55, item 5): new tests are classified by\nrunning them on the baseline (fail before and pass after: discriminating; pass before and\nafter: weak; fail after: broken), and each changed hunk of the code is reverted in a scratch\ncopy, one at a time, to see that some test fails. ``enforce`` makes a change no test\nexercises ``HIGH``, ``warn`` ``LOW``.",
@@ -1987,6 +2258,39 @@
         }
       },
       "title": "MutationConfig",
+      "type": "object"
+    },
+    "NarrativeConfig": {
+      "additionalProperties": false,
+      "description": "The optional narrative summary of a period (#58, item 12): one call, on demand only\n(``harness metrics --narrative``), to a command that reads the prompt and the metrics on\nstandard input and prints the summary.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeoutseconds"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "NarrativeConfig",
       "type": "object"
     },
     "NotificationsConfig": {
@@ -2097,6 +2401,58 @@
         }
       },
       "title": "PlanningConfig",
+      "type": "object"
+    },
+    "PreAuthorizationConfig": {
+      "additionalProperties": false,
+      "description": "Pre-authorised approval (#58, item 3). ``mode: allow`` lets a person, when they confirm\nthe operational contract (``harness task confirm --pre-approve`` or ``harness do\n--pre-approve``), approve in advance under a condition with an expiry. The approval is a\nhuman decision recorded in advance, bound to the contract digest and the condition (gate\npassed, no risk factor, size ``S``); when the condition does not hold at DECISION, the\nperson is asked as usual.",
+      "properties": {
+        "defaultHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaulthours"
+        },
+        "maxHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhours"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "PreAuthorizationConfig",
       "type": "object"
     },
     "PrinciplesConfig": {
@@ -4055,6 +4411,17 @@
       ],
       "default": null
     },
+    "friction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FrictionConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "governance": {
       "anyOf": [
         {
@@ -4092,6 +4459,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/MemoryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricsConfig"
         },
         {
           "type": "null"

@@ -877,6 +877,10 @@ class HumanDecision(StrictModel):
     checked_items: tuple[str, ...] = ()
     """Manual checklist items the person ticked with this decision (``review.manualChecklist``,
     #55); left out when empty."""
+    pre_authorization_id: str | None = None
+    """Since #58: the pre-authorised approval this decision applies. The person decided in
+    advance, under a condition the harness found to hold for this ChangeSet; the decision is
+    theirs (``actor``), recorded when the condition was met. Left out when absent."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -884,6 +888,7 @@ class HumanDecision(StrictModel):
         for name, alias in (
             ("acceptance_contract_digest", "acceptanceContractDigest"),
             ("identity_source", "identitySource"),
+            ("pre_authorization_id", "preAuthorizationId"),
         ):
             if getattr(self, name) is None:
                 data.pop(alias, None)
@@ -896,6 +901,54 @@ class HumanDecision(StrictModel):
             if not getattr(self, name):
                 data.pop(alias, None)
                 data.pop(name, None)
+        return data
+
+
+PreAuthorizationCondition = Literal["gatePassed", "noRiskFactors", "sizeS"]
+PRE_AUTHORIZATION_CONDITIONS: tuple[PreAuthorizationCondition, ...] = (
+    "gatePassed",
+    "noRiskFactors",
+    "sizeS",
+)
+
+
+class PreAuthorization(StrictModel):
+    """An approval a person gives in advance, when they confirm the operational contract
+    (#58, item 3). It is a human decision recorded before the ChangeSet exists, bound to the
+    contract digest of the run and to a condition: the automatic gate passed, the ChangeSet has
+    no risk factor and the task is size ``S``. At DECISION the harness records the approval on
+    the person's behalf only when every condition holds, the contract digest is unchanged and
+    the pre-authorisation has not expired; otherwise the person is asked as usual."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    pre_authorization_id: str
+    execution_id: str
+    task_id: str
+    actor: Actor
+    contract_digest: str
+    task_digest: str
+    conditions: tuple[PreAuthorizationCondition, ...] = PRE_AUTHORIZATION_CONDITIONS
+    rationale: str = Field(min_length=1, max_length=4000)
+    authorized_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    identity_source: Literal["explicit", "git", "fallback", "default"] | None = None
+
+    @field_validator("conditions")
+    @classmethod
+    def _every_condition(
+        cls, value: tuple[PreAuthorizationCondition, ...]
+    ) -> tuple[PreAuthorizationCondition, ...]:
+        # The condition of issue #58 is the conjunction of the three; none can be dropped.
+        if set(value) != set(PRE_AUTHORIZATION_CONDITIONS):
+            raise ValueError("a pre-authorisation requires gatePassed, noRiskFactors and sizeS")
+        return value
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_identity(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.identity_source is None:
+            data.pop("identitySource", None)
+            data.pop("identity_source", None)
         return data
 
 
@@ -1021,6 +1074,18 @@ class ResourceUsage(StrictModel):
     cost_usd: float | None = Field(default=None, ge=0)
     quality: MetricQuality
     limitations: tuple[str, ...] = ()
+    cache_tokens: int | None = Field(default=None, ge=0)
+    """Since #58: the input tokens served from or written to the provider's prompt cache, when
+    the provider reports them (already included in ``input_tokens``). Left out when absent, so
+    usage recorded before it keeps its stored form."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_cache(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.cache_tokens is None:
+            data.pop("cacheTokens", None)
+            data.pop("cache_tokens", None)
+        return data
 
 
 class MemoryRecord(StrictModel):
