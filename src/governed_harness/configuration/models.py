@@ -872,7 +872,21 @@ class DetectorMarker(ConfigModel):
     weight: float = Field(gt=0, le=1)
 
 
-OutputParser = Literal["auto", "sarif", "junit", "ruff", "mypy", "eslint", "tsc", "pytest", "none"]
+OutputParser = Literal[
+    "auto",
+    "sarif",
+    "junit",
+    "ruff",
+    "mypy",
+    "eslint",
+    "tsc",
+    "pytest",
+    "checkstyle",
+    "rubocop",
+    "cargo",
+    "msbuild",
+    "none",
+]
 IssueLevel = Literal["error", "warning", "note"]
 
 

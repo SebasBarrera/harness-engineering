@@ -8,7 +8,10 @@ tool's rule id. Supported formats, recognized by content:
 * SARIF 2.1.0 (any tool that emits it), ESLint JSON (``-f json``), Ruff JSON
   (``--output-format json``) and JUnit XML (printed, or written with ``--junitxml``);
 * text: Ruff (concise and full formats), Mypy, TypeScript ``tsc`` and the pytest failure
-  summary (``FAILED``/``ERROR`` lines, with the line taken from the traceback).
+  summary (``FAILED``/``ERROR`` lines, with the line taken from the traceback);
+* since #56, for the tools of the language standards packs: Checkstyle XML (Checkstyle, ktlint,
+  detekt, golangci-lint, SwiftLint, PHPStan and ESLint can all write it), RuboCop JSON
+  (``--format json``) and Cargo JSON messages (``cargo clippy --message-format=json``).
 
 Parsing never runs a command and never changes a validator's status; a format it does not
 recognize yields no issue. XML is parsed without DTDs or entity expansion."""
@@ -138,9 +141,98 @@ def _parse_json(text: str, workspace: Path) -> list[ParsedIssue] | None:
             return parse_eslint_json(data, workspace)
         if all("code" in item and "filename" in item for item in data):
             return parse_ruff_json(data, workspace)
+    if isinstance(data, dict) and isinstance(data.get("files"), list) and "summary" in data:
+        return parse_rubocop_json(data, workspace)
     if isinstance(data, list) and not data:
         return []
     return None
+
+
+def parse_rubocop_json(data: dict[str, Any], workspace: Path) -> list[ParsedIssue]:
+    issues: list[ParsedIssue] = []
+    for item in data.get("files") or []:
+        if not isinstance(item, dict):
+            continue
+        for offense in item.get("offenses") or []:
+            if not isinstance(offense, dict):
+                continue
+            severity = str(offense.get("severity") or "warning")
+            location = offense.get("location") or {}
+            issues.append(
+                ParsedIssue(
+                    rule=str(offense.get("cop_name") or "offense"),
+                    message=_message(offense.get("message")),
+                    level="error" if severity in {"error", "fatal"} else "warning",
+                    path=_relative(item.get("path"), workspace),
+                    line=_line(location.get("start_line")),
+                    end_line=_line(location.get("last_line")),
+                    tool="rubocop",
+                )
+            )
+    return issues
+
+
+def parse_cargo_messages(text: str, workspace: Path) -> list[ParsedIssue]:
+    """``cargo clippy --message-format=json``: one JSON object per line; the compiler
+    messages carry the lint code, the level and the primary span."""
+    issues: list[ParsedIssue] = []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("{") or "compiler-message" not in line:
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        message = record.get("message") if isinstance(record, dict) else None
+        if not isinstance(message, dict) or message.get("level") not in {"error", "warning"}:
+            continue
+        spans = [item for item in message.get("spans") or [] if isinstance(item, dict)]
+        primary = next(
+            (item for item in spans if item.get("is_primary")), spans[0] if spans else {}
+        )
+        code = message.get("code")
+        issues.append(
+            ParsedIssue(
+                rule=str((code if isinstance(code, dict) else {}).get("code") or "compiler"),
+                message=_message(message.get("message")),
+                level="error" if message.get("level") == "error" else "warning",
+                path=_relative(primary.get("file_name"), workspace),
+                line=_line(primary.get("line_start")),
+                end_line=_line(primary.get("line_end")),
+                tool="cargo",
+            )
+        )
+    return issues
+
+
+_CHECKSTYLE_LEVELS: dict[str, Level] = {"error": "error", "warning": "warning", "info": "note"}
+
+
+def parse_checkstyle(text: str, workspace: Path) -> list[ParsedIssue]:
+    """Checkstyle XML: ``<file name=...><error line severity message source/></file>``."""
+    if "<!DOCTYPE" in text or "<!ENTITY" in text:
+        return []
+    start = text.find("<")
+    try:
+        root = ElementTree.fromstring(text[max(start, 0) :].strip())  # nosec B314 - DTDs refused
+    except ElementTree.ParseError:
+        return []
+    issues: list[ParsedIssue] = []
+    for item in root.iter("file"):
+        for error in item.iter("error"):
+            source = error.get("source") or "checkstyle"
+            issues.append(
+                ParsedIssue(
+                    rule=source.rsplit(".", 1)[-1].removesuffix("Check") or source,
+                    message=_message(error.get("message")),
+                    level=_CHECKSTYLE_LEVELS.get(error.get("severity") or "error", "warning"),
+                    path=_relative(item.get("name"), workspace),
+                    line=_line(error.get("line")),
+                    tool="checkstyle",
+                )
+            )
+    return issues
 
 
 # ----- JUnit XML --------------------------------------------------------------------------
@@ -192,6 +284,36 @@ _TSC_PRETTY = re.compile(
 )
 _PYTEST_SUMMARY = re.compile(r"^(?P<kind>FAILED|ERROR) (?P<node>\S+)(?: - (?P<msg>.*))?$")
 _PYTEST_SECTION = re.compile(r"^_{3,} (?:ERROR collecting )?(?P<name>.+?) _{3,}$")
+_MSBUILD = re.compile(
+    r"^\s*(?P<path>[^\s(][^(]*)\((?P<line>\d+),\d+(?:,\d+,\d+)?\): (?P<level>error|warning) "
+    r"(?P<code>[A-Z]+\d+): (?P<msg>.+?)(?: \[[^\]]+\])?$"
+)
+
+
+def parse_msbuild_text(lines: list[str]) -> list[ParsedIssue]:
+    """``dotnet build`` diagnostics: ``path(line,col): warning CA1062: message [project]``;
+    repeated diagnostics (MSBuild prints them again in the summary) are kept once."""
+    issues: list[ParsedIssue] = []
+    seen: set[tuple[str, int, str]] = set()
+    for line in lines:
+        match = _MSBUILD.match(line)
+        if not match:
+            continue
+        key = (match["path"].strip(), int(match["line"]), match["code"])
+        if key in seen:
+            continue
+        seen.add(key)
+        issues.append(
+            ParsedIssue(
+                rule=match["code"],
+                message=_message(match["msg"]),
+                level="error" if match["level"] == "error" else "warning",
+                path=match["path"].strip(),
+                line=int(match["line"]),
+                tool="msbuild",
+            )
+        )
+    return issues
 
 
 def parse_ruff_text(lines: list[str]) -> list[ParsedIssue]:
@@ -325,13 +447,29 @@ def _parse_only(
             if "<testsuite" in text:
                 issues.extend(parse_junit(text, workspace))
         return issues
-    text_parsers = {"mypy": parse_mypy_text, "tsc": parse_tsc_text, "pytest": parse_pytest_text}
+    if parser == "checkstyle":
+        for text in texts:
+            if "<checkstyle" in text:
+                issues.extend(parse_checkstyle(text, workspace))
+        return issues
+    if parser == "cargo":
+        for text in texts:
+            issues.extend(parse_cargo_messages(text, workspace))
+        return issues
+    text_parsers = {
+        "mypy": parse_mypy_text,
+        "tsc": parse_tsc_text,
+        "pytest": parse_pytest_text,
+        "msbuild": parse_msbuild_text,
+    }
     if parser in text_parsers:
         return text_parsers[parser](lines)
     for text in texts:
         data = _load_json(text)
         if parser == "sarif" and isinstance(data, dict) and "runs" in data:
             issues.extend(parse_sarif(data, workspace))
+        elif parser == "rubocop" and isinstance(data, dict):
+            issues.extend(parse_rubocop_json(data, workspace))
         elif parser in {"eslint", "ruff"} and isinstance(data, list):
             rows = [item for item in data if isinstance(item, dict)]
             issues.extend(
@@ -353,7 +491,8 @@ def parse_output(
 ) -> list[ParsedIssue]:
     """Every issue the output of one validator run reports, in order, at most ``MAX_ISSUES``
     (callers count the rest). ``parser`` names one format (``sarif``, ``junit``, ``ruff``,
-    ``mypy``, ``eslint``, ``tsc``, ``pytest``); ``auto`` recognizes every format by content."""
+    ``mypy``, ``eslint``, ``tsc``, ``pytest``, ``checkstyle``, ``rubocop``, ``cargo``); ``auto``
+    recognizes every format by content."""
     if parser == "none":
         return []
     if parser != "auto":
@@ -366,6 +505,10 @@ def parse_output(
             continue
         if "<testsuite" in text:
             issues.extend(parse_junit(text, workspace))
+        elif "<checkstyle" in text:
+            issues.extend(parse_checkstyle(text, workspace))
+        elif "compiler-message" in text:
+            issues.extend(parse_cargo_messages(text, workspace))
     if not issues:
         lines = [line.rstrip() for line in (stdout + "\n" + stderr).splitlines()]
         for text_parser in (parse_ruff_text, parse_mypy_text, parse_tsc_text, parse_pytest_text):
