@@ -22,6 +22,13 @@ from governed_harness.checks import DiffFile, Issue, is_test_path, parse_unified
 from governed_harness.checks.architecture import ArchitectureLimits, check_architecture
 from governed_harness.checks.constraints import check_constraints, constraints_from_task
 from governed_harness.checks.interface import check_interface, declared_names
+from governed_harness.checks.layers import LayerRules, check_layers
+from governed_harness.checks.principles import (
+    PrincipleLimits,
+    check_principles,
+    is_source,
+    source_corpus,
+)
 from governed_harness.checks.risk import detect_risk_factors
 from governed_harness.checks.sarif import read_sarif
 from governed_harness.checks.secrets import scan_secrets
@@ -34,7 +41,7 @@ from governed_harness.checks.suite_quality import (
 )
 from governed_harness.checks.weakened import check_weakened_controls
 from governed_harness.configuration.agent_results import DEFAULT_RISK_ACTIONS, RISK_FACTORS
-from governed_harness.configuration.models import ValidatorDefinition
+from governed_harness.configuration.models import ValidatorDefinition, VerificationConfig
 from governed_harness.domain.enums import (
     ActorType,
     FindingSeverity,
@@ -67,6 +74,8 @@ SARIF_ID = "harness.sarif"
 RISK_ID = "harness.risk-factors"
 CHANGE_REQUESTS_ID = "harness.change-requests"
 RISK_ACK_FLAG = "riskack"
+PRINCIPLES_ID = "harness.principles"
+LAYERS_ID = "harness.layers"
 
 _SARIF_SEVERITY = {
     "error": FindingSeverity.HIGH,
@@ -134,17 +143,22 @@ class VerificationChecks:
         if requests:
             outputs.append(self._change_requests(execution, change_set, requests, diff))
         config = self.config
-        if config is None:
-            return outputs
+        layers = self.results.architecture.rules() if self.results.engineering.configured else None
+        if config is None and layers is None:
+            tdd = self.results.engineering.tdd_validation(execution, change_set, diff, outputs)
+            return [*outputs, tdd] if tdd is not None else outputs
         task = engine.run_task(execution)
         files = current_files(self.results.s.paths.workspace, diff)
+        architecture = self.results.project.architecture
         for item in pure_checks(
-            config,
+            config or _NO_CHECKS,
             task,
             diff,
             files,
             self.results.s.paths.workspace,
             self.results.baseline_text(execution),
+            layers=layers,
+            layer_policy=architecture.policy if architecture is not None else "enforce",
         ):
             outputs.append(
                 self._output(
@@ -157,6 +171,13 @@ class VerificationChecks:
                     started=item.started,
                 )
             )
+        if self.results.engineering.configured:
+            # testing.strategy: tdd (#56): red, green and refactor evidence of the ChangeSet.
+            tdd = self.results.engineering.tdd_validation(execution, change_set, diff, outputs)
+            if tdd is not None:
+                outputs.append(tdd)
+        if config is None:
+            return outputs
         if config.test_quality is not None:
             outputs.append(self._test_quality(execution, change_set, task, diff, files))
         if config.invariants:
@@ -670,6 +691,11 @@ class VerificationChecks:
         )
 
 
+_NO_CHECKS = VerificationConfig()
+"""A verification section with every check off: the layer rules of ``architecture`` run on
+their own."""
+
+
 def _rank(severity: FindingSeverity) -> int:
     return _SEVERITY_RANK[severity]
 
@@ -732,10 +758,35 @@ def pure_checks(
     files: Mapping[str, str],
     workspace: Path,
     baseline_text: Callable[[str], str | None] | None,
+    *,
+    layers: LayerRules | None = None,
+    layer_policy: str = "enforce",
 ) -> list[CheckResult]:
     """The checks that read only the diff and the files (VERIFICATION and ``harness check``):
-    interface, architecture, security patterns, constraints, weakened controls and secrets."""
+    interface, architecture, security patterns, constraints, weakened controls and secrets;
+    since #56 the engineering principles and the architecture's layer rules."""
     planned: list[tuple[str, str, Callable[[], tuple[list[Issue], str]]]] = []
+    principles = getattr(config, "principles", None)
+    if principles is not None and principles.enabled:
+        planned.append(
+            (
+                PRINCIPLES_ID,
+                principles.mode,
+                lambda: principle_issues(config, diff, files, workspace, baseline_text),
+            )
+        )
+    if layers is not None and layers.layers:
+        layer_severity = FindingSeverity.HIGH if layer_policy == "enforce" else FindingSeverity.LOW
+        planned.append(
+            (
+                LAYERS_ID,
+                layer_policy,
+                lambda: (
+                    check_layers(files, layers, severity=layer_severity),
+                    "architecture layer rules",
+                ),
+            )
+        )
     if config.interface not in {None, "off"} and declared_interfaces(task):
         planned.append(
             (
@@ -860,6 +911,53 @@ def architecture_issues(
         else:
             kept.append(issue)
     return kept, "architecture limits"
+
+
+def principle_issues(
+    config: Any,
+    diff: Sequence[DiffFile],
+    files: Mapping[str, str],
+    workspace: Path,
+    baseline_text: Callable[[str], str | None] | None,
+) -> tuple[list[Issue], str]:
+    """The deterministic proxies of the engineering principles (#56) on the ChangeSet."""
+    principles = config.principles
+    severity = principles.severity or FindingSeverity.MEDIUM
+    families = {_family_of(path) for path in files if is_source(path)}
+    corpus = source_corpus(workspace, families) if families else {}
+    architecture = config.architecture
+    limit = (
+        architecture.max_module_lines
+        if architecture is not None and architecture.max_module_lines
+        else 800
+    )
+    baseline_lines: dict[str, int] = {}
+    if baseline_text is not None:
+        for path in files:
+            before = baseline_text(path)
+            if before is not None:
+                baseline_lines[path] = len(before.splitlines())
+    issues = check_principles(
+        diff,
+        files,
+        corpus,
+        PrincipleLimits(
+            window=principles.window,
+            inheritance_depth=principles.inheritance_depth,
+            max_module_lines=limit,
+            unused_public=principles.unused_public is not False,
+            boy_scout=principles.boy_scout is not False,
+        ),
+        severity=severity,
+        baseline_lines=baseline_lines,
+    )
+    return issues, "engineering principles"
+
+
+def _family_of(path: str) -> str:
+    from governed_harness.checks.principles import _family
+
+    return _family(path)
 
 
 def constraint_issues(task: Task, files: Mapping[str, str], policy: str) -> tuple[list[Issue], str]:

@@ -101,6 +101,14 @@ class GateContract:
                 )
             if verification.risk_factors is not None:
                 checks["riskFactors"] = self.results.verification.risk_actions()
+            if verification.principles is not None:
+                checks["principles"] = verification.principles.model_dump(
+                    mode="json", by_alias=True
+                )
+        if self.results.engineering.configured:
+            layers = self.results.architecture.rules()
+            if layers is not None and layers.layers:
+                checks["layers"] = layers.as_dict()
         skipped = {"review.possible-secret"} if self.results.secrets_in_context else set()
         return {
             "workspace": workspace,
@@ -177,6 +185,8 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
+    from governed_harness.configuration.models import VerificationConfig
+    from governed_harness.orchestration.architecture import effective_rules
     from governed_harness.orchestration.verification_checks import (
         current_files,
         pure_checks,
@@ -258,15 +268,23 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             )
     checks: list[dict[str, Any]] = []
     verification = resolved.project.verification
-    if verification is not None and task is not None and baseline_text is not None:
+    architecture = resolved.project.architecture
+    layers = effective_rules(architecture, workspace / ".harness")
+    if (
+        (verification is not None or layers is not None)
+        and task is not None
+        and (baseline_text is not None)
+    ):
         parsed = parse_unified_diff(diff_text)
         for item in pure_checks(
-            verification,
+            verification or VerificationConfig(),
             task,
             parsed,
             current_files(workspace, parsed),
             workspace,
             baseline_text,
+            layers=layers,
+            layer_policy=architecture.policy if architecture is not None else "enforce",
         ):
             checks.append(
                 {

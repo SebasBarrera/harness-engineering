@@ -190,6 +190,18 @@ class SimulatedAgentProvider:
             result = {"findings": []}
         elif kind == "acceptance":
             result = {"tests": []}
+        elif kind == "architecture":
+            # No layering inferred and no option proposed: nothing waits for a person (#56).
+            result = (
+                {"options": []}
+                if request.get("mode") == "advise"
+                else {
+                    "style": "custom",
+                    "summary": "Simulated survey: no layering was inferred.",
+                    "layers": [],
+                    "allow": {},
+                }
+            )
         elif kind == "plan":
             task = request.get("task") or {}
             requirement_ids = [

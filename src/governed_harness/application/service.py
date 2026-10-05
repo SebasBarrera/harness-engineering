@@ -94,6 +94,13 @@ from .agent_results import (
     routing_calibration,
 )
 from .clarification_loader import load_clarification_file
+from .engineering import (
+    architecture_report,
+    decide_architecture,
+    project_report,
+    refresh_architecture,
+    standards_report,
+)
 from .exceptions import (
     ExceptionOptions,
     brief_exceptions,
@@ -133,12 +140,19 @@ class HarnessApplication:
         force: bool = False,
         gitignore: bool = False,
         example_task: bool = False,
+        agent_skills: bool = False,
     ) -> dict[str, Any]:
         """Write .harness/project.yaml. The CLI also asks for the .gitignore entry and the
         example task (``gitignore``/``example_task``); the Python API leaves the workspace
-        untouched beyond .harness/ unless asked."""
+        untouched beyond .harness/ unless asked. ``agent_skills`` (#56) also writes the skill
+        of the governed flow for Claude Code and Codex."""
         config = initialize_project(path, force=force)
         workspace = config.parent.parent
+        skills: list[dict[str, str]] | None = None
+        if agent_skills:
+            from governed_harness.embedded.skills import write_agent_skills
+
+            skills = write_agent_skills(workspace, force=force)
         detections = [item for item in detect_profiles(workspace) if item.confidence > 0]
         result: dict[str, Any] = {
             "status": "PASSED",
@@ -149,6 +163,8 @@ class HarnessApplication:
         }
         if gitignore:
             result["gitignore"] = ensure_gitignore(workspace)
+        if skills is not None:
+            result["agentSkills"] = skills
         example: Path | None = None
         if example_task:
             example = write_example_task(
@@ -352,8 +368,12 @@ class HarnessApplication:
         answers_file: Path,
         actor_id: str | None = None,
         actor_type: ActorType = ActorType.HUMAN,
+        relayed: bool = False,
     ) -> dict[str, Any]:
         """Answer the clarification questions INTENT asked about a task.
+
+        ``relayed`` (embedded mode, #56): the person's answers reached the harness through an
+        agent session (the MCP server); the record names the person and says so.
 
         The answers file maps question ids to answers and may replace criteria, add criteria
         and add requirements. The harness stores the revised task and a clarification record
@@ -365,6 +385,8 @@ class HarnessApplication:
         clarification = load_clarification_file(answers_file)
         with self._services(path) as services:
             decider, display_name = self._decider(services, actor_id)
+            if relayed:
+                display_name = f"{display_name or decider} (relayed by an agent session)"
             with self._leased(services, "task clarify"):
                 record, task = RunEngine(services).clarify(
                     task_id=task_id,
@@ -967,6 +989,71 @@ class HarnessApplication:
                 transport=transport,
                 transport_override=transport_override,
             )
+
+    def standards(
+        self, path: Path, *, pack: str | None = None, files: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
+        """The language standards packs of the project (#56): detected and effective packs,
+        their cards, the tools the repository configures and, for ``files``, the cards an
+        implement call and the review checklist would get. Works without a project too."""
+        try:
+            resolved = ConfigurationResolver().resolve(path)
+        except ConfigurationError:
+            return standards_report(path.resolve(), None, (), [], pack=pack, files=files)
+        return standards_report(
+            resolved.workspace_root,
+            resolved.project.standards,
+            tuple(item.technology for item in resolved.profiles),
+            [item.validator_id for item in resolved.effective_validators],
+            pack=pack,
+            files=files,
+        )
+
+    def architecture(self, path: Path) -> dict[str, Any]:
+        """The architecture of the project: configuration, survey or ADR, rules in force."""
+        with self._services(path) as services:
+            return architecture_report(services)
+
+    def decide_architecture(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        digest: str,
+        rationale: str,
+        decision: DecisionKind | None = None,
+        option: str | None = None,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject inferred layer rules, or choose an architecture option (#56)."""
+        with (
+            self._services(path) as services,
+            self._leased(services, "architecture decide") as lease,
+        ):
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_architecture(
+                services,
+                execution_id,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                decision=decision,
+                option=option,
+                continue_after=continue_after,
+            )
+
+    def refresh_architecture(self, path: Path) -> dict[str, Any]:
+        with self._services(path) as services:
+            return refresh_architecture(services)
+
+    def project(self, path: Path) -> dict[str, Any]:
+        """New or existing, packs, testing strategy, architecture and forge, without a call."""
+        with self._services(path) as services:
+            return project_report(services)
 
     def forge(self, path: Path) -> dict[str, Any]:
         """The forge the workspace resolves to, without calling it."""

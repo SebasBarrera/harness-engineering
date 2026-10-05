@@ -44,7 +44,13 @@ plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-task
 acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
 budget_app = typer.Typer(help="Governed budget of agent calls")
 routing_app = typer.Typer(help="Model and effort routing of agent calls")
-pr_app = typer.Typer(help="Pull request integration")
+pr_app = typer.Typer(
+    help="Pull and merge requests on GitHub, GitLab, Bitbucket, Azure DevOps, Gitea"
+)
+standards_app = typer.Typer(help="Language standards packs: cards and tools")
+architecture_app = typer.Typer(help="Architecture: survey, options, ADR and layer rules")
+project_app = typer.Typer(help="What the harness detects about the project")
+mcp_app = typer.Typer(help="Embedded mode: the harness as an MCP server for an agent session")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -65,6 +71,10 @@ app.add_typer(acceptance_app, name="acceptance")
 app.add_typer(budget_app, name="budget")
 app.add_typer(routing_app, name="routing")
 app.add_typer(pr_app, name="pr")
+app.add_typer(standards_app, name="standards")
+app.add_typer(architecture_app, name="architecture")
+app.add_typer(project_app, name="project")
+app.add_typer(mcp_app, name="mcp")
 
 
 ACTOR_HELP = (
@@ -227,6 +237,12 @@ def init(
         "--example-task/--no-example-task",
         help="Write an example task to .harness/task.example.yaml",
     ),
+    agent_skills: bool = typer.Option(
+        False,
+        "--agent-skills",
+        help="Also write the skill of the governed flow for Claude Code "
+        "(.claude/skills/harness/SKILL.md) and Codex (.codex/skills/harness/SKILL.md)",
+    ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Create .harness/project.yaml for a repository, using the detected technology profiles,
@@ -235,7 +251,11 @@ def init(
     _emit(
         _call(
             lambda: HarnessApplication().init(
-                path, force=force, gitignore=gitignore, example_task=example_task
+                path,
+                force=force,
+                gitignore=gitignore,
+                example_task=example_task,
+                agent_skills=agent_skills,
             )
         ),
         json_output,
@@ -901,6 +921,130 @@ def pr_forge(
     """Show the forge the workspace resolves to (delivery.forge or the origin remote), its API
     URL, transport and the environment variable its token is read from. Calls nothing."""
     _emit(_call(lambda: HarnessApplication().forge(path)))
+
+
+@standards_app.command("show")
+def standards_show(
+    lang: str | None = typer.Option(
+        None, "--lang", help="One pack (python, typescript, java, ...) with all its cards"
+    ),
+    file: list[str] | None = typer.Option(
+        None,
+        "--file",
+        help="A workspace path: show the cards an implement call and the review checklist "
+        "would get for it (repeatable)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Show the language standards packs: the detected and effective packs (repository
+    overrides applied), their tools and the validators added for the tools the repository
+    configures; with --lang every card of one pack; with --file the cards selected for those
+    files. Works without a project configuration. Reads only."""
+    _emit(
+        _call(lambda: HarnessApplication().standards(path, pack=lang, files=tuple(file or ()))),
+        json_output,
+    )
+
+
+@architecture_app.command("show")
+def architecture_show(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Show the architecture of the project: the configured section, whether the project is
+    new or existing, the cached survey or the ADR, the layer rules in force with their
+    forbidden imports, and the source layout the survey cache is keyed by."""
+    _emit(_call(lambda: HarnessApplication().architecture(path)), json_output)
+
+
+@architecture_app.command("decide")
+def architecture_decide(
+    run: str = RUN_OPTION,
+    digest: str = typer.Option(..., "--digest", help="Digest shown by the blocked phase"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    decision: DecisionKind | None = typer.Option(
+        None,
+        "--decision",
+        case_sensitive=False,
+        help="APPROVE or REJECT the layer rules a survey inferred",
+    ),
+    option: str | None = typer.Option(
+        None, "--option", help="The architecture option chosen for a new project"
+    ),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Decide the architecture, bound to the digest of the proposal: approve or reject the
+    layer rules a survey inferred (existing project), or choose one of the options of a new
+    project, which is recorded as an ADR. The approved rules are enforced as forbidden
+    dependencies in VERIFICATION. A stale digest or a non-human actor exits 5."""
+    result = _call(
+        lambda: _acting().decide_architecture(
+            path,
+            execution_id=run,
+            digest=digest,
+            rationale=rationale,
+            decision=decision,
+            option=option,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result)
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
+
+
+@architecture_app.command("refresh")
+def architecture_refresh(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Mark the cached architecture survey stale: the next run surveys the project again (one
+    call). Approved rules stay in force until a new survey is decided."""
+    _emit(_call(lambda: HarnessApplication().refresh_architecture(path)))
+
+
+@mcp_app.command("serve")
+def mcp_serve(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Serve the harness to an agent session over stdio (Model Context Protocol, JSON-RPC 2.0,
+    one message per line). Tools: project, status, inbox, task create, questions and clarify
+    (the person's answers, marked as relayed), run start (provider session by default) and
+    continue, check, review and standards. No tool decides for a person: gate, acceptance,
+    plan and architecture decisions stay in the terminal. Register it, for example, with
+    claude mcp add harness -- harness mcp serve."""
+    from governed_harness.embedded.mcp_server import serve_stdio
+
+    raise typer.Exit(code=serve_stdio(path.resolve()))
+
+
+@project_app.command("show")
+def project_show(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Show what the harness detects about the project, deterministically and without an
+    agent call: new or existing (and why), profiles, standards packs, testing strategy,
+    architecture status, project setup answers and forge."""
+    _emit(_call(lambda: HarnessApplication().project(path)), json_output)
 
 
 @app.command()

@@ -192,6 +192,23 @@ ARCHITECTURE_INSTRUCTIONS: Final[dict[str, str]] = {
 }
 """Instructions of the ``architecture`` call by its mode (#56)."""
 
+ACCEPTANCE_GHERKIN: Final[str] = (
+    "Write the acceptance criteria and requirements of the task below as Gherkin feature files "
+    "(behaviour-driven development), before any implementation exists, for the workspace at "
+    "{workspace}. Put every file under {directory}/ with the .feature extension; each Scenario "
+    "names the criterion or requirement id it covers and uses Given, When, Then steps that "
+    "state observable behaviour, not implementation details. Write no step definitions: a "
+    "person approves the scenarios, the harness freezes them, and the implementation then "
+    "writes the step definitions and the code. "
+    + _READ_ONLY
+    + " "
+    + _JSON.replace(
+        "RESULT",
+        '{{"tests": [{{"path": "{directory}/<name>.feature", "content": "<Feature: ...>"}}]}}',
+    )
+)
+"""Instructions of the ``acceptance`` call under ``testing.strategy: bdd`` (#56)."""
+
 
 def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str:
     """The instructions of a request kind with its placeholders filled."""
@@ -203,6 +220,8 @@ def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str
         "styles": "",
     }
     fields.update(values)
+    if kind == "acceptance" and fields.get("format") == "gherkin":
+        return ACCEPTANCE_GHERKIN.format(**fields)
     if kind == "architecture":
         return ARCHITECTURE_INSTRUCTIONS[str(fields.get("mode") or "survey")].format(**fields)
     return INSTRUCTIONS[kind].format(**fields)

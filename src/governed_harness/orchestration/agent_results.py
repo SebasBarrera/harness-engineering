@@ -122,6 +122,14 @@ class AgentResults:
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
+        # Wave 6 (#56): standards, principles, testing strategy, architecture, project setup.
+        from governed_harness.orchestration.architecture import ArchitectureFlow
+        from governed_harness.orchestration.engineering import Engineering
+        from governed_harness.orchestration.project_setup import ProjectSetup
+
+        self.engineering = Engineering(self)
+        self.architecture = ArchitectureFlow(self)
+        self.project_setup = ProjectSetup(self)
         self._baselines: dict[str, StoredSnapshot | None] = {}
 
     def after_verification(
@@ -236,6 +244,7 @@ class AgentResults:
                 project.budget is not None,
                 project.memory is not None,
                 project.agent_routing is not None,
+                self.engineering.configured,
             )
         )
 
@@ -597,13 +606,22 @@ class AgentResults:
         if kind == "acceptance":
             config = self.acceptance.config
             return config.author if config else None
+        if kind == "architecture":
+            architecture = self.project.architecture
+            return architecture.agent if architecture else None
         return None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
         configured = self.call_config(kind)
         if configured is not None and configured.provider:
             return configured.provider
-        return self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
+        provider = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
+        if provider == "session":
+            # Embedded mode (#56): the session implements; read-only calls go to the project's
+            # provider, so the author does not review itself.
+            fallback = self.project.agent_provider
+            return fallback if fallback != "session" else "simulated"
+        return provider
 
     def call_agent(
         self,
@@ -614,6 +632,7 @@ class AgentResults:
         *,
         task: Task,
         instruction_values: dict[str, Any] | None = None,
+        instructions_suffix: str = "",
     ) -> AgentCallOutcome:
         """Send a read-only request of ``kind`` and return its structured result.
 
@@ -638,7 +657,8 @@ class AgentResults:
             "readOnly": True,
             "instructions": render_instructions(
                 kind, workspace=workspace, **(instruction_values or {})
-            ),
+            )
+            + (f" {instructions_suffix}" if instructions_suffix else ""),
             "workspace": workspace,
             "task": task.model_dump(mode="json"),
         }
@@ -893,6 +913,21 @@ class AgentResults:
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
+        suffix = ""
+        if self.engineering.configured:
+            # Standards cards for the files this call works on, testing strategy and layers
+            # (#56), selected deterministically and cached by digest.
+            since = self.baseline_changes(execution)
+            changed = [item.path for item in since.changes] if since is not None else []
+            manifest = extra.get("contextFiles")
+            listed = (
+                [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
+                if isinstance(manifest, dict)
+                else []
+            )
+            paths = self.engineering.candidate_paths(task, changed, listed)
+            engineering, suffix = self.engineering.implement_extra(execution, phase, task, paths)
+            extra.update(engineering)
         if not extra:
             return None
         workspace = str(self.s.paths.workspace)
@@ -901,7 +936,8 @@ class AgentResults:
                 "schemaVersion": REQUEST_SCHEMA_VERSION,
                 "kind": "implement",
                 "workspace": workspace,
-                "instructions": render_instructions("implement", workspace=workspace),
+                "instructions": render_instructions("implement", workspace=workspace)
+                + (f" {suffix}" if suffix else ""),
             }
         )
         return extra

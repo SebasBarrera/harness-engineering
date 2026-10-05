@@ -25,6 +25,7 @@ from governed_harness.configuration.agent_results import (
     _Section,
     off_from_yaml,
 )
+from governed_harness.domain.enums import FindingSeverity
 
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
@@ -173,6 +174,9 @@ class PrinciplesConfig(_Section):
     unused_public: bool | None = Field(default=None, alias="unusedPublic")
     boy_scout: bool | None = Field(default=None, alias="boyScout")
     checklist: bool | None = None
+    severity: FindingSeverity | None = None
+    """Severity of a principle finding under ``enforce`` (default ``MEDIUM``: shown, not
+    blocking under the default ``findingBlockSeverities``; ``HIGH`` makes them block)."""
 
     @field_validator("mode", mode="before")
     @classmethod
