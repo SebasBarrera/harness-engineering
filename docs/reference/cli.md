@@ -783,8 +783,12 @@ harness benchmark scenarios [OPTIONS]
 
 ## harness api serve
 
-Serve the local API and web dashboard. There is no authentication: keep it bound to
-127.0.0.1.
+Serve the local API and web dashboard. Keep it bound to 127.0.0.1.
+
+With the api section that harness init writes, every route requires Authorization: Bearer
+TOKEN. Your token comes from the variable in api.tokenEnv (HARNESS_API_TOKEN by default);
+when it is not set, a new token is generated and printed once on standard error. Without
+the section there is no authentication, as in 1.0.0.
 
 ```text
 harness api serve [OPTIONS]

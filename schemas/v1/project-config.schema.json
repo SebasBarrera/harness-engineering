@@ -296,6 +296,116 @@
       "title": "AgentRoutingConfig",
       "type": "object"
     },
+    "ApiConfig": {
+      "additionalProperties": false,
+      "description": "``harness api serve`` authentication (#18). ``auth: token`` (the default when the\nsection is present) requires ``Authorization: Bearer TOKEN`` on every route; ``off`` keeps\nthe 1.0.0 behaviour. ``tokenEnv`` names the variable holding the token of the person who\nstarts the server (generated and shown once when it is not set), ``tokenUser`` the actor\nid recorded on that person's decisions and ``tokenRole`` their role. ``users`` declares\nfurther people, each with an id, a role and the variable of their token.",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "enum": [
+                "token",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auth"
+        },
+        "tokenEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenenv"
+        },
+        "tokenRole": {
+          "anyOf": [
+            {
+              "enum": [
+                "viewer",
+                "reviewer",
+                "admin"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenrole"
+        },
+        "tokenUser": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenuser"
+        },
+        "users": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ApiUser"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Users"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "ApiUser": {
+      "additionalProperties": false,
+      "description": "A person who may use the API: the actor id recorded on their decisions, their role and\nthe NAME of the environment variable that holds their token (never the token itself).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "viewer",
+            "reviewer",
+            "admin"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "tokenEnv": {
+          "title": "Tokenenv",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "tokenEnv"
+      ],
+      "title": "ApiUser",
+      "type": "object"
+    },
     "ArchitectureConfig": {
       "additionalProperties": false,
       "description": "Engineering limits checked on the Python files of the ChangeSet (#40).",
@@ -4341,6 +4451,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/AgentRoutingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "api": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApiConfig"
         },
         {
           "type": "null"
