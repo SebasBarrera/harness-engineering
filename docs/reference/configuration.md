@@ -55,7 +55,17 @@ intake:
   criteriaPolicy: enforce
 verification:
   requirementTraceability: enforce
+  outputParsers: true
+review:
+  exceptions: true
+  exceptionDays: 30
+retrospective:
+  causal: true
 ```
+
+Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
+`.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
+`notifications` section is never written, because it needs a URL.
 
 ## Fields
 
@@ -118,9 +128,9 @@ Without `review.exceptions` an `APPROVE_EXCEPTION` decision is what it was in 1.
 with a rationale that closes the run, with no expiry and no effect on later runs. With
 `review.exceptions: true`:
 
-- The decision carries an expiry: `harness gate decide ... --decision APPROVE_EXCEPTION
-  --expires-in 14d` (also `36h`, `2w`), `--expires-at <ISO 8601>` or, with neither,
-  `review.exceptionDays`. An expiry must be in the future and at most 365 days away.
+- The decision carries an expiry: `--expires-in 14d` (also `36h`, `2w`) or
+  `--expires-at <ISO 8601>` on `harness gate decide --decision APPROVE_EXCEPTION`, or, with
+  neither, `review.exceptionDays`. An expiry must be in the future and at most 365 days away.
 - An exception record (schema `exception.schema.json`) is stored with the person, the rationale,
   the decision, the gate and the ChangeSet digest it was granted on, the scope, the
   `--alternative-evidence` and `--follow-up` texts and its provenance; it is recorded as
@@ -167,11 +177,13 @@ validators that had no effect on the gate. With `causal: true`:
 Nothing is applied automatically, as before. `harness rules health [--since DAYS]` reads every
 run of the project and shows, per rule, how often it fired, blocked a gate, was excepted (and how
 often its exceptions were relied on), fired on a ChangeSet that was later corrected, fired in a
-rejected run or in a run later linked to an outcome, with a fixed-rule signal (`often excepted
-when it blocks`, `fired in runs later linked to an outcome`, `led to corrections`), and per
+rejected run or in a run later linked to an outcome, with a fixed-rule signal
+(`often excepted when it blocks`, `fired in runs later linked to an outcome`,
+`led to corrections`), and per
 validator how many results did not pass. It needs no setting and writes nothing.
-`harness outcome record --run R --kind INCIDENT|REVERT|HOTFIX|REGRESSION|OTHER --summary ...
-[--reference ...] [--observed-at ...]` links what happened after a run to it (schema
+`harness outcome record --run R --kind KIND --summary TEXT` (kinds `INCIDENT`, `REVERT`,
+`HOTFIX`, `REGRESSION`, `OTHER`; optional `--reference` and `--observed-at`) links what
+happened after a run to it (schema
 `outcome.schema.json`; an actor id of an agent, validator or the harness exits with 5);
 `harness outcome list` shows them.
 

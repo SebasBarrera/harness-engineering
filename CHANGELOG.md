@@ -39,8 +39,8 @@
   null) from `--expires-in`/`--expires-at` or `review.exceptionDays`, and records an exception
   (new contract `exception.schema.json`) with the person, rationale, run, gate, digest, scope,
   alternative evidence and follow-up, as `DECISION` evidence and an `exception.granted` event.
-  The default scope is the gate's blocking findings by rule, path and fingerprint; `--scope
-  RULE[:PATH]` widens it. While an exception is in force, a later run's gate does not count the
+  The default scope is the gate's blocking findings by rule, path and fingerprint;
+  `--scope RULE[:PATH]` widens it. While an exception is in force, a later run's gate does not count the
   findings it covers and says so (`EXCEPTION_APPLIED_<id>`); once it expires they block again,
   also for a run waiting in `DECISION`, and a run whose own exception expired before closing is
   `BLOCKED`. A failing mandatory validator is never covered. `harness exceptions list` and
