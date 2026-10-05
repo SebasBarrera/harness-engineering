@@ -320,6 +320,65 @@ def test_variance_of_identical_reviews(workspace: Path) -> None:
     assert variance["verdictStability"] == 1.0 and variance["meanJaccard"] == 1.0
 
 
+def _panel(root: Path, **values: Any) -> None:
+    path = root / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["review"]["panel"].update(values)
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+
+def test_failed_consistency_check_calls_no_reviewer(workspace: Path) -> None:
+    (workspace / "check_schema.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
+    _panel(
+        workspace, consistencyChecks=[{"id": "schema", "command": ["python", "check_schema.py"]}]
+    )
+    _feature(workspace)
+    report = HarnessApplication().review_code(workspace, provider="finder")
+    assert report["verdict"] == "FAIL"
+    assert report["consistency"][0]["id"] == "schema"
+    assert report["consistency"][0]["status"] == "FAILED"
+    assert report["tokens"]["modelCalls"] == 0
+    assert {item["status"] for item in report["reviewers"]} == {"SKIPPED"}
+
+
+FAKE_RUFF = """\
+import json
+print(json.dumps([{
+    "code": "B006", "message": "Do not use mutable data structures for argument defaults",
+    "filename": "src/sample/pricing.py", "location": {"row": 2, "column": 1},
+    "end_location": {"row": 2, "column": 2},
+}, {
+    "code": "E501", "message": "Line too long", "filename": "src/sample/pricing.py",
+    "location": {"row": 2, "column": 1}, "end_location": {"row": 2, "column": 2},
+}]))
+"""
+
+
+def test_linter_rules_are_checked_by_the_tool_not_by_a_model(workspace: Path) -> None:
+    overrides = workspace / "standards" / "python"
+    overrides.mkdir(parents=True)
+    (overrides / "tools.yaml").write_text(
+        "tools:\n  - id: ruff\n    command: [python, fake_ruff.py]\n    parser: ruff\n"
+        "    configFiles: [ruff.toml]\n",
+        encoding="utf-8",
+    )
+    (workspace / "ruff.toml").write_text("", encoding="utf-8")
+    (workspace / "fake_ruff.py").write_text(FAKE_RUFF, encoding="utf-8")
+    path = workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["review"]["panel"]["runTools"] = True
+    config["standards"] = {"packs": ["python"], "path": "standards"}
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    _feature(workspace)
+    report = HarnessApplication().review_code(workspace, provider="finder")
+    linted = [item for item in report["findings"] if item["source"] == "tool:ruff"]
+    # Only the diagnostic of a catalog rule (B006 verifies python.no-mutable-defaults) counts.
+    assert [(item["rule"], item["line"], item["severity"]) for item in linted] == [
+        ("python.no-mutable-defaults", 2, "error")
+    ]
+    assert report["deterministic"]["linterFindings"] == 1
+
+
 def test_review_brief_still_works_as_a_command(python_workspace: Path) -> None:
     result = CliRunner().invoke(app, ["--json", "review", "--path", str(python_workspace)])
     # No run yet: the brief reports it (not found), not a usage error.
