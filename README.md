@@ -155,6 +155,7 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 | From | Command |
 |---|---|
 | A release wheel (recommended) | `pip install <wheel URL from the release page>`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
+| A release wheel with pipx (isolated CLI) | `pipx install <wheel URL from the release page>`, or `pipx install "governed-agent-harness[api] @ <wheel URL>"` for the dashboard. The harness then lives in its own environment and the validators keep running the project's `python`/`npm` from `PATH`, so install `pytest` in the project's environment, not in the pipx one. Not exercised in CI; `harness --version` confirms the install |
 | Source | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
 | Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (published from `v1.0.0`; runs as a non-root user) |
 

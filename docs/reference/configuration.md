@@ -55,7 +55,17 @@ intake:
   criteriaPolicy: enforce
 verification:
   requirementTraceability: enforce
+  outputParsers: true
+review:
+  exceptions: true
+  exceptionDays: 30
+retrospective:
+  causal: true
 ```
+
+Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
+`.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
+`notifications` section is never written, because it needs a URL.
 
 ## Fields
 
@@ -88,6 +98,132 @@ verification:
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
+| `verification.outputParsers` | `false` when the key is absent; `init` writes `true` | Parse the output of a failing command validator into one finding per reported problem, with path, line and the tool's rule. See [located findings](#located-findings). |
+| `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
+| `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
+| `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
+| `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
+
+## Located findings
+
+Without `verification.outputParsers` a failing command validator records one finding
+(`<validator>.failed`, `HIGH` when mandatory, `MEDIUM` when optional) without a location, as in
+1.0.0. With `outputParsers: true` it also records one finding per problem the tool reported,
+with rule `<validator>.<tool rule>` (for example `python.ruff.F401`, `python.mypy.return-value`,
+`python.pytest.test-failed`), the path relative to the workspace and the line. The formats are
+recognized by content: SARIF 2.1.0, ESLint JSON, Ruff JSON, JUnit XML (printed, or written to a
+file named with `--junitxml`, `--junit-xml`, `--output-file` or `-o` inside the workspace), and
+the text output of Ruff (concise and full), Mypy, TypeScript `tsc` and pytest (`FAILED`/`ERROR`
+summary lines, with the line of the test taken from the traceback). Errors keep the severity of
+the summary finding, so the gate status is the one the summary already decides; warnings are
+`LOW` and notes are not recorded. At most 200 findings are kept per validator run, and an `INFO`
+finding counts the rest. A validator that passes is not parsed. The SARIF export
+(`harness trace --format sarif`) carries a `partialFingerprints` entry `harnessFinding/v1` per
+result (rule, validator, path and message without positions, stable across attempts and runs)
+and the finding, run and validator ids in `properties`.
+
+## Exceptions
+
+Without `review.exceptions` an `APPROVE_EXCEPTION` decision is what it was in 1.0.0: a decision
+with a rationale that closes the run, with no expiry and no effect on later runs. With
+`review.exceptions: true`:
+
+- The decision carries an expiry: `--expires-in 14d` (also `36h`, `2w`) or
+  `--expires-at <ISO 8601>` on `harness gate decide --decision APPROVE_EXCEPTION`, or, with
+  neither, `review.exceptionDays`. An expiry must be in the future and at most 365 days away.
+- An exception record (schema `exception.schema.json`) is stored with the person, the rationale,
+  the decision, the gate and the ChangeSet digest it was granted on, the scope, the
+  `--alternative-evidence` and `--follow-up` texts and its provenance; it is recorded as
+  `DECISION` evidence and as an `exception.granted` event on the run's chain, before the run
+  closes. The harness records the alternative evidence and the follow-up, it does not check them.
+- The scope is, by default, every blocking finding of the gate, each by rule, path and
+  fingerprint (rule, validator, path and message, without line numbers), so only the same problem
+  is covered. `--scope RULE` or `--scope RULE:PATH` (repeatable) widens it to a rule, optionally
+  in one file.
+- While the exception is in force, the gate of a later run of the project does not count the
+  findings it covers: they stay in the record and the gate lists them as inputs together with
+  the reason code `EXCEPTION_APPLIED_<exceptionId>`. A mandatory validator that does not pass
+  still fails the gate: an exception covers findings, not failing tests.
+- Once it expires the findings block again, also for a run already waiting in `DECISION` (its
+  gate is evaluated again when the run continues), and a run whose own `APPROVE_EXCEPTION` expired
+  before it closed is `BLOCKED` until a new decision.
+
+`harness exceptions list [--status active|expired] [--expiring-within DAYS]` is the ledger: who
+granted each exception, on which run and digest, its scope, evidence and follow-up, the days left
+and the runs whose gate relied on it. `harness review` shows the exceptions granted in a run or
+relied on by its gate. Interactive decisions ask for the expiry, the alternative evidence and
+the follow-up.
+
+## Retrospective by cause
+
+Without `retrospective.causal` the retrospective is the 1.0.0 one: generated at `CLOSURE` (or by
+`harness retrospect`), with recommendations from run-level counts, including failures of optional
+validators that had no effect on the gate. With `causal: true`:
+
+- Each retrospective records the `trigger` (`CLOSED`, `REJECTED`, `CANCELLED`, `ON_DEMAND`) and
+  its `causes`: reason code, subject (a validator, a rule or a provider, never a person), phase,
+  effect, occurrences, attempts and evidence references.
+- The reason codes are `MANDATORY_VALIDATOR_<STATUS>` (a mandatory validator that stopped
+  `VERIFICATION`), `BLOCKING_FINDING` (a rule that failed a delivery gate),
+  `CHANGES_REQUESTED`, `REJECTED`, `EXCEPTION_APPROVED`, `EXCEPTION_GRANTED` (per excepted
+  rule), `PROVIDER_TRANSIENT_FAILURE`, `RUN_CANCELLED` and `POST_RUN_<KIND>` for outcomes
+  recorded with `harness outcome record`. Optional validators that did not pass are named in an
+  observation and are not causes.
+- Recommendations come from the causes (one per validator, rule or decision that redirected the
+  run); a rule that failed the gate and was excepted is flagged for its precision.
+- A rejected or cancelled run gets its retrospective when the decision or the cancellation is
+  recorded (stored as a record; the run's event chain is not extended).
+
+Nothing is applied automatically, as before. `harness rules health [--since DAYS]` reads every
+run of the project and shows, per rule, how often it fired, blocked a gate, was excepted (and how
+often its exceptions were relied on), fired on a ChangeSet that was later corrected, fired in a
+rejected run or in a run later linked to an outcome, with a fixed-rule signal
+(`often excepted when it blocks`, `fired in runs later linked to an outcome`,
+`led to corrections`), and per
+validator how many results did not pass. It needs no setting and writes nothing.
+`harness outcome record --run R --kind KIND --summary TEXT` (kinds `INCIDENT`, `REVERT`,
+`HOTFIX`, `REGRESSION`, `OTHER`; optional `--reference` and `--observed-at`) links what
+happened after a run to it (schema
+`outcome.schema.json`; an actor id of an agent, validator or the harness exits with 5);
+`harness outcome list` shows them.
+
+## Notifications
+
+`harness inbox` (and `GET /api/inbox`, the dashboard's left column) lists the runs that wait for
+a person: a decision in `DECISION` (gate status, digest, blocking findings) or answers to
+clarification questions in `INTENT`, oldest first. It needs no configuration. The dashboard
+refreshes the inbox, the runs and the selected run every 5 seconds.
+
+Webhooks are opt-in. `harness init` writes none, because a URL is needed:
+
+```yaml
+notifications:
+  webhooks:
+    - urlEnv: HARNESS_SLACK_WEBHOOK   # or url: https://hooks.example.invalid/...
+      events: [decision.pending, run.finished, exception.granted]
+      retries: 2                      # default 2 (0 to 10)
+      timeoutSeconds: 5               # default 5
+```
+
+Each webhook needs exactly one of `url` (an `http://` or `https://` URL written in the file, so it
+enters the configuration snapshot) or `urlEnv` (the name of an environment variable read when the
+notification is sent, so a URL that carries a token stays out of the file and of the snapshot).
+`events` defaults to `decision.pending` and `run.finished`.
+
+| Event | Sent when |
+|---|---|
+| `decision.pending` | A run stops in `DECISION` waiting for a person, once per ChangeSet digest. |
+| `run.finished` | A run closes (`PASSED`), is rejected or is cancelled, once per run. |
+| `exception.granted` | An exception is recorded under `review.exceptions`. |
+
+The harness sends a JSON `POST` with `event`, `occurredAt`, `harnessVersion`, `projectId`,
+`executionId`, `taskId`, `taskTitle`, `status`, `currentPhase`, `changeSetDigest`, `gateStatus`
+and `next` (the `harness review` command); `exception.granted` adds `exceptionId` and `expiresAt`.
+It never sends a rationale, a validator output, the URL or an environment value. A response
+outside 2xx or a network error is retried with a growing wait (0.5 s, 1 s, 2 s, at most 5 s). The
+outcome of every notification (delivered or failed, attempts, HTTP status, webhook index; never
+the URL) is stored as a `notification` record outside the run's event chain. A failed
+notification never changes the run or the exit code of the command.
 
 ## Policies
 

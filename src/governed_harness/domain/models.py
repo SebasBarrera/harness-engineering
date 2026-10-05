@@ -483,6 +483,45 @@ class HumanDecision(StrictModel):
     expires_at: datetime | None = None
 
 
+class ExceptionScope(StrictModel):
+    """Findings an exception covers: a rule, optionally narrowed to a path and to one finding
+    fingerprint (``reporting.fingerprint``)."""
+
+    rule_id: str = Field(min_length=1)
+    path: str | None = None
+    fingerprint: str | None = None
+
+
+class ExceptionRecord(StrictModel):
+    """A person's exception to blocking findings, recorded with ``APPROVE_EXCEPTION`` when
+    ``review.exceptions`` is on.
+
+    It is bound to the decision and the ChangeSet digest it was granted on, expires at
+    ``expires_at`` and covers the findings in ``scope``: while it is in force a later run of the
+    project does not block on them, and once it expires they block again. Alternative evidence
+    and the follow-up are what the person declared; the harness records them, it does not check
+    them."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    exception_id: str
+    project_id: str
+    execution_id: str
+    decision_id: str
+    gate_evaluation_id: str
+    actor: Actor
+    rationale: str = Field(min_length=1)
+    scope: tuple[ExceptionScope, ...] = ()
+    change_set_digest: str
+    granted_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    alternative_evidence: str | None = Field(default=None, max_length=4000)
+    follow_up: str | None = Field(default=None, max_length=1000)
+    provenance: Provenance
+
+    def active_at(self, now: datetime) -> bool:
+        return self.granted_at <= now < self.expires_at
+
+
 FEEDBACK_STREAM_CHARS = 4000
 """Characters kept from the end of each failing validator stream in provider feedback."""
 FEEDBACK_TOTAL_CHARS = 16000
@@ -597,11 +636,66 @@ class Recommendation(StrictModel):
     requires_human_review: bool = True
 
 
+RetrospectiveTrigger = Literal["CLOSED", "REJECTED", "CANCELLED", "ON_DEMAND"]
+
+
+class RetrospectiveCause(StrictModel):
+    """What stopped or redirected a run, by reason code (``retrospective.causal``).
+
+    ``subject`` is the validator, rule or provider the cause is about, never a person;
+    ``attempts`` are the VERIFICATION or decision attempts in which it occurred."""
+
+    reason_code: str
+    subject: str
+    phase: PhaseId
+    effect: str
+    occurrences: int = Field(ge=1)
+    attempts: tuple[int, ...] = ()
+    evidence_refs: tuple[str, ...] = ()
+
+
 class Retrospective(StrictModel):
+    """Non-mutating observations and recommendations about a run. ``causes`` and ``trigger``
+    are filled only under ``retrospective.causal`` and are left out of the serialized record
+    otherwise, so a 1.0.0 retrospective keeps its form."""
+
     retrospective_id: str
     execution_id: str
     observations: tuple[RetrospectiveObservation, ...]
     recommendations: tuple[Recommendation, ...]
     generated_at: datetime = Field(default_factory=utc_now)
     applied_automatically: Literal[False] = False
+    provenance: Provenance
+    trigger: RetrospectiveTrigger | None = None
+    causes: tuple[RetrospectiveCause, ...] = ()
+
+    @model_serializer(mode="wrap")
+    def _omit_causal_fields(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.trigger is None:
+            data.pop("trigger", None)
+        if not self.causes:
+            data.pop("causes", None)
+        return data
+
+
+OutcomeKind = Literal["INCIDENT", "REVERT", "HOTFIX", "REGRESSION", "OTHER"]
+
+
+class OutcomeRecord(StrictModel):
+    """Something that happened to a change after its run: an incident, a revert, a hotfix or a
+    regression, linked to the run by a person. It feeds the rule health across runs; nothing
+    is applied automatically."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    outcome_id: str
+    project_id: str
+    execution_id: str
+    kind: OutcomeKind
+    summary: str = Field(min_length=1, max_length=4000)
+    reference: str | None = Field(default=None, max_length=1000)
+    change_set_digest: str | None = None
+    observed_at: datetime
+    recorded_at: datetime = Field(default_factory=utc_now)
+    actor: Actor
     provenance: Provenance

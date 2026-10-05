@@ -2,6 +2,83 @@
 
 ## Unreleased
 
+- Retrospective by cause, rule health and outcomes (#53). In the thesis evaluation the
+  retrospective attributed 19 of 53 recommendations to the wrong cause (reported there, not
+  re-measured here), counting optional validators without effect on the gate, and rejected runs
+  got none. Under `retrospective.causal` (written by `harness init`) each
+  retrospective records its trigger (`CLOSED`, `REJECTED`, `CANCELLED`, `ON_DEMAND`) and its
+  causes by reason code (mandatory validator that stopped `VERIFICATION`, rule that failed a
+  gate, requested changes, rejection, exception, transient provider failure, cancellation,
+  outcome after the run), with subjects that are validators, rules or providers and never
+  people; recommendations come from those causes, and rejected or cancelled runs get one when
+  that happens. Without the key the retrospective keeps its 1.0.0 form (the new `trigger` and
+  `causes` fields are left out). `harness rules health` shows per rule how often it fired,
+  blocked, was excepted, led to corrections or rejections and fired in runs later linked to an
+  outcome. `harness outcome record|list` links incidents, reverts, hotfixes and regressions to a
+  run (new contract `outcome.schema.json`; 31 schemas).
+- Located findings from validator output (#53). A failing pytest was one finding without a
+  location; the failing test was three artifact hops away. Under `verification.outputParsers`
+  (written by `harness init`) the output of a failing command validator is parsed into one
+  finding per reported problem with path, line and the tool's rule: SARIF 2.1.0, ESLint and Ruff
+  JSON, JUnit XML (printed or written with `--junitxml`) and the text of Ruff, Mypy, `tsc` and
+  pytest. Errors keep the summary finding's severity, so the gate outcome does not change;
+  warnings are `LOW`; at most 200 per run. Without the key only the summary finding is recorded.
+  The SARIF export adds a stable `partialFingerprints` entry (`harnessFinding/v1`) and the ids of
+  the finding, run and validator to every result.
+- Pending-decision inbox and notifications (#53). Nothing told a person that a run was waiting
+  for them. `harness inbox` and `GET /api/inbox` list the runs waiting for a decision or for
+  clarification answers, oldest first, with the next command; the dashboard shows them and
+  refreshes every 5 seconds. The optional `notifications.webhooks` setting (`url`, or `urlEnv` to
+  keep a token out of `project.yaml` and of the configuration snapshot) receives a JSON `POST` on
+  `decision.pending` (once per digest), `run.finished` (closed, rejected or cancelled) and, if
+  listed, `exception.granted`, with identifiers, statuses and digests only; failures are retried
+  with a bounded backoff and recorded as `notification` records (never the URL), outside the
+  run's event chain, and never change the run. Without the setting nothing is sent or recorded.
+- Exceptions with expiry, scope and follow-up (#53). Under the new `review.exceptions` setting
+  (written by `harness init`), `APPROVE_EXCEPTION` sets the decision's `expiresAt` (it was always
+  null) from `--expires-in`/`--expires-at` or `review.exceptionDays`, and records an exception
+  (new contract `exception.schema.json`) with the person, rationale, run, gate, digest, scope,
+  alternative evidence and follow-up, as `DECISION` evidence and an `exception.granted` event.
+  The default scope is the gate's blocking findings by rule, path and fingerprint;
+  `--scope RULE[:PATH]` widens it. While an exception is in force, a later run's gate does not count the
+  findings it covers and says so (`EXCEPTION_APPLIED_<id>`); once it expires they block again,
+  also for a run waiting in `DECISION`, and a run whose own exception expired before closing is
+  `BLOCKED`. A failing mandatory validator is never covered. `harness exceptions list` and
+  `GET /api/exceptions` are the ledger; the brief and the interactive decision show and ask for
+  them. Without the setting `APPROVE_EXCEPTION` behaves as in 1.0.0 and the exception options are
+  rejected (exit 2).
+- Decision brief (#53). `harness review [--run latest] [--diff]` shows, for one ChangeSet digest,
+  what was asked (intent, requirements, criteria, constraints), what changed (files and line
+  counts), the gate with each reason explained, the current findings with `file:line` (blocking
+  ones first), what was verified on which digest (latest attempt of each validator, requirement
+  to test mapping) and what was not (validators that did not run, optional failures without
+  effect on the gate, untraced requirements), retries and corrections (attempts, automatic and
+  requested corrections, provider retries, validators that passed only after failing on the same
+  digest, superseded findings), what changed since the last decision (files and findings by
+  fingerprint) and the exact decide command. It is built from the record by fixed rules and
+  writes nothing; `GET /api/runs/{run}/review` serves it and the dashboard renders it. `--run`
+  accepts `latest` and a unique prefix in every command, and the read-only commands default to
+  `latest`. `harness artifact show <ref|digest prefix> [--describe]` prints a stored artifact after
+  verifying its digest. On a terminal `harness gate decide` without `--decision`,
+  `--change-set-digest` or `--rationale` shows the brief, asks for them and requires typing the
+  first 12 characters of the digest; a wrong confirmation records nothing (exit 5). Without a
+  terminal the options are still required (exit 2). A rejected decision explains the way out
+  (the current digest, the phase, the decisions a failed gate admits). The dashboard gains
+  `REQUEST_CHANGES` and a confirmation with the digest and the files, and escapes the values it
+  renders.
+- Onboarding (#53). `harness --version` prints the version (it was `No such option`, exit 2). On
+  a terminal every command prints readable text; JSON stays the default when standard output is
+  not a terminal, `--json` forces it and `--no-json` forces text (it printed a Python `repr`),
+  both per command and before the command name. `harness init` reports the detected profiles and
+  the next commands, adds `.harness/` to `.gitignore` (`--no-gitignore` skips it) and writes
+  `.harness/task.example.yaml` (`--no-example-task` skips it); the Python API `init` does neither
+  unless asked. `harness doctor` also reports the Git identity, the baseline commit, whether
+  `.harness/` is ignored, the agent CLI of the configured provider on `PATH`, the agent sandbox
+  mechanism and every validator's command, each with a fix; a missing default agent CLI, a
+  missing mandatory validator or a missing sandbox mechanism for a command provider fail it
+  (exit 2), the rest are `WARNING`s. Errors keep their text and exit code and gain a `hint`
+  (JSON) or `Hint:` line (terminal) with the command that fixes them. The README documents a
+  pipx install from the release wheel (not exercised in CI).
 - `INTENT` checks that acceptance criteria can be verified (#32). A task whose only criterion was
   "It works." passed `INTENT` and `SPECIFICATION` and was approved. A deterministic assessment now
   raises clarification questions with stable ids for a criterion without an observable result

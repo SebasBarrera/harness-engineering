@@ -8,7 +8,10 @@ from governed_harness.domain.models import (
     Recommendation,
     Retrospective,
     RetrospectiveObservation,
+    RetrospectiveTrigger,
 )
+from governed_harness.retrospective.causal import causal_retrospective
+from governed_harness.retrospective.causes import CauseAnalysis
 from governed_harness.telemetry.metrics import MetricValue
 
 
@@ -22,7 +25,23 @@ class RetrospectiveEngine:
         metrics: dict[str, MetricValue],
         evidence_refs: tuple[str, ...],
         provenance: Provenance,
+        analysis: CauseAnalysis | None = None,
+        trigger: RetrospectiveTrigger | None = None,
     ) -> Retrospective:
+        """Without ``analysis`` this is the 1.0.0 retrospective. With it (``retrospective.causal``)
+        the recommendations come from the causes: one per mandatory validator that stopped
+        VERIFICATION, per rule that failed a gate, per decision that redirected or ended the run
+        and per outcome recorded after it, never from optional validators without effect on the
+        gate."""
+        if analysis is not None:
+            return causal_retrospective(
+                execution_id=execution_id,
+                metrics=metrics,
+                evidence_refs=evidence_refs,
+                provenance=provenance,
+                analysis=analysis,
+                trigger=trigger or "ON_DEMAND",
+            )
         observations: list[RetrospectiveObservation] = []
         recommendations: list[Recommendation] = []
 

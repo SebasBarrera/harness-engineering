@@ -55,6 +55,22 @@
       "title": "ActorType",
       "type": "string"
     },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
     "Provenance": {
       "additionalProperties": false,
       "properties": {
@@ -236,6 +252,57 @@
       "title": "Recommendation",
       "type": "object"
     },
+    "RetrospectiveCause": {
+      "additionalProperties": false,
+      "description": "What stopped or redirected a run, by reason code (``retrospective.causal``).\n\n``subject`` is the validator, rule or provider the cause is about, never a person;\n``attempts`` are the VERIFICATION or decision attempts in which it occurred.",
+      "properties": {
+        "attempts": {
+          "default": [],
+          "items": {
+            "type": "integer"
+          },
+          "title": "Attempts",
+          "type": "array"
+        },
+        "effect": {
+          "title": "Effect",
+          "type": "string"
+        },
+        "evidenceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Evidencerefs",
+          "type": "array"
+        },
+        "occurrences": {
+          "minimum": 1,
+          "title": "Occurrences",
+          "type": "integer"
+        },
+        "phase": {
+          "$ref": "#/$defs/PhaseId"
+        },
+        "reasonCode": {
+          "title": "Reasoncode",
+          "type": "string"
+        },
+        "subject": {
+          "title": "Subject",
+          "type": "string"
+        }
+      },
+      "required": [
+        "reasonCode",
+        "subject",
+        "phase",
+        "effect",
+        "occurrences"
+      ],
+      "title": "RetrospectiveCause",
+      "type": "object"
+    },
     "RetrospectiveObservation": {
       "additionalProperties": false,
       "properties": {
@@ -267,12 +334,21 @@
   "$id": "https://example.org/governed-harness/schemas/v1/retrospective.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
+  "description": "Non-mutating observations and recommendations about a run. ``causes`` and ``trigger``\nare filled only under ``retrospective.causal`` and are left out of the serialized record\notherwise, so a 1.0.0 retrospective keeps its form.",
   "properties": {
     "appliedAutomatically": {
       "const": false,
       "default": false,
       "title": "Appliedautomatically",
       "type": "boolean"
+    },
+    "causes": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/RetrospectiveCause"
+      },
+      "title": "Causes",
+      "type": "array"
     },
     "executionId": {
       "title": "Executionid",
@@ -303,6 +379,24 @@
     "retrospectiveId": {
       "title": "Retrospectiveid",
       "type": "string"
+    },
+    "trigger": {
+      "anyOf": [
+        {
+          "enum": [
+            "CLOSED",
+            "REJECTED",
+            "CANCELLED",
+            "ON_DEMAND"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Trigger"
     }
   },
   "required": [

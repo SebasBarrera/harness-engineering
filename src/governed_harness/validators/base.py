@@ -35,6 +35,9 @@ class ValidationContext:
     # Unredacted diff exists only in memory for security checks.  It must never be
     # persisted as an artifact or event payload.
     raw_diff: str | None = None
+    # verification.outputParsers: parse the output of a failing command validator into one
+    # located finding per reported problem (validators.parsers).
+    parse_output: bool = False
 
 
 @dataclass(frozen=True)
