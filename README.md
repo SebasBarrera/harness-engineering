@@ -289,7 +289,12 @@ closed with `harness evidence attach`, and a checklist ticked in the decision; t
 certifies the ChangeSet from recorded evidence only (see
 [docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Under
 `runtime.stateDir: auto` (written by `init`) the state database and artifacts live under the
-user's data directory, not in `.harness/`.
+user's data directory, not in `.harness/`. A small, risk-free task takes a **fast lane**, and
+`harness do "TEXT" --pre-approve` runs it in one command with an approval given in advance that
+applies only if the gate passes, there is no risk factor and the task is size `S`
+([docs/guides/low-friction.md](docs/guides/low-friction.md)); `harness metrics` reports tokens,
+cost, delivery, time, quality and friction locally, as one self-contained HTML file among other
+formats, without calling a model ([docs/guides/local-metrics.md](docs/guides/local-metrics.md)).
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles

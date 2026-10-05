@@ -293,7 +293,13 @@ diferida de CI que se cierra con `harness evidence attach` y una lista de cheque
 la decisión; el arnés certifica el ChangeSet solo con evidencia registrada (ver
 [docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Con
 `runtime.stateDir: auto` (lo escribe `init`) la base de estado y los artefactos viven en el
-directorio de datos del usuario, no en `.harness/`.
+directorio de datos del usuario, no en `.harness/`. Una tarea pequeña y sin riesgo va por un
+**carril rápido**, y `harness do "TEXTO" --pre-approve` la ejecuta en un solo comando con una
+aprobación dada de antemano que se aplica solo si la compuerta pasa, no hay factores de riesgo y la
+tarea es de tamaño `S` ([docs/guides/low-friction.md](docs/guides/low-friction.md), en inglés);
+`harness metrics` informa tokens, costo, entregas, tiempos, calidad y fricción en local, entre
+otros formatos como un único HTML autocontenido, sin llamar a un modelo
+([docs/guides/local-metrics.md](docs/guides/local-metrics.md), en inglés).
 Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
