@@ -140,6 +140,17 @@ message on standard error or in the JSON result) is repeated with the same reque
 `PASSED` and the verification of its change fails, the run records an `agent.unsupported-claim`
 finding. See [provider feedback loop](../reference/configuration.md#provider-feedback-loop).
 
+### Request kinds (protocol 1.1)
+
+With the agent-results settings that `harness init` writes, the provider also receives
+read-only requests of kind `clarify`, `acceptance`, `plan` and `review`, and the implement
+request may carry `gate`, `permissions`, `routing`, `budget`, `contextFiles`, `lessons` and
+`acceptanceTests`. An adapter that speaks only the 1.0 protocol treats every request as an
+implementation: on a read-only request it changes the workspace, the harness undoes the change
+and blocks the phase. Read `kind` (absent means `implement`), answer the read-only kinds with a
+`result` object and apply `routing.flags` to your CLI if you want the router's model and effort.
+The kinds, results and keys are described in [better agent results](agent-results.md).
+
 ## Declare what the agent may change
 
 The ChangeSet is what a person approves, so declare the files the task owns:

@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+- Better agent results, wave 2 (#52, closes #37, #38, #39, #40, #41, #42, #43, #44; implements
+  the proposal of #7 behind a setting). The motivating figures come from the thesis evaluation
+  (reported there, not re-measured here). Every setting is optional: a `project.yaml` without
+  it keeps the 1.0.0 behaviour and configuration digest, and `harness init` writes them all
+  (`harness config validate` shows them under `agentResults`). Guide:
+  `docs/guides/agent-results.md`.
+  - Provider protocol 1.1: read-only request kinds `clarify`, `acceptance`, `plan` and `review`
+    with rendered instructions and a `result` object; a read-only call that changes the
+    workspace is undone and recorded as a HIGH finding. Invocations record `callKind` and
+    `effort`. Adapters that speak only 1.0 must read `kind` before enabling these settings.
+  - INTENT (#37): agent review of ambiguity and completeness, once per task revision,
+    questions grouped by category (rule `A1`); answers that cite documents or ids the task and
+    the workspace lack get a question (rule `A2`).
+  - SPECIFICATION: independent acceptance tests written from the criteria by a separate call,
+    approved by a person (`harness acceptance show|decide`), frozen and checked to fail before
+    and pass after the change.
+  - PLANNING (#39): decomposition of tasks above `planning.threshold` requirements into
+    sub-tasks that partition them, approved by a person (`harness plan show|decide`), each with
+    its own verification, correction budget and gate; adaptive granularity splits a capable
+    model's coarse attempt only after it fails.
+  - IMPLEMENTATION: the gate contract and `harness check` (records nothing), per-call
+    permissions derived from the capability grants, a bounded context manifest (#41), active
+    lessons (#43), the remaining budget (#42) and the routing decision (#44).
+  - VERIFICATION (#40): declared interface conformance, architecture limits (pre-existing
+    violations are LOW), severe security patterns, verifiable task constraints, weakened
+    controls, test quality (assertion-free tests, changed-line coverage, a reordered rerun),
+    context-aware secrets, SARIF reports with tool and rule versions, invariant commands and
+    risk factors that block, require `--acknowledge-risk` in the decision or inform; a failing
+    mandatory validator is compared with the baseline and only introduced failures block
+    (`PREEXISTING_ERROR`, `INTRODUCED_ERROR`, #7), and a Ruff/Mypy ratchet keeps optional
+    validators from getting worse.
+  - Corrections: reproduce-first corrections after REQUEST_CHANGES, an `agent.empty-correction`
+    finding, and REQUEST_CHANGES with blocking items (`--change-request
+    "description::condition"`).
+  - INDEPENDENT_REVIEW (#38): a second agent after the deterministic checks pass, once per
+    ChangeSet digest; HIGH and CRITICAL findings block and return to the agent within the
+    correction budget (trigger `REVIEW_FINDINGS`).
+  - Stop the line: a run that stops unapproved has its changes quarantined as a patch and the
+    baseline restored, or new runs wait for `harness run quarantine`; changes outside
+    `ownedPaths` are HIGH findings.
+  - Budget (#42): limits per call, task and run with a warning threshold;
+    `budget.exceeded` blocks the next agent call until `harness budget raise`.
+  - Lessons (#43): findings that caused a correction become proposed project memory.
+  - Routing (#44): `agentRouting: tiered` chooses model and effort per call kind and task size,
+    escalates effort before model after quality failures, and records every decision;
+    `harness routing calibrate` reports cost per approved task.
+  - Contracts regenerated (31 schemas): `agent-invocation`, `clarification-record`,
+    `clarification-request`, `human-decision`, `project-config` and `provider-feedback` gain
+    optional fields that are left out when absent.
 - Retrospective by cause, rule health and outcomes (#53). In the thesis evaluation the
   retrospective attributed 19 of 53 recommendations to the wrong cause (reported there, not
   re-measured here), counting optional validators without effect on the gate, and rejected runs
