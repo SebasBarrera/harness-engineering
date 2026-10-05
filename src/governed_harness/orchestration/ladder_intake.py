@@ -75,9 +75,11 @@ class LadderIntake:
         context = self.ladder.project.context
         return context.locate if context else None
 
-    def defaults(self) -> dict[str, Any]:
+    def defaults(
+        self, execution: Execution | None = None, task: Task | None = None
+    ) -> dict[str, Any]:
         """What the project configuration says about the items a task's contract may leave
-        out."""
+        out (a branch template is filled with the run and the task)."""
         project = self.ladder.project
         delivery = project.delivery_settings
         verification = project.verification
@@ -97,9 +99,14 @@ class LadderIntake:
             ),
             "push": delivery.push,
             "createPullRequest": delivery.pull_request.create if delivery.pull_request else None,
-            "comment": None if delivery.comment is None else delivery.comment != "never",
+            "comment": delivery.comment,
             "coverageThreshold": coverage,
         }
+        branch = values["branch"]
+        if isinstance(branch, str) and execution is not None and task is not None:
+            values["branch"] = branch.replace("{runId}", execution.execution_id).replace(
+                "{taskId}", task.task_id
+            )
         return values
 
     # ----- INTENT -----------------------------------------------------------------------------
@@ -143,7 +150,7 @@ class LadderIntake:
         """The contract summary of the task revision, recorded once per task digest."""
         results = self.ladder.engine.results
         digest = task_digest(task)
-        summary = derive_contract(task, digest, self.defaults())
+        summary = derive_contract(task, digest, self.defaults(execution, task))
         key = f"contract:{execution.execution_id}:{summary.digest}"
         known = results.flag_json(key)
         if isinstance(known, dict) and isinstance(known.get("ref"), str):
@@ -186,7 +193,7 @@ class LadderIntake:
         produce (``confirmContract`` in the answers file)."""
         from governed_harness.domain.models import utc_now
 
-        summary = derive_contract(task, task_digest(task), self.defaults())
+        summary = derive_contract(task, task_digest(task), self.defaults(execution, task))
         self.ladder.engine.results.set_flag_json(
             f"contractconfirmed:{execution.execution_id}",
             {

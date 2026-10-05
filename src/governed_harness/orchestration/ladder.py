@@ -51,7 +51,6 @@ from governed_harness.domain.models import (
     HumanAttachment,
     HumanDecision,
     PhaseExecution,
-    PlanStep,
     ProbeDefinition,
     Task,
     ValidationResult,
@@ -263,6 +262,18 @@ class VerificationLadder:
         decision = self.preflight_decision(execution)
         if decision is not None:
             return None
+        if self.config.mode != "enforce":
+            # warn: the person sees it in the brief; nothing waits.
+            self.engine.results.record_finding(
+                execution,
+                validator_id=CERTIFICATION_ID,
+                rule_id="verification.preflight-unavailable",
+                category="verification-ladder",
+                severity=FindingSeverity.LOW,
+                message="Verification preflight UNAVAILABLE: " + "; ".join(preflight.reasons[:5]),
+                evidence_refs=(preflight.ref,),
+            )
+            return None
         return PhaseOutcome(
             ResultStatus.BLOCKED,
             "Verification preflight UNAVAILABLE: "
@@ -430,16 +441,30 @@ class VerificationLadder:
             route, why = "deferred", f"verified after the run: {declaration.deferred}"
         else:
             route = "unreachable"
-            unavailable = [
-                f"{item.level} {item.provides} ({'; '.join(d.description for d in item.detections if not d.available)} not available)"
-                for item in capabilities
-                if not item.available and VerificationLevel(item.level).rank >= required.rank
+            broken = [
+                f"probe {probe.probe_id} cannot run here ("
+                + "; ".join(probe_runs[probe.probe_id].evaluation.problems[:2])
+                + ")"
+                for probe in linked
+                if probe.probe_id in probe_runs
+                and probe_runs[probe.probe_id].evaluation.readiness == "UNAVAILABLE"
             ]
-            why = (
-                "no probe is linked to it"
+            unavailable = [
+                f"{item.level} {item.provides} needs "
+                + ", ".join(d.description for d in item.detections if not d.available)
+                for item in capabilities
+                if not item.available
+                and not item.probes
+                and VerificationLevel(item.level).rank >= required.rank
+            ]
+            reason = (
+                "; ".join(broken[:2])
+                if broken
+                else "no probe is linked to it"
                 if missing_probe
                 else "; ".join(unavailable[:2]) or f"no capability reaches {required.value} here"
-            ) + f"; highest reachable here is {highest.value} ({reachable[highest]})"
+            )
+            why = f"{reason}; highest reachable here is {highest.value} ({reachable[highest]})"
         return {
             "criterionId": criterion.criterion_id,
             "declared": declaration is not None,
@@ -450,22 +475,6 @@ class VerificationLadder:
             "why": why,
             "probes": [probe.probe_id for probe in linked],
         }
-
-    def plan_steps(self, execution: Execution, task: Task) -> tuple[PlanStep, ...]:
-        if self.config is None:
-            return ()
-        probes = [probe.probe_id for probe in self.probes(task)]
-        return (
-            PlanStep(
-                step_id=new_id("step"),
-                description=(
-                    "Certify every acceptance criterion on the verification ladder"
-                    + (f" (probes: {', '.join(probes)})" if probes else "")
-                ),
-                capabilities=("filesystem.read", "process.execute"),
-                expected_evidence=("certification", *(f"probe.{item}" for item in probes)),
-            ),
-        )
 
     # ----- VERIFICATION -------------------------------------------------------------------------
     def verification(

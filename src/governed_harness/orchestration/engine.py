@@ -1217,8 +1217,6 @@ class RunEngine:
         plan_steps: tuple[PlanStep, ...] = steps
         if self.results.active:
             plan_steps = (*self.results.decomposition.plan_steps(execution), *steps)
-        if self.ladder.active:
-            plan_steps = (*plan_steps, *self.ladder.plan_steps(execution, task))
         plan = Plan(
             plan_id=new_id("plan"),
             execution_id=execution.execution_id,

@@ -36,8 +36,31 @@ class Hunk:
         }
 
 
+def _blocks(lines: list[str], start: int, end: int) -> list[tuple[int, int]]:
+    """``start..end`` split after each run of blank lines that is followed by more lines, so
+    that a new function added next to a changed line is a hunk of its own."""
+    blocks: list[tuple[int, int]] = []
+    begin = start
+    index = start
+    while index < end:
+        if not lines[index].strip():
+            following = index
+            while following < end and not lines[following].strip():
+                following += 1
+            if following < end and any(lines[item].strip() for item in range(begin, index)):
+                blocks.append((begin, following))
+                begin = following
+            index = following
+            continue
+        index += 1
+    blocks.append((begin, end))
+    return blocks
+
+
 def hunks(path: str, before: str, after: str) -> list[Hunk]:
-    """The hunks that turn ``before`` into ``after``."""
+    """The hunks that turn ``before`` into ``after``. A changed region that adds several blocks
+    of lines (separated by blank lines) gives one hunk per block: the first replaces the
+    removed lines, the others are additions."""
     old = before.splitlines(keepends=True)
     new = after.splitlines(keepends=True)
     matcher = difflib.SequenceMatcher(a=old, b=new, autojunk=False)
@@ -45,7 +68,10 @@ def hunks(path: str, before: str, after: str) -> list[Hunk]:
     for tag, i1, i2, j1, j2 in matcher.get_opcodes():
         if tag == "equal":
             continue
-        found.append(Hunk(path, len(found) + 1, i1, i2, j1, j2))
+        blocks = _blocks(new, j1, j2) if j2 > j1 else [(j1, j2)]
+        for position, (start, end) in enumerate(blocks):
+            first = position == 0
+            found.append(Hunk(path, len(found) + 1, i1 if first else i2, i2, start, end))
     return found
 
 

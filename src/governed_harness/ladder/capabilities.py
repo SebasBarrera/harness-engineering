@@ -63,9 +63,17 @@ class DetectionResult:
     description: str
     available: bool
     output: str = ""
+    checked: bool = True
+    """False when the command was not run (``capabilityDetection`` off): the capability is
+    planned as available but nothing is credited without the validators' results."""
 
     def as_dict(self) -> dict[str, Any]:
-        return {"check": self.description, "available": self.available, "output": self.output}
+        return {
+            "check": self.description,
+            "available": self.available,
+            "checked": self.checked,
+            "output": self.output,
+        }
 
 
 @dataclass(frozen=True)
@@ -142,7 +150,9 @@ def capability_statuses(
 ) -> list[CapabilityStatus]:
     """Every capability of the selected profiles with its availability: its validators are
     configured (any of them) and every detection passes. Without ``run_detections`` a
-    capability that needs a detection command is reported unavailable (never assumed)."""
+    detection command is not run: the capability is planned as available and marked not
+    checked. The certification never credits a rung from a plan, only from the validators'
+    results."""
     statuses: list[CapabilityStatus] = []
     for profile_id, verification in declared:
         for capability in verification.capabilities or ():
@@ -174,7 +184,10 @@ def _status(
         if item.command is not None and not run_detections:
             detections.append(
                 DetectionResult(
-                    " ".join(item.command), False, "not run (capabilityDetection is off)"
+                    " ".join(item.command),
+                    True,
+                    "not run (capabilityDetection is off)",
+                    checked=False,
                 )
             )
         else:

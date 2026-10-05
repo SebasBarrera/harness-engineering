@@ -136,7 +136,9 @@ def test_probe_that_cannot_run_is_unavailable() -> None:
         item,
         [VariantRun("amount=10", True, 0, "not json"), run("amount=1000", {"total": 1})],
     )
-    assert garbage.readiness == "UNAVAILABLE"
+    # A program that ran and printed something else is READY: its JSON assertions fail.
+    assert garbage.readiness == "READY" and not garbage.passed
+    assert any("not JSON" in item.detail for item in garbage.results if not item.passed)
     text = ProbeDefinition.model_validate(
         {
             "id": "greeting",
@@ -349,9 +351,8 @@ def test_capability_catalog_and_detection(tmp_path: Path) -> None:
     skipped = capability_statuses(
         declared, tmp_path, {"python.pytest"}, run_detections=False, timeout=5, runner=runner
     )
-    assert not {(item.profile_id, item.level): item for item in skipped}[
-        ("python_default", "L1")
-    ].available
+    unchecked = {(item.profile_id, item.level): item for item in skipped}[("python_default", "L1")]
+    assert unchecked.available and not unchecked.detections[0].checked
     expect = CapabilityDetection.model_validate(
         {"command": ["adb", "devices"], "expect": "\\tdevice$"}
     )

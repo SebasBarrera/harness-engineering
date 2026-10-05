@@ -7,8 +7,9 @@ process is the orchestration's job (with the harness's process runner and grants
 
 Classification of one probe on one workspace state:
 
-* ``READY``: every variant ran to completion (no timeout, no missing executable, JSON output
-  parsed when ``output: json``); its assertions may pass or fail;
+* ``READY``: every variant ran to completion (no timeout, no missing or refused executable);
+  its assertions may pass or fail (an output that is not JSON fails the JSON assertions: on the
+  baseline that is the expected "fails before");
 * ``UNAVAILABLE``: some variant could not run, so the probe says nothing about the behaviour.
 
 An unavailable probe never passes: VERIFICATION records it ``BLOCKED``."""
@@ -81,6 +82,8 @@ class ProbeEvaluation:
 
 
 _PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+NOT_JSON = object()
+"""The document of a variant whose output is not JSON (``output: json``)."""
 
 
 def fill(template: str, values: dict[str, str]) -> str:
@@ -93,13 +96,13 @@ def _shown(value: Any) -> str:
     return text if len(text) <= MAX_SHOWN else text[: MAX_SHOWN - 3] + "..."
 
 
-def _document(run: VariantRun, output: str) -> tuple[Any, str | None]:
+def _document(run: VariantRun, output: str) -> Any:
     if output != "json":
-        return run.stdout, None
+        return run.stdout
     try:
-        return json.loads(run.stdout), None
-    except json.JSONDecodeError as error:
-        return None, f"variant {run.name}: the output is not JSON ({error.msg})"
+        return json.loads(run.stdout)
+    except json.JSONDecodeError:
+        return NOT_JSON
 
 
 def _values(document: Any, path: str | None, output: str) -> list[Any]:
@@ -137,6 +140,14 @@ def _single(
     index: int, assertion: Any, run: VariantRun, document: Any, output: str
 ) -> AssertionResult:
     kind = assertion.kind
+    if document is NOT_JSON and kind != "exitCode" and (kind != "text"):
+        return AssertionResult(
+            index,
+            kind,
+            False,
+            f"the output is not JSON (exit code {run.exit_code})",
+            run.name,
+        )
     if kind == "exitCode":
         passed = run.exit_code == assertion.equals
         return AssertionResult(
@@ -219,15 +230,7 @@ def evaluate(probe: Any, runs: list[VariantRun]) -> ProbeEvaluation:
     problems = [
         f"variant {run.name}: {run.problem or 'did not run'}" for run in runs if not run.ran
     ]
-    documents: dict[str, Any] = {}
-    for run in runs:
-        if not run.ran:
-            continue
-        document, problem = _document(run, probe.output)
-        if problem is not None:
-            problems.append(problem)
-        else:
-            documents[run.name] = document
+    documents = {run.name: _document(run, probe.output) for run in runs if run.ran}
     if problems:
         return ProbeEvaluation(probe.probe_id, "UNAVAILABLE", False, (), tuple(problems), names)
     results: list[AssertionResult] = []
@@ -237,7 +240,11 @@ def evaluate(probe: Any, runs: list[VariantRun]) -> ProbeEvaluation:
                 run for run in runs if not assertion.variants or run.name in assertion.variants
             ]
             observed = [
-                _shown(_values(documents[run.name], assertion.path, probe.output))
+                (
+                    "not JSON"
+                    if documents[run.name] is NOT_JSON
+                    else _shown(_values(documents[run.name], assertion.path, probe.output))
+                )
                 if assertion.path is not None
                 else run.stdout
                 for run in chosen
