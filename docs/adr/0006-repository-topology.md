@@ -43,4 +43,6 @@ scanning, secret scanning with push protection, branch rulesets, GitHub Pages an
 - The repository has a single maintainer, who integrates work branches into `develop` with merge
   commits and no pull requests; CI must be green on the branch before it is merged. Rulesets block
   force pushes and deletion of `main` and `develop`. With a second maintainer, the flow moves to
-  pull requests with required reviews and CODEOWNERS.
+  pull requests with required reviews and CODEOWNERS. *Amended 2026-10-05:* the single maintainer
+  also integrates through pull requests (merge commit, every blocking check green, no required
+  review), so the checks that only run on pull requests apply to every change.
