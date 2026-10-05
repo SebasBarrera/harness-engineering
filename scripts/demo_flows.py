@@ -317,6 +317,7 @@ def without_agent_results(root: Path) -> None:
         "standards",
         "testing",
         "architecture",
+        "friction",
     ):
         config.pop(section, None)
     path.write_text(yaml.safe_dump(config, sort_keys=False))

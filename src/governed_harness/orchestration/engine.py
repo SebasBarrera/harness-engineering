@@ -103,7 +103,6 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
-from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
     FeedbackBuilder,
@@ -112,6 +111,7 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
 from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
@@ -2141,8 +2141,10 @@ class RunEngine:
                 output = prepare(definition)()
                 self._save_validator_output(execution, output)
                 outputs.append(output)
-        if outputs and outputs[-1].result.validator_id == AFFECTED_TESTS_ID and (
-            outputs[-1].result.status is not ResultStatus.PASSED
+        if (
+            outputs
+            and outputs[-1].result.validator_id == AFFECTED_TESTS_ID
+            and (outputs[-1].result.status is not ResultStatus.PASSED)
         ):
             return PhaseOutcome(
                 outputs[-1].result.status,

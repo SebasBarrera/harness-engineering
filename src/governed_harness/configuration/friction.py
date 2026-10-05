@@ -124,7 +124,9 @@ class PreAuthorizationConfig(_Section):
     default_hours: int | None = Field(
         default=None, alias="defaultHours", ge=1, le=MAX_PRE_AUTHORIZATION_HOURS
     )
-    max_hours: int | None = Field(default=None, alias="maxHours", ge=1, le=MAX_PRE_AUTHORIZATION_HOURS)
+    max_hours: int | None = Field(
+        default=None, alias="maxHours", ge=1, le=MAX_PRE_AUTHORIZATION_HOURS
+    )
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -167,9 +169,7 @@ class FrictionConfig(_Section):
     """Low friction for small changes (#58, items 1, 3, 5, 6 and 7)."""
 
     fast_lane: FastLaneConfig | None = Field(default=None, alias="fastLane")
-    pre_authorization: PreAuthorizationConfig | None = Field(
-        default=None, alias="preAuthorization"
-    )
+    pre_authorization: PreAuthorizationConfig | None = Field(default=None, alias="preAuthorization")
     change_types: bool | None = Field(default=None, alias="changeTypes")
     """Documentation-only or configuration-only ChangeSets (detected from the paths) do not
     require new tests or requirement traceability."""

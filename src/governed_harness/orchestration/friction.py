@@ -98,6 +98,7 @@ AFFECTED_TESTS_ID = "harness.affected-tests"
 _REVIEW_SEVERITIES = frozenset(
     {FindingSeverity.MEDIUM, FindingSeverity.HIGH, FindingSeverity.CRITICAL}
 )
+_BLOCKING_SEVERITIES = frozenset({FindingSeverity.HIGH, FindingSeverity.CRITICAL})
 _CACHEABLE = frozenset({ResultStatus.PASSED})
 
 
@@ -351,14 +352,26 @@ class Friction:
         if profile["files"] > profile["filesBound"]:
             signals.append(f"{profile['files']} files (larger than S)")
         validations = self.engine._latest_validations(execution.execution_id, change_set.digest)
+        mandatory = {
+            finding for item in validations if item.mandatory for finding in item.finding_ids
+        }
         ids = {finding for item in validations for finding in item.finding_ids}
         findings = [
             item
             for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
-            if item.finding_id in ids and item.severity in _REVIEW_SEVERITIES
+            if item.finding_id in ids
+            and (
+                item.severity in _BLOCKING_SEVERITIES
+                or (
+                    item.severity in _REVIEW_SEVERITIES
+                    and (item.finding_id in mandatory or item.introduced is True)
+                )
+            )
         ]
         if findings:
-            signals.append(f"{len(findings)} finding(s) of severity MEDIUM or above")
+            # A finding an optional validator also reports on the baseline (introduced is not
+            # true) is no signal: it was there before the change.
+            signals.append(f"{len(findings)} finding(s) of this change of severity MEDIUM or above")
         lane = self.lane(execution) or {}
         if lane.get("escalated"):
             signals.append("the run left the fast lane")
@@ -407,9 +420,7 @@ class Friction:
         if not isinstance(cached, dict):
             return None
         try:
-            earlier = self.s.state.get(
-                "validation", str(cached["validationId"]), ValidationResult
-            )
+            earlier = self.s.state.get("validation", str(cached["validationId"]), ValidationResult)
         except (NotFoundError, KeyError):
             return None
         now = utc_now()
@@ -438,7 +449,9 @@ class Friction:
         )
         return ValidatorOutput(result)
 
-    def _remember(self, execution: Execution, change_set: ChangeSet, definition: Any, output: Any) -> None:
+    def _remember(
+        self, execution: Execution, change_set: ChangeSet, definition: Any, output: Any
+    ) -> None:
         if output.result.status not in _CACHEABLE or output.findings:
             return
         key = self._cache_key(execution, change_set, definition)
@@ -760,7 +773,9 @@ class Friction:
             record.model_dump(mode="json", by_alias=True),
             actor=actor,
         )
-        self.s.state.set_flag(f"{PREAUTH_FLAG}:{execution.execution_id}", record.pre_authorization_id)
+        self.s.state.set_flag(
+            f"{PREAUTH_FLAG}:{execution.execution_id}", record.pre_authorization_id
+        )
         if with_contract:
             # The person confirms the contract the pre-authorisation is bound to in the same
             # act: one interaction (withPreAuthorization), not two.
