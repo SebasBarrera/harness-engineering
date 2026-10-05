@@ -291,13 +291,17 @@ class GovernanceConfig(ConfigModel):
       against events, artifact digests, anchor) and refuses to export a run that fails, and
       ``status`` adds the result of the record check.
     * ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event
-      chain outside ``.harness`` so that ``harness verify`` detects a truncated chain."""
+      chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.
+    * ``pinTaskRevision``: a run works on the task revision it was created with (or a revision
+      made through ``task clarify``), ``task create`` refuses a task id that has an open run, and
+      a decision is bound to the acceptance-contract digest frozen in SPECIFICATION."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
     trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
     verify_records: bool | None = Field(default=None, alias="verifyRecords")
     chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
+    pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
 
     @field_validator("trusted_hosts")
     @classmethod

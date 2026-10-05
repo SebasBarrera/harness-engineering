@@ -61,6 +61,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "trustedHosts": list(DEFAULT_TRUSTED_HOSTS),
             "verifyRecords": True,
             "chainAnchor": "file",
+            "pinTaskRevision": True,
         },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

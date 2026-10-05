@@ -64,6 +64,7 @@ governance:
   - ::1
   verifyRecords: true
   chainAnchor: file
+  pinTaskRevision: true
 ```
 
 ## Fields
@@ -431,6 +432,15 @@ the reason in `eventChainError` (before, an edited event made it exit with 1).
 Neither anchor is tamper-proof: a process with your permissions can rewrite the anchor as well as
 `state.db`. It turns a silent truncation into an edit of two places, and a deleted anchor shows up
 as `absent`.
+
+### The task of a run
+
+In 1.0.0 every phase re-read the stored task, so `harness task create` with the id of a task whose
+run waited in `DECISION` replaced the task under the run, silently.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `pinTaskRevision` | `false` | `true` | `run start` stores the task revision as an artifact and records its digest (`taskDigest`, `taskRevisionRef`) in `run.created`; every phase works on that revision, and only `task clarify` (during `INTENT`) replaces it. `task create` with the id of a task that has an open run (not closed, cancelled or rejected) exits with 5 and names the run. `SPECIFICATION` freezes the acceptance-contract digest (requirements, acceptance criteria and constraints); `gate decide` records it in the decision as `acceptanceContractDigest` and refuses with 5 when the run's task no longer produces it, and a decision bound to another contract does not let `DECISION` pass. |
 
 ## Technology profiles
 

@@ -53,7 +53,7 @@ from governed_harness.domain.models import (
 )
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
-from governed_harness.orchestration.engine import EngineServices, RunEngine
+from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
 from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
@@ -120,6 +120,7 @@ class HarnessApplication:
             "trustedHosts": list(settings.trusted_hosts) if settings.trusted_hosts else None,
             "verifyRecords": bool(settings.verify_records),
             "chainAnchor": settings.chain_anchor or "off",
+            "pinTaskRevision": bool(settings.pin_task_revision),
         }
 
     @staticmethod
@@ -141,6 +142,20 @@ class HarnessApplication:
             task = load_task_file(
                 source, project_id=project.project_id, criteria_policy=project.criteria_policy
             )
+            if project.governance_settings.pin_task_revision:
+                open_runs = [
+                    item.execution_id
+                    for item in services.state.list(
+                        "execution", Execution, project_id=project.project_id
+                    )
+                    if item.task_id == task.task_id and run_is_open(item)
+                ]
+                if open_runs:
+                    raise PolicyViolationError(
+                        f"task {task.task_id} has open run(s) {', '.join(open_runs)}; its task "
+                        "cannot be replaced while they run. Create the task under a new id, "
+                        "cancel the run, or revise it with harness task clarify during INTENT"
+                    )
             services.state.put(
                 "task",
                 task.task_id,

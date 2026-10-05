@@ -123,6 +123,31 @@ CLAIM_CHECK_ID = "harness.claim-check"
 """Validator id of that finding: the harness compares the claim with recorded results."""
 
 
+REJECTED_REASON = "Rejected by human decision"
+
+
+def run_is_open(execution: Execution) -> bool:
+    """Whether a run may still change: not closed, not cancelled and not rejected. A run that
+    failed or is blocked can be resumed with ``run continue`` and stays open."""
+    if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
+        return False
+    return not (
+        execution.status is ResultStatus.FAILED and execution.terminal_reason == REJECTED_REASON
+    )
+
+
+def acceptance_contract_digest(task: Task) -> str:
+    """Digest of the acceptance contract SPECIFICATION freezes: requirements, acceptance
+    criteria and constraints of a task revision."""
+    return sha256_json(
+        {
+            "requirements": [item.model_dump(mode="json") for item in task.requirements],
+            "acceptance": [item.model_dump(mode="json") for item in task.acceptance_criteria],
+            "constraints": list(task.constraints),
+        }
+    )
+
+
 @dataclass(frozen=True)
 class EnginePaths:
     workspace: Path
@@ -242,18 +267,17 @@ class RunEngine:
         self.s.state.set_flag(
             f"provider:{execution_id}", provider or self.s.resolved.project.agent_provider
         )
-        self.s.events.append(
-            execution_id,
-            "run.created",
-            {
-                "taskId": task.task_id,
-                "projectId": task.project_id,
-                "configurationDigest": configuration_digest,
-                "workflowDigest": workflow_digest,
-                "policyDigest": policy_digest,
-                "provider": provider or self.s.resolved.project.agent_provider,
-            },
-        )
+        created: dict[str, Any] = {
+            "taskId": task.task_id,
+            "projectId": task.project_id,
+            "configurationDigest": configuration_digest,
+            "workflowDigest": workflow_digest,
+            "policyDigest": policy_digest,
+            "provider": provider or self.s.resolved.project.agent_provider,
+        }
+        if self._pins_task():
+            created.update(self._pin_task_revision(execution_id, task))
+        self.s.events.append(execution_id, "run.created", created)
         self._record_artifact(
             execution,
             config_ref,
@@ -376,6 +400,7 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
+        contract_digest = self._current_contract_digest(execution)
         actor = Actor(
             actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
         )
@@ -389,6 +414,7 @@ class RunEngine:
             change_set_digest=change_set_digest,
             configuration_digest=execution.configuration_digest,
             policy_digest=execution.policy_digest,
+            acceptance_contract_digest=contract_digest,
         )
         self.s.state.put(
             "decision",
@@ -452,7 +478,7 @@ class RunEngine:
             updated = updated.model_copy(
                 update={
                     "status": ResultStatus.FAILED,
-                    "terminal_reason": "Rejected by human decision",
+                    "terminal_reason": REJECTED_REASON,
                     "updated_at": utc_now(),
                 }
             )
@@ -538,6 +564,9 @@ class RunEngine:
             task_ref=revised_ref.uri,
         )
         self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
+        if self._pins_task():
+            # A revision through clarify is the one way the task of an open run may change.
+            self.s.state.set_flag(f"taskrev:{execution.execution_id}", revised_ref.uri)
         self.s.state.put(
             "clarification",
             record.clarification_id,
@@ -682,7 +711,7 @@ class RunEngine:
         return outcome
 
     def _phase_intent(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         task_ref = self.s.artifacts.put_json(
             task.model_dump(mode="json"), metadata={"kind": "task-intent"}
         )
@@ -839,7 +868,8 @@ class RunEngine:
         )
 
     def _phase_specification(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
+        digest = acceptance_contract_digest(task)
         contract = {
             "taskId": task.task_id,
             "requirements": [item.model_dump(mode="json") for item in task.requirements],
@@ -847,17 +877,11 @@ class RunEngine:
                 item.model_dump(mode="json") for item in task.acceptance_criteria
             ],
             "constraints": list(task.constraints),
-            "digest": sha256_json(
-                {
-                    "requirements": [item.model_dump(mode="json") for item in task.requirements],
-                    "acceptance": [
-                        item.model_dump(mode="json") for item in task.acceptance_criteria
-                    ],
-                    "constraints": list(task.constraints),
-                }
-            ),
+            "digest": digest,
         }
         contract_ref = self.s.artifacts.put_json(contract, metadata={"kind": "acceptance-contract"})
+        if self._pins_task():
+            self.s.state.set_flag(f"contract:{execution.execution_id}", digest)
         evidence = self._record_evidence(
             execution,
             phase.phase_id,
@@ -871,7 +895,7 @@ class RunEngine:
         )
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         selection = MemoryStore(self.s.state).select(
             project_id=execution.project_id,
             task_id=task.task_id,
@@ -943,7 +967,7 @@ class RunEngine:
         )
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         plan_id = self.s.state.get_flag(f"plan:{execution.execution_id}")
         if not plan_id:
             return PhaseOutcome(ResultStatus.BLOCKED, "No approved plan exists")
@@ -1187,7 +1211,7 @@ class RunEngine:
                 ValidationContext(
                     execution_id=execution.execution_id,
                     workspace=self.s.paths.workspace,
-                    task=self.get_task(execution.task_id),
+                    task=self.run_task(execution),
                     change_set=change_set,
                     definition=definition,
                     grants=grants,
@@ -1231,7 +1255,7 @@ class RunEngine:
     ) -> TraceabilityOutput:
         """Relate the task's identified requirements to the tests of the workspace; the mapping
         is recorded as VERIFICATION evidence and each untraced requirement as a finding."""
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         validator = RequirementTraceabilityValidator(
             policy, (profile.technology for profile in self.s.resolved.profiles)
         )
@@ -1284,7 +1308,7 @@ class RunEngine:
             ValidationContext(
                 execution_id=execution.execution_id,
                 workspace=self.s.paths.workspace,
-                task=self.get_task(execution.task_id),
+                task=self.run_task(execution),
                 change_set=change_set,
                 definition=definition,
                 grants=grants,
@@ -1339,6 +1363,16 @@ class RunEngine:
                 return PhaseOutcome(
                     ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
                 )
+            if current_decision.acceptance_contract_digest is not None:
+                try:
+                    contract = self._current_contract_digest(execution)
+                except PolicyViolationError as error:
+                    return PhaseOutcome(ResultStatus.BLOCKED, str(error))
+                if contract != current_decision.acceptance_contract_digest:
+                    return PhaseOutcome(
+                        ResultStatus.BLOCKED,
+                        "Human decision is stale: it is bound to another acceptance contract",
+                    )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
                 return PhaseOutcome(
                     ResultStatus.PASSED,
@@ -1774,7 +1808,7 @@ class RunEngine:
             raise NotFoundError("baseline snapshot is missing")
         before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(baseline_uri)))
         after = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-        task = self.get_task(execution.task_id)
+        task = self.run_task(execution)
         owned_paths: set[str] | None = None
         if task.implementation.mode == "patch":
             owned_paths = {patch.path for patch in task.implementation.patches}
@@ -2052,6 +2086,40 @@ class RunEngine:
 
     def get_task(self, task_id: str) -> Task:
         return self.s.state.get("task", task_id, Task)
+
+    def run_task(self, execution: Execution) -> Task:
+        """The task revision a run works on: the revision pinned when the run was created (or
+        revised through ``task clarify``) under ``governance.pinTaskRevision``, otherwise the
+        stored task, re-read by every phase as in 1.0.0."""
+        uri = self.s.state.get_flag(f"taskrev:{execution.execution_id}")
+        if uri:
+            return Task.model_validate_json(self.s.artifacts.get(uri))
+        return self.get_task(execution.task_id)
+
+    def _pins_task(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.pin_task_revision)
+
+    def _pin_task_revision(self, execution_id: str, task: Task) -> dict[str, Any]:
+        ref = self.s.artifacts.put_json(
+            task.model_dump(mode="json"), metadata={"kind": "task-revision"}
+        )
+        self.s.state.set_flag(f"taskrev:{execution_id}", ref.uri)
+        return {"taskDigest": task_digest(task), "taskRevisionRef": ref.uri}
+
+    def _current_contract_digest(self, execution: Execution) -> str | None:
+        """Under ``governance.pinTaskRevision``, the digest of the acceptance contract frozen in
+        SPECIFICATION after checking that the run's task still produces it; ``None`` without the
+        setting (or for a run created without it)."""
+        frozen = self.s.state.get_flag(f"contract:{execution.execution_id}")
+        if not self._pins_task() or not frozen:
+            return None
+        current = acceptance_contract_digest(self.run_task(execution))
+        if current != frozen:
+            raise PolicyViolationError(
+                "the acceptance contract of the run changed after SPECIFICATION "
+                f"(frozen {frozen}, now {current}); a decision cannot be bound to it"
+            )
+        return frozen
 
     def current_change_set(self, execution_id: str) -> ChangeSet:
         execution = self.get_execution(execution_id)

@@ -130,6 +130,15 @@
   the user's data directory (`$HARNESS_ANCHOR_DIR` overrides it) or to a Git note under
   `refs/notes/governed-harness`, so `verify` reports a truncated (`truncated`) or replaced
   (`rewritten`) chain. Without the keys, `trace` exports as in 1.0.0 and nothing is anchored.
+- The task of a run no longer changes under it (#48). `harness task create` with the id of a task
+  whose run waited in `DECISION` replaced the task silently, and every phase re-read it. Under the
+  new `governance.pinTaskRevision` (written by `harness init`) a run stores the task revision it
+  was created with (`taskDigest` and `taskRevisionRef` in `run.created`) and every phase works on
+  it; only `task clarify` during `INTENT` replaces it. `task create` with the id of a task that has
+  an open run exits with 5. `SPECIFICATION` freezes the acceptance-contract digest, and a decision
+  records it as `acceptanceContractDigest` (new optional field of `human-decision.schema.json`, left
+  out of decisions recorded without the setting) and is refused with 5 when the run's task no
+  longer produces it. Without the setting the 1.0.0 behaviour and digests are kept.
 
 ## 1.0.0 - 2026-10-01
 
