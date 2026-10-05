@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+- Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
+  behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
+  it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it
+  under `friction`). Guides: `docs/guides/low-friction.md`, `docs/guides/local-metrics.md`.
+  - Fast lane (`friction.fastLane`): at INTENT the router's size and the task's risk flags decide
+    the lane; size `S` without a risk flag (and without probes, a checklist or a criterion
+    verified beyond `L1`) skips the agent ambiguity review, the decomposition, the preflight on
+    the baseline and light mutation, and runs the agent review only on a signal. The lane and why
+    are recorded (`lane.classified`, `lane-decision` evidence); a risk factor in the ChangeSet or
+    a ChangeSet larger than `S` returns the run to the full flow (`lane.escalated`). Mandatory
+    validators and the human decision are never skipped.
+  - Faster verification in the fast lane: the affected Python tests first (a failure stops the
+    attempt; the full suite runs before the gate), validators side by side up to
+    `runtime.maxParallel`, and a `PASSED` result reused for the same validator, ChangeSet,
+    baseline and configuration (`validator.reused`).
+  - `harness do TEXT`: creates the task from text, runs it and, on a terminal, asks INTENT's
+    questions and the decision after the brief; no task file.
+  - Approval in advance (`friction.preAuthorization`): `harness do --pre-approve` and
+    `harness task confirm --pre-approve` record a human decision before the ChangeSet exists,
+    bound to the contract digest and to the condition gate passed, no risk factor, size `S`,
+    with an expiry (new contract `pre-authorization.schema.json`, 38 schemas); DECISION applies
+    it only when the condition holds and asks the person otherwise. Confirming the contract and
+    approving in advance count as one interaction.
+  - Batch decisions: `harness inbox --approve`, `--reject`, `--request-changes RUN=DIGEST`,
+    `--decisions FILE` and `--batch`, each bound to its own digest; a refused one exits 5.
+  - Change types (`friction.changeTypes`): documentation-only or configuration-only ChangeSets,
+    detected from their paths, need no new tests or requirement traceability.
+  - Friction targets per size (`friction.targets`) and `harness metrics` (no key needed): tokens
+    (input, output, cache) and cost by agent, model, task and phase, models used, lines by agent
+    invocation and by person, issues resolved and features delivered with links, time per task,
+    phase, agent call and human wait, quality, friction against the targets and daily and weekly
+    trends, for one repository or every repository of the run registry (`--all-repos`), as
+    JSON, Markdown, CSV, Prometheus text or one self-contained HTML file; zero model calls and no
+    per-person indicator. Costs of providers that report only tokens come from `metrics.prices`
+    or `--prices` and are labelled estimated. `--narrative` adds one on-demand call to
+    `metrics.narrative.command`. The dashboard of `harness api serve` gains a Metrics tab
+    (`GET /api/metrics`, `GET /api/metrics/report`). Usage gains `cacheTokens`, reported by the
+    Claude Code and Codex adapters.
+  - Measured with `scripts/measure_friction.py` (fixture provider that calls no model; tokens are
+    the provider's estimate, request characters divided by four, recorded by the harness; two
+    small tasks each): recorded tokens 5792 and 5147 per task before, 3703 and 2956 in the fast
+    lane, 3739 and 2982 in the fast lane with the approval in advance; agent calls 5 and 4
+    before, 3 and 2 after (no `clarify` and no `review` call). Commands the person typed: 3 per
+    task before (`task create`, `run start`, `gate decide`), 2 in the fast lane (`do`,
+    `gate decide`) and 1 with the approval in advance (`do --pre-approve`); recorded human
+    interactions 1 per task in all three. Wall-clock seconds of those commands on the
+    measuring machine: 7.68 and 5.49 before, 4.39 and 4.36 in the fast lane, 3.65 and 5.56 with
+    the approval in advance (one run each; not a benchmark).
+  - Known limits: the affected-test selection reads Python imports and names only; the change
+    type is decided from paths; a reused validator result assumes the validator is
+    deterministic; the HTML report was viewed in one browser (Chrome, dark scheme), the dashboard
+    tab only through tests and a syntax check of its script.
 - Plan-approval checkpoint in PLANNING (closes #8). The workflow declared `approval.request`
   and the exit gate `plan_authorized` for PLANNING, but only decomposition plans were approved.
   Under `friction.planApproval: risk` (written by `harness init`) a task the router sizes `L` or
