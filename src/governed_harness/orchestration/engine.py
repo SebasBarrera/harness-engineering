@@ -5,7 +5,7 @@ import json
 import socket
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -30,6 +30,11 @@ from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvid
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.capabilities.phase import PhasePolicy, phase_scope
+from governed_harness.capabilities.repository import (
+    DestructivePolicy,
+    destructive_scope,
+    repository_policies,
+)
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
     ResolvedConfiguration,
@@ -841,7 +846,10 @@ class RunEngine:
             if self.is_cancelled(execution.execution_id):
                 outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
             else:
-                with phase_scope(self._phase_policy(running, phase)):
+                with (
+                    phase_scope(self._phase_policy(running, phase)),
+                    destructive_scope(self._destructive_policy(running)),
+                ):
                     outcome = handler(running, phase)
         except (KeyboardInterrupt, SystemExit) as interruption:
             # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
@@ -1543,6 +1551,31 @@ class RunEngine:
             phase_execution_id=phase.phase_execution_id,
         )
         return policy
+
+    def _destructive_policy(self, execution: Execution) -> DestructivePolicy | None:
+        """Under ``governance.applyRepositoryPolicies`` with ``destructiveActionsDefault: deny``
+        (#5): destructive commands are refused unless granted, each attempt a finding."""
+        if not repository_policies(self.s.resolved).deny_destructive:
+            return None
+
+        def denied(actor: Actor, argv: Sequence[str], reason: str) -> None:
+            self.results.record_finding(
+                execution,
+                validator_id="harness.capabilities",
+                rule_id="capabilities.destructive-denied",
+                category="security",
+                severity=FindingSeverity.HIGH,
+                message=(
+                    f"{actor.actor_id} tried a destructive command ({reason}): "
+                    f"{' '.join(argv)[:200]}"
+                ),
+                recommendation=(
+                    "Grant process.destructive for this command in project.yaml if it is "
+                    "intended (policies.destructiveActionsDefault: deny)."
+                ),
+            )
+
+        return DestructivePolicy(self.s.paths.workspace, denied)
 
     # ----- declared settings (#51) -------------------------------------------------------
     def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:

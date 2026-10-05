@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Repository policies applied (#5). `policies.repositoryContentTrusted` and
+  `policies.destructiveActionsDefault` were read by nothing. Under the new
+  `governance.applyRepositoryPolicies` (written by `harness init`; absent keeps the earlier
+  behaviour and configuration digest), repository content is untrusted: requests carry a
+  prompt-injection notice, the repository's instruction files reach the implementing agent only
+  quoted (reviewers get their names) and the review panel flags instructions addressed to an
+  agent in changed files; destructive commands (recursive deletes outside the workspace, force
+  pushes, history rewrites, dropped data, ownership or permission changes outside the workspace)
+  are refused unless a `process.destructive` grant allows them, each attempt a `HIGH` finding,
+  and the Claude Code adapter passes them as disallowed tools. Neither policy is declarative any
+  more.
 - Capabilities per phase (#4). The grants of a run were the union of the profiles' and the
   project's capabilities for the whole run, so a project could not narrow a profile and the
   workflow's `allowedCapabilities` had no effect. Under the new `governance.phaseCapabilities`

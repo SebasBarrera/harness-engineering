@@ -228,6 +228,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "phasePermissions": True,
             # Wave 7 (#4): grants narrowed by the project and limited to each phase.
             "phaseCapabilities": True,
+            # Wave 7 (#5): repository content is untrusted, destructive commands are denied.
+            "applyRepositoryPolicies": True,
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},

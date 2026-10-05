@@ -48,6 +48,7 @@ from governed_harness.review.invoke import BuiltProvider, ProviderInvoker
 from governed_harness.review.panel import PanelInputs, PanelReport, ReviewerCall, run_panel
 from governed_harness.review.project import (
     consistency_runner,
+    panel_context,
     review_setup,
     reviewer_route,
 )
@@ -220,6 +221,7 @@ class PanelReview:
         )
         cache_settings = settings.effective_cache
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
+        untrusted, notice = panel_context(resolved, workspace)
         inputs = PanelInputs(
             workspace=workspace,
             diff_text=diff,
@@ -249,7 +251,8 @@ class PanelReview:
                 execution_id=execution.execution_id,
                 cancelled=lambda: engine.is_cancelled(execution.execution_id),
             ),
-            extra={"task": compact_task(engine.run_task(execution))},
+            extra={"task": compact_task(engine.run_task(execution)), **untrusted},
+            untrusted_notice=notice,
             mcp={"mcpServers": servers, "digest": mcp_digest(servers)},
         )
         report = run_panel(inputs)

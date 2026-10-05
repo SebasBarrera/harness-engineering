@@ -777,7 +777,14 @@ class GovernanceConfig(ConfigModel):
       project narrows, never widens, a profile), every grant made while a phase runs keeps only
       the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call
       outside IMPLEMENTATION is read-only and may start only its own command, and the resolved
-      grants of each phase attempt are recorded as evidence."""
+      grants of each phase attempt are recorded as evidence.
+    * ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes
+      repository content (instruction files included) quoted, untrusted context of every agent
+      request with a prompt-injection notice, and the review panel flags instructions in changed
+      files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive
+      deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or
+      permission changes outside the workspace) unless a ``process.destructive`` grant allows
+      them, with a finding for each attempt."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -796,6 +803,7 @@ class GovernanceConfig(ConfigModel):
     stop_the_line: StopTheLine | None = Field(default=None, alias="stopTheLine")
     phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
     phase_capabilities: bool | None = Field(default=None, alias="phaseCapabilities")
+    apply_repository_policies: bool | None = Field(default=None, alias="applyRepositoryPolicies")
 
     @field_validator("stop_the_line", mode="before")
     @classmethod

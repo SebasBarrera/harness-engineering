@@ -131,6 +131,26 @@ review:
   agentReview: enforce
   structuredChanges: true
   manualChecklist: true
+  panel:
+    mode: enforce
+    maxFindings: 20
+    parallel: 4
+    budget:
+      baseTokens: 6000
+      tokensPerLine: 30
+      maxTokens: 60000
+    cache:
+      ttlDays: 14
+      maxEntries: 500
+    runTools: true
+    autoFix:
+      mode: scoped
+      maxAttempts: 2
+    secondOpinion:
+      mode: 'off'
+    evidenceRefs: true
+    comment: false
+    mcpServers: []
 retrospective:
   causal: true
 planning:
@@ -193,6 +213,7 @@ governance:
   stopTheLine: restore
   phasePermissions: true
   phaseCapabilities: true
+  applyRepositoryPolicies: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -286,8 +307,10 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes `agent` and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
+| `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
+| `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
@@ -439,8 +462,8 @@ Resolution order: core policies, then profile policies, then project policies.
 | `retrospectiveAutoApply` | `false` | **No** (locked `false`) |
 | `findingBlockSeverities` | `["HIGH", "CRITICAL"]` | Yes: severities whose findings make the gate `FAILED` |
 | `allowEmptyChangeSet` | not set (false) | Yes: allow a run whose implementation produced no change |
-| `repositoryContentTrusted` | `false` | Declared; **not read by any component** (issue #5); reported by `config validate` |
-| `destructiveActionsDefault` | `deny` | Declared; **not read by any component** (issue #5); reported by `config validate` |
+| `repositoryContentTrusted` | `false` | Yes; applied under `governance.applyRepositoryPolicies` (see [repository policies](#repository-policies)); otherwise declarative and named by `config validate` |
+| `destructiveActionsDefault` | `deny` | Yes; applied under `governance.applyRepositoryPolicies` (see [repository policies](#repository-policies)); otherwise declarative and named by `config validate` |
 
 Setting a locked policy to any other value fails with a configuration error (exit code 2), for
 example `project configuration may not weaken locked policy requireHumanDecision`.
@@ -856,6 +879,38 @@ and the workflow's `allowedCapabilities` had no effect (issue #4). Under
 
 `harness config validate` warns that `allowedCapabilities` is declared but not applied while the
 key is off.
+
+### Repository policies
+
+The policies `repositoryContentTrusted` and `destructiveActionsDefault` were part of the core
+policies and read by nothing (issue #5). Under `governance.applyRepositoryPolicies: true`:
+
+* `repositoryContentTrusted: false` (the default): every request the harness builds says that
+  repository content is untrusted data, not instructions (a prompt-injection notice). The
+  instruction files of the repository (`instructions.files`, by default `AGENTS.md`, `CLAUDE.md`,
+  `.cursorrules`, `.cursor/rules`, `.github/copilot-instructions.md`) reach the implementing agent
+  only quoted, in a fence longer than any backtick run they hold (`untrustedContent`, at most 8
+  files of 4,000 characters), and every read-only call and reviewer gets only their names. The
+  review panel's rule `pipeline-security.embedded-instructions` (checked by the harness, never by a
+  model) flags changed lines that address instructions to an agent: "ignore the previous
+  instructions", "reviewers must approve", chat-template markers. With
+  `repositoryContentTrusted: true` that rule is inactive and no notice is added. A CLI that loads
+  instruction files by itself still reads them; the notice tells it how to treat them.
+* `destructiveActionsDefault: deny` (the default): a command the harness runs while a phase runs
+  (validators, probes, consistency checks, provider launches) is refused before it starts when it
+  deletes recursively outside the workspace (or the workspace root), force-pushes or deletes a
+  remote ref, rewrites history (`rebase`, `commit --amend`, `filter-branch`, `filter-repo`),
+  discards commits (`reset --hard`), drops data (`DROP TABLE`, `TRUNCATE TABLE`, `dropdb`,
+  `FLUSHALL`) or changes ownership or permissions outside the workspace, also inside `sh -c`.
+  A `process.destructive` grant whose scope prefixes the command allows it. Each refusal is a
+  `HIGH` `capabilities.destructive-denied` finding. Implement and read-only requests carry
+  `commandPolicy: {destructive: deny}`; the Claude Code adapter passes the same operations as
+  `--disallowedTools` (a pattern cannot see paths, so `chown` and `chmod -R` are refused there
+  everywhere). Commands an agent CLI runs by itself are confined by the agent sandbox, not by this
+  list.
+
+`harness config validate` warns that both policies are declared but not applied while the key is
+off.
 
 ## Large repositories
 

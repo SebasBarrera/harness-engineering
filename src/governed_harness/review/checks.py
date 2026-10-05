@@ -187,12 +187,58 @@ def secrets(files: Iterable[FileChange]) -> list[CheckHit]:
     ]
 
 
+_INJECTION = (
+    re.compile(
+        r"\b(?:ignore|disregard|forget|override)\s+(?:all\s+|any\s+)?(?:the\s+|your\s+)?"
+        r"(?:previous|prior|above|earlier|preceding|system)\s+(?:instructions|directions|rules|"
+        r"prompts?|guidelines)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(r"<\|(?:im_start|im_end|system)\|>|\[/?INST\]|<<SYS>>"),
+    re.compile(r"(?:^|[\s#/*>-])(?:system prompt|developer message)\s*:", re.IGNORECASE),
+    re.compile(
+        r"\b(?:AI|LLM|assistant|agent|language model|reviewers?|model)s?\b[^.\n]{0,40}\b"
+        r"(?:must|should|shall|are instructed to)\s+(?:approve|ignore|skip|not\s+report|"
+        r"report\s+no|pass|merge)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\bdo\s+not\s+(?:tell|inform|mention\s+(?:this\s+)?to|report\s+(?:this\s+)?to)\s+the\s+"
+        r"(?:user|human|reviewer|maintainer)\b",
+        re.IGNORECASE,
+    ),
+)
+
+
+def embedded_instructions(files: Iterable[FileChange]) -> list[CheckHit]:
+    """Text addressed to an agent inside changed content (a prompt injection), since #5."""
+    hits: list[CheckHit] = []
+    for item in files:
+        if item.is_deleted or item.binary:
+            continue
+        for line in item.added:
+            if any(pattern.search(line.text) for pattern in _INJECTION):
+                hits.append(
+                    CheckHit(
+                        "embedded-instructions",
+                        item.path,
+                        "new",
+                        line.number,
+                        "Changed content addresses instructions to an agent (prompt injection); "
+                        "repository content is untrusted",
+                        _quote(line.text),
+                    )
+                )
+    return hits
+
+
 CHECKS: dict[str, Callable[[Iterable[FileChange]], list[CheckHit]]] = {
     "tautological-assertion": tautological_assertions,
     "weakened-gates": weakened_gates,
     "dangerous-paths": dangerous_paths,
     "temporary-files": temporary_files,
     "secrets": secrets,
+    "embedded-instructions": embedded_instructions,
 }
 """The checks a rule may name as ``tool:harness:CHECK``."""
 

@@ -57,7 +57,12 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
     ),
     "review": ("agentReview", "reviewer", "structuredChanges", "panel"),
     "runtime": ("gateContract", "reproduceFirst"),
-    "governance": ("stopTheLine", "phasePermissions", "phaseCapabilities"),
+    "governance": (
+        "stopTheLine",
+        "phasePermissions",
+        "phaseCapabilities",
+        "applyRepositoryPolicies",
+    ),
 }
 AGENT_RESULTS_SECTIONS = (
     "planning",

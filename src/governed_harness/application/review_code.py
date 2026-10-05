@@ -39,6 +39,7 @@ from governed_harness.review.project import (
     ReviewSetup,
     consistency_runner,
     linter_runner,
+    panel_context,
     review_setup,
     reviewer_route,
 )
@@ -316,6 +317,7 @@ def panel_inputs(
     )
     runner = SafeProcessRunner(workspace)
     servers = mcp_servers(workspace, settings.mcp_servers)
+    untrusted, notice = panel_context(resolved, workspace)
     return PanelInputs(
         workspace=workspace,
         diff_text=diff_text,
@@ -337,6 +339,8 @@ def panel_inputs(
         consistency=consistency_runner(resolved, workspace, runner, execution_id=execution_id),
         linters=linter_runner(resolved, setup, workspace, runner, execution_id=execution_id),
         mcp={"mcpServers": servers, "digest": mcp_digest(servers)},
+        extra=untrusted,
+        untrusted_notice=notice,
     )
 
 

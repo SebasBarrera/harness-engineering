@@ -91,6 +91,8 @@ def review_setup(resolved: ResolvedConfiguration, workspace: Path | None = None)
         workspace=workspace,
     )
     catalog = _known_checks(catalog)
+    if resolved.effective_policies.get("repositoryContentTrusted") is True:
+        catalog = _trusted_content(catalog)
     reviewers = load_reviewers(workspace, catalog, enabled=settings.reviewers)
     return ReviewSetup(settings, catalog, reviewers, standards, frozenset(tools))
 
@@ -106,6 +108,41 @@ def _known_checks(catalog: Catalog) -> Catalog:
         else:
             active.append(rule)
     return Catalog(tuple(active), tuple(sorted(inactive, key=lambda item: item.rule.rule_id)))
+
+
+def _trusted_content(catalog: Catalog) -> Catalog:
+    """Under ``policies.repositoryContentTrusted: true`` (#5) instructions in changed content
+    are not flagged."""
+    active: list[Rule] = []
+    inactive = list(catalog.inactive)
+    for rule in catalog.rules:
+        if (HARNESS_TOOL, "embedded-instructions") in rule.tools:
+            inactive.append(
+                InactiveRule(
+                    rule, "repository content is trusted (policies.repositoryContentTrusted)"
+                )
+            )
+        else:
+            active.append(rule)
+    return Catalog(tuple(active), tuple(sorted(inactive, key=lambda item: item.rule.rule_id)))
+
+
+def panel_context(
+    resolved: ResolvedConfiguration, workspace: Path
+) -> tuple[dict[str, Any], str | None]:
+    """What ``governance.applyRepositoryPolicies`` adds to every reviewer request (#5): the
+    names of the instruction files as untrusted context and the prompt-injection notice."""
+    from governed_harness.capabilities.repository import (
+        UNTRUSTED_NOTICE,
+        repository_policies,
+        untrusted_context,
+    )
+
+    policies = repository_policies(resolved)
+    if not policies.untrusted:
+        return {}, None
+    context = untrusted_context(workspace, policies.instruction_files, include_content=False)
+    return {"untrustedContent": context}, UNTRUSTED_NOTICE
 
 
 def reviewer_route(resolved: ResolvedConfiguration) -> Route:
@@ -256,6 +293,7 @@ __all__ = [
     "ReviewSetup",
     "consistency_runner",
     "linter_runner",
+    "panel_context",
     "panel_settings",
     "review_setup",
     "reviewer_route",

@@ -16,6 +16,7 @@ before and after the batch, so the record keeps one writer. Isolation of a revie
 
 from __future__ import annotations
 
+import contextvars
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -168,7 +169,10 @@ class ProviderInvoker:
                 return f"the provider raised {type(error).__name__}: {error}"
 
         with ThreadPoolExecutor(max_workers=max(1, min(workers, len(calls)))) as pool:
-            results = list(pool.map(run, range(len(calls))))
+            # Each worker runs in a copy of this context: the policies of the running phase
+            # (capabilities, destructive commands) reach the provider processes it starts.
+            parent = contextvars.copy_context()
+            results = list(pool.map(lambda index: parent.copy().run(run, index), range(len(calls))))
         answers: list[ReviewerAnswer] = []
         for call, result, request_ref, target in zip(
             calls, results, request_refs, built, strict=True

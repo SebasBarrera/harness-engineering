@@ -117,6 +117,11 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     extras = implement_extras_lines(request)
     if extras:
         lines += ["", *extras]
+    untrusted = request.get("untrustedContent")
+    if isinstance(untrusted, dict):
+        from governed_harness.capabilities.repository import quoted_lines
+
+        lines += ["", *quoted_lines(untrusted)]
     if self_report:
         lines += ["", "## Self-report", PROMPT_INSTRUCTIONS]
     return "\n".join(lines).rstrip() + "\n"
@@ -159,7 +164,15 @@ def _feedback_lines(feedback: dict[str, Any]) -> list[str]:
 
 
 _CALL_KEYS_LEFT_OUT = frozenset({"instructions", "schemaVersion", "kind", "readOnly", "isolation"})
-_IMPLEMENT_EXTRAS = ("gate", "permissions", "contextFiles", "lessons", "acceptanceTests", "budget")
+_IMPLEMENT_EXTRAS = (
+    "gate",
+    "permissions",
+    "contextFiles",
+    "lessons",
+    "acceptanceTests",
+    "budget",
+    "commandPolicy",
+)
 
 
 def render_call_prompt(request: dict[str, Any]) -> str:
@@ -272,6 +285,10 @@ class NativeAgentProvider(CommandAgentProvider):
         still keep the call read-only)."""
         return None
 
+    def policy_args(self, policy: Any) -> tuple[str, ...]:
+        """The CLI options of the command policy (#5); none for a CLI without them."""
+        return ()
+
     def model_args(self, routing: Mapping[str, str] | None = None) -> tuple[str, ...]:
         """``--model`` of the configured model, or of the model the router chose for the call
         (``agentRouting``, since 1.1), followed by the CLI's effort option."""
@@ -301,6 +318,7 @@ class NativeAgentProvider(CommandAgentProvider):
             *self.configuration.argv_prefix,
             *(isolated if isolated is not None else self.base_args()),
             *self.model_args(request_routing(request)),
+            *self.policy_args(request.get("commandPolicy")),
             *self.configuration.extra_args,
         )
         tail = self.prompt_args(prompt)
@@ -355,6 +373,13 @@ class ClaudeCodeProvider(NativeAgentProvider):
 
     def effort_args(self, effort: str) -> tuple[str, ...]:
         return ("--effort", effort)
+
+    def policy_args(self, policy: Any) -> tuple[str, ...]:
+        from governed_harness.capabilities.repository import CLAUDE_DISALLOWED
+
+        if isinstance(policy, Mapping) and policy.get("destructive") == "deny":
+            return ("--disallowedTools", *CLAUDE_DISALLOWED)
+        return ()
 
     def read_answer(self, result: ProcessResult) -> ProviderAnswer:
         value = json.loads(result.stdout)

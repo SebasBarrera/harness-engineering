@@ -14,10 +14,6 @@ from governed_harness.configuration.models import ResolvedConfiguration
 DECLARATIVE_SETTINGS: dict[str, str] = {
     "workspace.units": "Declared units are not used by the engine.",
     "runtime.maxParallel": "Phases and validators run one at a time.",
-    "policies.repositoryContentTrusted": "No component reads it; repository content is always "
-    "treated as untrusted.",
-    "policies.destructiveActionsDefault": "No component reads it; destructive actions follow "
-    "the capability grants.",
     "policies.ambiguousPackageManager": "No component reads it; the Node.js profile always uses "
     "npm.",
     "workflow.phases[].dependsOn": "The phase order is fixed by the state machine.",
@@ -30,7 +26,7 @@ _PROJECT_KEYS = {
     "workspace.units": ("workspace", "units"),
     "runtime.maxParallel": ("runtime", "maxParallel"),
 }
-_POLICY_KEYS = ("repositoryContentTrusted", "destructiveActionsDefault", "ambiguousPackageManager")
+_POLICY_KEYS = ("ambiguousPackageManager",)
 
 
 def _present(raw: dict[str, Any], path: tuple[str, ...]) -> bool:
@@ -63,6 +59,11 @@ def declared_settings_report(
         warnings.append(
             "workflow allowedCapabilities are declared but not applied (grants are per run); "
             "set governance.phaseCapabilities: true"
+        )
+    if not governance.apply_repository_policies:
+        warnings.append(
+            "policies repositoryContentTrusted and destructiveActionsDefault are declared but not "
+            "applied; set governance.applyRepositoryPolicies: true"
         )
     if not governance.apply_workflow_settings:
         warnings.append(

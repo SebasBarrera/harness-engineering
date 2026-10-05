@@ -250,6 +250,7 @@ class AgentResults:
                 project.memory is not None,
                 project.agent_routing is not None,
                 self.engineering.configured,
+                bool(governance.apply_repository_policies),
             )
         )
 
@@ -672,6 +673,12 @@ class AgentResults:
         }
         request.update(payload)
         request.update(self.request_common(execution, phase, kind, task, provider_id, grants))
+        repository = self.repository_extra(read_only=True)
+        if repository:
+            # #5: the notice and the names of the instruction files, never their directives.
+            request.update(repository)
+            if "untrustedContent" in repository:
+                request["instructions"] += " " + repository["untrustedContent"]["notice"]
         request_ref = self.record_json(
             execution,
             phase.phase_id,
@@ -926,6 +933,7 @@ class AgentResults:
             extra["gate"] = self.gate.contract(execution)
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
+        extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
@@ -956,6 +964,25 @@ class AgentResults:
                 + (f" {suffix}" if suffix else ""),
             }
         )
+        return extra
+
+    def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
+        """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the
+        repository's instruction files as quoted, untrusted context (only their names for a
+        read-only call) and the command policy."""
+        from governed_harness.capabilities.repository import (
+            repository_policies,
+            untrusted_context,
+        )
+
+        policies = repository_policies(self.s.resolved)
+        extra: dict[str, Any] = {}
+        if policies.untrusted:
+            extra["untrustedContent"] = untrusted_context(
+                self.s.paths.workspace, policies.instruction_files, include_content=not read_only
+            )
+        if policies.deny_destructive:
+            extra["commandPolicy"] = {"destructive": "deny"}
         return extra
 
     def implement_context(
