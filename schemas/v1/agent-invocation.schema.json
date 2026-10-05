@@ -151,6 +151,25 @@
     "actor": {
       "$ref": "#/$defs/Actor"
     },
+    "callKind": {
+      "anyOf": [
+        {
+          "enum": [
+            "implement",
+            "clarify",
+            "review",
+            "plan",
+            "acceptance"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Callkind"
+    },
     "contextManifestRef": {
       "anyOf": [
         {
@@ -162,6 +181,18 @@
       ],
       "default": null,
       "title": "Contextmanifestref"
+    },
+    "effort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effort"
     },
     "error": {
       "anyOf": [

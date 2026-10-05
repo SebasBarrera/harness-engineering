@@ -14,6 +14,23 @@ from pydantic import (
     model_validator,
 )
 
+from governed_harness.configuration.agent_results import (
+    AcceptanceTestsConfig,
+    AgentCallConfig,
+    AgentRoutingConfig,
+    AmbiguityReview,
+    ArchitectureConfig,
+    BudgetConfig,
+    ContextConfig,
+    InvariantCheck,
+    MemoryConfig,
+    PlanningConfig,
+    Policy,
+    RiskAction,
+    SarifInput,
+    TestQualityConfig,
+    off_from_yaml,
+)
 from governed_harness.domain.enums import FindingSeverity, PhaseId
 
 
@@ -105,6 +122,8 @@ _OPTIONAL_RUNTIME_FIELDS = {
     "provider_retries": "providerRetries",
     "provider_retry_delay_seconds": "providerRetryDelaySeconds",
     "provider_transient_patterns": "providerTransientPatterns",
+    "gate_contract": "gateContract",
+    "reproduce_first": "reproduceFirst",
     "extended_redaction": "extendedRedaction",
 }
 """Optional runtime keys left out of the serialized configuration while they are unset."""
@@ -220,6 +239,14 @@ class RuntimeConfig(ConfigModel):
     """Since 1.1: also redact model-API keys (``sk-ant-``, ``sk-``, ``AIza``), Slack tokens,
     JSON Web Tokens and credentials in URLs from every stored artifact and from the agent's
     summary. Absent or false keeps the 1.0.0 rules."""
+
+    gate_contract: bool | None = Field(default=None, alias="gateContract")
+    """Since 1.1 (#52): the implement request carries the gate contract (validators, review
+    rules, blocking severities, the workspace path and the ``harness check`` command) and the
+    agent's permissions derived from the capability grants."""
+    reproduce_first: bool | None = Field(default=None, alias="reproduceFirst")
+    """Since 1.1 (#52): a correction attempt that changes nothing is a finding, and a correction
+    after REQUEST_CHANGES must add a test that fails before it and passes after it."""
 
     @field_validator("provider_transient_patterns")
     @classmethod
@@ -389,9 +416,36 @@ class IntakeConfig(ConfigModel):
 
     ``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``
     records the questions as evidence and low-severity findings and lets the run continue,
-    ``off`` skips the assessment."""
+    ``off`` skips the assessment.
+
+    Since 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for
+    ambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its
+    provider, model and effort, and ``validateAnswers`` checks a person's answers for references
+    to documents or requirements the task and the workspace do not contain. Absent keys keep the
+    1.0.0 behaviour."""
 
     criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
+    ambiguity_review: AmbiguityReview | None = Field(default=None, alias="ambiguityReview")
+    clarify_agent: AgentCallConfig | None = Field(default=None, alias="clarifyAgent")
+    validate_answers: bool | None = Field(default=None, alias="validateAnswers")
+
+    @field_validator("ambiguity_review", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def agent_review_enabled(self) -> bool:
+        return self.ambiguity_review == "agent"
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name in ("ambiguity_review", "clarify_agent", "validate_answers"):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(type(self).model_fields[name].alias or name, None)
+        return data
 
 
 RequirementTraceabilityPolicy = Literal["enforce", "warn", "off"]
@@ -416,12 +470,55 @@ class VerificationConfig(ConfigModel):
     tsc, SARIF, pytest) into one finding per reported problem, with file, line and rule. Absent
     or false keeps the single summary finding of 1.0.0."""
 
+    # ----- since 1.1, agent results (#40, #52); every key absent keeps 1.0.0 -----------------
+    interface: Policy | None = None
+    """Conformance of a task's declared interface (``metadata.interface``): ``enforce`` makes a
+    mismatch HIGH, ``warn`` LOW."""
+    architecture: ArchitectureConfig | None = None
+    security_patterns: bool | None = Field(default=None, alias="securityPatterns")
+    """Unrestricted pickle/marshal of stored data, persisted card numbers or CVC, and weak
+    password hashing are HIGH findings."""
+    constraints: Policy | None = None
+    """Verifiable task constraints (standard library only, no clock or random, annotated public
+    API, no float money, no stubs) recognised from the task or listed in ``metadata.checks``."""
+    ratchet: Policy | None = None
+    """Optional validators (Ruff, Mypy) must not report more problems than on the baseline."""
+    invariants: tuple[InvariantCheck, ...] | None = None
+    differential: bool | None = None
+    """Run a failing mandatory validator on the baseline and block only introduced failures."""
+    weakened_controls: Policy | None = Field(default=None, alias="weakenedControls")
+    test_quality: TestQualityConfig | None = Field(default=None, alias="testQuality")
+    secrets: Literal["context", "pattern"] | None = None
+    """``context``: the secret check of the independent review weighs where a literal is
+    (tests, environment assignments, values the task declares) and detects evasion."""
+    sarif: tuple[SarifInput, ...] | None = None
+    risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
+    acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")
+
+    @field_validator("interface", "constraints", "ratchet", "weakened_controls", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @field_validator("risk_factors")
+    @classmethod
+    def _known_factors(cls, value: dict[str, RiskAction] | None) -> dict[str, RiskAction] | None:
+        from governed_harness.configuration.agent_results import RISK_FACTORS
+
+        unknown = sorted(set(value or {}) - set(RISK_FACTORS))
+        if unknown:
+            raise ValueError(
+                f"unknown risk factor(s): {', '.join(unknown)}; known: {', '.join(RISK_FACTORS)}"
+            )
+        return value
+
     @model_serializer(mode="wrap")
     def _omit_absent_parsers(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        if self.output_parsers is None:
-            data.pop("output_parsers", None)
-            data.pop("outputParsers", None)
+        for name, field in type(self).model_fields.items():
+            if name != "requirement_traceability" and getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(field.alias or name, None)
         return data
 
 
@@ -441,14 +538,26 @@ class ReviewConfig(ConfigModel):
 
     exceptions: bool | None = None
     exception_days: int | None = Field(default=None, alias="exceptionDays", ge=1, le=365)
+    agent_review: Policy | None = Field(default=None, alias="agentReview")
+    """Since 1.1 (#38): a second agent (call kind ``review``) reviews the ChangeSet in
+    INDEPENDENT_REVIEW; under ``enforce`` its HIGH and CRITICAL findings block the gate."""
+    reviewer: AgentCallConfig | None = None
+    structured_changes: bool | None = Field(default=None, alias="structuredChanges")
+    """Since 1.1 (#52): REQUEST_CHANGES may carry blocking items with a verifiable condition
+    that VERIFICATION checks until the run closes."""
+
+    @field_validator("agent_review", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        for name, alias in (("exceptions", "exceptions"), ("exception_days", "exceptionDays")):
+        for name, field in type(self).model_fields.items():
             if getattr(self, name) is None:
                 data.pop(name, None)
-                data.pop(alias, None)
+                data.pop(field.alias or name, None)
         return data
 
 
@@ -507,6 +616,7 @@ class RetrospectiveConfig(ConfigModel):
 
 
 DeciderIdentity = Literal["git", "default"]
+StopTheLine = Literal["restore", "block", "off"]
 ChainAnchorMode = Literal["file", "git-note", "off"]
 
 DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
@@ -555,7 +665,14 @@ class GovernanceConfig(ConfigModel):
       ``missingTestScript`` set the status of an unavailable mandatory validator, and a
       ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).
     * ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access
-      to the agent under ``runtime.agentSandbox: enforce``."""
+      to the agent under ``runtime.agentSandbox: enforce``.
+    * ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed
+      out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the
+      workspace to the baseline, ``block`` refuses new runs in the workspace until a person
+      quarantines them (``harness run quarantine``).
+    * ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,
+      derived from the capability grants (read-only for clarify, review and plan), recorded as
+      evidence."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -571,6 +688,13 @@ class GovernanceConfig(ConfigModel):
     )
     apply_profile_policies: bool | None = Field(default=None, alias="applyProfilePolicies")
     apply_network_policy: bool | None = Field(default=None, alias="applyNetworkPolicy")
+    stop_the_line: StopTheLine | None = Field(default=None, alias="stopTheLine")
+    phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
+
+    @field_validator("stop_the_line", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
 
     @field_validator("trusted_hosts")
     @classmethod
@@ -620,6 +744,11 @@ class ProjectConfiguration(ConfigModel):
     review: ReviewConfig | None = None
     notifications: NotificationsConfig | None = None
     retrospective: RetrospectiveConfig | None = None
+    planning: PlanningConfig | None = None
+    context: ContextConfig | None = None
+    budget: BudgetConfig | None = None
+    memory: MemoryConfig | None = None
+    agent_routing: AgentRoutingConfig | None = Field(default=None, alias="agentRouting")
     toolchain: ToolchainConfig | None = None
     provenance: ProvenanceConfig | None = None
     delivery: DeliveryConfig | None = None
@@ -700,12 +829,19 @@ class ProjectConfiguration(ConfigModel):
             "review",
             "notifications",
             "retrospective",
+            "planning",
+            "context",
+            "budget",
+            "memory",
             "toolchain",
             "provenance",
             "delivery",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)
+        if self.agent_routing is None:
+            data.pop("agent_routing", None)
+            data.pop("agentRouting", None)
         return data
 
 

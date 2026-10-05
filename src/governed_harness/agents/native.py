@@ -34,6 +34,7 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections.abc import Mapping
 from typing import Any
 
 from governed_harness.agents.base import AgentContext
@@ -41,6 +42,7 @@ from governed_harness.agents.command import (
     CommandAgentConfiguration,
     CommandAgentProvider,
     ProviderAnswer,
+    request_routing,
 )
 from governed_harness.agents.self_report import PROMPT_INSTRUCTIONS, extract_from_text
 from governed_harness.configuration.models import NATIVE_DEFAULT_COMMANDS
@@ -110,6 +112,9 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     feedback = request.get("feedback")
     if feedback:
         lines += ["", *_feedback_lines(feedback)]
+    extras = implement_extras_lines(request)
+    if extras:
+        lines += ["", *extras]
     if self_report:
         lines += ["", "## Self-report", PROMPT_INSTRUCTIONS]
     return "\n".join(lines).rstrip() + "\n"
@@ -151,6 +156,80 @@ def _feedback_lines(feedback: dict[str, Any]) -> list[str]:
     return lines
 
 
+_CALL_KEYS_LEFT_OUT = frozenset({"instructions", "schemaVersion", "kind", "readOnly"})
+_IMPLEMENT_EXTRAS = ("gate", "permissions", "contextFiles", "lessons", "acceptanceTests", "budget")
+
+
+def render_call_prompt(request: dict[str, Any]) -> str:
+    """A read-only request (``clarify``, ``acceptance``, ``plan``, ``review``, since 1.1) as
+    text: the rendered instructions, then the request itself as JSON."""
+    payload = {key: value for key, value in request.items() if key not in _CALL_KEYS_LEFT_OUT}
+    return (
+        f"{request.get('instructions', '')}\n\n"
+        "The request, as JSON:\n\n```json\n"
+        f"{json.dumps(payload, indent=2, sort_keys=True)}\n```\n\n"
+        "End your answer with the JSON object described above, on its own, so the harness can "
+        "read it.\n"
+    )
+
+
+def implement_extras_lines(request: dict[str, Any]) -> list[str]:
+    """What the agent-results settings add to an implement request (gate contract,
+    permissions, context manifest, lessons, frozen acceptance tests, budget), as text."""
+    present = {key: request[key] for key in _IMPLEMENT_EXTRAS if request.get(key)}
+    if not present:
+        return []
+    return [
+        "## What the harness will check and what you may use",
+        "```json",
+        json.dumps(present, indent=2, sort_keys=True),
+        "```",
+    ]
+
+
+def extract_call_result(text: str) -> Any:
+    """The ``result`` object of a read-only call from a CLI's output: the last JSON object
+    with a ``result`` key found in the output or in any text field of it."""
+    candidates: list[str] = [text]
+    for line in [text, *text.splitlines()]:
+        try:
+            value = json.loads(line)
+        except ValueError:
+            continue
+        candidates.extend(_strings(value))
+    for candidate in reversed(candidates):
+        found = _last_result_object(candidate)
+        if found is not None:
+            return found
+    return None
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [text for item in value.values() for text in _strings(item)]
+    if isinstance(value, list):
+        return [text for item in value for text in _strings(item)]
+    return []
+
+
+def _last_result_object(text: str) -> Any:
+    decoder = json.JSONDecoder()
+    found: Any = None
+    index = text.find("{")
+    while index != -1:
+        try:
+            value, end = decoder.raw_decode(text, index)
+        except ValueError:
+            index = text.find("{", index + 1)
+            continue
+        if isinstance(value, dict) and isinstance(value.get("result"), dict):
+            found = value["result"]
+        index = text.find("{", end)
+    return found
+
+
 def _tail(text: str, chars: int = STDERR_TAIL_CHARS) -> str:
     text = " ".join(text.strip().split())
     return text[-chars:]
@@ -184,9 +263,17 @@ class NativeAgentProvider(CommandAgentProvider):
     def base_args(self) -> tuple[str, ...]:
         raise NotImplementedError
 
-    def model_args(self) -> tuple[str, ...]:
-        model = self.configuration.model
-        return ("--model", model) if model else ()
+    def model_args(self, routing: Mapping[str, str] | None = None) -> tuple[str, ...]:
+        """``--model`` of the configured model, or of the model the router chose for the call
+        (``agentRouting``, since 1.1), followed by the CLI's effort option."""
+        routing = routing or {}
+        model = routing.get("model") or self.configuration.model
+        effort = routing.get("effort")
+        return (("--model", model) if model else ()) + (self.effort_args(effort) if effort else ())
+
+    def effort_args(self, effort: str) -> tuple[str, ...]:
+        """The CLI's reasoning-effort option; a CLI without one ignores the router's effort."""
+        return ()
 
     def prompt_args(self, prompt: str) -> tuple[str, ...]:
         return ()
@@ -194,11 +281,15 @@ class NativeAgentProvider(CommandAgentProvider):
     def process_input(
         self, request: dict[str, object], context: AgentContext
     ) -> tuple[tuple[str, ...], bytes | None, tuple[str, ...]]:
-        prompt = render_prompt(request, self_report=self.configuration.self_report)
+        kind = request.get("kind")
+        if kind is not None and kind != "implement":
+            prompt = render_call_prompt(request)
+        else:
+            prompt = render_prompt(request, self_report=self.configuration.self_report)
         head = (
             *self.configuration.argv_prefix,
             *self.base_args(),
-            *self.model_args(),
+            *self.model_args(request_routing(request)),
             *self.configuration.extra_args,
         )
         tail = self.prompt_args(prompt)
@@ -216,6 +307,9 @@ class NativeAgentProvider(CommandAgentProvider):
     def _self_report_from(self, text: str) -> Any:
         return extract_from_text(text) if self.configuration.self_report else None
 
+    def extract_result(self, result: ProcessResult) -> Any:
+        return extract_call_result(result.stdout.decode("utf-8", "replace"))
+
 
 class ClaudeCodeProvider(NativeAgentProvider):
     """``claude -p --output-format json``: one JSON object with ``result``, ``is_error``,
@@ -225,6 +319,9 @@ class ClaudeCodeProvider(NativeAgentProvider):
 
     def base_args(self) -> tuple[str, ...]:
         return ("-p", "--output-format", "json", "--permission-mode", "acceptEdits")
+
+    def effort_args(self, effort: str) -> tuple[str, ...]:
+        return ("--effort", effort)
 
     def read_answer(self, result: ProcessResult) -> ProviderAnswer:
         value = json.loads(result.stdout)
@@ -276,6 +373,9 @@ class CodexProvider(NativeAgentProvider):
 
     def base_args(self) -> tuple[str, ...]:
         return ("exec", "--json", "--full-auto", "--skip-git-repo-check")
+
+    def effort_args(self, effort: str) -> tuple[str, ...]:
+        return ("-c", f'model_reasoning_effort="{effort}"')
 
     def prompt_args(self, prompt: str) -> tuple[str, ...]:
         return ("-",)

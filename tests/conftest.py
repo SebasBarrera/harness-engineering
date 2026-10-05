@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import yaml
 
 from governed_harness.application import HarnessApplication
 
@@ -27,6 +28,43 @@ def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mo
     # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
     # directory; tests keep them in a temporary one.
     monkeypatch.setenv("HARNESS_ANCHOR_DIR", str(tmp_path_factory.mktemp("anchors")))
+
+
+AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
+    "verification": (
+        "interface",
+        "architecture",
+        "securityPatterns",
+        "constraints",
+        "ratchet",
+        "invariants",
+        "differential",
+        "weakenedControls",
+        "testQuality",
+        "secrets",
+        "sarif",
+        "riskFactors",
+        "acceptanceTests",
+    ),
+    "review": ("agentReview", "reviewer", "structuredChanges"),
+    "runtime": ("gateContract", "reproduceFirst"),
+    "governance": ("stopTheLine", "phasePermissions"),
+}
+AGENT_RESULTS_SECTIONS = ("planning", "context", "budget", "memory", "agentRouting")
+
+
+def without_agent_results(root: Path) -> None:
+    """Remove the agent-results settings (#37-#44, #52) that ``harness init`` writes, so a
+    fixture project behaves as before them; tests of those settings turn on what they need."""
+    path = root / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for section, keys in AGENT_RESULTS_KEYS.items():
+        for key in keys:
+            config.get(section, {}).pop(key, None)
+    for section in AGENT_RESULTS_SECTIONS:
+        config.pop(section, None)
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
 def git_init(path: Path) -> None:
@@ -67,6 +105,7 @@ def python_workspace(tmp_path: Path) -> Path:
     )
     git_init(root)
     HarnessApplication().init(root)
+    without_agent_results(root)
     return root
 
 
@@ -106,6 +145,7 @@ def node_workspace(tmp_path: Path) -> Path:
     )
     git_init(root)
     HarnessApplication().init(root)
+    without_agent_results(root)
     return root
 
 

@@ -8,7 +8,6 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Sequence
-from typing import Literal
 
 from governed_harness.domain.enums import FindingSeverity, ResultStatus
 from governed_harness.domain.models import (
@@ -19,6 +18,7 @@ from governed_harness.domain.models import (
     FeedbackDecision,
     FeedbackFinding,
     FeedbackGate,
+    FeedbackTrigger,
     FeedbackValidator,
     Finding,
     ProviderFeedback,
@@ -71,7 +71,7 @@ class FeedbackBuilder:
     def build(
         self,
         *,
-        trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"],
+        trigger: FeedbackTrigger,
         attempt: int,
         change_set_digest: str,
         gate: FeedbackGate,

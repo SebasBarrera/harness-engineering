@@ -61,6 +61,7 @@ from governed_harness.domain.models import (
     Actor,
     Artifact,
     ChangedFile,
+    ChangeRequestItem,
     ChangeSet,
     ClarificationAnswer,
     ClarificationQuestion,
@@ -72,6 +73,7 @@ from governed_harness.domain.models import (
     Execution,
     FeedbackDecision,
     FeedbackGate,
+    FeedbackTrigger,
     Finding,
     FindingLocation,
     GateEvaluation,
@@ -98,6 +100,7 @@ from governed_harness.intake import (
     task_digest,
 )
 from governed_harness.memory import MemoryStore, context_manifest
+from governed_harness.orchestration.agent_results import AgentResults
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
     FeedbackBuilder,
@@ -290,6 +293,7 @@ class RunEngine:
             ),
         )
         self._phase_deadline: float | None = None
+        self.results = AgentResults(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -304,6 +308,9 @@ class RunEngine:
             raise ConfigurationError(
                 f"task project {task.project_id} does not match {self.s.resolved.project.project_id}"
             )
+        if self.results.active:
+            # governance.stopTheLine: block refuses a run on top of unapproved changes.
+            self.results.stop_line.check_new_run(task.project_id)
         execution_id = new_id("run")
         resolved_dict = self.s.resolved.model_dump(mode="json", by_alias=True)
         config_ref = self.s.artifacts.put_json(
@@ -381,7 +388,11 @@ class RunEngine:
 
     def continue_execution(self, execution_id: str) -> Execution:
         try:
-            return self._continue_execution(execution_id)
+            execution = self._continue_execution(execution_id)
+            if self.results.active:
+                # governance.stopTheLine and memory.learnFromFindings at the end of a step.
+                execution = self.results.after_run(execution)
+            return execution
         finally:
             self.anchor_chain(execution_id)
 
@@ -438,7 +449,20 @@ class RunEngine:
                         execution, outcome
                     ):
                         continue
+                    if (
+                        phase_id is PhaseId.INDEPENDENT_REVIEW
+                        and self.results.active
+                        and self.results.after_failed_review(execution, outcome.summary)
+                    ):
+                        continue
                     return execution
+                if (
+                    phase_id is PhaseId.VERIFICATION
+                    and self.results.active
+                    and self.results.after_passed_verification(execution)
+                ):
+                    # planning.decomposition: the next sub-task starts (#39).
+                    continue
             if execution.status in {
                 ResultStatus.PASSED,
                 ResultStatus.CANCELLED,
@@ -452,7 +476,10 @@ class RunEngine:
         actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
         self.s.events.append(execution_id, "run.cancellation.requested", {}, actor=actor)
         try:
-            return self._cancel_execution(execution)
+            cancelled = self._cancel_execution(execution)
+            if self.results.active:
+                self.results.stop_line.stop(cancelled, "cancelled")
+            return cancelled
         finally:
             self.anchor_chain(execution_id)
 
@@ -467,6 +494,8 @@ class RunEngine:
         actor_display_name: str | None = None,
         identity_source: IdentitySource | None = None,
         expires_at: datetime | None = None,
+        acknowledged_risks: tuple[str, ...] = (),
+        change_requests: tuple[ChangeRequestItem, ...] = (),
     ) -> HumanDecision:
         require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
@@ -493,6 +522,11 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
+        if acknowledged_risks or change_requests or self.results.active:
+            # Risk factors to acknowledge and structured change requests (#52).
+            self.results.check_decision(
+                execution, decision, change_set_digest, acknowledged_risks, change_requests
+            )
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
@@ -518,6 +552,8 @@ class RunEngine:
             expires_at=expires_at
             if expires_at is not None
             else (decided_at + timedelta(hours=expiry) if expiry else None),
+            acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
+            change_requests=change_requests,
         )
         self.s.state.put(
             "decision",
@@ -536,6 +572,8 @@ class RunEngine:
             update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
         )
         if decision is DecisionKind.REQUEST_CHANGES:
+            if change_requests:
+                self.results.open_change_requests(execution, record)
             transition = self.state_machine.authorize_correction(PhaseId.DECISION)
             updated = updated.model_copy(
                 update={
@@ -573,7 +611,15 @@ class RunEngine:
                     findings=findings,
                     decision=FeedbackDecision(
                         decision=decision,
-                        rationale=head(record.rationale, FEEDBACK_RATIONALE_CHARS),
+                        rationale=head(
+                            record.rationale
+                            + "".join(
+                                f"\n{item.item_id} (blocking, verified by {item.condition}): "
+                                f"{item.description}"
+                                for item in change_requests
+                            ),
+                            FEEDBACK_RATIONALE_CHARS,
+                        ),
                         actor_id=actor.actor_id,
                     ),
                 )
@@ -590,6 +636,8 @@ class RunEngine:
                 update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
             )
         self._save_execution(updated)
+        if decision is DecisionKind.REJECT and self.results.active:
+            self.results.stop_line.stop(updated, "rejected")
         self.anchor_chain(execution_id)
         return record
 
@@ -859,11 +907,22 @@ class RunEngine:
         if no_acceptance_criteria(task):
             policy = "enforce"
         questions = assess_intent(task) if policy != "off" else ()
+        review_refs: tuple[str, ...] = ()
+        if self.results.active and policy != "off":
+            # Agent review of ambiguity and completeness, and the check of earlier answers
+            # (intake.ambiguityReview, intake.validateAnswers; #37).
+            review = self.results.intent.questions(execution, phase, task, questions)
+            review_refs = review.evidence_refs
+            if review.blocked is not None:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED, review.blocked, (evidence.artifact_ref, *review_refs)
+                )
+            questions = questions + review.questions
         if not questions:
             return PhaseOutcome(
                 ResultStatus.PASSED,
                 "Intent is structured and identifiable",
-                (evidence.artifact_ref,),
+                (evidence.artifact_ref, *review_refs),
             )
         request_evidence = self._request_clarification(
             execution, phase, task, questions, "enforce" if policy == "enforce" else "warn"
@@ -1027,12 +1086,22 @@ class RunEngine:
             "Versioned acceptance contract",
             supports=tuple(item.criterion_id for item in task.acceptance_criteria),
         )
+        if self.results.active:
+            # verification.acceptanceTests (#52): independent tests a person approves.
+            blocked = self.results.acceptance.propose(execution, phase, task)
+            if blocked is not None:
+                return blocked
         return PhaseOutcome(
             ResultStatus.PASSED, "Acceptance contract frozen", (evidence.artifact_ref,)
         )
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
+        if self.results.active:
+            # planning.decomposition (#39): a large task waits for an approved plan.
+            blocked = self.results.decomposition.plan(execution, phase, task)
+            if blocked is not None:
+                return blocked
         selection = MemoryStore(self.s.state).select(
             project_id=execution.project_id,
             task_id=task.task_id,
@@ -1063,11 +1132,14 @@ class RunEngine:
                 expected_evidence=("findings", "gate evaluation", "human decision"),
             ),
         )
+        plan_steps: tuple[PlanStep, ...] = steps
+        if self.results.active:
+            plan_steps = (*self.results.decomposition.plan_steps(execution), *steps)
         plan = Plan(
             plan_id=new_id("plan"),
             execution_id=execution.execution_id,
             task_id=task.task_id,
-            steps=steps,
+            steps=plan_steps,
             risks=("Repository content is untrusted", "Approval becomes stale after any change"),
             validator_ids=tuple(item.validator_id for item in self.s.resolved.effective_validators)
             + (
@@ -1122,73 +1194,16 @@ class RunEngine:
             return PhaseOutcome(ResultStatus.BLOCKED, "No approved plan exists")
         plan = self.s.state.get("plan", plan_id, Plan)
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
-        sandbox: SandboxPlan | None = None
-        sandbox_refs: tuple[str, ...] = ()
-        if provider_id == "simulated":
-            provider: AgentProvider = SimulatedAgentProvider()
-            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
-        else:
-            provider_config = self.s.resolved.project.agent_providers.get(provider_id)
-            if provider_config is None:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED,
-                    f"Provider {provider_id!r} is not configured",
-                )
-            if self.s.resolved.project.runtime.effective_agent_sandbox == "enforce":
-                try:
-                    sandbox = build_sandbox(
-                        self.s.paths.workspace,
-                        self.s.resolved.project.runtime.sandbox_write_paths or (),
-                        self.sandbox_host,
-                        protected=self._protected_paths(),
-                        allow_network=self._agent_network_allowed(),
-                    )
-                except SandboxUnavailable as error:
-                    self._record_sandbox_finding(
-                        execution,
-                        rule_id="sandbox.unavailable",
-                        severity=FindingSeverity.HIGH,
-                        message=f"The agent sandbox is enforced but unavailable: {error}",
-                        recommendation=(
-                            "Run on macOS (sandbox-exec) or on Linux with bubblewrap (bwrap) "
-                            "installed, or set runtime.agentSandbox to off to run the agent "
-                            "with the user's permissions."
-                        ),
-                    )
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED,
-                        f"Agent sandbox unavailable: {error}; the provider was not started",
-                    )
-                sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
-            environment = None
-            if provider_config.pass_env is not None or provider_config.env is not None:
-                environment = provider_environment(provider_config)
-                if environment.missing:
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED,
-                        f"Provider {provider_id!r} needs environment variable(s) "
-                        f"{', '.join(environment.missing)} (env fromEnv); the provider was not "
-                        "started",
-                    )
-                sandbox_refs = (
-                    *sandbox_refs,
-                    self._record_provider_environment(execution, phase, provider_id, environment),
-                )
-            configuration = CommandAgentConfiguration(
-                provider_id=provider_id,
-                argv_prefix=provider_config.effective_command,
-                model=provider_config.model,
-                sandbox_prefix=sandbox.prefix if sandbox else (),
-                environment=environment,
-                self_report=bool(self.s.resolved.project.provenance_settings.self_report),
-                extra_args=provider_config.args or (),
-            )
-            provider = (
-                native_provider(provider_config.kind, configuration)
-                if provider_config.native
-                else CommandAgentProvider(configuration)
-            )
-            actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
+        built = self._build_provider(execution, phase, provider_id)
+        if isinstance(built, PhaseOutcome):
+            return built
+        provider, actor, sandbox, sandbox_refs = built
+        if self.results.active:
+            blocked = self.results.before_agent_call(execution, phase, "implement")
+            if blocked is not None:
+                return blocked
+            # runtime.reproduceFirst: the workspace as the correction attempt found it.
+            self.results.corrections.start(execution, phase)
         grants = grants_from_rules(
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
@@ -1200,6 +1215,12 @@ class RunEngine:
             manifest = json.loads(self.s.artifacts.get(context_uri))
             memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
         runtime = self.s.resolved.project.runtime
+        request_extra: dict[str, Any] | None = None
+        if self.results.active:
+            task = self.results.implementation_task(execution, task)
+            request_extra = self.results.implement_extras(
+                execution, phase, task, provider_id, actor, grants
+            )
         context = SimulatedAgentContext(
             execution_id=execution.execution_id,
             workspace=self.s.paths.workspace,
@@ -1214,6 +1235,7 @@ class RunEngine:
             context_manifest_ref=context_uri,
             memory_context=memory_context,
             feedback=self._pending_feedback(execution, phase),
+            request_extra=request_extra,
         )
         guard = (
             ExcludedPathGuard(
@@ -1249,6 +1271,10 @@ class RunEngine:
         finally:
             if guard is not None and guard_before is not None:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
+        if self.results.active:
+            self.results.after_agent_call(execution, phase, result)
+            if result.status is ResultStatus.PASSED:
+                self.results.corrections.end(execution, phase, result)
         if (
             result.status is ResultStatus.PASSED
             and runtime.claim_check_enabled
@@ -1287,6 +1313,80 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    def _build_provider(
+        self, execution: Execution, phase: PhaseExecution, provider_id: str
+    ) -> tuple[AgentProvider, Actor, SandboxPlan | None, tuple[str, ...]] | PhaseOutcome:
+        """The provider of a run (or of one call kind), with the agent sandbox when it is
+        enforced; a phase outcome when the provider cannot be started."""
+        sandbox: SandboxPlan | None = None
+        sandbox_refs: tuple[str, ...] = ()
+        if provider_id == "simulated":
+            provider: AgentProvider = SimulatedAgentProvider()
+            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
+            return provider, actor, sandbox, sandbox_refs
+        provider_config = self.s.resolved.project.agent_providers.get(provider_id)
+        if provider_config is None:
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"Provider {provider_id!r} is not configured",
+            )
+        if self.s.resolved.project.runtime.effective_agent_sandbox == "enforce":
+            try:
+                sandbox = build_sandbox(
+                    self.s.paths.workspace,
+                    self.s.resolved.project.runtime.sandbox_write_paths or (),
+                    self.sandbox_host,
+                    protected=self._protected_paths(),
+                    allow_network=self._agent_network_allowed(),
+                )
+            except SandboxUnavailable as error:
+                self._record_sandbox_finding(
+                    execution,
+                    rule_id="sandbox.unavailable",
+                    severity=FindingSeverity.HIGH,
+                    message=f"The agent sandbox is enforced but unavailable: {error}",
+                    recommendation=(
+                        "Run on macOS (sandbox-exec) or on Linux with bubblewrap (bwrap) "
+                        "installed, or set runtime.agentSandbox to off to run the agent "
+                        "with the user's permissions."
+                    ),
+                )
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    f"Agent sandbox unavailable: {error}; the provider was not started",
+                )
+            sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
+        environment = None
+        if provider_config.pass_env is not None or provider_config.env is not None:
+            environment = provider_environment(provider_config)
+            if environment.missing:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    f"Provider {provider_id!r} needs environment variable(s) "
+                    f"{', '.join(environment.missing)} (env fromEnv); the provider was not "
+                    "started",
+                )
+            sandbox_refs = (
+                *sandbox_refs,
+                self._record_provider_environment(execution, phase, provider_id, environment),
+            )
+        configuration = CommandAgentConfiguration(
+            provider_id=provider_id,
+            argv_prefix=provider_config.effective_command,
+            model=provider_config.model,
+            sandbox_prefix=sandbox.prefix if sandbox else (),
+            environment=environment,
+            self_report=bool(self.s.resolved.project.provenance_settings.self_report),
+            extra_args=provider_config.args or (),
+        )
+        provider = (
+            native_provider(provider_config.kind, configuration)
+            if provider_config.native
+            else CommandAgentProvider(configuration)
+        )
+        actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
+        return provider, actor, sandbox, sandbox_refs
 
     # ----- declared settings (#51) -------------------------------------------------------
     def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:
@@ -1874,6 +1974,11 @@ class RunEngine:
             outputs.append(
                 self._verify_requirement_traceability(execution, phase, change_set, policy)
             )
+        if self.results.active:
+            # Deterministic checks of the agent-results settings, then the comparison of
+            # failing validators with the baseline (verification.differential, #7).
+            outputs.extend(self.results.verification.run(execution, phase, change_set))
+            outputs = self.results.after_verification(execution, phase, change_set, outputs)
         mandatory_non_passed = [
             output.result
             for output in outputs
@@ -1899,6 +2004,9 @@ class RunEngine:
         """Relate the task's identified requirements to the tests of the workspace; the mapping
         is recorded as VERIFICATION evidence and each untraced requirement as a finding."""
         task = self.run_task(execution)
+        if self.results.active:
+            # Under decomposition, the requirements of the sub-tasks implemented so far.
+            task = self.results.decomposition.verification_task(execution, task)
         validator = RequirementTraceabilityValidator(
             policy, (profile.technology for profile in self.s.resolved.profiles)
         )
@@ -1947,7 +2055,12 @@ class RunEngine:
         grants = grants_from_rules(
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
-        output = IndependentReviewValidator().execute(
+        skip = (
+            frozenset({"review.possible-secret"})
+            if self.results.active and self.results.secrets_in_context
+            else frozenset()
+        )
+        output = IndependentReviewValidator(skip).execute(
             ValidationContext(
                 execution_id=execution.execution_id,
                 workspace=self.s.paths.workspace,
@@ -1966,6 +2079,15 @@ class RunEngine:
             )
         )
         self._save_validator_output(execution, output)
+        if self.results.active:
+            # review.agentReview (#38): a second reviewer after the deterministic checks.
+            review = self.results.agent_review.run(execution, phase, change_set)
+            if review.blocking and self.results.review_correction_available(execution):
+                return PhaseOutcome(
+                    ResultStatus.FAILED,
+                    f"The agent review found {len(review.blocking)} blocking finding(s)",
+                    output.result.evidence_refs,
+                )
         return PhaseOutcome(
             ResultStatus.PASSED,
             output.result.summary,
@@ -2211,9 +2333,13 @@ class RunEngine:
             return False
         if runtime.claim_check_enabled:
             self._record_unsupported_claim(execution, failing)
+        events = self.s.events.list(execution.execution_id)
+        if self.results.active:
+            # planning.decomposition (#39): each sub-task has its own correction budget.
+            events = events[self.results.decomposition.budget_start(events) :]
         used = sum(
             1
-            for event in self.s.events.list(execution.execution_id)
+            for event in events
             if event.event_type == "correction.authorized"
             and event.payload.get("trigger") == "VERIFICATION_FAILED"
         )
@@ -2232,7 +2358,8 @@ class RunEngine:
                         "changeSetDigest": execution.change_set_digest,
                     },
                 )
-            return False
+            # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
+            return self.results.active and self.results.replan_after_failure(execution)
         feedback_ref: str | None = None
         if self._feedback_applies(execution.execution_id):
             findings = [
@@ -2281,6 +2408,9 @@ class RunEngine:
                 "feedbackRef": feedback_ref,
             },
         )
+        if self.results.active:
+            # agentRouting (#44): a quality failure climbs the escalation ladder.
+            self.results.escalate(execution, "VERIFICATION_FAILED")
         return True
 
     def _record_unsupported_claim(
@@ -2365,7 +2495,7 @@ class RunEngine:
         execution: Execution,
         phase_id: PhaseId,
         *,
-        trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"],
+        trigger: FeedbackTrigger,
         change_set_digest: str,
         gate: FeedbackGate,
         validations: list[ValidationResult],

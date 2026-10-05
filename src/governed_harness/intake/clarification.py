@@ -555,6 +555,10 @@ def revise_task(
                     requirements.append(requirement)
                     added_requirements.append(requirement.requirement_id)
             continue
+        if question.rule_id == "A1" and question.category == "out-of-scope":
+            # An agent's out-of-scope question is answered with what the task leaves out.
+            constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
+            continue
         if question.target == TASK_TARGET:
             if clarification.add_requirements or clarification.add_criteria:
                 continue

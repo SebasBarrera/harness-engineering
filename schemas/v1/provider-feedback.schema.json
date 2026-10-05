@@ -93,7 +93,8 @@
         "gateId": {
           "enum": [
             "verification",
-            "delivery_candidate"
+            "delivery_candidate",
+            "independent_review"
           ],
           "title": "Gateid",
           "type": "string"
@@ -303,7 +304,8 @@
     "trigger": {
       "enum": [
         "VERIFICATION_FAILED",
-        "CHANGES_REQUESTED"
+        "CHANGES_REQUESTED",
+        "REVIEW_FINDINGS"
       ],
       "title": "Trigger",
       "type": "string"

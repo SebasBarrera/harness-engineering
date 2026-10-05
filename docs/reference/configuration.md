@@ -52,20 +52,94 @@ runtime:
   providerRetries: 3
   providerRetryDelaySeconds: 60
   extendedRedaction: true
+  gateContract: true
+  reproduceFirst: true
 retention:
   artifactDays: 30
   eventDays: 365
   orphanArtifacts: true
 intake:
   criteriaPolicy: enforce
+  ambiguityReview: agent
+  validateAnswers: true
 verification:
   requirementTraceability: enforce
   outputParsers: true
+  interface: enforce
+  architecture:
+    maxModuleLines: 800
+    maxFunctionLines: 80
+    maxComplexity: 15
+    severity: MEDIUM
+  securityPatterns: true
+  constraints: enforce
+  ratchet: enforce
+  differential: true
+  weakenedControls: enforce
+  testQuality:
+    assertions: true
+    interfaceTests: true
+    diffCoverage: 80
+    flakyReruns: 1
+    severity: MEDIUM
+  secrets: context
+  riskFactors:
+    newDependency: acknowledge
+    authentication: acknowledge
+    destructiveMigration: block
+    publicContract: acknowledge
+    network: acknowledge
+    floatMoney: block
+    sensitiveLogging: block
+    deletedWithoutTests: inform
+  acceptanceTests:
+    mode: agent
 review:
   exceptions: true
   exceptionDays: 30
+  agentReview: enforce
+  structuredChanges: true
 retrospective:
   causal: true
+planning:
+  decomposition: agent
+  threshold: 12
+  granularity: adaptive
+  coarseModels:
+  - claude-sonnet-5-5
+  - claude-opus-5-5
+  - gpt-6.1-sol
+context:
+  manifest: auto
+  maxFiles: 40
+  maxBytes: 400000
+budget:
+  perCall:
+    costUsd: 25
+    wallSeconds: 7200
+  perTask:
+    costUsd: 200
+  perRun:
+    costUsd: 100
+    tokens: 500000000
+    wallSeconds: 43200
+  warnAt: 0.8
+memory:
+  learnFromFindings: auto
+  autoApproveRecurring: false
+agentRouting:
+  mode: tiered
+  thresholds:
+    requirements:
+    - 5
+    - 15
+    files:
+    - 5
+    - 20
+    loc:
+    - 2000
+    - 10000
+  maxEscalations: 2
 governance:
   deciderIdentity: git
   confirmDecisionDigest: true
@@ -82,6 +156,8 @@ governance:
   decisionExpiryHours: 72
   applyProfilePolicies: true
   applyNetworkPolicy: true
+  stopTheLine: restore
+  phasePermissions: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -135,6 +211,12 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
 | `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
+| `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes `agent` and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
+| `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
+| `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
+| `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
+| `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
+| `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |

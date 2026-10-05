@@ -1,4 +1,4 @@
-# Gitleaks configuration: the default rules plus one documented exception.
+# Gitleaks configuration: the default rules plus documented exceptions.
 title = "harness-engineering"
 
 [extend]
@@ -11,3 +11,7 @@ regexes = ['''s3cret-from-env''']
 [[allowlists]]
 description = "Fictitious credential once used by the native-adapter redaction test (commit 5b6b918, since replaced); it is not a credential."
 regexes = ['''sk-test-0123456789abcdef''']
+
+[[allowlists]]
+description = "Fictitious sample values of the context-aware secret check's unit tests in an earlier commit of the wave 2 branch; they are not credentials and were replaced by plain words."
+regexes = ['''k-91827364-live''', '''^abcdef123456$''']

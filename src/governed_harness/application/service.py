@@ -71,6 +71,7 @@ from governed_harness.domain.models import (
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
+from governed_harness.orchestration.gate_contract import run_check
 from governed_harness.orchestration.retention import RetentionCollector
 from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
@@ -79,6 +80,18 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
+from .agent_results import (
+    acceptance_state,
+    agent_results_summary,
+    budget_state,
+    decide_acceptance,
+    decide_plan,
+    parse_change_requests,
+    plan_state,
+    quarantine_run,
+    raise_budget,
+    routing_calibration,
+)
 from .clarification_loader import load_clarification_file
 from .exceptions import (
     ExceptionOptions,
@@ -194,6 +207,7 @@ class HarnessApplication:
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
             "governance": self._governance(resolved.project.governance_settings),
+            "agentResults": agent_results_summary(resolved.project),
             **self._wave4_settings(resolved),
             "declarative": declarative,
             "warnings": warnings,
@@ -420,6 +434,120 @@ class HarnessApplication:
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
 
+    def routing_calibration(self, path: Path) -> dict[str, Any]:
+        """Cost per approved task of the routing decisions recorded in the project (#44)."""
+        with self._services(path) as services:
+            return routing_calibration(services)
+
+    def budget(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """Usage of a run and its task against the budget limits (#42)."""
+        with self._services(path) as services:
+            return budget_state(services, self._run_id(services, execution_id))
+
+    def raise_budget(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        scope: str,
+        metric: str,
+        limit: float,
+        rationale: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Raise a budget limit of a run (a person, recorded); ``run continue`` resumes it."""
+        with self._services(path) as services, self._leased(services, "budget raise"):
+            execution_id = self._run_id(services, execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return raise_budget(
+                services,
+                execution_id,
+                scope=scope,
+                metric=metric,
+                limit=limit,
+                actor_id=decider,
+                rationale=rationale,
+            )
+
+    def acceptance(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """The acceptance tests proposed or frozen for a run (#52)."""
+        with self._services(path) as services:
+            return acceptance_state(services, self._run_id(services, execution_id))
+
+    def decide_acceptance(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        digest: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject the proposed acceptance tests (digest-bound, a person)."""
+        with self._services(path) as services, self._leased(services, "acceptance decide") as lease:
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_acceptance(
+                services,
+                execution_id,
+                decision=decision,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                continue_after=continue_after,
+            )
+
+    def plan(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """The decomposition of a run and the progress of its sub-tasks (#39)."""
+        with self._services(path) as services:
+            return plan_state(services, self._run_id(services, execution_id))
+
+    def decide_plan(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        digest: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject the decomposition PLANNING proposed (digest-bound, a person)."""
+        with self._services(path) as services, self._leased(services, "plan decide") as lease:
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_plan(
+                services,
+                execution_id,
+                decision=decision,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                continue_after=continue_after,
+            )
+
+    def check(self, path: Path, execution_id: str | None = None) -> dict[str, Any]:
+        """``harness check``: the gate's validators and diff checks on the workspace, with
+        nothing recorded (it reads the configuration and the run's check state only)."""
+        return run_check(path, execution_id)
+
+    def quarantine_run(
+        self, path: Path, execution_id: str, actor_id: str | None = None
+    ) -> dict[str, Any]:
+        """Quarantine the changes of a stopped run and restore the baseline
+        (``governance.stopTheLine``); a person only."""
+        with self._services(path) as services, self._leased(services, "run quarantine"):
+            execution_id = self._run_id(services, execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return quarantine_run(services, execution_id, decider)
+
     @classmethod
     def _after(cls, services: EngineServices, execution: Execution) -> Execution:
         """Side effects of reaching a state a person cares about: the webhooks of
@@ -494,6 +622,8 @@ class HarnessApplication:
         continue_after: bool = True,
         default_actor: str = DEFAULT_CLI_ACTOR,
         exception: ExceptionOptions | None = None,
+        acknowledged_risks: tuple[str, ...] = (),
+        change_requests: tuple[str, ...] = (),
     ) -> tuple[HumanDecision, Execution]:
         """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
         records an exception with an expiry (``expires_in``/``expires_at``, else
@@ -542,6 +672,8 @@ class HarnessApplication:
                 if services.resolved.project.governance_settings.git_decider
                 else None,
                 expires_at=expiry,
+                acknowledged_risks=acknowledged_risks,
+                change_requests=parse_change_requests(change_requests),
             )
             if records_exception:
                 granted = record_exception(

@@ -7,8 +7,8 @@ checked against the documented expectation. The script is used by CI in three wa
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
-  clarification, traceability, corrections, integrity and delivery flows, leaving the projects in
-  ``--workdir`` so ``scripts/metrics_report.py`` can read them;
+  clarification, traceability, corrections, integrity, delivery and agent-results flows,
+  leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
@@ -248,6 +248,45 @@ def node_project(root: Path) -> Path:
     return root
 
 
+AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
+    "verification": (
+        "interface",
+        "architecture",
+        "securityPatterns",
+        "constraints",
+        "ratchet",
+        "invariants",
+        "differential",
+        "weakenedControls",
+        "testQuality",
+        "secrets",
+        "sarif",
+        "riskFactors",
+        "acceptanceTests",
+    ),
+    "review": ("agentReview", "reviewer", "structuredChanges"),
+    "runtime": ("gateContract", "reproduceFirst"),
+    "governance": ("stopTheLine", "phasePermissions"),
+}
+
+
+def without_agent_results(root: Path) -> None:
+    """Remove the agent-results settings (#52) that ``harness init`` writes. The thesis flows
+    document the behaviour before them (for example a broken baseline that blocks); the
+    ``agent-results`` flow shows the written defaults."""
+    import yaml  # a dependency of the package
+
+    path = root / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text())
+    for section, keys in AGENT_RESULTS_KEYS.items():
+        for key in keys:
+            config.get(section, {}).pop(key, None)
+    for section in ("planning", "context", "budget", "memory", "agentRouting"):
+        config.pop(section, None)
+    path.write_text(yaml.safe_dump(config, sort_keys=False))
+
+
 def current_digest(t: Transcript, flow: str, root: Path, run_id: str) -> str:
     status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
     return str(status["execution"]["changeSetDigest"])
@@ -329,6 +368,7 @@ def flow_later_change(t: Transcript, root: Path) -> None:
     python_project(root)
     (root / "task.yaml").write_text(PY_TASK)
     t.run(flow, root, ["init", "--path", "."], 0)
+    without_agent_results(root)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
     run_id = t.json(
         flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 4
@@ -422,6 +462,7 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     git(root, "commit", "-qm", "legacy test (already broken)")
     (root / "task.yaml").write_text(PY_TASK)
     t.run(flow, root, ["init", "--path", "."], 0)
+    without_agent_results(root)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
     started = t.json(
         flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 6
@@ -477,6 +518,7 @@ def flow_review_exception(t: Transcript, root: Path) -> None:
         )
     )
     t.run(flow, root, ["init", "--path", "."], 0)
+    without_agent_results(root)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", "--path", ".", "--task", "task_python_secret"], 4)[
         "executionId"
@@ -602,6 +644,7 @@ def flow_memory(t: Transcript, root: Path) -> None:
     (root / "task.yaml").write_text(PY_TASK)
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
+    without_agent_results(root)
     proposal = t.json(
         flow,
         root,
@@ -1000,6 +1043,7 @@ def flow_corrections(t: Transcript, root: Path) -> None:
     python_project(root)
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
+    without_agent_results(root)
     (root / "agent.py").write_text(CORRECTING_AGENT)
     config = root / ".harness" / "project.yaml"
     # The flow runs on hosts without a sandbox mechanism (CI Linux without bwrap, Windows).
@@ -1062,6 +1106,7 @@ def flow_integrity(t: Transcript, root: Path) -> None:
     (root / "task.yaml").write_text(PY_TASK)
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
+    without_agent_results(root)
     validated = t.json(flow, root, ["config", "validate", *here], 0)
     t.check(
         flow,
@@ -1163,6 +1208,62 @@ def flow_delivery(t: Transcript, root: Path) -> None:
     t.run(flow, root, [*approval, "--head", "HEAD", "--bundle", "evidence.tar.gz"], 5)
 
 
+def flow_agent_results(t: Transcript, root: Path) -> None:
+    """The agent-results settings init writes (wave 2, #52), with the simulated provider: a
+    failure the baseline already has does not block, harness check runs the gate without
+    recording anything, and a rejected run's changes are quarantined (stop the line)."""
+    flow = "agent-results"
+    python_project(root)
+    legacy = root / "tests" / "test_legacy.py"
+    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "legacy test (already broken)")
+    (root / "task.yaml").write_text(PY_TASK)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    validated = t.json(flow, root, ["config", "validate", *here], 0)
+    t.check(
+        flow,
+        validated["agentResults"]["checks"].get("differential") is True,
+        "init enables the comparison with the baseline",
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_add_discount"], 4)[
+        "executionId"
+    ]
+    status = t.json(flow, root, ["status", *here, "--run", run_id], 0)
+    t.check(
+        flow,
+        status["gate"]["status"] == "PASSED",
+        "the failure the baseline already had does not block the gate",
+    )
+    # harness check runs the gate's validators: the legacy failure is still a failure there.
+    t.run(flow, root, ["check", *here, "--run", run_id], 6)
+    digest = current_digest(t, flow, root, run_id)
+    t.run(
+        flow,
+        root,
+        [
+            "gate",
+            "decide",
+            *here,
+            "--run",
+            run_id,
+            "--decision",
+            "REJECT",
+            "--change-set-digest",
+            digest,
+            "--actor",
+            "human.reviewer",
+            "--rationale",
+            "Not this change",
+        ],
+        6,
+    )
+    pricing = (root / "src" / "sample" / "pricing.py").read_text()
+    t.check(flow, "1 - rate" not in pricing, "the rejected change was quarantined")
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -1175,6 +1276,7 @@ FLOWS = {
     "corrections": flow_corrections,
     "integrity": flow_integrity,
     "delivery": flow_delivery,
+    "agent-results": flow_agent_results,
 }
 
 

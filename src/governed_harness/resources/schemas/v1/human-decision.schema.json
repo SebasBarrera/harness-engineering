@@ -55,6 +55,36 @@
       "title": "ActorType",
       "type": "string"
     },
+    "ChangeRequestItem": {
+      "additionalProperties": false,
+      "description": "A blocking item of a structured REQUEST_CHANGES: what must change and the condition\nthat verifies it. ``test:<pytest node id>`` must pass; ``absent:<regex>`` must not match\nany added line of the ChangeSet; ``text`` items are sent to the agent and shown to the\nreviewer but are not checked by a tool.",
+      "properties": {
+        "condition": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Condition",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "itemId": {
+          "pattern": "^CR-[1-9][0-9]*$",
+          "title": "Itemid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "itemId",
+        "description",
+        "condition"
+      ],
+      "title": "ChangeRequestItem",
+      "type": "object"
+    },
     "DecisionKind": {
       "enum": [
         "APPROVE",
@@ -82,8 +112,24 @@
       "default": null,
       "title": "Acceptancecontractdigest"
     },
+    "acknowledgedRisks": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Acknowledgedrisks",
+      "type": "array"
+    },
     "actor": {
       "$ref": "#/$defs/Actor"
+    },
+    "changeRequests": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ChangeRequestItem"
+      },
+      "title": "Changerequests",
+      "type": "array"
     },
     "changeSetDigest": {
       "title": "Changesetdigest",

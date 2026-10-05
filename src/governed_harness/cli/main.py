@@ -40,6 +40,10 @@ artifact_app = typer.Typer(help="Artifact store commands")
 exceptions_app = typer.Typer(help="Exception ledger commands")
 rules_app = typer.Typer(help="Rule and validator health across runs")
 outcome_app = typer.Typer(help="Outcomes after a run (incidents, reverts, hotfixes)")
+plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-tasks")
+acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
+budget_app = typer.Typer(help="Governed budget of agent calls")
+routing_app = typer.Typer(help="Model and effort routing of agent calls")
 pr_app = typer.Typer(help="Pull request integration")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
@@ -56,6 +60,10 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(exceptions_app, name="exceptions")
 app.add_typer(rules_app, name="rules")
 app.add_typer(outcome_app, name="outcome")
+app.add_typer(plan_app, name="plan")
+app.add_typer(acceptance_app, name="acceptance")
+app.add_typer(budget_app, name="budget")
+app.add_typer(routing_app, name="routing")
 app.add_typer(pr_app, name="pr")
 
 
@@ -413,6 +421,204 @@ def run_cancel(
     event."""
     execution = _call(lambda: _acting().cancel_run(path, run, actor))
     _emit(execution, kind="execution")
+
+
+@plan_app.command("show")
+def plan_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the decomposition PLANNING proposed for a run (`planning.decomposition`), its
+    digest, its status and the sub-tasks completed so far."""
+    _emit(_call(lambda: HarnessApplication().plan(path, run)), kind="plan")
+
+
+@plan_app.command("decide")
+def plan_decide(
+    run: str = RUN_OPTION,
+    decision: DecisionKind = typer.Option(
+        ..., "--decision", case_sensitive=False, help="APPROVE or REJECT"
+    ),
+    digest: str = typer.Option(
+        ..., "--digest", help="Digest of the proposed plan shown by plan show"
+    ),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
+    sub-tasks in order, each with its own verification and gate; REJECT keeps the task whole.
+    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5."""
+    result = _call(
+        lambda: _acting().decide_plan(
+            path,
+            execution_id=run,
+            decision=decision,
+            digest=digest,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result, kind="plan")
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
+
+
+@routing_app.command("calibrate")
+def routing_calibrate(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Report the cost per approved task of every routing decision recorded in the project
+    (`agentRouting`), by provider family, call kind, task size, model and effort, and suggest
+    the cheapest implement rung per size among groups with at least two approved runs. Nothing
+    is applied: a person edits `agentRouting.tables`."""
+    _emit(_call(lambda: HarnessApplication().routing_calibration(path)), kind="routing")
+
+
+@budget_app.command("show")
+def budget_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the usage of a run and of its task (reported tokens and cost, measured wall time of
+    the agent calls) against the `budget` limits, the limits a person raised and what remains."""
+    _emit(_call(lambda: HarnessApplication().budget(path, run)), kind="budget")
+
+
+@budget_app.command("raise")
+def budget_raise(
+    run: str = RUN_OPTION,
+    scope: str = typer.Option(..., "--scope", help="call, task or run"),
+    metric: str = typer.Option(..., "--metric", help="costUsd, tokens or wallSeconds"),
+    limit: float = typer.Option(..., "--to", help="The new limit; it must be above the current"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Raise a budget limit of a run blocked with budget.exceeded; the raise is recorded on the
+    run's event chain with the person and the rationale, then `harness run continue` resumes the
+    run. A non-human actor, a lower limit or a missing rationale exits 5."""
+    _emit(
+        _call(
+            lambda: _acting().raise_budget(
+                path,
+                execution_id=run,
+                scope=scope,
+                metric=metric,
+                limit=limit,
+                rationale=rationale,
+                actor_id=actor,
+            )
+        ),
+        kind="budget",
+    )
+
+
+@acceptance_app.command("show")
+def acceptance_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the acceptance tests proposed for a run (`verification.acceptanceTests`), their
+    digest, their status and, once approved, the frozen files and their digests."""
+    _emit(_call(lambda: HarnessApplication().acceptance(path, run)), kind="acceptance")
+
+
+@acceptance_app.command("decide")
+def acceptance_decide(
+    run: str = RUN_OPTION,
+    decision: DecisionKind = typer.Option(
+        ..., "--decision", case_sensitive=False, help="APPROVE or REJECT"
+    ),
+    digest: str = typer.Option(..., "--digest", help="Digest shown by acceptance show"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Approve or reject the proposed acceptance tests, bound to their digest. APPROVE writes
+    and freezes them, runs them once on the workspace before the change and resumes the run;
+    every later VERIFICATION checks that they are unchanged and pass. A stale digest or a
+    non-human actor exits 5."""
+    result = _call(
+        lambda: _acting().decide_acceptance(
+            path,
+            execution_id=run,
+            decision=decision,
+            digest=digest,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result, kind="acceptance")
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
+
+
+@app.command("check")
+def check(
+    run: str | None = typer.Option(
+        None,
+        "--run",
+        help="Run whose task and baseline the diff checks use (default: the latest run that "
+        "wrote a check state)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Run the validators of the gate and the enabled diff checks on the workspace, without
+    recording anything (`runtime.gateContract`). The agent can run it before it finishes; the
+    implement request carries the exact command. Exit 0 when every mandatory validator passes
+    and no enforced check reports a blocking problem, 6 otherwise."""
+    result = _call(lambda: HarnessApplication().check(path, run))
+    _emit(result, json_output, kind="check")
+    if result["status"] != "PASSED":
+        raise typer.Exit(code=6)
+
+
+@run_app.command("quarantine")
+def run_quarantine(
+    run: str = RUN_OPTION,
+    actor: str | None = typer.Option(
+        None,
+        "--actor",
+        help=ACTOR_HELP,
+        show_default=False,
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Keep the changes of a run that stopped without approval as a quarantined patch and
+    restore the workspace to its baseline (`governance.stopTheLine`). This releases a line
+    blocked by `stopTheLine: block`. A run that is closed or still open for a decision is
+    refused (exit 5)."""
+    _emit(_call(lambda: _acting().quarantine_run(path, run, actor)), kind="quarantine")
 
 
 @run_app.command("list")
@@ -825,6 +1031,20 @@ def gate_decide(
         help="Show the decision brief and confirm the ChangeSet digest even when every option "
         "is given",
     ),
+    acknowledge_risk: list[str] | None = typer.Option(
+        None,
+        "--acknowledge-risk",
+        help="APPROVE or APPROVE_EXCEPTION under verification.riskFactors: a risk factor of the "
+        "ChangeSet the decider acknowledges (repeatable; required for every factor whose "
+        "action is acknowledge)",
+    ),
+    change_request: list[str] | None = typer.Option(
+        None,
+        "--change-request",
+        help="REQUEST_CHANGES under review.structuredChanges: a blocking item as "
+        "'description::condition' where the condition is test:NODE_ID (a pytest node id), "
+        "absent:REGEX or text (repeatable)",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -879,6 +1099,8 @@ def gate_decide(
             rationale=reason,
             continue_after=continue_after,
             exception=exception,
+            acknowledged_risks=tuple(acknowledge_risk or ()),
+            change_requests=tuple(change_request or ()),
         ),
         hint=_decide_hint(application, path, run_id),
     )

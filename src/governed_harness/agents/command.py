@@ -6,8 +6,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from governed_harness.agents.base import AgentContext, AgentExecutionResult
+from governed_harness.agents.base import AgentCallResult, AgentContext, AgentExecutionResult
 from governed_harness.agents.environment import ProviderEnvironment
+from governed_harness.agents.requests import CallKind
 from governed_harness.agents.self_report import REQUEST_BLOCK
 from governed_harness.domain.enums import (
     ActorType,
@@ -56,6 +57,9 @@ class ProviderAnswer:
     usage_limitations: tuple[str, ...] = ()
     session_id: str | None = None
     self_report: Any = None
+    result: Any = None
+    """The structured ``result`` of a ``clarify``, ``acceptance``, ``plan`` or ``review``
+    answer (since 1.1)."""
 
 
 class CommandAgentProvider:
@@ -92,6 +96,12 @@ class CommandAgentProvider:
             request["feedback"] = context.feedback
         if self.configuration.self_report:
             request["selfReport"] = dict(REQUEST_BLOCK)
+        # The agent-results settings (gate contract, permissions, context manifest, lessons,
+        # budget, routing) add their keys, and the kind and instructions with them; without
+        # any of them the request keeps the 1.0 form.
+        extra = context.request_extra
+        if extra:
+            request.update(extra)
         return request
 
     def process_input(
@@ -116,13 +126,52 @@ class CommandAgentProvider:
             summary=str(response.get("summary", f"Agent CLI exited with {result.exit_code}")),
             usage=response.get("usage"),
             self_report=response.get("selfReport") if self.configuration.self_report else None,
+            result=response.get("result"),
         )
 
     def failure_summary(self, result: ProcessResult) -> str:
         return f"Agent CLI exited with {result.exit_code}"
 
-    # ----- the invocation ------------------------------------------------------------------
+    def extract_result(self, result: ProcessResult) -> Any:
+        """The ``result`` object of a read-only call when the answer did not carry it in the
+        protocol field (built-in adapters read it from the agent's text)."""
+        return None
+
+    # ----- the invocations -----------------------------------------------------------------
     def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
+        request = self.build_request(task, plan, context)
+        execution, _ = self._invoke(
+            request,
+            context,
+            phase_id=PhaseId.IMPLEMENTATION,
+            call_kind="implement" if context.request_extra else None,
+        )
+        return execution
+
+    def call(
+        self,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+    ) -> AgentCallResult:
+        """Send a read-only ``clarify``, ``acceptance``, ``plan`` or ``review`` request. A
+        passing answer must carry a ``result`` object; otherwise it is a protocol error."""
+        execution, result = self._invoke(
+            dict(request), context, phase_id=phase_id, call_kind=kind, require_result=True
+        )
+        return AgentCallResult(execution, result)
+
+    def _invoke(
+        self,
+        request: dict[str, object],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+        call_kind: CallKind | None,
+        require_result: bool = False,
+    ) -> tuple[AgentExecutionResult, dict[str, Any] | None]:
         actor = context.provenance.actor
         if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
             actor = Actor(
@@ -131,7 +180,6 @@ class CommandAgentProvider:
                 version="1",
             )
         started = datetime.now(UTC)
-        request = self.build_request(task, plan, context)
         prompt_digest = sha256_json(request)
         argv, stdin, recorded_argv = self.process_input(request, context)
         environment = self.configuration.environment
@@ -155,7 +203,7 @@ class CommandAgentProvider:
         tool = ToolInvocation(
             invocation_id=new_id("tool"),
             execution_id=context.execution_id,
-            phase_id=PhaseId.IMPLEMENTATION,
+            phase_id=phase_id,
             actor=actor,
             tool_id="agent.cli",
             argv=recorded_argv,
@@ -178,6 +226,7 @@ class CommandAgentProvider:
         usage_ref: str | None = None
         session_id: str | None = None
         self_report: Any = None
+        structured: dict[str, Any] | None = None
         if result.status is ResultStatus.PASSED:
             try:
                 answer = self.read_answer(result)
@@ -197,8 +246,17 @@ class CommandAgentProvider:
                 summary = answer.summary
                 session_id = answer.session_id
                 self_report = answer.self_report
+                if require_result and status is ResultStatus.PASSED:
+                    value = (
+                        answer.result if answer.result is not None else self.extract_result(result)
+                    )
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            f"a {call_kind} response that passes needs a 'result' object"
+                        )
+                    structured = value
             except Exception as exc:
-                usage, usage_ref = None, None
+                usage, usage_ref, structured = None, None, None
                 status = ResultStatus.ERROR
                 error = HarnessErrorRecord(
                     error_id=new_id("err"),
@@ -214,13 +272,14 @@ class CommandAgentProvider:
                 error = error.model_copy(
                     update={"message": redactor.redact_configured_text(error.message)}
                 )
+        routing = request_routing(request)
         invocation = AgentInvocation(
             invocation_id=invocation_id,
             execution_id=context.execution_id,
-            phase_id=PhaseId.IMPLEMENTATION,
+            phase_id=phase_id,
             actor=actor,
             provider=self.provider_id,
-            model=self.configuration.model,
+            model=routing.get("model") or self.configuration.model,
             session_id=session_id,
             started_at=started,
             finished_at=datetime.now(UTC),
@@ -231,10 +290,26 @@ class CommandAgentProvider:
             usage_ref=usage_ref,
             output_ref=stdout_ref.uri,
             error=error,
+            call_kind=call_kind,
+            effort=routing.get("effort"),
         )
-        return AgentExecutionResult(
-            status, summary, invocation, (tool,), stdout_ref.uri, usage, self_report
+        return (
+            AgentExecutionResult(
+                status, summary, invocation, (tool,), stdout_ref.uri, usage, self_report
+            ),
+            structured,
         )
+
+
+def request_routing(request: dict[str, object]) -> dict[str, str]:
+    """The model and effort a request carries under ``agentRouting`` or a call's own setting
+    (``routing``); empty without them."""
+    routing = request.get("routing")
+    if not isinstance(routing, dict):
+        return {}
+    return {
+        name: str(routing[name]) for name in ("model", "effort") if routing.get(name) is not None
+    }
 
 
 _USAGE_FIELDS = {

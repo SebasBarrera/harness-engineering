@@ -178,21 +178,35 @@ class Task(StrictModel):
         return data
 
 
-ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1"]
+ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2"]
+"""``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 1.1 ``A1`` is a question an
+agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37) and ``A2``
+a question about an answer that refers to something the task and the workspace do not contain
+(``intake.validateAnswers``)."""
 
 
 class ClarificationQuestion(StrictModel):
-    """A question raised by the deterministic intent assessment in INTENT.
+    """A question raised in INTENT by the deterministic intent assessment or, since 1.1, by the
+    agent review of the task or the check of earlier answers.
 
     ``target`` is the criterion id the question is about, ``task`` for the task as a whole,
     or ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for
     example ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,
-    ``Q-2``, ...)."""
+    ``Q-2``, ...). ``category`` groups the questions of an agent review (ambiguity,
+    completeness categories, consistency) and is left out when absent."""
 
     question_id: str = Field(pattern=r"^Q-[1-9][0-9]*$")
     rule_id: ClarificationRule
     target: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    category: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_category(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.category is None:
+            data.pop("category", None)
+        return data
 
 
 class ClarificationRequest(StrictModel):
@@ -354,6 +368,20 @@ class AgentInvocation(StrictModel):
     usage_ref: str | None = None
     output_ref: str | None = None
     error: HarnessErrorRecord | None = None
+    call_kind: Literal["implement", "clarify", "review", "plan", "acceptance"] | None = None
+    """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
+    so invocations recorded without the agent-results settings keep their stored form."""
+    effort: str | None = None
+    """Since 1.1 (#44): the reasoning effort the router chose, when it chose one."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_kind(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, alias in (("call_kind", "callKind"), ("effort", "effort")):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
 
 
 class ChangedFile(StrictModel):
@@ -468,6 +496,27 @@ class GateEvaluation(StrictModel):
     provenance: Provenance
 
 
+class ChangeRequestItem(StrictModel):
+    """A blocking item of a structured REQUEST_CHANGES: what must change and the condition
+    that verifies it. ``test:<pytest node id>`` must pass; ``absent:<regex>`` must not match
+    any added line of the ChangeSet; ``text`` items are sent to the agent and shown to the
+    reviewer but are not checked by a tool."""
+
+    item_id: str = Field(pattern=r"^CR-[1-9][0-9]*$")
+    description: str = Field(min_length=1, max_length=2000)
+    condition: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("condition")
+    @classmethod
+    def _known_condition(cls, value: str) -> str:
+        kind = value.split(":", 1)[0] if ":" in value else value
+        if kind not in {"test", "absent", "text"}:
+            raise ValueError("a condition is test:<node id>, absent:<regex> or text")
+        if kind in {"test", "absent"} and not value.split(":", 1)[1].strip():
+            raise ValueError(f"the {kind} condition needs a value")
+        return value
+
+
 class HumanDecision(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     decision_id: str
@@ -489,6 +538,12 @@ class HumanDecision(StrictModel):
     """Where the actor id came from under ``governance.deciderIdentity: git``: ``--actor``
     (``explicit``), the Git user (``git``) or, when Git has no usable identity, the default
     actor (``fallback``). Left out when absent, like ``acceptance_contract_digest``."""
+    acknowledged_risks: tuple[str, ...] = ()
+    """Risk factors of the ChangeSet the person acknowledged (``verification.riskFactors``
+    with ``acknowledge``, #52); left out when empty."""
+    change_requests: tuple[ChangeRequestItem, ...] = ()
+    """Blocking items of a structured REQUEST_CHANGES (``review.structuredChanges``, #52);
+    left out when empty."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -498,6 +553,13 @@ class HumanDecision(StrictModel):
             ("identity_source", "identitySource"),
         ):
             if getattr(self, name) is None:
+                data.pop(alias, None)
+                data.pop(name, None)
+        for name, alias in (
+            ("acknowledged_risks", "acknowledgedRisks"),
+            ("change_requests", "changeRequests"),
+        ):
+            if not getattr(self, name):
                 data.pop(alias, None)
                 data.pop(name, None)
         return data
@@ -551,12 +613,16 @@ FEEDBACK_TEXT_CHARS = 1000
 """Characters kept from a finding message, a validator summary or a claim summary."""
 FEEDBACK_RATIONALE_CHARS = 4000
 
+FeedbackTrigger = Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED", "REVIEW_FINDINGS"]
+"""Why a correction attempt was sent back to the agent; ``REVIEW_FINDINGS`` since 1.1
+(``review.agentReview``, #38)."""
+
 
 class FeedbackGate(StrictModel):
     """The outcome the feedback is about: the VERIFICATION result (``gate_id`` ``verification``)
     or the delivery gate a person decided on (``delivery_candidate``)."""
 
-    gate_id: Literal["verification", "delivery_candidate"]
+    gate_id: Literal["verification", "delivery_candidate", "independent_review"]
     gate_evaluation_id: str | None = None
     status: ResultStatus
     reason_codes: tuple[str, ...]
@@ -599,7 +665,7 @@ class ProviderFeedback(StrictModel):
 
     schema_version: Literal["1.0"] = "1.0"
     attempt: int = Field(ge=2)
-    trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"]
+    trigger: FeedbackTrigger
     change_set_digest: str
     gate: FeedbackGate
     findings: tuple[FeedbackFinding, ...] = Field(default=(), max_length=FEEDBACK_MAX_FINDINGS)

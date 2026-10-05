@@ -78,7 +78,9 @@
             "C1",
             "C2",
             "C3",
-            "T1"
+            "T1",
+            "A1",
+            "A2"
           ],
           "title": "Ruleid",
           "type": "string"

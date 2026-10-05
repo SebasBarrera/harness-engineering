@@ -62,6 +62,11 @@ RULES = (
 class IndependentReviewValidator:
     validator_id = "review.independent"
 
+    def __init__(self, skip_rules: frozenset[str] = frozenset()) -> None:
+        # verification.secrets: context replaces the style-dependent secret pattern with the
+        # context-aware check of VERIFICATION, so the review does not report it twice.
+        self.skip_rules = skip_rules
+
     def execute(self, context: ValidationContext) -> ValidatorOutput:
         actor = Actor(
             actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1"
@@ -106,7 +111,9 @@ class IndependentReviewValidator:
                 "validatorId": self.validator_id,
                 "changeSetDigest": context.change_set.digest,
                 "findingIds": [finding.finding_id for finding in findings],
-                "rulesEvaluated": [rule.rule_id for rule in RULES]
+                "rulesEvaluated": [
+                    rule.rule_id for rule in RULES if rule.rule_id not in self.skip_rules
+                ]
                 + ["review.source-without-test-change"],
             },
             metadata={"kind": "independent-review"},
@@ -142,6 +149,8 @@ class IndependentReviewValidator:
             if raw_line.startswith("+") and not raw_line.startswith("+++"):
                 content = raw_line[1:]
                 for rule in RULES:
+                    if rule.rule_id in self.skip_rules:
+                        continue
                     if rule.pattern.search(content):
                         yield Finding(
                             finding_id=new_id("finding"),
