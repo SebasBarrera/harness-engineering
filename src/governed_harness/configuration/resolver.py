@@ -22,6 +22,7 @@ from governed_harness.configuration.models import (
     ValidatorDefinition,
 )
 from governed_harness.configuration.policies import validate_profile_policies
+from governed_harness.configuration.workflow_rules import validate_enforced_workflow
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.profiles.detectors import detect_profiles
 from governed_harness.profiles.interpreter import discover_python, with_interpreter
@@ -81,6 +82,9 @@ class ConfigurationResolver:
             for profile_id in dict.fromkeys(requested)
         )
         workflow = load_builtin_workflow(project.workflow)
+        if project.governance_settings.enforce_workflow:
+            # Since #3: every gate and condition the engine will evaluate must be known.
+            validate_enforced_workflow(workflow)
         validators = self._resolve_validators(project.validators, profiles)
         grants = project.capabilities.grants
         if toolchain.validators or toolchain.interpreter == "auto":

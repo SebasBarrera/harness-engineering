@@ -31,16 +31,15 @@
         },
         "dependsOn": {
           "default": [],
-          "description": "Declarative: the phase order is fixed by the state machine.",
+          "description": "Earlier phases whose latest attempt must have passed before this phase starts, under governance.enforceWorkflow (the order of the nine phases stays fixed).",
           "items": {
             "$ref": "#/$defs/PhaseId"
           },
           "title": "Dependson",
-          "type": "array",
-          "x-declarative": true
+          "type": "array"
         },
         "exitGate": {
-          "description": "Name of the condition the phase must meet to pass; recorded with each attempt (exitGate, exitGateMet) under governance.applyWorkflowSettings.",
+          "description": "Name of the condition the phase must meet to pass: evaluated from the run's records under governance.enforceWorkflow (an unmet one leaves the attempt BLOCKED); recorded with each attempt (exitGate, exitGateMet) under governance.applyWorkflowSettings or governance.enforceWorkflow.",
           "title": "Exitgate",
           "type": "string"
         },
@@ -57,10 +56,9 @@
         },
         "parallelizable": {
           "default": false,
-          "description": "Declarative: phases run one at a time.",
+          "description": "Under governance.enforceWorkflow, the phase's independent read-only work may run at once: the validators declared parallelSafe of VERIFICATION. Phases themselves and the sub-tasks of a decomposition run one at a time on the run's workspace.",
           "title": "Parallelizable",
-          "type": "boolean",
-          "x-declarative": true
+          "type": "boolean"
         },
         "purpose": {
           "title": "Purpose",

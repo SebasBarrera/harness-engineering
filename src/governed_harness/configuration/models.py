@@ -205,8 +205,11 @@ class RuntimeConfig(ConfigModel):
         alias="maxParallel",
         ge=1,
         le=32,
-        description="Declarative: phases and validators run one at a time.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Under governance.enforceWorkflow, the most validators declared parallelSafe that a "
+            "parallelizable VERIFICATION runs at once; otherwise phases and validators run one "
+            "at a time."
+        ),
     )
     allow_network: bool = Field(
         default=False,
@@ -755,7 +758,13 @@ class GovernanceConfig(ConfigModel):
       quarantines them (``harness run quarantine``).
     * ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,
       derived from the capability grants (read-only for clarify, review and plan), recorded as
-      evidence."""
+      evidence.
+    * ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are
+      evaluated from the run's records after a phase attempt passes (an unmet condition leaves
+      the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides
+      which phase may start, and ``parallelizable`` lets the validators declared
+      ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to
+      ``runtime.maxParallel``. An unknown gate or condition is a configuration error."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -773,6 +782,7 @@ class GovernanceConfig(ConfigModel):
     apply_network_policy: bool | None = Field(default=None, alias="applyNetworkPolicy")
     stop_the_line: StopTheLine | None = Field(default=None, alias="stopTheLine")
     phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
+    enforce_workflow: bool | None = Field(default=None, alias="enforceWorkflow")
 
     @field_validator("stop_the_line", mode="before")
     @classmethod
@@ -977,7 +987,8 @@ IssueLevel = Literal["error", "warning", "note"]
 class ValidatorDefinition(ConfigModel):
     """A validator of a profile or, since 1.1, of the project (``toolchain.validators``).
 
-    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``) are
+    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,
+    ``parallelSafe``) are
     left out of the serialized definition while they are absent, so a resolved configuration
     without them keeps its digest."""
 
@@ -999,6 +1010,10 @@ class ValidatorDefinition(ConfigModel):
     otherwise)."""
     pass_env: tuple[str, ...] | None = Field(default=None, alias="passEnv")
     """Variables of the harness's environment the command receives as they are."""
+    parallel_safe: bool | None = Field(default=None, alias="parallelSafe")
+    """The command writes nothing another validator reads or writes, so under
+    ``governance.enforceWorkflow`` it may run at the same time as the other parallel-safe
+    validators of a parallelizable VERIFICATION (#3). Absent: it runs alone, as in 1.0.0."""
 
     @field_validator("pass_env")
     @classmethod
@@ -1016,6 +1031,7 @@ class ValidatorDefinition(ConfigModel):
             ("severity", "severity"),
             ("failure_severity", "failureSeverity"),
             ("pass_env", "passEnv"),
+            ("parallel_safe", "parallelSafe"),
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
@@ -1053,14 +1069,19 @@ class WorkflowPhaseDefinition(ConfigModel):
     depends_on: tuple[PhaseId, ...] = Field(
         default=(),
         alias="dependsOn",
-        description="Declarative: the phase order is fixed by the state machine.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Earlier phases whose latest attempt must have passed before this phase starts, "
+            "under governance.enforceWorkflow (the order of the nine phases stays fixed)."
+        ),
     )
     required: bool = True
     parallelizable: bool = Field(
         default=False,
-        description="Declarative: phases run one at a time.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Under governance.enforceWorkflow, the phase's independent read-only work may run "
+            "at once: the validators declared parallelSafe of VERIFICATION. Phases themselves "
+            "and the sub-tasks of a decomposition run one at a time on the run's workspace."
+        ),
     )
     allowed_capabilities: tuple[str, ...] = Field(
         default=(),
@@ -1076,8 +1097,10 @@ class WorkflowPhaseDefinition(ConfigModel):
     exit_gate: str = Field(
         alias="exitGate",
         description=(
-            "Name of the condition the phase must meet to pass; recorded with each attempt "
-            "(exitGate, exitGateMet) under governance.applyWorkflowSettings."
+            "Name of the condition the phase must meet to pass: evaluated from the run's "
+            "records under governance.enforceWorkflow (an unmet one leaves the attempt "
+            "BLOCKED); recorded with each attempt (exitGate, exitGateMet) under "
+            "governance.applyWorkflowSettings or governance.enforceWorkflow."
         ),
     )
     timeout_seconds: int = Field(
