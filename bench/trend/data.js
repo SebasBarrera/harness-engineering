@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791201055870,
+  "lastUpdate": 1791202275287,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2557,6 +2557,68 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 6.527,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera",
+            "email": "js.barrerap@gmail.com"
+          },
+          "committer": {
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera",
+            "email": "js.barrerap@gmail.com"
+          },
+          "id": "4245433b0c926e386b246563513662e21a4ce438",
+          "message": "Merge branch 'feat/wave3-review-experience' into develop\n\nWave 3 makes the human side of governance usable: a decision brief and\nharness review built only from the record (what was asked, what changed, risks\nwith lines, what was verified on which digest and what was not), interactive\ngate decide with digest confirmation, REQUEST_CHANGES in the dashboard,\n--run latest and artifact show; exceptions with expiry, scope, alternative\nevidence and follow-up that block again when they expire; readable CLI output,\n--version, init helpers and an extended doctor; a pending-decisions inbox and\nwebhooks; validator output parsers with located findings and SARIF\nfingerprints; and a retrospective by cause with rule health and outcome records.\nBehaviour changes sit behind keys harness init writes; a project.yaml without\nthem keeps the 1.0.0 behaviour and digest.\n\nCloses #53\n\nVerification on the branch head f8344f06d82d: 21 CI job(s) succeeded, no blocking job failed.\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304852939\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304852941\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304852956\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304852958\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304853026\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37304853032\nFiles of the v0.8.0 cut in the tree: matched: 110/232  mismatched: 98  missing: 24",
+          "timestamp": "2026-10-05T11:50:25Z",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/4245433b0c926e386b246563513662e21a4ce438"
+        },
+        "date": 1791202273983,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000671,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.000981,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.005908,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.032208,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.155727,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.184741,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 7.488594,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.723,
             "unit": "%"
           }
         ]
