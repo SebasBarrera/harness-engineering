@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791158277874,
+  "lastUpdate": 1791171116628,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2301,6 +2301,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 2.653,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "50c60c55d392984b8f2a0ab1e1b9997b850d798b",
+          "message": "Merge branch 'security/agent-sandbox' into develop\n\nCommand providers now run under an OS write sandbox when runtime.agentSandbox is\nenforce (written by harness init): macOS sandbox-exec or Linux bwrap allow writes\nonly to the workspace, the temporary directory and declared paths, and a host\nwithout a sandbox blocks IMPLEMENTATION instead of running unconfined. The\nprofile is recorded as evidence and a denied write becomes a finding. Verified\nwith Claude Code on macOS. A project.yaml without the keys keeps 1.0.0 behavior.\n\nCloses #34\n\nVerification on the branch head 2caee982bbf3: every blocking CI job succeeded.\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258919016\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258918963\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258918929\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258918888\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258919014\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37258918933\nThe merge with the C0 change already in develop conflicted only in CHANGELOG.md and\ndocs/reference/configuration.md (both sections kept). On the merge result: pytest exit 0,\nruff and format clean, mypy clean, schemas and generated references unchanged, demo flows\n89 steps with 0 unexpected exit codes.",
+          "timestamp": "2026-10-04T22:31:06-05:00",
+          "tree_id": "417d45022bca3d841af32014888f058b30223790",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/50c60c55d392984b8f2a0ab1e1b9997b850d798b"
+        },
+        "date": 1791171116029,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000681,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.000991,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.006039,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.032388,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.154497,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.634332,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 7.80519,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 5.084,
             "unit": "%"
           }
         ]
