@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol
 
-from governed_harness.domain.enums import ResultStatus
+from governed_harness.agents.requests import CallKind
+from governed_harness.domain.enums import PhaseId, ResultStatus
 from governed_harness.domain.models import (
     AgentInvocation,
     Plan,
@@ -59,6 +60,21 @@ class AgentContext(Protocol):
     def memory_context(self) -> dict[str, Any] | None: ...
     @property
     def feedback(self) -> dict[str, Any] | None: ...
+    @property
+    def request_extra(self) -> dict[str, Any] | None:
+        """Keys the agent-results settings add to the request (gate contract, permissions,
+        context manifest, lessons, budget, routing); ``None`` keeps the 1.0 request."""
+        ...
+
+
+@dataclass(frozen=True)
+class AgentCallResult:
+    """The outcome of a ``clarify``, ``review`` or ``plan`` call: the 1.0 result fields and
+    the structured ``result`` object of the response (``None`` when the call did not pass or
+    the response carried none)."""
+
+    execution: AgentExecutionResult
+    response: dict[str, Any] | None = None
 
 
 class AgentProvider(Protocol):
@@ -67,3 +83,12 @@ class AgentProvider(Protocol):
     def capabilities(self) -> tuple[str, ...]: ...
 
     def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult: ...
+
+    def call(
+        self,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+    ) -> AgentCallResult: ...

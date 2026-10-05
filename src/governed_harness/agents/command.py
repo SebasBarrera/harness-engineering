@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from governed_harness.agents.base import AgentContext, AgentExecutionResult
+from governed_harness.agents.base import AgentCallResult, AgentContext, AgentExecutionResult
+from governed_harness.agents.requests import CallKind
 from governed_harness.domain.enums import (
     ActorType,
     ErrorKind,
@@ -53,15 +54,7 @@ class CommandAgentProvider:
         return ("external_cli", "structured_json")
 
     def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
-        actor = context.provenance.actor
-        if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
-            actor = Actor(
-                actor_type=ActorType.AGENT,
-                actor_id=f"agent.{self.provider_id}",
-                version="1",
-            )
-        started = datetime.now(UTC)
-        request: dict[str, object] = {
+        request: dict[str, Any] = {
             "schemaVersion": "1.0",
             "task": task.model_dump(mode="json"),
             "plan": plan.model_dump(mode="json"),
@@ -74,6 +67,63 @@ class CommandAgentProvider:
         # every other request keeps its previous form and prompt digest.
         if context.feedback:
             request["feedback"] = context.feedback
+        # The agent-results settings (gate contract, permissions, context manifest, lessons,
+        # budget, routing) add their keys, and the kind and instructions with them; without
+        # any of them the request keeps the 1.0 form.
+        extra = context.request_extra
+        if extra:
+            request.update(extra)
+        execution, _ = self._invoke(
+            request,
+            context,
+            phase_id=PhaseId.IMPLEMENTATION,
+            call_kind="implement" if extra else None,
+            effort=_effort(extra),
+            model=_model(extra),
+        )
+        return execution
+
+    def call(
+        self,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+    ) -> AgentCallResult:
+        """Send a ``clarify``, ``review`` or ``plan`` request. The response must carry a
+        ``result`` object when it passes; a missing or non-object ``result`` is a protocol
+        error."""
+        execution, response = self._invoke(
+            request,
+            context,
+            phase_id=phase_id,
+            call_kind=kind,
+            effort=_effort(request),
+            model=_model(request),
+            require_result=True,
+        )
+        return AgentCallResult(execution, response)
+
+    def _invoke(
+        self,
+        request: dict[str, Any],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+        call_kind: CallKind | None,
+        effort: str | None,
+        model: str | None,
+        require_result: bool = False,
+    ) -> tuple[AgentExecutionResult, dict[str, Any] | None]:
+        actor = context.provenance.actor
+        if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
+            actor = Actor(
+                actor_type=ActorType.AGENT,
+                actor_id=f"agent.{self.provider_id}",
+                version="1",
+            )
+        started = datetime.now(UTC)
         request_bytes = json.dumps(request, sort_keys=True).encode("utf-8")
         prompt_digest = sha256_json(request)
         result = context.process_runner.run(
@@ -94,7 +144,7 @@ class CommandAgentProvider:
         tool = ToolInvocation(
             invocation_id=new_id("tool"),
             execution_id=context.execution_id,
-            phase_id=PhaseId.IMPLEMENTATION,
+            phase_id=phase_id,
             actor=actor,
             tool_id="agent.cli",
             argv=self.configuration.argv_prefix,
@@ -115,6 +165,7 @@ class CommandAgentProvider:
         invocation_id = new_id("agentinv")
         usage: ResourceUsage | None = None
         usage_ref: str | None = None
+        structured: dict[str, Any] | None = None
         if result.status is ResultStatus.PASSED:
             try:
                 response = json.loads(result.stdout)
@@ -137,8 +188,15 @@ class CommandAgentProvider:
                     ).uri
                 status = ResultStatus(response["status"])
                 summary = str(response.get("summary", summary))
+                if require_result and status is ResultStatus.PASSED:
+                    value = response.get("result")
+                    if not isinstance(value, dict):
+                        raise ValueError(
+                            f"a {call_kind} response that passes needs a 'result' object"
+                        )
+                    structured = value
             except Exception as exc:
-                usage, usage_ref = None, None
+                usage, usage_ref, structured = None, None, None
                 status = ResultStatus.ERROR
                 error = HarnessErrorRecord(
                     error_id=new_id("err"),
@@ -150,10 +208,10 @@ class CommandAgentProvider:
         invocation = AgentInvocation(
             invocation_id=invocation_id,
             execution_id=context.execution_id,
-            phase_id=PhaseId.IMPLEMENTATION,
+            phase_id=phase_id,
             actor=actor,
             provider=self.provider_id,
-            model=self.configuration.model,
+            model=model or self.configuration.model,
             started_at=started,
             finished_at=datetime.now(UTC),
             status=status,
@@ -163,8 +221,28 @@ class CommandAgentProvider:
             usage_ref=usage_ref,
             output_ref=stdout_ref.uri,
             error=error,
+            call_kind=call_kind,
+            effort=effort,
         )
-        return AgentExecutionResult(status, summary, invocation, (tool,), stdout_ref.uri, usage)
+        return (
+            AgentExecutionResult(status, summary, invocation, (tool,), stdout_ref.uri, usage),
+            structured,
+        )
+
+
+def _routing(request: dict[str, Any] | None) -> dict[str, Any]:
+    routing = (request or {}).get("routing")
+    return routing if isinstance(routing, dict) else {}
+
+
+def _model(request: dict[str, Any] | None) -> str | None:
+    value = _routing(request).get("model")
+    return str(value) if value else None
+
+
+def _effort(request: dict[str, Any] | None) -> str | None:
+    value = _routing(request).get("effort")
+    return str(value) if value else None
 
 
 _USAGE_FIELDS = {

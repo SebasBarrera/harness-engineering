@@ -89,6 +89,7 @@ from governed_harness.intake import (
     task_digest,
 )
 from governed_harness.memory import MemoryStore, context_manifest
+from governed_harness.orchestration.agent_results import AgentResults
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
     FeedbackBuilder,
@@ -259,6 +260,7 @@ class RunEngine:
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
         self._phase_deadline: float | None = None
+        self.results = AgentResults(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -828,11 +830,22 @@ class RunEngine:
         if no_acceptance_criteria(task):
             policy = "enforce"
         questions = assess_intent(task) if policy != "off" else ()
+        review_refs: tuple[str, ...] = ()
+        if self.results.active and policy != "off":
+            # Agent review of ambiguity and completeness, and the check of earlier answers
+            # (intake.ambiguityReview, intake.validateAnswers; #37).
+            review = self.results.intent.questions(execution, phase, task, questions)
+            review_refs = review.evidence_refs
+            if review.blocked is not None:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED, review.blocked, (evidence.artifact_ref, *review_refs)
+                )
+            questions = questions + review.questions
         if not questions:
             return PhaseOutcome(
                 ResultStatus.PASSED,
                 "Intent is structured and identifiable",
-                (evidence.artifact_ref,),
+                (evidence.artifact_ref, *review_refs),
             )
         request_evidence = self._request_clarification(
             execution, phase, task, questions, "enforce" if policy == "enforce" else "warn"
@@ -1084,53 +1097,14 @@ class RunEngine:
             return PhaseOutcome(ResultStatus.BLOCKED, "No approved plan exists")
         plan = self.s.state.get("plan", plan_id, Plan)
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
-        sandbox: SandboxPlan | None = None
-        sandbox_refs: tuple[str, ...] = ()
-        if provider_id == "simulated":
-            provider: AgentProvider = SimulatedAgentProvider()
-            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
-        else:
-            provider_config = self.s.resolved.project.agent_providers.get(provider_id)
-            if provider_config is None:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED,
-                    f"Provider {provider_id!r} is not configured",
-                )
-            if self.s.resolved.project.runtime.effective_agent_sandbox == "enforce":
-                try:
-                    sandbox = build_sandbox(
-                        self.s.paths.workspace,
-                        self.s.resolved.project.runtime.sandbox_write_paths or (),
-                        self.sandbox_host,
-                        protected=self._protected_paths(),
-                        allow_network=self._agent_network_allowed(),
-                    )
-                except SandboxUnavailable as error:
-                    self._record_sandbox_finding(
-                        execution,
-                        rule_id="sandbox.unavailable",
-                        severity=FindingSeverity.HIGH,
-                        message=f"The agent sandbox is enforced but unavailable: {error}",
-                        recommendation=(
-                            "Run on macOS (sandbox-exec) or on Linux with bubblewrap (bwrap) "
-                            "installed, or set runtime.agentSandbox to off to run the agent "
-                            "with the user's permissions."
-                        ),
-                    )
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED,
-                        f"Agent sandbox unavailable: {error}; the provider was not started",
-                    )
-                sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
-            provider = CommandAgentProvider(
-                CommandAgentConfiguration(
-                    provider_id=provider_id,
-                    argv_prefix=provider_config.command,
-                    model=provider_config.model,
-                    sandbox_prefix=sandbox.prefix if sandbox else (),
-                )
-            )
-            actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
+        built = self._build_provider(execution, phase, provider_id)
+        if isinstance(built, PhaseOutcome):
+            return built
+        provider, actor, sandbox, sandbox_refs = built
+        if self.results.active:
+            blocked = self.results.before_agent_call(execution, phase, "implement")
+            if blocked is not None:
+                return blocked
         grants = grants_from_rules(
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
@@ -1142,6 +1116,12 @@ class RunEngine:
             manifest = json.loads(self.s.artifacts.get(context_uri))
             memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
         runtime = self.s.resolved.project.runtime
+        request_extra: dict[str, Any] | None = None
+        if self.results.active:
+            task = self.results.implementation_task(execution, task)
+            request_extra = self.results.implement_extras(
+                execution, phase, task, provider_id, actor, grants
+            )
         context = SimulatedAgentContext(
             execution_id=execution.execution_id,
             workspace=self.s.paths.workspace,
@@ -1156,6 +1136,7 @@ class RunEngine:
             context_manifest_ref=context_uri,
             memory_context=memory_context,
             feedback=self._pending_feedback(execution, phase),
+            request_extra=request_extra,
         )
         guard = (
             ExcludedPathGuard(self.s.paths.workspace) if self._protects_excluded_paths() else None
@@ -1184,6 +1165,8 @@ class RunEngine:
         finally:
             if guard is not None and guard_before is not None:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
+        if self.results.active:
+            self.results.after_agent_call(execution, phase, result)
         if (
             result.status is ResultStatus.PASSED
             and runtime.claim_check_enabled
@@ -1220,6 +1203,60 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    def _build_provider(
+        self, execution: Execution, phase: PhaseExecution, provider_id: str
+    ) -> tuple[AgentProvider, Actor, SandboxPlan | None, tuple[str, ...]] | PhaseOutcome:
+        """The provider of a run (or of one call kind), with the agent sandbox when it is
+        enforced; a phase outcome when the provider cannot be started."""
+        sandbox: SandboxPlan | None = None
+        sandbox_refs: tuple[str, ...] = ()
+        if provider_id == "simulated":
+            provider: AgentProvider = SimulatedAgentProvider()
+            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
+            return provider, actor, sandbox, sandbox_refs
+        provider_config = self.s.resolved.project.agent_providers.get(provider_id)
+        if provider_config is None:
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"Provider {provider_id!r} is not configured",
+            )
+        if self.s.resolved.project.runtime.effective_agent_sandbox == "enforce":
+            try:
+                sandbox = build_sandbox(
+                    self.s.paths.workspace,
+                    self.s.resolved.project.runtime.sandbox_write_paths or (),
+                    self.sandbox_host,
+                    protected=self._protected_paths(),
+                    allow_network=self._agent_network_allowed(),
+                )
+            except SandboxUnavailable as error:
+                self._record_sandbox_finding(
+                    execution,
+                    rule_id="sandbox.unavailable",
+                    severity=FindingSeverity.HIGH,
+                    message=f"The agent sandbox is enforced but unavailable: {error}",
+                    recommendation=(
+                        "Run on macOS (sandbox-exec) or on Linux with bubblewrap (bwrap) "
+                        "installed, or set runtime.agentSandbox to off to run the agent "
+                        "with the user's permissions."
+                    ),
+                )
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    f"Agent sandbox unavailable: {error}; the provider was not started",
+                )
+            sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
+        provider = CommandAgentProvider(
+            CommandAgentConfiguration(
+                provider_id=provider_id,
+                argv_prefix=provider_config.command,
+                model=provider_config.model,
+                sandbox_prefix=sandbox.prefix if sandbox else (),
+            )
+        )
+        actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
+        return provider, actor, sandbox, sandbox_refs
 
     # ----- declared settings (#51) -------------------------------------------------------
     def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:

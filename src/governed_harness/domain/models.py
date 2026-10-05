@@ -178,21 +178,35 @@ class Task(StrictModel):
         return data
 
 
-ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1"]
+ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2"]
+"""``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 1.1 ``A1`` is a question an
+agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37) and ``A2``
+a question about an answer that refers to something the task and the workspace do not contain
+(``intake.validateAnswers``)."""
 
 
 class ClarificationQuestion(StrictModel):
-    """A question raised by the deterministic intent assessment in INTENT.
+    """A question raised in INTENT by the deterministic intent assessment or, since 1.1, by the
+    agent review of the task or the check of earlier answers.
 
     ``target`` is the criterion id the question is about, ``task`` for the task as a whole,
     or ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for
     example ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,
-    ``Q-2``, ...)."""
+    ``Q-2``, ...). ``category`` groups the questions of an agent review (ambiguity,
+    completeness categories, consistency) and is left out when absent."""
 
     question_id: str = Field(pattern=r"^Q-[1-9][0-9]*$")
     rule_id: ClarificationRule
     target: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    category: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_category(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.category is None:
+            data.pop("category", None)
+        return data
 
 
 class ClarificationRequest(StrictModel):
@@ -354,6 +368,20 @@ class AgentInvocation(StrictModel):
     usage_ref: str | None = None
     output_ref: str | None = None
     error: HarnessErrorRecord | None = None
+    call_kind: Literal["implement", "clarify", "review", "plan"] | None = None
+    """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
+    so invocations recorded without the agent-results settings keep their stored form."""
+    effort: str | None = None
+    """Since 1.1 (#44): the reasoning effort the router chose, when it chose one."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_kind(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, alias in (("call_kind", "callKind"), ("effort", "effort")):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
 
 
 class ChangedFile(StrictModel):
