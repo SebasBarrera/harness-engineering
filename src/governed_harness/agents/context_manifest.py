@@ -214,11 +214,13 @@ def _score(
     lessons: set[str],
     id_patterns: Sequence[tuple[str, re.Pattern[str]]],
     terms: Sequence[str],
+    located: set[str] | None = None,
 ) -> tuple[int, list[str]]:
     score = 0
     reasons: list[str] = []
     for paths, points, reason in (
         (referenced, 100, "referenced by the task"),
+        (located or set(), 80, "located by the locate call"),
         (interfaces, 60, "declared interface"),
         (changed, 50, "changed by an earlier step"),
         (lessons, 20, "path of an active lesson"),
@@ -256,6 +258,7 @@ def build_manifest(
     changed_paths: Sequence[str] = (),
     interface_paths: Sequence[str] = (),
     lesson_paths: Sequence[str] = (),
+    located_paths: Sequence[str] = (),
     max_files: int = 40,
     max_bytes: int = 400_000,
     excludes: Collection[str] = DEFAULT_EXCLUDES,
@@ -278,6 +281,7 @@ def build_manifest(
     interfaces = {_normalise(path) for path in interface_paths}
     changed = {_normalise(path) for path in changed_paths}
     lessons = {_normalise(path) for path in lesson_paths}
+    located = {_normalise(path) for path in located_paths}
 
     candidates: list[tuple[int, str, int, str, list[str]]] = []
     for relative, path in _walk(root, excludes):
@@ -293,6 +297,7 @@ def build_manifest(
             lessons=lessons,
             id_patterns=id_patterns,
             terms=terms,
+            located=located,
         )
         if score > 0:
             candidates.append((score, relative, len(data), sha256_bytes(data), reasons))

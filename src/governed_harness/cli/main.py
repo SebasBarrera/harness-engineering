@@ -45,6 +45,9 @@ acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
 budget_app = typer.Typer(help="Governed budget of agent calls")
 routing_app = typer.Typer(help="Model and effort routing of agent calls")
 pr_app = typer.Typer(help="Pull request integration")
+verification_app = typer.Typer(
+    help="Verification ladder: plan, preflight, certification and deferred items"
+)
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -65,6 +68,7 @@ app.add_typer(acceptance_app, name="acceptance")
 app.add_typer(budget_app, name="budget")
 app.add_typer(routing_app, name="routing")
 app.add_typer(pr_app, name="pr")
+app.add_typer(verification_app, name="verification")
 
 
 ACTOR_HELP = (
@@ -260,6 +264,12 @@ def doctor(
     path: Path | None = typer.Option(
         None, "--path", help="Also validate the project in this directory"
     ),
+    install_hooks: bool = typer.Option(
+        False,
+        "--install-hooks",
+        help="Run the hook installation command the project declares "
+        "(environment.gitHooks.install) before the checks",
+    ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Check the local environment (Python and Git required; Node.js and npm reported as
@@ -268,7 +278,7 @@ def doctor(
     the validators, the baseline commit and whether .harness/ is ignored by Git. Each check that
     is not PASSED says how to fix it. Exit code 2 when a required check FAILED; a WARNING does
     not fail."""
-    result = _call(lambda: HarnessApplication().doctor(path))
+    result = _call(lambda: HarnessApplication().doctor(path, install_hooks=install_hooks))
     _emit(result, json_output, kind="doctor")
     if result["status"] != "PASSED":
         raise typer.Exit(code=2)
@@ -285,6 +295,24 @@ def config_validate(
     validators, capabilities and policies, the settings that are declared but not applied
     (`declarative`) and a warning for each one the project relies on (`warnings`)."""
     _emit(_call(lambda: HarnessApplication().validate_config(path)), json_output)
+
+
+@config_app.command("lint")
+def config_lint(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Report contradictions between the harness configuration and the agent instruction files
+    (AGENTS.md, CLAUDE.md, .cursorrules, .cursor/rules, .github/copilot-instructions.md): tool
+    versions, coverage thresholds, statements about the tests and instructions to bypass a
+    control (--no-verify, a forced push, git add -A). Each conflict names the source that wins by
+    `instructions.precedence`. Exit 6 when there is any issue."""
+    result = _call(lambda: HarnessApplication().config_lint(path))
+    _emit(result, json_output)
+    if result["status"] != "PASSED":
+        raise typer.Exit(code=6)
 
 
 @task_app.command("create")
@@ -370,11 +398,36 @@ def task_clarify(
     )
 
 
+@task_app.command("confirm")
+def task_confirm(
+    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    digest: str = typer.Option(
+        ..., "--digest", help="Digest of the operational contract shown by task questions"
+    ),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Confirm the operational contract of a task's current revision, bound to its digest
+    (`intake.operationalContract`). Under `enforce` INTENT waits for it; then `harness run
+    continue`. A stale digest or a non-human actor exits 5."""
+    _emit(
+        _call(lambda: _acting().confirm_contract(path, task_id=task, digest=digest, actor_id=actor))
+    )
+
+
 @run_app.command("start")
 def run_start(
     task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
     provider: str | None = typer.Option(
         None, "--provider", help="Agent provider id; defaults to the project agentProvider"
+    ),
+    isolate: str | None = typer.Option(
+        None,
+        "--isolate",
+        help="worktree: run in a Git worktree of its own on a new branch from the updated base "
+        "branch; none: in place (default: workspace.isolation.mode)",
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -383,8 +436,9 @@ def run_start(
 ) -> None:
     """Create a run for a task and execute the normative phases until a stop condition. Exit
     code 4 means the automated phases finished and a human decision is pending; 6 means a
-    validation, policy or blocking condition stopped the run."""
-    execution = _call(lambda: HarnessApplication().start_run(path, task, provider))
+    validation, policy or blocking condition stopped the run. With --isolate worktree a branch or
+    worktree directory that already exists stops the run (exit 6); nothing is reset or deleted."""
+    execution = _call(lambda: HarnessApplication().start_run(path, task, provider, isolate=isolate))
     _emit(execution, json_output, kind="execution")
     _exit_for_execution(execution.status, execution.current_phase.value)
 
@@ -421,6 +475,77 @@ def run_cancel(
     event."""
     execution = _call(lambda: _acting().cancel_run(path, run, actor))
     _emit(execution, kind="execution")
+
+
+@run_app.command("cleanup")
+def run_cleanup(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Remove the worktree of a finished isolated run (`run start --isolate worktree`). Only a
+    worktree the harness created and without uncommitted changes is removed; its branch is
+    kept. Anything else exits 5."""
+    _emit(_call(lambda: HarnessApplication().cleanup_run(path, run)))
+
+
+@verification_app.command("show")
+def verification_show(
+    run: str = RUN_OPTION_LATEST,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the verification plan of a run (the rung each criterion requires, the rungs this
+    environment reaches and why), its preflight (READY, PARTIAL or UNAVAILABLE), the
+    certification of its ChangeSet, the deferred items and the manual checklist."""
+    _emit(_call(lambda: HarnessApplication().verification(path, run)))
+
+
+@verification_app.command("decide")
+def verification_decide(
+    run: str = RUN_OPTION,
+    continue_uncertified: bool = typer.Option(
+        False,
+        "--continue-uncertified",
+        help="Continue without the rungs the preflight found unreachable (required)",
+    ),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Decide on a run whose preflight is UNAVAILABLE: continue it uncertified for what this
+    environment cannot verify (those criteria end WAIVED, never certified; the unavailable probes
+    are not run). Recorded on the run with the person and the rationale. A run that does not
+    wait on such a preflight, or a non-human actor, exits 5."""
+    if not continue_uncertified:
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "--continue-uncertified is required",
+                "hint": "Or fix the environment and run harness run continue.",
+            }
+        )
+        raise typer.Exit(code=2)
+    result = _call(
+        lambda: _acting().decide_verification(
+            path,
+            execution_id=run,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result)
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
 @plan_app.command("show")
@@ -820,6 +945,60 @@ def evidence_list(
     _emit(_call(lambda: HarnessApplication().list_evidence(path, run)))
 
 
+@evidence_app.command("attach")
+def evidence_attach(
+    file: Path = typer.Option(..., "--file", exists=True, dir_okay=False, help="File to attach"),
+    run: str | None = typer.Option(None, "--run", help="Run the evidence is about"),
+    task: str | None = typer.Option(
+        None, "--task", help="Task the attachment is intake context of (with --manual)"
+    ),
+    item: str | None = typer.Option(
+        None, "--item", help="Deferred item (D-CRITERION) to close, or checklist item"
+    ),
+    manual: bool = typer.Option(
+        False,
+        "--manual",
+        help="A person's attachment (screenshot, video, log) instead of a test or CI report",
+    ),
+    evidence_format: str = typer.Option(
+        "auto", "--format", help="auto, junit, sarif or ci-status (deferred items)"
+    ),
+    case: str | None = typer.Option(
+        None, "--case", help="Only the JUnit test cases whose name contains this text"
+    ),
+    commit: str | None = typer.Option(
+        None, "--commit", help="Commit the evidence is about (checked against the item's)"
+    ),
+    note: str | None = typer.Option(None, "--note", help="What the attachment shows"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Attach evidence. With --run and --item D-CRITERION, close a deferred verification
+    with a JUnit, SARIF or CI status report (bound to the item's ChangeSet digest and commit;
+    an expired item exits 5). With --manual, store a person's attachment bound to the run's
+    ChangeSet (and to a checklist item with --item), or to a task revision as intake context
+    the agent receives (--task)."""
+    _emit(
+        _call(
+            lambda: _acting().attach_evidence(
+                path,
+                file=file,
+                execution_id=run,
+                task_id=task,
+                item=item,
+                manual=manual,
+                evidence_format=evidence_format,
+                case=case,
+                commit=commit,
+                note=note,
+                actor_id=actor,
+            )
+        )
+    )
+
+
 @findings_app.command("list")
 def findings_list(
     run: str = RUN_OPTION_LATEST,
@@ -1038,6 +1217,12 @@ def gate_decide(
         "ChangeSet the decider acknowledges (repeatable; required for every factor whose "
         "action is acknowledge)",
     ),
+    check: list[str] | None = typer.Option(
+        None,
+        "--check",
+        help="Under review.manualChecklist: a checklist item the person verified (repeatable); "
+        "APPROVE needs every item of the run",
+    ),
     change_request: list[str] | None = typer.Option(
         None,
         "--change-request",
@@ -1081,12 +1266,14 @@ def gate_decide(
         follow_up=follow_up,
     )
     confirm = terminal and _digest_confirmation_configured(path)
+    checked = list(check or ())
     if missing or interactive or confirm:
         decision, change_set_digest, rationale = _interactive_decision(
             application, path, run_id, decision, change_set_digest, rationale
         )
         if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
             exception = _interactive_exception(exception)
+        checked = _interactive_checklist(application, path, run_id, checked)
     assert decision is not None and change_set_digest is not None and rationale is not None
     chosen, digest, reason = decision, change_set_digest, rationale
     record, execution = _call(
@@ -1101,6 +1288,7 @@ def gate_decide(
             exception=exception,
             acknowledged_risks=tuple(acknowledge_risk or ()),
             change_requests=tuple(change_request or ()),
+            checked_items=tuple(checked),
         ),
         hint=_decide_hint(application, path, run_id),
     )
@@ -1112,6 +1300,22 @@ def gate_decide(
         kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
+
+
+def _interactive_checklist(
+    application: HarnessApplication, path: Path, run_id: str, checked: list[str]
+) -> list[str]:
+    """Ask about each checklist item of the run that is not ticked yet."""
+    brief = _call(lambda: application.review(path, run_id))
+    for item in brief.get("checklist") or []:
+        if item["itemId"] in checked:
+            continue
+        answer = str(
+            typer.prompt(f"Checked {item['itemId']}: {item['text']}? (yes/no)", default="no")
+        )
+        if answer.strip().lower() in {"y", "yes"}:
+            checked.append(item["itemId"])
+    return checked
 
 
 def _digest_confirmation_configured(path: Path) -> bool:
@@ -1255,6 +1459,14 @@ def inbox(
     DECISION (gate status, digest, blocking findings) or answers to clarification questions in
     INTENT, each with the next command."""
     _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+
+
+@app.command()
+def registry(json_output: bool | None = JSON_OPTION) -> None:
+    """List the projects whose run registry lives in the state directory
+    (`runtime.stateDir: auto`, `$HARNESS_STATE_DIR` or the user's data directory) with their
+    latest runs: the runs of several repositories in one place."""
+    _emit(_call(lambda: HarnessApplication().registry()), json_output)
 
 
 @rules_app.command("health")

@@ -173,7 +173,6 @@ class IsolationConfig(_Section):
     fetch: bool | None = None
     remote: str | None = None
     directory: str | None = None
-    cleanup: bool | None = None
 
     @field_validator("mode", mode="before")
     @classmethod

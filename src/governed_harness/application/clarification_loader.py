@@ -13,7 +13,9 @@ from governed_harness.intake import ClarificationInput
 
 from .task_loader import _first, _required_text
 
-_KNOWN_FIELDS = frozenset({"answers", "replaceCriteria", "addCriteria", "addRequirements"})
+_KNOWN_FIELDS = frozenset(
+    {"answers", "replaceCriteria", "addCriteria", "addRequirements", "contract", "confirmContract"}
+)
 
 
 def _criterion(item: Any, *, require_id: bool, where: str) -> AcceptanceCriterion:
@@ -85,7 +87,12 @@ def load_clarification_file(path: Path) -> ClarificationInput:
     if unknown:
         raise ConfigurationError(f"unknown answers-file field(s): {', '.join(unknown)}")
     answers = raw.get("answers")
-    if not isinstance(answers, dict) or not answers:
+    contract = raw.get("contract")
+    if contract is not None and not isinstance(contract, dict):
+        raise ConfigurationError("contract must be a map of contract item to value")
+    if answers is None and contract:
+        answers = {}
+    if not isinstance(answers, dict) or (not answers and not contract):
         raise ConfigurationError("answers file requires 'answers': a map of question id to text")
     texts: dict[str, str] = {}
     for question_id, text in answers.items():
@@ -103,4 +110,6 @@ def load_clarification_file(path: Path) -> ClarificationInput:
             for item in _list(raw, "addCriteria")
         ),
         add_requirements=tuple(_requirement(item) for item in _list(raw, "addRequirements")),
+        contract=dict(contract) if contract else None,
+        confirm_contract=bool(raw.get("confirmContract")),
     )

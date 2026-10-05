@@ -8,7 +8,9 @@ rules cannot give:
 * ``review`` (INDEPENDENT_REVIEW): findings of a second reviewer on the ChangeSet;
 * ``plan`` (PLANNING): ordered sub-tasks that partition the task's requirements;
 * ``acceptance`` (SPECIFICATION): acceptance tests written from the criteria by a separate
-  call, returned as files that the harness writes and freezes once a person approves them.
+  call, returned as files that the harness writes and freezes once a person approves them;
+* ``locate`` (INTENT, since #55): where to intervene, as ``path:line`` with evidence, for a
+  task the router classifies M or L; ambiguous places come back as questions.
 
 These kinds are read-only by contract: the request says so (``readOnly: true``) and the harness
 compares the workspace before and after the call; a provider that changed it gets a HIGH
@@ -22,10 +24,19 @@ from __future__ import annotations
 
 from typing import Any, Final, Literal
 
-CallKind = Literal["implement", "clarify", "review", "plan", "acceptance"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance", "locate"]
 
-CALL_KINDS: Final[tuple[CallKind, ...]] = ("implement", "clarify", "review", "plan", "acceptance")
-READ_ONLY_KINDS: Final[frozenset[str]] = frozenset({"clarify", "review", "plan", "acceptance"})
+CALL_KINDS: Final[tuple[CallKind, ...]] = (
+    "implement",
+    "clarify",
+    "review",
+    "plan",
+    "acceptance",
+    "locate",
+)
+READ_ONLY_KINDS: Final[frozenset[str]] = frozenset(
+    {"clarify", "review", "plan", "acceptance", "locate"}
+)
 REQUEST_SCHEMA_VERSION = "1.1"
 """Version of a request that carries ``kind`` and ``instructions``; an implement request sent
 without any agent-results key keeps the 1.0 form (and its prompt digest)."""
@@ -139,6 +150,21 @@ INSTRUCTIONS: Final[dict[CallKind, str]] = {
             '{{"tests": [{{"path": "{directory}/test_<name>.py", "content": "<file>"}}]}}',
         )
     ),
+    "locate": (
+        "Find where the task below must be implemented in the workspace at {workspace}, before "
+        "anyone changes it. Read the files the task references and search the code for its "
+        "requirements and criteria. Return at most {maxLocations} locations, most relevant "
+        "first, each with the file, the line, the evidence (the code or text that shows it is "
+        "the place) and why it must change. When the task could be implemented in clearly "
+        "different places and the task does not say which, ask instead of guessing. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"locations": [{{"path": "<file>", "line": 1, "evidence": "<code>", '
+            '"reason": "<why>"}}], "questions": [{{"text": "<question>"}}]}}',
+        )
+    ),
 }
 
 
@@ -149,6 +175,7 @@ def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str
         "categories": ", ".join(CLARIFY_CATEGORIES),
         "maxSubtasks": 12,
         "directory": "tests/acceptance",
+        "maxLocations": 20,
     }
     fields.update(values)
     return INSTRUCTIONS[kind].format(**fields)
@@ -162,4 +189,5 @@ def phase_of(kind: CallKind) -> str:
         "review": "INDEPENDENT_REVIEW",
         "plan": "PLANNING",
         "acceptance": "SPECIFICATION",
+        "locate": "INTENT",
     }[kind]

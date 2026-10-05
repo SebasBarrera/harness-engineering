@@ -182,7 +182,9 @@ class ProbeAssertion(StrictModel):
                 raise ValueError("a jsonPath assertion needs 'path'")
             given = [self.present is not None, self.equals is not None, self.matches is not None]
             if sum(given) != 1:
-                raise ValueError("a jsonPath assertion needs exactly one of present, equals, matches")
+                raise ValueError(
+                    "a jsonPath assertion needs exactly one of present, equals, matches"
+                )
         if kind == "order" and not (
             (self.path is not None and self.order is not None)
             or (self.before is not None and self.after is not None)
@@ -283,7 +285,9 @@ class ProbeDefinition(StrictModel):
         keys = sorted(self.matrix)
         return tuple(
             ProbeVariant(
-                name=",".join(f"{key}={value}" for key, value in zip(keys, combination, strict=True)),
+                name=",".join(
+                    f"{key}={value}" for key, value in zip(keys, combination, strict=True)
+                ),
                 values=dict(zip(keys, combination, strict=True)),
             )
             for combination in itertools.product(*(self.matrix[key] for key in keys))
@@ -456,11 +460,12 @@ class Task(StrictModel):
         return data
 
 
-ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2"]
+ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2", "A3"]
 """``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 1.1 ``A1`` is a question an
-agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37) and ``A2``
+agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37), ``A2``
 a question about an answer that refers to something the task and the workspace do not contain
-(``intake.validateAnswers``)."""
+(``intake.validateAnswers``) and ``A3`` a question of the localisation call about where to
+intervene (``context.locate``, #55)."""
 
 
 class ClarificationQuestion(StrictModel):
@@ -488,7 +493,11 @@ class ClarificationQuestion(StrictModel):
 
 
 class ClarificationRequest(StrictModel):
-    """The questions INTENT asked about one revision of a task, identified by its digest."""
+    """The questions INTENT asked about one revision of a task, identified by its digest.
+
+    Since 1.1 (#55) the same request may carry the operational contract (``contract``): the
+    summary of what was agreed and the items nobody settled, so that a person answers
+    everything in one message. A request has at least one question or a contract."""
 
     schema_version: Literal["1.0"] = "1.0"
     request_id: str
@@ -496,8 +505,22 @@ class ClarificationRequest(StrictModel):
     task_id: str
     task_digest: str
     policy: Literal["enforce", "warn"]
-    questions: tuple[ClarificationQuestion, ...] = Field(min_length=1)
+    questions: tuple[ClarificationQuestion, ...] = ()
     created_at: datetime = Field(default_factory=utc_now)
+    contract: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _asks_something(self) -> ClarificationRequest:
+        if not self.questions and self.contract is None:
+            raise ValueError("a clarification request needs a question or a contract")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.contract is None:
+            data.pop("contract", None)
+        return data
 
 
 class ClarificationAnswer(StrictModel):

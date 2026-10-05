@@ -31,6 +31,8 @@ class DecisionRequest(BaseModel):
     scope: tuple[str, ...] = ()
     alternative_evidence: str | None = None
     follow_up: str | None = None
+    checked_items: tuple[str, ...] = ()
+    """Checklist items the person verified (``review.manualChecklist``, #55)."""
 
 
 def trusted_hosts(workspace: Path) -> tuple[str, ...] | None:
@@ -146,6 +148,7 @@ def create_app(workspace: Path) -> FastAPI:
                     alternative_evidence=request.alternative_evidence,
                     follow_up=request.follow_up,
                 ),
+                checked_items=request.checked_items,
             )
             body: dict[str, object] = {
                 "decision": decision.model_dump(mode="json", by_alias=True),
@@ -158,6 +161,21 @@ def create_app(workspace: Path) -> FastAPI:
             raise HTTPException(status_code=403, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
+
+    @api.get("/api/runs/{execution_id}/verification")
+    def run_verification(execution_id: str) -> dict[str, object]:
+        try:
+            return application.verification(root, execution_id)
+        except Exception as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+
+    @api.get("/api/registry")
+    def registry() -> dict[str, object]:
+        """The projects of the shared run registry (``runtime.stateDir``, #55)."""
+        try:
+            return application.registry()
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @api.get("/api/inbox")
     def pending() -> list[dict[str, object]]:
@@ -217,6 +235,7 @@ ul { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; } code { overflow-
 <main>
 <section><h2>Waiting for a person</h2><div id="inbox">Loading...</div>
 <h2 style="margin-top:20px">Executions</h2><div id="runs">Loading...</div>
+<h2 style="margin-top:20px">Repositories</h2><div id="registry">Loading...</div>
 <div class="notice">Refreshes every 5 seconds.</div></section>
 <section><h2>Selected execution</h2><div id="decision"></div><div id="brief">Select an execution.</div>
 <details><summary>Status (JSON)</summary><pre id="detail"></pre></details></section>
@@ -235,10 +254,14 @@ async function loadRuns(){
   button.onclick=()=>loadRun(run.executionId); target.appendChild(button); }
  if(!runs.length) target.textContent='No executions recorded.';
 }
+async function loadRegistry(){
+ const value=await request('/api/registry'); const target=document.getElementById('registry');
+ target.innerHTML=value.projects.length?list(value.projects, p=>`<li><code>${esc(p.projectId)}</code> ${esc(p.workspace)}: ${p.runs.length} run(s)${p.runs.length?`, latest ${esc(p.runs[0].status)} in ${esc(p.runs[0].currentPhase)}`:''}</li>`):'No registry outside the workspaces (runtime.stateDir).';
+}
 async function loadInbox(){
  const items=await request('/api/inbox'); const target=document.getElementById('inbox'); target.innerHTML='';
  for(const item of items){ const button=document.createElement('button'); button.className='run';
-  const state=item.kind==='decision'?`gate ${esc(item.gateStatus)}, ${item.blockingFindings} blocking`:`${item.questions} question(s)`;
+  const state=item.kind==='decision'?`gate ${esc(item.gateStatus)}, ${item.blockingFindings} blocking`:item.kind==='deferred'?`${esc(item.itemId)} ${esc(item.status)}${item.warning?', '+esc(item.warning):''}`:item.kind==='preflight'?'preflight UNAVAILABLE':`${item.questions} question(s)`;
   button.innerHTML=`<b>${esc(item.kind)}</b> ${esc(item.taskTitle)}<br><small>${esc(item.executionId)} - ${state} - ${item.waitingHours} h</small>`;
   button.onclick=()=>loadRun(item.executionId); target.appendChild(button); }
  if(!items.length) target.textContent='Nothing waits for a person.';
@@ -253,7 +276,7 @@ async function loadRun(id){
  if(key!==decisionKey){ decisionKey=key; renderDecision(id, brief); }
 }
 async function refresh(){
- try { await loadInbox(); await loadRuns(); if(selectedId){ await loadRun(selectedId); } }
+ try { await loadInbox(); await loadRuns(); await loadRegistry(); if(selectedId){ await loadRun(selectedId); } }
  catch(error){ document.getElementById('runs').textContent=error.message; }
 }
 function list(items, render){ return items.length ? '<ul>'+items.map(render).join('')+'</ul>' : '<div>none</div>'; }
@@ -277,6 +300,8 @@ function renderBrief(b){
   `<h3>Verified on <code>${esc(b.verified.changeSetDigest)}</code></h3><table>${checks}</table>`+
   `<h3>Not verified</h3>`+list(b.notVerified, t=>`<li>${esc(t)}</li>`)+
   (exceptions?`<h3>Exceptions in force</h3><ul>${exceptions}</ul>`:'')+
+  (b.certification?`<h3>Certification ${esc(b.certification.status)}</h3>`+list(b.certification.criteria, c=>`<li><code>${esc(c.criterionId)}</code> ${esc(c.status)}: requires ${esc(c.required)}, reached ${esc(c.achieved||'no rung')}</li>`):'')+
+  (b.deferred?`<h3>Deferred verification</h3>`+list(b.deferred, d=>`<li><code>${esc(d.itemId)}</code> ${esc(d.status)} (${esc(d.where)})</li>`):'')+
   `<h3>History</h3><div>${b.history.implementationAttempts} implementation and ${b.history.verificationAttempts} verification attempt(s), ${b.history.automaticCorrections} automatic correction(s), ${b.history.requestedChanges} requested change(s), ${b.history.providerRetries} provider retry(ies).</div>`+delta;
 }
 function renderDecision(id, b){
@@ -286,6 +311,7 @@ function renderDecision(id, b){
  <div class="notice">The decision will be bound to <code>${esc(b.run.changeSetDigest)}</code> (${b.changed.files.length} file(s)). Any later change invalidates it.</div>
  <label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>
  <label>Rationale<textarea id="rationale" placeholder="Explain the evidence considered and the reason for the decision. For REQUEST_CHANGES, say what must change."></textarea></label>
+ ${(b.checklist||[]).map(c=>`<label><input type="checkbox" class="check" value="${esc(c.itemId)}" style="width:auto"> ${esc(c.itemId)}: ${esc(c.text)}</label>`).join('')}
  <div class="actions">
   <button data-decision="APPROVE">Approve</button>
   <button data-decision="REQUEST_CHANGES">Request changes</button>
@@ -302,7 +328,8 @@ async function decide(id, decision){
  if(!confirm(`${decision} for\\n${digest}\\n\\nFiles:\\n${files}\\n\\nRecord this decision?`)) return;
  try {
   await request('/api/runs/'+encodeURIComponent(id)+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-   decision,change_set_digest:digest,actor_id:document.getElementById('actor').value,rationale,continue_after:true
+   decision,change_set_digest:digest,actor_id:document.getElementById('actor').value,rationale,continue_after:true,
+   checked_items:[...document.querySelectorAll('input.check:checked')].map(i=>i.value)
   })});
   decisionKey=null; await refresh();
  } catch(error){ alert(error.message); }

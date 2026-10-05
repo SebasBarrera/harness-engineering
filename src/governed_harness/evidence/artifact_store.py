@@ -131,6 +131,12 @@ class LocalArtifactStore:
             refs.append(self.describe(f"artifact://sha256/{hex_digest}"))
         return refs
 
+    def path_for(self, reference: ArtifactRef | str) -> Path:
+        """Where the content of an artifact is stored (read-only use: an agent may read a
+        person's attachment from there)."""
+        uri = reference.uri if isinstance(reference, ArtifactRef) else reference
+        return self._blob_path(self._digest_from_uri(uri).split(":", 1)[1])
+
     def _blob_path(self, hex_digest: str) -> Path:
         if len(hex_digest) != 64 or any(char not in "0123456789abcdef" for char in hex_digest):
             raise ValueError("invalid sha256 digest")

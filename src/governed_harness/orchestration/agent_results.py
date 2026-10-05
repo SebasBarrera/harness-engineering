@@ -597,6 +597,9 @@ class AgentResults:
         if kind == "acceptance":
             config = self.acceptance.config
             return config.author if config else None
+        if kind == "locate":
+            context = self.project.context
+            return context.locate.agent if context and context.locate else None
         return None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
@@ -934,6 +937,7 @@ class AgentResults:
                 changed_paths=changed,
                 interface_paths=interfaces,
                 lesson_paths=lesson_paths,
+                located_paths=self.engine.ladder.located_paths(execution),
                 max_files=context.max_files or DEFAULT_CONTEXT_MAX_FILES,
                 max_bytes=context.max_bytes or DEFAULT_CONTEXT_MAX_BYTES,
             )

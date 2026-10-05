@@ -412,6 +412,13 @@ def build_brief(
     }
     if agent_results:
         brief["riskFactors"] = agent_results
+    # Since #55: certification, preflight, deferred items, checklist, contract, interruptions.
+    from governed_harness.application.ladder import brief_sections, not_verified_lines
+
+    ladder = brief_sections(services, execution)
+    if ladder:
+        brief.update(ladder)
+        brief["notVerified"] = [*brief["notVerified"], *not_verified_lines(ladder)]
     return brief
 
 
