@@ -609,3 +609,27 @@ def test_extended_profiles_are_detected_only_with_the_key(tmp_path: Path) -> Non
     resolved = ConfigurationResolver().resolve(root)
     assert [item.profile_id for item in resolved.profiles] == ["go_default"]
     assert [item.validator_id for item in resolved.effective_validators] == ["go.test", "go.vet"]
+    # Tests of a technology the traceability corpus does not parse are found by their text.
+    (root / "total_test.go").write_text(
+        'package service\n\nfunc TestTotal(t *testing.T) { t.Log("ac_total") }\n'
+    )
+    (root / ".git").mkdir()
+    (root / ".git" / "ignored_test.go").write_text("// ac_total\n")
+    from governed_harness.domain.models import Task
+    from governed_harness.orchestration.engine import RunEngine
+
+    services = EngineServices.open(resolved)
+    try:
+        task = Task.model_validate(
+            {
+                "taskId": "t",
+                "projectId": "project_go",
+                "title": "Total",
+                "intent": "Show the total.",
+                "acceptanceCriteria": [{"criterionId": "ac_total", "text": "The total shows."}],
+            }
+        )
+        named = RunEngine(services).ladder.named_tests(task)
+    finally:
+        services.close()
+    assert [item.path for item in named["ac_total"]] == ["total_test.go"]

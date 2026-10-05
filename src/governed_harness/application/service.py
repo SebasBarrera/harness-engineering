@@ -1586,10 +1586,10 @@ class HarnessApplication:
                 workspace, project.project_id, project.runtime.state_dir, create=False
             )
             root = location.root
-            writable = (
-                os.access(root if root.exists() else root.parent, os.W_OK)
-                or not root.parent.exists()
+            existing = next(
+                (item for item in (root, *root.parents) if item.exists()), Path(root.anchor)
             )
+            writable = os.access(existing, os.W_OK)
             checks["stateDir"] = {
                 "status": "PASSED" if writable else "FAILED",
                 "path": str(root),

@@ -7,5 +7,5 @@ status), the verification capabilities of the technology profiles, the operation
 the lint of agent instruction files. The orchestration (``orchestration.ladder``) wires them
 into the phases.
 
-The package must not import ``governed_harness.domain`` at import time: the domain models use
-``ladder.jsonpath`` to validate probe assertions."""
+``ladder.jsonpath`` imports nothing of the harness: the domain models use it to validate probe
+assertions, so it must not import them back."""

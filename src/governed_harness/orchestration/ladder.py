@@ -24,13 +24,13 @@ agent-results settings: a project without any of them runs exactly the earlier c
 from __future__ import annotations
 
 import fnmatch
+import os
 from dataclasses import dataclass
 from datetime import timedelta
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.domain.enums import (
-    ActorType,
     DecisionKind,
     EvidenceKind,
     FindingSeverity,
@@ -43,7 +43,6 @@ from governed_harness.domain.errors import ConfigurationError, PolicyViolationEr
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     AcceptanceCriterion,
-    Actor,
     CertificationRecord,
     ChangeSet,
     DeferredVerification,
@@ -112,6 +111,7 @@ _GENERIC_TEST_SUFFIXES = (
     ".cjs",
 )
 _MAX_GENERIC_TEST_BYTES = 2_000_000
+_SKIPPED_TEST_DIRECTORIES = frozenset({"node_modules", "build", "target", "vendor", "dist"})
 
 
 @dataclass(frozen=True)
@@ -704,25 +704,28 @@ class VerificationLadder:
         found: dict[str, list[NamedTest]] = {}
         root = self.s.paths.workspace
         patterns = {identifier: word_pattern(identifier) for identifier in identifiers}
-        for path in sorted(root.rglob("*")):
-            relative = PurePosixPath(path.relative_to(root).as_posix())
-            if (
-                not path.is_file()
-                or path.suffix not in _GENERIC_TEST_SUFFIXES
-                or any(
-                    part.startswith(".") or part in {"node_modules", "build", "target", "vendor"}
-                    for part in relative.parts
-                )
-                or "test" not in relative.as_posix().lower()
-                or path.stat().st_size > _MAX_GENERIC_TEST_BYTES
-            ):
-                continue
-            text = path.read_text(encoding="utf-8", errors="replace")
-            for identifier, pattern in patterns.items():
-                if pattern.search(text):
-                    found.setdefault(identifier, []).append(
-                        NamedTest(relative.as_posix(), relative.as_posix())
-                    )
+        for current, directories, files in os.walk(root):
+            directories[:] = sorted(
+                item
+                for item in directories
+                if not item.startswith(".") and item not in _SKIPPED_TEST_DIRECTORIES
+            )
+            for name in sorted(files):
+                path = Path(current) / name
+                relative = PurePosixPath(path.relative_to(root).as_posix())
+                if (
+                    path.suffix not in _GENERIC_TEST_SUFFIXES
+                    or path.is_symlink()
+                    or "test" not in relative.as_posix().lower()
+                    or path.stat().st_size > _MAX_GENERIC_TEST_BYTES
+                ):
+                    continue
+                text = path.read_text(encoding="utf-8", errors="replace")
+                for identifier, pattern in patterns.items():
+                    if pattern.search(text):
+                        found.setdefault(identifier, []).append(
+                            NamedTest(relative.as_posix(), relative.as_posix())
+                        )
         return found
 
     def named_tests(self, task: Task) -> dict[str, list[NamedTest]]:
@@ -1160,10 +1163,6 @@ class VerificationLadder:
             }
             for item in attachments
         ]
-
-
-def actor_is_human(actor: Actor) -> bool:
-    return actor.actor_type is ActorType.HUMAN
 
 
 __all__ = [
