@@ -88,6 +88,17 @@
       "title": "CapabilityRule",
       "type": "object"
     },
+    "FindingSeverity": {
+      "enum": [
+        "INFO",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
     "IntakeConfig": {
       "additionalProperties": false,
       "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.",
@@ -108,6 +119,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": false,
+      "description": "Process bounds and, since 1.1, the feedback loop around the agent provider.\n\nThe loop settings are optional: a key that is absent keeps the 1.0.0 behaviour and is left\nout of the serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them.",
       "properties": {
         "allowNetwork": {
           "default": false,
@@ -132,6 +144,86 @@
           "minimum": 1,
           "title": "Maxparallel",
           "type": "integer"
+        },
+        "providerFeedback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerfeedback"
+        },
+        "providerRetries": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerretries"
+        },
+        "providerRetryDelaySeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerretrydelayseconds"
+        },
+        "providerTransientPatterns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providertransientpatterns"
+        },
+        "unsupportedClaimSeverity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verificationCorrections": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verificationcorrections"
         }
       },
       "title": "RuntimeConfig",

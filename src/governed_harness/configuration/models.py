@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-from governed_harness.domain.enums import PhaseId
+from governed_harness.domain.enums import FindingSeverity, PhaseId
 
 
 class ConfigModel(BaseModel):
@@ -43,11 +43,106 @@ class CapabilitiesConfig(ConfigModel):
     grants: tuple[CapabilityRule, ...] = ()
 
 
+DEFAULT_TRANSIENT_PATTERNS: tuple[str, ...] = (
+    "timed out",
+    "connection reset",
+    "went to sleep",
+    "overloaded",
+    "429",
+    "529",
+    "rate limit",
+    "usage limit",
+)
+"""Messages that mark a command-provider failure as transient when
+``runtime.providerTransientPatterns`` is not set (case-insensitive substrings)."""
+
+DEFAULT_UNSUPPORTED_CLAIM_SEVERITY = FindingSeverity.MEDIUM
+
+_OPTIONAL_RUNTIME_FIELDS = {
+    "verification_corrections": "verificationCorrections",
+    "provider_feedback": "providerFeedback",
+    "unsupported_claim_severity": "unsupportedClaimSeverity",
+    "provider_retries": "providerRetries",
+    "provider_retry_delay_seconds": "providerRetryDelaySeconds",
+    "provider_transient_patterns": "providerTransientPatterns",
+}
+
+
 class RuntimeConfig(ConfigModel):
+    """Process bounds and, since 1.1, the feedback loop around the agent provider.
+
+    The loop settings are optional: a key that is absent keeps the 1.0.0 behaviour and is left
+    out of the serialized configuration, so the snapshot digest of an existing project does not
+    change. ``harness init`` writes them."""
+
     command_timeout_seconds: int = Field(default=900, alias="commandTimeoutSeconds", ge=1)
     max_output_bytes: int = Field(default=1_000_000, alias="maxOutputBytes", ge=1024)
     max_parallel: int = Field(default=2, alias="maxParallel", ge=1, le=32)
     allow_network: bool = Field(default=False, alias="allowNetwork")
+    verification_corrections: int | None = Field(
+        default=None, alias="verificationCorrections", ge=0, le=10
+    )
+    provider_feedback: bool | None = Field(default=None, alias="providerFeedback")
+    unsupported_claim_severity: FindingSeverity | None = Field(
+        default=None, alias="unsupportedClaimSeverity"
+    )
+    provider_retries: int | None = Field(default=None, alias="providerRetries", ge=0, le=10)
+    provider_retry_delay_seconds: float | None = Field(
+        default=None, alias="providerRetryDelaySeconds", ge=0, le=3600
+    )
+    provider_transient_patterns: tuple[str, ...] | None = Field(
+        default=None, alias="providerTransientPatterns"
+    )
+
+    @field_validator("provider_transient_patterns")
+    @classmethod
+    def patterns_must_not_be_blank(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None and any(not item.strip() for item in value):
+            raise ValueError("providerTransientPatterns must not contain blank patterns")
+        return value
+
+    @property
+    def correction_limit(self) -> int:
+        """Automatic corrections after a failed VERIFICATION: 0 when the key is absent."""
+        return self.verification_corrections or 0
+
+    @property
+    def claim_check_enabled(self) -> bool:
+        """The unsupported-claim check belongs to the verification loop: it runs when
+        ``verificationCorrections`` is set, with any value."""
+        return self.verification_corrections is not None
+
+    @property
+    def claim_severity(self) -> FindingSeverity:
+        return self.unsupported_claim_severity or DEFAULT_UNSUPPORTED_CLAIM_SEVERITY
+
+    @property
+    def feedback_enabled(self) -> bool:
+        return bool(self.provider_feedback)
+
+    @property
+    def retry_limit(self) -> int:
+        return self.provider_retries or 0
+
+    @property
+    def retry_delay_seconds(self) -> float:
+        return self.provider_retry_delay_seconds or 0.0
+
+    @property
+    def transient_patterns(self) -> tuple[str, ...]:
+        if self.provider_transient_patterns is None:
+            return DEFAULT_TRANSIENT_PATTERNS
+        return self.provider_transient_patterns
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_loop_settings(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        # Same rule as the intake section: a project.yaml written for 1.0.0 serializes as before.
+        data: dict[str, Any] = handler(self)
+        for field, alias in _OPTIONAL_RUNTIME_FIELDS.items():
+            if getattr(self, field) is None:
+                data.pop(alias, None)
+                data.pop(field, None)
+        return data
 
 
 class AgentProviderConfiguration(ConfigModel):

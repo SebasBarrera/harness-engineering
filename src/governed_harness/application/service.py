@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness import __version__
-from governed_harness.configuration import ConfigurationResolver, initialize_project
+from governed_harness.configuration import ConfigurationResolver, RuntimeConfig, initialize_project
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -84,6 +84,20 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "feedbackLoop": self._feedback_loop(resolved.project.runtime),
+        }
+
+    @staticmethod
+    def _feedback_loop(runtime: RuntimeConfig) -> dict[str, Any]:
+        """Effective values of the provider feedback loop (absent keys resolve to 'off')."""
+        return {
+            "verificationCorrections": runtime.correction_limit,
+            "providerFeedback": runtime.feedback_enabled,
+            "unsupportedClaimCheck": runtime.claim_check_enabled,
+            "unsupportedClaimSeverity": runtime.claim_severity.value,
+            "providerRetries": runtime.retry_limit,
+            "providerRetryDelaySeconds": runtime.retry_delay_seconds,
+            "providerTransientPatterns": list(runtime.transient_patterns),
         }
 
     def create_task(self, path: Path, source: Path) -> Task:
