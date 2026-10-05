@@ -45,7 +45,7 @@ The list below is the complete set computed by `MetricsProjector.project` in
 | `changesets.count` | count | OBSERVED | Number of distinct persisted ChangeSet records. | ChangeSet records | |
 | `changeset.files` | count | DERIVED | Unique paths appearing in persisted ChangeSets. | ChangeSet records | |
 | `human.decisions` | count | OBSERVED | Number of persisted human decisions. | decision records | |
-| `human.interactions` | count | OBSERVED | Events a person caused on the run: decisions, clarification answers, plan, acceptance and preflight decisions, budget raises, quarantines, contract confirmations (one confirmed with the clarification answers counts with them) and attached evidence (since #55; reported against `intake.interruptions.target`). | run events with a human actor | |
+| `human.interactions` | count | OBSERVED | Events a person caused on the run: decisions, clarification answers, plan, acceptance and preflight decisions, budget raises, quarantines, contract confirmations (one confirmed with the clarification answers, or with a pre-authorised approval, counts with them), attached evidence (since #55; reported against `intake.interruptions.target`), approvals given in advance and plan approvals (since #58). A decision the harness records from a pre-authorisation is not counted again. | run events with a human actor | |
 | `tokens.input` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported input tokens; no estimation. | resource usage records | See below. |
 | `tokens.output` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported output tokens; no estimation. | resource usage records | See below. |
 | `tokens.reasoning` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported reasoning tokens; no estimation. | resource usage records | See below. |
@@ -56,6 +56,14 @@ simulated provider does not call a model and creates none. A command provider cr
 response carries the optional `usage` object (see
 [connecting an external agent](guides/external-agents.md)); the values are then `REPORTED`. When a
 provider reports nothing, the harness shows the gap instead of estimating it.
+
+## Aggregated metrics
+
+`harness metrics` (since 1.1, issue #58) aggregates these records over the runs of a repository,
+or of every repository of the run registry, into tokens and cost by agent, model, task and phase,
+lines, delivery, time, quality, friction against per-size targets and trends, with zero model
+calls; costs of providers that report tokens without a cost are estimated from a price table and
+labelled `estimated`. See [local metrics](guides/local-metrics.md).
 
 ## Reading the metrics
 

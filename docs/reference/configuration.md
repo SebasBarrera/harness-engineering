@@ -237,6 +237,35 @@ architecture:
   mode: agent
   refresh: manual
   enforce: enforce
+friction:
+  fastLane:
+    mode: auto
+    skip:
+    - ambiguityReview
+    - decomposition
+    - agentReview
+    - preflight
+    - mutation
+    verification:
+      affectedTestsFirst: true
+      parallel: true
+      cache: true
+  preAuthorization:
+    mode: allow
+    defaultHours: 24
+    maxHours: 72
+  changeTypes: true
+  planApproval: risk
+  targets:
+    S:
+      interactions: 1
+      minutes: 30
+    M:
+      interactions: 3
+      minutes: 240
+    L:
+      interactions: 6
+      minutes: 1440
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -301,6 +330,8 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
 | `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
+| `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
+| `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
 
 ## Located findings
 
@@ -1117,6 +1148,29 @@ confirmContract: true
 | `delivery.pullRequest` | none | `create: false`, `draft: true` | `create` the pull or merge request after the push, and `draft` (over `delivery.forge.draft`). The forge, the repository, the base (`delivery.forge.baseBranch`, else the remote's default branch), the labels and the template (followed by the decision brief) are the forge layer's: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from `origin` unless `delivery.forge` names it (see [forges](../guides/forges.md)). Created once per run; the contract's `createPullRequest` overrides `create`. |
 | `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request through the same forge (one comment per run, updated on a retry) when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
 | `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
+
+## Friction
+
+The keys of this section (since 1.1, issue #58) are optional: a `project.yaml` without the
+`friction` section keeps the 1.0.0 behaviour and its configuration digest. `harness init` writes
+it; `harness config validate` shows the effective values under `friction`. Guides:
+[low friction for small changes](../guides/low-friction.md) and
+[local metrics](../guides/local-metrics.md).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `friction.fastLane.mode` | off | `auto` | Size `S` (router of #44) without a risk flag takes the fast lane; the lane and why are recorded (`lane.classified`). A risk factor in the ChangeSet or a ChangeSet larger than `S` takes the run back to the full flow (`lane.escalated`). |
+| `friction.fastLane.skip` | the five below | `ambiguityReview`, `decomposition`, `agentReview`, `preflight`, `mutation` | What the fast lane leaves out; `agentReview` means the agent review runs only on a signal. `acceptanceTests` may be added. |
+| `friction.fastLane.verification.affectedTestsFirst` | off | `true` | The Python tests the change affects run first; a failure stops the attempt, the full suite still runs before the gate. |
+| `friction.fastLane.verification.parallel` | off | `true` | The profile validators run side by side, up to `runtime.maxParallel`. |
+| `friction.fastLane.verification.cache` | off | `true` | A `PASSED` validator result is reused for the same validator, ChangeSet digest, baseline and configuration. |
+| `friction.preAuthorization.mode` | off | `allow` | A person may approve in advance with the contract confirmation (`harness do --pre-approve`, `harness task confirm --pre-approve`), bound to the contract digest and the condition gate passed, no risk factor, size `S`. |
+| `friction.preAuthorization.defaultHours`, `maxHours` | `24`, `168` | `24`, `72` | Validity of a pre-authorisation when none is given, and its maximum. |
+| `friction.changeTypes` | off | `true` | A documentation-only or configuration-only ChangeSet needs no new tests and no requirement traceability. |
+| `friction.planApproval` | off | `risk` | `risk`: tasks sized `L` or with a risk flag wait for a person to approve their plan, bound to its digest, before IMPLEMENTATION (#8); `always`: every task. |
+| `friction.targets` | the values `init` writes | `S` 1 interaction and 30 minutes, `M` 3 and 240, `L` 6 and 1440 | Friction targets per task size, reported by `harness metrics`. |
+| `metrics.prices` | none | none | US dollars per million `input`, `output` and `cache` tokens by model id (`provider/model`, model or provider id), used only to estimate the cost of calls that reported tokens without a cost; labelled `estimated`. |
+| `metrics.narrative.command`, `timeoutSeconds` | none | none | The command `harness metrics --narrative` calls once, on demand, with the prompt and the metrics on standard input. |
 
 ## Technology profiles
 
