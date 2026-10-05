@@ -68,6 +68,7 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
+from governed_harness.forges import render_code_quality
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
@@ -101,6 +102,7 @@ from .exceptions import (
     parse_scope,
     record_exception,
 )
+from .forges import create_on_forge, forge_report, publish_on_forge, status_on_forge
 from .health import list_outcomes, record_outcome, rule_health
 from .hints import default_hint
 from .notifications import inbox, notify, notify_transition
@@ -848,10 +850,32 @@ class HarnessApplication:
         sarif: bool | None = None,
         commit_sha: str | None = None,
         transport_override: Transport | None = None,
+        forge: str | None = None,
     ) -> dict[str, Any]:
-        """Post the decision brief of a run on a pull request and upload its SARIF report."""
+        """Post the decision brief of a run on a pull request and upload its SARIF report.
+
+        Since #56 any forge: with ``forge`` (or ``delivery.forge``), or when ``origin`` is not
+        a GitHub remote, the forge layer posts the comment and the forge's quality report."""
         with self._services(path) as services:
             run_id = self._run_id(services, execution_id)
+            use_forge = forge is not None or (
+                services.resolved.project.delivery_settings.forge is not None
+            )
+            if not use_forge and repository is None:
+                detected = forge_report(services)
+                use_forge = detected.get("status") == "DETECTED" and detected["kind"] != "github"
+            if use_forge:
+                return publish_on_forge(
+                    services,
+                    run_id,
+                    pull_request=pull_request,
+                    kind=forge,
+                    repository=repository,
+                    transport={"gh": "cli", "glab": "cli"}.get(transport or "", transport),
+                    reports=sarif,
+                    commit_sha=commit_sha,
+                    transport_override=transport_override,
+                )
             settings = services.resolved.project.delivery_settings.publisher or PublisherConfig()
             updates: dict[str, Any] = {}
             if repository is not None:
@@ -887,6 +911,67 @@ class HarnessApplication:
                 sarif=report,
                 commit_sha=commit_sha,
             )
+
+    def create_pull_request(
+        self,
+        path: Path,
+        execution_id: str,
+        *,
+        head: str | None = None,
+        base: str | None = None,
+        title: str | None = None,
+        labels: tuple[str, ...] = (),
+        draft: bool | None = None,
+        forge: str | None = None,
+        repository: str | None = None,
+        transport: str | None = None,
+        transport_override: Transport | None = None,
+    ) -> dict[str, Any]:
+        """Open a pull or merge request from the run's closure branch on its forge (#56)."""
+        with self._services(path) as services:
+            return create_on_forge(
+                services,
+                self._run_id(services, execution_id),
+                head=head,
+                base=base,
+                title=title,
+                labels=labels,
+                draft=draft,
+                kind=forge,
+                repository=repository,
+                transport=transport,
+                transport_override=transport_override,
+            )
+
+    def pull_request_status(
+        self,
+        path: Path,
+        execution_id: str,
+        *,
+        commit_sha: str,
+        target_url: str | None = None,
+        forge: str | None = None,
+        repository: str | None = None,
+        transport: str | None = None,
+        transport_override: Transport | None = None,
+    ) -> dict[str, Any]:
+        """Set the commit status of the run on its forge (#56)."""
+        with self._services(path) as services:
+            return status_on_forge(
+                services,
+                self._run_id(services, execution_id),
+                commit_sha=commit_sha,
+                target_url=target_url,
+                kind=forge,
+                repository=repository,
+                transport=transport,
+                transport_override=transport_override,
+            )
+
+    def forge(self, path: Path) -> dict[str, Any]:
+        """The forge the workspace resolves to, without calling it."""
+        with self._services(path) as services:
+            return forge_report(services)
 
     def list_runs(self, path: Path) -> list[Execution]:
         with self._services(path) as services:
@@ -948,6 +1033,8 @@ class HarnessApplication:
                 return reporter.render_json(**kwargs)
             if format == "sarif":
                 return reporter.render_sarif(findings)
+            if format == "codequality":
+                return render_code_quality(findings)
             if format == "jsonl":
                 return services.events.export_jsonl(execution_id)
             if format != "markdown":

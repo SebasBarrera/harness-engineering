@@ -647,7 +647,9 @@ def status(
 @app.command()
 def trace(
     run: str = RUN_OPTION_LATEST,
-    format: str = typer.Option("markdown", "--format", help="markdown, json, jsonl or sarif"),
+    format: str = typer.Option(
+        "markdown", "--format", help="markdown, json, jsonl, sarif or codequality"
+    ),
     output: Path | None = typer.Option(
         None, "--output", help="Write to this file instead of standard output"
     ),
@@ -655,7 +657,8 @@ def trace(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
-    """Export the trace of a run as Markdown, JSON, JSONL or SARIF. Under
+    """Export the trace of a run as Markdown, JSON, JSONL, SARIF or a GitLab Code Quality
+    report (codequality: the findings, with the same fingerprints as SARIF). Under
     `governance.verifyRecords: true` the run is verified first (as `harness verify`) and a run
     that does not verify is not exported (exit code 6)."""
     data = _call(lambda: HarnessApplication().trace(path, run, format))
@@ -770,13 +773,21 @@ def pr_publish(
     commit: str | None = typer.Option(
         None, "--commit", help="Commit the SARIF report belongs to (default: the PR head)"
     ),
+    forge: str | None = typer.Option(
+        None,
+        "--forge",
+        help="github, gitlab, bitbucket, azure-devops or gitea (default: delivery.forge, else "
+        "detected from the origin remote)",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
-    """Post the decision brief of a run on a GitHub pull request (one comment per run, updated
-    when published again) and upload the run's findings as SARIF. Information only: nothing is
-    decided on the pull request."""
+    """Post the decision brief of a run on a pull or merge request (one comment per run,
+    updated when published again) and attach the run's findings: SARIF to GitHub code scanning,
+    a Code Insights report on Bitbucket; GitLab and Azure DevOps read the report from CI
+    artifacts. GitHub is the default; another forge is detected from the origin remote or set
+    with --forge or delivery.forge. Information only: nothing is decided on the forge."""
     _emit(
         _call(
             lambda: HarnessApplication().publish_pull_request(
@@ -787,9 +798,109 @@ def pr_publish(
                 transport=transport,
                 sarif=sarif,
                 commit_sha=commit,
+                forge=forge,
             )
         )
     )
+
+
+@pr_app.command("create")
+def pr_create(
+    run: str = RUN_OPTION_LATEST,
+    base: str | None = typer.Option(
+        None, "--base", help="Target branch (default: delivery.forge.baseBranch)"
+    ),
+    head: str | None = typer.Option(
+        None, "--head", help="Source branch (default: the closure branch of the run)"
+    ),
+    title: str | None = typer.Option(None, "--title", help="Title (default: the task title)"),
+    label: list[str] | None = typer.Option(
+        None, "--label", help="Label, added to delivery.forge.labels (repeatable)"
+    ),
+    draft: bool | None = typer.Option(
+        None, "--draft/--ready", help="Open it as a draft (default: delivery.forge.draft)"
+    ),
+    forge: str | None = typer.Option(
+        None, "--forge", help="github, gitlab, bitbucket, azure-devops or gitea"
+    ),
+    repository: str | None = typer.Option(
+        None, "--repository", help="Repository path on the forge (default: the origin remote)"
+    ),
+    transport: str | None = typer.Option(
+        None, "--transport", help="cli (gh or glab) or api (HTTPS, token from the environment)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Open a pull or merge request from the closure branch of a run (push the branch first),
+    with the repository's pull request template and the decision brief as its description and
+    the configured labels. The creation is recorded as a delivery.pull-request.created event.
+    Nothing is approved on the forge: the approval is the run's digest-bound decision."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().create_pull_request(
+                path,
+                run,
+                head=head,
+                base=base,
+                title=title,
+                labels=tuple(label or ()),
+                draft=draft,
+                forge=forge,
+                repository=repository,
+                transport=transport,
+            )
+        )
+    )
+
+
+@pr_app.command("status")
+def pr_status(
+    commit: str = typer.Option(..., "--commit", help="Commit whose status is set"),
+    run: str = RUN_OPTION_LATEST,
+    target_url: str | None = typer.Option(
+        None, "--target-url", help="Link shown with the status (for example the CI job)"
+    ),
+    forge: str | None = typer.Option(
+        None, "--forge", help="github, gitlab, bitbucket, azure-devops or gitea"
+    ),
+    repository: str | None = typer.Option(
+        None, "--repository", help="Repository path on the forge (default: the origin remote)"
+    ),
+    transport: str | None = typer.Option(
+        None, "--transport", help="cli (gh or glab) or api (HTTPS, token from the environment)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Set the commit status governed-harness from a run: success once it closed approved,
+    pending while it waits for a human decision, failure otherwise."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().pull_request_status(
+                path,
+                run,
+                commit_sha=commit,
+                target_url=target_url,
+                forge=forge,
+                repository=repository,
+                transport=transport,
+            )
+        )
+    )
+
+
+@pr_app.command("forge")
+def pr_forge(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the forge the workspace resolves to (delivery.forge or the origin remote), its API
+    URL, transport and the environment variable its token is read from. Calls nothing."""
+    _emit(_call(lambda: HarnessApplication().forge(path)))
 
 
 @app.command()
