@@ -21,7 +21,7 @@ from governed_harness.domain.errors import (
     NotFoundError,
     PolicyViolationError,
 )
-from governed_harness.domain.models import DeferredVerification, Finding
+from governed_harness.domain.models import DeferredVerification, Finding, utc_now
 from governed_harness.orchestration.engine import EngineServices
 
 GOOD = (
@@ -359,6 +359,53 @@ def test_an_expired_deferred_item_cannot_be_closed(python_workspace: Path, tmp_p
         application.attach_evidence(
             python_workspace, file=passing, execution_id=run, item="D-ac_unit", actor_id="human.ci"
         )
+
+
+def test_the_inbox_warns_before_a_deferred_item_expires(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace)
+    application, execution = start(
+        python_workspace,
+        tmp_path,
+        task(
+            [
+                {
+                    "criterionId": "ac_unit",
+                    "text": "apply_discount(100, 100, 0.1) returns 90.",
+                    "verification": {"level": "L4", "deferred": "staging"},
+                }
+            ]
+        ),
+    )
+    run = execution.execution_id
+    inbox = [
+        entry for entry in application.inbox(python_workspace) if entry.get("kind") == "deferred"
+    ]
+    assert [entry["status"] for entry in inbox] == ["PENDING"]
+    assert inbox[0]["warning"] is None
+    resolved = ConfigurationResolver().resolve(python_workspace)
+    services = EngineServices.open(resolved)
+    try:
+        item = services.state.list("deferred_verification", DeferredVerification, execution_id=run)[
+            0
+        ]
+        soon = item.model_copy(update={"expires_at": utc_now() + timedelta(hours=30)})
+        services.state.put(
+            "deferred_verification",
+            item.deferred_id,
+            soon,
+            execution_id=run,
+            project_id=item.project_id,
+        )
+    finally:
+        services.close()
+    inbox = [
+        entry for entry in application.inbox(python_workspace) if entry.get("kind") == "deferred"
+    ]
+    assert [entry["status"] for entry in inbox] == ["PENDING"]
+    assert inbox[0]["warning"] == "expires within 2 day(s)"
+    assert inbox[0]["next"].startswith(f"harness evidence attach --run {run} --item D-ac_unit")
 
 
 def test_a_declared_rung_that_is_not_reached_fails_the_verification(
