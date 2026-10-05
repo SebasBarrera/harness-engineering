@@ -89,6 +89,15 @@
   `project.yaml` without the settings behaves as before, sends the same provider request and
   keeps its configuration snapshot digest. `harness config validate` shows the effective values
   under `feedbackLoop`.
+- The ChangeSet diff is a valid unified diff (#50). Every line of the stored diff was followed by an
+  empty line, so the artifact could not be applied with `git apply` and viewers showed it wrongly.
+  The diff now ends each line once, diffs an added file from `/dev/null` and a deleted one to it,
+  and marks a last line without a newline with `\ No newline at end of file`; lines are split on
+  newlines only, as Git does. A test applies a recorded diff with `git apply --check` and
+  `git apply`. This is a defect fix and applies to every project, with or without new settings:
+  the ChangeSet digest covers the diff, so a run recorded with this version has a different
+  ChangeSet digest than the same change recorded by 1.0.0. Records written by earlier versions
+  are read as they are and keep their digests.
 
 ## 1.0.0 - 2026-10-01
 
