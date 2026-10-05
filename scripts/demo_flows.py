@@ -8,8 +8,8 @@ checked against the documented expectation. The script is used by CI in three wa
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
   clarification, traceability, corrections, integrity, delivery, agent-results and ladder flows,
-  and the gitlab, tdd and bdd flows of wave 6, leaving the projects in ``--workdir`` so
-  ``scripts/metrics_report.py`` can read them (with ``HARNESS_STATE_DIR`` pointing at the same
+  the gitlab, tdd and bdd flows of wave 6 and the friction flow of wave 8, leaving the
+  projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them (with ``HARNESS_STATE_DIR`` pointing at the same
   run registry: ``runtime.stateDir: auto``, written by init, keeps it outside the workspaces);
 * any single flow name, for local debugging.
 
@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -1807,6 +1808,131 @@ def flow_bdd(t: Transcript, root: Path) -> None:
     )
 
 
+FRICTION_AGENT = """\
+import json, sys
+from pathlib import Path
+
+request = json.load(sys.stdin)
+kind = request.get("kind", "implement")
+results = {"clarify": {"questions": []}, "review": {"findings": []}, "plan": {"subtasks": []},
+           "acceptance": {"tests": []}, "locate": {"locations": []},
+           "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}}}
+if kind == "implement":
+    text = request["task"]["intent"]
+    with Path("README.md").open("a", encoding="utf-8") as handle:
+        handle.write("\\n" + text + "\\n")
+    answer = {"status": "PASSED", "summary": "README updated"}
+else:
+    answer = {"status": "PASSED", "summary": kind, "result": results.get(kind, {})}
+answer["usage"] = {"inputTokens": len(json.dumps(request)) // 4, "outputTokens": 20}
+print(json.dumps(answer))
+"""
+
+
+def flow_friction(t: Transcript, root: Path) -> None:
+    """Low friction for small changes and local metrics (#58): harness do on a small
+    documentation change with an approval given in advance closes the run in one command
+    (fast lane, the approval applied because the gate passed, no risk factor, size S); a second
+    change waits in the inbox and is approved there by digest; harness metrics writes one
+    self-contained HTML file. A fixture command provider writes the README; no model."""
+    flow = "friction"
+    python_project(root)
+    (root / "README.md").write_text("# Sample\n")
+    (root / "agent.py").write_text(FRICTION_AGENT)
+    with (root / ".gitignore").open("a", encoding="utf-8") as handle:
+        handle.write("agent.py\n*.json\nmetrics.html\n")
+    git(root, "add", ".")
+    git(root, "commit", "-qm", "readme")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    import yaml  # a dependency of the package
+
+    config_path = root / ".harness" / "project.yaml"
+    config = yaml.safe_load(config_path.read_text())
+    config["agentProvider"] = "fixture"
+    config["agentProviders"] = {"fixture": {"kind": "command", "command": ["python", "agent.py"]}}
+    config["runtime"].update({"agentSandbox": "off", "providerRetryDelaySeconds": 0})
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    done = t.json(
+        flow,
+        root,
+        [
+            "do",
+            "The discount applies at or above the threshold.",
+            *here,
+            "--criterion",
+            "README.md states that the discount applies at or above the threshold",
+            "--pre-approve",
+            "--actor",
+            "you",
+            "--no-interactive",
+            "--json",
+        ],
+        0,
+    )
+    t.check(
+        flow,
+        done["run"]["status"] == "PASSED"
+        and done["lane"]["lane"] == "fast"
+        and done["preAuthorization"]["conditions"] == ["gatePassed", "noRiskFactors", "sizeS"],
+        "the fast lane closes the run with the approval given in advance",
+    )
+    git(root, "add", "README.md")
+    git(root, "commit", "-qm", "first change")
+    waiting = t.json(
+        flow,
+        root,
+        [
+            "do",
+            "Amounts are rounded to two decimals.",
+            *here,
+            "--criterion",
+            "README.md states that amounts are rounded to two decimals",
+            "--no-interactive",
+            "--json",
+        ],
+        4,
+    )
+    run_id = waiting["run"]["executionId"]
+    inbox = t.json(flow, root, ["inbox", *here, "--json"], 0)
+    pending = [item for item in inbox if item.get("executionId") == run_id]
+    t.check(flow, bool(pending) and pending[0]["kind"] == "decision", "the run waits in the inbox")
+    digest = pending[0]["changeSetDigest"] if pending else "sha256:missing"
+    batch = t.json(
+        flow,
+        root,
+        [
+            "inbox",
+            *here,
+            "--approve",
+            f"{run_id}={digest}",
+            "--rationale",
+            "Documentation only",
+            "--actor",
+            "you",
+            "--json",
+        ],
+        0,
+    )
+    t.check(flow, batch["recorded"] == 1, "the batch decision is bound to the run's digest")
+    t.run(flow, root, ["metrics", *here, "--format", "html", "--output", "metrics.html"], 0)
+    page = (root / "metrics.html").read_text(encoding="utf-8")
+    t.check(
+        flow,
+        not re.search(r"""(src|href)\s*=\s*["']?https?:""", page)
+        and "<script" not in page
+        and "<link" not in page
+        and "<svg" in page,
+        "the metrics HTML is self-contained (no remote src or href, no script)",
+    )
+    report = t.json(flow, root, ["metrics", *here, "--format", "json"], 0)
+    t.check(
+        flow,
+        report["totals"]["runs"] == 2 and report["quality"]["preAuthorizedApprovals"] == 1,
+        "the metrics count both runs and the approval given in advance",
+    )
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -1824,6 +1950,7 @@ FLOWS = {
     "gitlab": flow_gitlab,
     "tdd": flow_tdd,
     "bdd": flow_bdd,
+    "friction": flow_friction,
 }
 
 
