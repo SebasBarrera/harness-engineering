@@ -426,6 +426,28 @@ def _exceptions(items: Sequence[Mapping[str, Any]]) -> list[str]:
     return table(rows, ["EXCEPTION", "STATUS", "EXPIRES", "BY", "SCOPES", "USED IN", "FOLLOW-UP"])
 
 
+def _inbox(items: Sequence[Mapping[str, Any]]) -> list[str]:
+    if not items:
+        return ["Nothing waits for a person."]
+    rows = []
+    for item in items:
+        if item["kind"] == "decision":
+            detail = f"gate {item['gateStatus']}, {item['blockingFindings']} blocking finding(s)"
+        else:
+            detail = f"{item['questions']} question(s)"
+        rows.append(
+            [
+                str(item["kind"]),
+                str(item["executionId"]),
+                short(item["taskTitle"], 36),
+                detail,
+                f"{item['waitingHours']} h",
+                str(item["next"]),
+            ]
+        )
+    return table(rows, ["WAITS FOR", "RUN", "TASK", "STATE", "WAITING", "NEXT"])
+
+
 Renderer = Callable[[Any], list[str]]
 
 RENDERERS: dict[str, Renderer] = {
@@ -439,6 +461,7 @@ RENDERERS: dict[str, Renderer] = {
     "init": _init,
     "review": _review,
     "exceptions": _exceptions,
+    "inbox": _inbox,
 }
 
 

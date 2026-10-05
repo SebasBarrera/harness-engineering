@@ -90,6 +90,7 @@ verification:
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 | `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
+| `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
 
 ## Exceptions
 
@@ -122,6 +123,44 @@ granted each exception, on which run and digest, its scope, evidence and follow-
 and the runs whose gate relied on it. `harness review` shows the exceptions granted in a run or
 relied on by its gate. Interactive decisions ask for the expiry, the alternative evidence and
 the follow-up.
+
+## Notifications
+
+`harness inbox` (and `GET /api/inbox`, the dashboard's left column) lists the runs that wait for
+a person: a decision in `DECISION` (gate status, digest, blocking findings) or answers to
+clarification questions in `INTENT`, oldest first. It needs no configuration. The dashboard
+refreshes the inbox, the runs and the selected run every 5 seconds.
+
+Webhooks are opt-in. `harness init` writes none, because a URL is needed:
+
+```yaml
+notifications:
+  webhooks:
+    - urlEnv: HARNESS_SLACK_WEBHOOK   # or url: https://hooks.example.invalid/...
+      events: [decision.pending, run.finished, exception.granted]
+      retries: 2                      # default 2 (0 to 10)
+      timeoutSeconds: 5               # default 5
+```
+
+Each webhook needs exactly one of `url` (an `http://` or `https://` URL written in the file, so it
+enters the configuration snapshot) or `urlEnv` (the name of an environment variable read when the
+notification is sent, so a URL that carries a token stays out of the file and of the snapshot).
+`events` defaults to `decision.pending` and `run.finished`.
+
+| Event | Sent when |
+|---|---|
+| `decision.pending` | A run stops in `DECISION` waiting for a person, once per ChangeSet digest. |
+| `run.finished` | A run closes (`PASSED`), is rejected or is cancelled, once per run. |
+| `exception.granted` | An exception is recorded under `review.exceptions`. |
+
+The harness sends a JSON `POST` with `event`, `occurredAt`, `harnessVersion`, `projectId`,
+`executionId`, `taskId`, `taskTitle`, `status`, `currentPhase`, `changeSetDigest`, `gateStatus`
+and `next` (the `harness review` command); `exception.granted` adds `exceptionId` and `expiresAt`.
+It never sends a rationale, a validator output, the URL or an environment value. A response
+outside 2xx or a network error is retried with a growing wait (0.5 s, 1 s, 2 s, at most 5 s). The
+outcome of every notification (delivered or failed, attempts, HTTP status, webhook index; never
+the URL) is stored as a `notification` record outside the run's event chain. A failed
+notification never changes the run or the exit code of the command.
 
 ## Policies
 

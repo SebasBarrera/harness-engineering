@@ -129,6 +129,13 @@ def create_app(workspace: Path) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=409, detail=str(error)) from error
 
+    @api.get("/api/inbox")
+    def pending() -> list[dict[str, object]]:
+        try:
+            return application.inbox(root)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+
     @api.get("/api/exceptions")
     def exceptions(status: Literal["all", "active", "expired"] = "all") -> list[dict[str, object]]:
         try:
@@ -178,12 +185,14 @@ ul { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; } code { overflow-
 <body>
 <header><h1>Governed Agent Harness</h1><div>Local observability and explicit, digest-bound human decisions.</div></header>
 <main>
-<section><h2>Executions</h2><div id="runs">Loading...</div></section>
+<section><h2>Waiting for a person</h2><div id="inbox">Loading...</div>
+<h2 style="margin-top:20px">Executions</h2><div id="runs">Loading...</div>
+<div class="notice">Refreshes every 5 seconds.</div></section>
 <section><h2>Selected execution</h2><div id="decision"></div><div id="brief">Select an execution.</div>
 <details><summary>Status (JSON)</summary><pre id="detail"></pre></details></section>
 </main>
 <script>
-let selected = null; let brief = null;
+let selected = null; let brief = null; let selectedId = null; let decisionKey = null;
 function esc(value){ return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 async function request(url, options){
  const response=await fetch(url, options); const body=await response.json();
@@ -196,11 +205,26 @@ async function loadRuns(){
   button.onclick=()=>loadRun(run.executionId); target.appendChild(button); }
  if(!runs.length) target.textContent='No executions recorded.';
 }
+async function loadInbox(){
+ const items=await request('/api/inbox'); const target=document.getElementById('inbox'); target.innerHTML='';
+ for(const item of items){ const button=document.createElement('button'); button.className='run';
+  const state=item.kind==='decision'?`gate ${esc(item.gateStatus)}, ${item.blockingFindings} blocking`:`${item.questions} question(s)`;
+  button.innerHTML=`<b>${esc(item.kind)}</b> ${esc(item.taskTitle)}<br><small>${esc(item.executionId)} - ${state} - ${item.waitingHours} h</small>`;
+  button.onclick=()=>loadRun(item.executionId); target.appendChild(button); }
+ if(!items.length) target.textContent='Nothing waits for a person.';
+}
 async function loadRun(id){
+ selectedId=id;
  selected=await request('/api/runs/'+encodeURIComponent(id));
  brief=await request('/api/runs/'+encodeURIComponent(id)+'/review');
  document.getElementById('detail').textContent=JSON.stringify(selected,null,2);
- renderBrief(brief); renderDecision(id, brief);
+ renderBrief(brief);
+ const key=`${id}|${brief.run.awaitingDecision}|${brief.run.changeSetDigest}`;
+ if(key!==decisionKey){ decisionKey=key; renderDecision(id, brief); }
+}
+async function refresh(){
+ try { await loadInbox(); await loadRuns(); if(selectedId){ await loadRun(selectedId); } }
+ catch(error){ document.getElementById('runs').textContent=error.message; }
 }
 function list(items, render){ return items.length ? '<ul>'+items.map(render).join('')+'</ul>' : '<div>none</div>'; }
 function renderBrief(b){
@@ -250,10 +274,10 @@ async function decide(id, decision){
   await request('/api/runs/'+encodeURIComponent(id)+'/decision',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
    decision,change_set_digest:digest,actor_id:document.getElementById('actor').value,rationale,continue_after:true
   })});
-  await loadRuns(); await loadRun(id);
+  decisionKey=null; await refresh();
  } catch(error){ alert(error.message); }
 }
-loadRuns().catch(error=>document.getElementById('runs').textContent=error.message);
+refresh(); setInterval(refresh, 5000);
 </script>
 </body>
 </html>"""

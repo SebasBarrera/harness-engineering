@@ -54,6 +54,7 @@ from .exceptions import (
     record_exception,
 )
 from .hints import default_hint
+from .notifications import inbox, notify, notify_transition
 from .onboarding import (
     EXAMPLE_TASK_NAME,
     ensure_gitignore,
@@ -282,17 +283,30 @@ class HarnessApplication:
             engine = RunEngine(services)
             task = engine.get_task(task_id)
             execution = engine.create_execution(task, provider=provider)
-            return engine.continue_execution(execution.execution_id)
+            return self._after(services, engine.continue_execution(execution.execution_id))
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
-            return RunEngine(services).continue_execution(execution_id)
+            return self._after(services, RunEngine(services).continue_execution(execution_id))
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str) -> Execution:
         with self._services(path) as services:
             execution_id = self._run_id(services, execution_id)
-            return RunEngine(services).cancel(execution_id, actor_id)
+            return self._after(services, RunEngine(services).cancel(execution_id, actor_id))
+
+    @staticmethod
+    def _after(services: EngineServices, execution: Execution) -> Execution:
+        """Side effects of reaching a state a person cares about: the webhooks of
+        ``notifications``. They never change the run; a delivery failure is recorded, not
+        raised."""
+        notify_transition(services, execution)
+        return execution
+
+    def inbox(self, path: Path) -> list[dict[str, Any]]:
+        """Runs of the project waiting for a person (decision or clarification answers)."""
+        with self._services(path) as services:
+            return inbox(services)
 
     def decide_gate(
         self,
@@ -344,12 +358,19 @@ class HarnessApplication:
                 expires_at=expiry,
             )
             if records_exception:
-                record_exception(
+                granted = record_exception(
                     services,
                     decision=record,
                     scope=scopes,
                     alternative_evidence=options.alternative_evidence,
                     follow_up=options.follow_up,
+                )
+                notify(
+                    services,
+                    engine.get_execution(execution_id),
+                    "exception.granted",
+                    exceptionId=granted.exception_id,
+                    expiresAt=granted.expires_at.isoformat(),
                 )
             execution = (
                 engine.continue_execution(execution_id)
@@ -357,7 +378,7 @@ class HarnessApplication:
                 and decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}
                 else engine.get_execution(execution_id)
             )
-            return record, execution
+            return record, self._after(services, execution)
 
     def status(self, path: Path, execution_id: str) -> dict[str, Any]:
         with self._services(path) as services:

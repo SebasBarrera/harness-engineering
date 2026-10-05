@@ -306,7 +306,7 @@ class ReviewConfig(ConfigModel):
         return data
 
 
-NotificationEvent = Literal["decision.pending", "run.finished"]
+NotificationEvent = Literal["decision.pending", "run.finished", "exception.granted"]
 
 _WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
 

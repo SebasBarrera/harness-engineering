@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Pending-decision inbox and notifications (#53). Nothing told a person that a run was waiting
+  for them. `harness inbox` and `GET /api/inbox` list the runs waiting for a decision or for
+  clarification answers, oldest first, with the next command; the dashboard shows them and
+  refreshes every 5 seconds. The optional `notifications.webhooks` setting (`url`, or `urlEnv` to
+  keep a token out of `project.yaml` and of the configuration snapshot) receives a JSON `POST` on
+  `decision.pending` (once per digest), `run.finished` (closed, rejected or cancelled) and, if
+  listed, `exception.granted`, with identifiers, statuses and digests only; failures are retried
+  with a bounded backoff and recorded as `notification` records (never the URL), outside the
+  run's event chain, and never change the run. Without the setting nothing is sent or recorded.
+
 - Exceptions with expiry, scope and follow-up (#53). Under the new `review.exceptions` setting
   (written by `harness init`), `APPROVE_EXCEPTION` sets the decision's `expiresAt` (it was always
   null) from `--expires-in`/`--expires-at` or `review.exceptionDays`, and records an exception

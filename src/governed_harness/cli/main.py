@@ -819,6 +819,19 @@ def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hi
     return hint
 
 
+@app.command()
+def inbox(
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the runs of the project that wait for a person, oldest first: a decision in
+    DECISION (gate status, digest, blocking findings) or answers to clarification questions in
+    INTENT, each with the next command."""
+    _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+
+
 @exceptions_app.command("list")
 def exceptions_list(
     status: str = typer.Option("all", "--status", help="all, active or expired"),
