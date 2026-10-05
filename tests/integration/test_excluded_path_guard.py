@@ -5,6 +5,7 @@ gate, and the agent sandbox keeps ``.harness`` and ``.git`` read-only."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -137,6 +138,7 @@ def test_without_the_setting_the_writes_stay_invisible(
     assert not [item for item in findings if item.validator_id == "harness.workspace-guard"]
 
 
+@pytest.mark.skipif(os.name == "nt", reason="creating symbolic links needs privileges on Windows")
 def test_guard_ignores_harness_state_and_git_reads(tmp_path: Path) -> None:
     (tmp_path / ".harness" / "artifacts").mkdir(parents=True)
     (tmp_path / ".git").mkdir()
@@ -155,6 +157,7 @@ def test_guard_ignores_harness_state_and_git_reads(tmp_path: Path) -> None:
     assert changes == {("src/link.py", "ADDED"), (".harness/project.yaml", "ADDED")}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the sandbox profiles use POSIX paths")
 def test_sandbox_keeps_harness_and_git_read_only(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     (workspace / ".git").mkdir(parents=True)

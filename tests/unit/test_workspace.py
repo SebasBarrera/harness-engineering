@@ -55,14 +55,15 @@ def test_diff_is_a_patch_git_applies(tmp_path: Path) -> None:
         "notes.txt": "first\nstill no newline",
         "page.txt": "title\x0cfooter\nend\nmore\n",
     }
+    # Bytes, not text: newline translation on Windows would change the content.
     for relative, text in original.items():
         (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / relative).write_text(text, encoding="utf-8")
+        (tmp_path / relative).write_bytes(text.encode("utf-8"))
     snapshotter = WorkspaceSnapshotter(tmp_path)
     before = snapshotter.snapshot()
     (tmp_path / "src" / "gone.py").unlink()
     for relative, text in changed.items():
-        (tmp_path / relative).write_text(text, encoding="utf-8")
+        (tmp_path / relative).write_bytes(text.encode("utf-8"))
     after = snapshotter.snapshot()
     diff = snapshotter.diff(before, after)
     assert {change.status for change in diff.changes} == {"ADDED", "DELETED", "MODIFIED"}
@@ -70,7 +71,7 @@ def test_diff_is_a_patch_git_applies(tmp_path: Path) -> None:
     # Restore the baseline and apply the recorded diff to it.
     (tmp_path / "src" / "new.py").unlink()
     for relative, text in original.items():
-        (tmp_path / relative).write_text(text, encoding="utf-8")
+        (tmp_path / relative).write_bytes(text.encode("utf-8"))
     patch = tmp_path.parent / f"{tmp_path.name}.diff"
     patch.write_bytes(diff.unified_diff)
     check = subprocess.run(
@@ -80,7 +81,7 @@ def test_diff_is_a_patch_git_applies(tmp_path: Path) -> None:
     subprocess.run(["git", "apply", str(patch)], cwd=tmp_path, check=True)
     assert not (tmp_path / "src" / "gone.py").exists()
     for relative, text in changed.items():
-        assert (tmp_path / relative).read_text(encoding="utf-8") == text
+        assert (tmp_path / relative).read_bytes() == text.encode("utf-8")
 
 
 def test_binary_file_has_binary_marker(tmp_path: Path) -> None:
