@@ -160,7 +160,10 @@ def task_create(
         True, "--json/--no-json", help="Print JSON (default) or a plain representation"
     ),
 ) -> None:
-    """Validate a task file (YAML or JSON) and persist it as a versioned task."""
+    """Validate a task file (YAML or JSON) and persist it as a versioned task. A task needs
+    at least one acceptance criterion (exit code 2 otherwise), except under
+    `intake.criteriaPolicy: enforce`: there a task without criteria is stored with
+    `criteriaPending: true` and INTENT asks for its criteria (rule C0)."""
     _emit(_call(lambda: HarnessApplication().create_task(path, file)), json_output)
 
 

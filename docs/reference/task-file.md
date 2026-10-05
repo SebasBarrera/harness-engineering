@@ -12,6 +12,12 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 `title` or `intent` is currently stored as the text `None` instead of being rejected
 (issue #29), so always provide both.
 
+At least one acceptance criterion is required, except when the project sets
+`intake.criteriaPolicy: enforce`: then a task without criteria is accepted and stored
+with `criteriaPending: true`, and INTENT asks for its criteria (rule `C0`). Only the
+harness sets `criteriaPending`, and it removes the field once `harness task clarify`
+adds the first criterion.
+
 ## Task
 
 | Field | Type | Required | Constraints |
@@ -19,6 +25,7 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 | `acceptanceCriteria` | array of [AcceptanceCriterion](#acceptancecriterion) | yes |  |
 | `constraints` | array of string | no |  |
 | `createdAt` | string (date-time) | no |  |
+| `criteriaPending` | boolean | no | default `false` |
 | `implementation` | [ImplementationInstruction](#implementationinstruction) | no |  |
 | `intent` | string | yes | min length 1; max length 16000 |
 | `metadata` | object | no |  |

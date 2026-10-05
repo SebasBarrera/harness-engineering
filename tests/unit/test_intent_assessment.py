@@ -266,7 +266,14 @@ def test_the_measured_discount_task_raises_no_question() -> None:
 
 
 def test_templates_cover_every_rule() -> None:
-    assert set(QUESTION_TEMPLATES) == {"C1", "C2", "C3", "T1"}
+    # C0 asks seven questions, so it has one template per question (C0a to C0g).
+    assert set(QUESTION_TEMPLATES) == {
+        *(f"C0{letter}" for letter in "abcdefg"),
+        "C1",
+        "C2",
+        "C3",
+        "T1",
+    }
 
 
 def test_long_texts_are_shortened_in_questions() -> None:

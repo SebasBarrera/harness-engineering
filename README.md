@@ -272,7 +272,8 @@ weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessB
 `intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
 ("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
-findings, `off` skips the check.
+findings, `off` skips the check. Only `enforce` accepts a task without acceptance criteria;
+`INTENT` then asks for them (rule `C0`) before anything else runs.
 `verification.requirementTraceability` decides what `VERIFICATION` does with a requirement that
 carries an identifier (`A1. ...`, `[B12] ...` or an explicit `requirementId`) and that no test
 names: `enforce` (written by `init`) records a `HIGH` finding, so the gate is `FAILED`; `warn`
@@ -316,7 +317,10 @@ output bounds, secret redaction before persistence, digest-bound decisions and a
 log. It does **not** isolate the processes it launches: an authorized command keeps the file-system,
 network, CPU and memory permissions of your OS user. `allowNetwork` is not enforced. The event chain
 makes tampering detectable, not impossible. Run untrusted repositories, agents or plugins only inside
-a container or VM. See [SECURITY.md](SECURITY.md).
+a container or VM. See [SECURITY.md](SECURITY.md). The one exception is write confinement of agent
+providers: with `runtime.agentSandbox: enforce`, written by `harness init`, an agent CLI cannot
+write outside the workspace and its declared paths (macOS `sandbox-exec`, Linux `bwrap`), and a host
+without either blocks `IMPLEMENTATION` instead of running it unconfined.
 
 ## Metrics and monitoring
 

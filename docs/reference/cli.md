@@ -140,7 +140,10 @@ harness config validate [OPTIONS]
 
 ## harness task create
 
-Validate a task file (YAML or JSON) and persist it as a versioned task.
+Validate a task file (YAML or JSON) and persist it as a versioned task. A task needs
+at least one acceptance criterion (exit code 2 otherwise), except under
+`intake.criteriaPolicy: enforce`: there a task without criteria is stored with
+`criteriaPending: true` and INTENT asks for its criteria (rule C0).
 
 ```text
 harness task create [OPTIONS]

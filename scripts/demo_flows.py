@@ -727,11 +727,13 @@ def flow_memory(t: Transcript, root: Path) -> None:
         "after the invalidation only the accepted recommendation stays active",
     )
 
-    # A command provider that reports its usage fills the token and cost metrics.
+    # A command provider that reports its usage fills the token and cost metrics. The flow is
+    # about usage and runs on Linux and Windows hosts without a sandbox mechanism, so it turns the
+    # agent sandbox that init enforces off (with enforce such a host blocks IMPLEMENTATION).
     (root / "usage_adapter.py").write_text(USAGE_ADAPTER)
     config = root / ".harness" / "project.yaml"
     config.write_text(
-        config.read_text()
+        config.read_text().replace("agentSandbox: enforce", "agentSandbox: 'off'")
         + "agentProviders:\n  usage_fixture:\n    kind: command\n"
         + "    command: [python, usage_adapter.py]\n    model: usage-fixture\n"
     )
@@ -786,11 +788,35 @@ answers:
 """
 
 
+ONE_SENTENCE_TASK = """\
+taskId: task_python_one_sentence
+title: Discount rules
+intent: Describe the discount rule in code.
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/rules.py
+      operation: create
+      content: |
+        THRESHOLD_IS_INCLUSIVE = True
+"""
+
+ELICITATION = """\
+answers:
+  Q-1: |
+    - sample.rules.THRESHOLD_IS_INCLUSIVE equals True.
+    - The existing tests in tests/test_pricing.py pass.
+  Q-6: Changing apply_discount.
+"""
+
+
 def flow_clarification(t: Transcript, root: Path) -> None:
     """A task whose only criterion is "It works." blocks INTENT under the enforce policy written
     by init (exit 6). A person answers the questions; the revised task passes INTENT on
     run continue and the run reaches DECISION. Unknown question ids exit with 2 and clarifying a
-    task whose run is past INTENT exits with 5."""
+    task whose run is past INTENT exits with 5. A one-sentence task without criteria is accepted
+    under enforce; INTENT asks the seven C0 questions (exit 6), and the answer about results
+    becomes its criteria, so run continue reaches DECISION."""
     flow = "clarification"
     python_project(root)
     (root / "task.yaml").write_text(VAGUE_TASK)
@@ -815,6 +841,33 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     t.run(flow, root, ["run", "continue", *here, "--run", run_id], 4)
     approve(t, flow, root, run_id, "Clarified criteria covered by the validators")
     t.run(flow, root, [*clarify, "--file", "answers.yaml"], 5)
+
+    (root / "one-sentence.yaml").write_text(ONE_SENTENCE_TASK)
+    (root / "elicitation.yaml").write_text(ELICITATION)
+    task_id = "task_python_one_sentence"
+    created = t.json(flow, root, ["task", "create", *here, "--file", "one-sentence.yaml"], 0)
+    t.check(
+        flow,
+        created["acceptanceCriteria"] == [] and created["criteriaPending"] is True,
+        "a task without acceptance criteria is accepted under enforce, marked criteriaPending",
+    )
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", task_id], 6)["executionId"]
+    questions = t.json(flow, root, ["task", "questions", *here, "--task", task_id], 0)
+    t.check(
+        flow,
+        [item["ruleId"] for item in (questions["openRequest"] or {}).get("questions", [])]
+        == ["C0"] * 7,
+        "INTENT asked the seven C0 questions that elicit the acceptance criteria",
+    )
+    elicit = ["task", "clarify", *here, "--task", task_id, "--actor", "human.author"]
+    revised = t.json(flow, root, [*elicit, "--file", "elicitation.yaml"], 0)["task"]
+    t.check(
+        flow,
+        len(revised["acceptanceCriteria"]) == 2 and "criteriaPending" not in revised,
+        "the answer about results became two acceptance criteria",
+    )
+    t.run(flow, root, ["run", "continue", *here, "--run", run_id], 4)
+    approve(t, flow, root, run_id, "Elicited criteria covered by the validators")
 
 
 UNTRACED_TASK = """\

@@ -16,6 +16,35 @@
   re-assesses the revision. No phase was added. New contracts:
   `clarification-request.schema.json` and `clarification-record.schema.json`. A clarification
   flow was added to `scripts/demo_flows.py`.
+- `INTENT` elicits the acceptance criteria of a task that has none (#33). A one-sentence task was
+  refused by `harness task create`, so it never reached the clarification questions. Under
+  `intake.criteriaPolicy: enforce` the task is now accepted and stored with
+  `criteriaPending: true`; under `warn`, `off` or without the setting it is still refused with
+  exit code 2 and the same message. The task model allows no criteria only together with that
+  marker, which only the harness sets and which is left out of tasks with criteria, so their
+  stored form and digest do not change. The new rule `C0` asks seven separate questions (results
+  and how each is checked, inputs and outputs, limits, errors, behaviours in scope, out of scope,
+  non-functional constraints) instead of the other rules, and a task without criteria never
+  passes `INTENT` under any policy (exit 6). `harness task clarify` turns the answer about results
+  into acceptance criteria, one per line (or takes `addCriteria`), the scope and other answers
+  into requirements and the out-of-scope answer into constraints; a revision still without
+  criteria is asked again. The task, clarification-request and clarification-record schemas gain
+  `criteriaPending` and the rule id `C0`. The clarification demo flow now also runs a
+  one-sentence task.
+- Agent providers run write-confined (#34). In an evaluation an agent CLI wrote files outside its
+  workspace: the harness's path containment covers its own file handling, not the agent process.
+  The new `runtime.agentSandbox: enforce | off` wraps every command-provider invocation in
+  `IMPLEMENTATION`, including those after `REQUEST_CHANGES`, in `sandbox-exec` (macOS) or `bwrap`
+  (Linux) so that writes outside the workspace, `$TMPDIR` and `runtime.sandboxWritePaths` fail;
+  reads, network and process execution stay allowed. `harness init` writes `enforce` with default
+  write paths for agent CLIs (`/tmp`, `/var/folders`, `~/.claude`, `~/.claude.json*`, `~/.cache`,
+  `~/Library/Caches`, `~/.config`, `~/.npm`). The profile digest and the allowed paths are recorded
+  as `IMPLEMENTATION` evidence and an `agent.sandbox.applied` event; a host without a mechanism
+  blocks `IMPLEMENTATION` with a `sandbox.unavailable` finding (`run start` exits with 6), and a
+  provider that fails on a denied write gets a `sandbox.write-denied` finding. A `project.yaml`
+  without the key runs with `off` and keeps its configuration snapshot digest. The simulated
+  provider and the validators are not wrapped. The usage flow of `scripts/demo_flows.py` sets
+  `agentSandbox: 'off'`, since it runs on hosts without a mechanism.
 - `VERIFICATION` reports requirements that no test names (#35). Agents claimed that every
   requirement had tests, and the suite ran without relating requirements to tests. A new step,
   `traceability.requirements`, runs after the technology validators: it identifies a requirement by

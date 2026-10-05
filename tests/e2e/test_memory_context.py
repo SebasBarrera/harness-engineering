@@ -123,6 +123,7 @@ def test_command_provider_receives_memory_only_when_there_is_any(
     config["agentProviders"] = {
         "fixture_command": {"kind": "command", "command": ["python", "agent_adapter.py"]}
     }
+    config["runtime"]["agentSandbox"] = "off"  # about memory; the sandbox has its own tests
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     task_path = tmp_path / "task.yaml"
     task_path.write_text(TASK, encoding="utf-8")
