@@ -19,7 +19,8 @@
 
 > [!WARNING]
 > Beta de investigación. **Esto no es un sandbox**: los comandos que ejecuta el harness conservan
-> los permisos de tu usuario del sistema operativo y el tablero local no tiene autenticación. Lee
+> los permisos de tu usuario del sistema operativo y el tablero local solo se autentica con un token
+> local cuando `project.yaml` tiene la sección `api` que escribe `harness init`. Lee
 > [Esto no es un sandbox](#esto-no-es-un-sandbox) antes de usarlo con código en el que no confías.
 
 ## Contenido
@@ -331,8 +332,12 @@ publicarse en GitHub, GitLab, Bitbucket, Azure DevOps o Gitea
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requiere el extra `api`) sirve el
 tablero en `/` y nueve rutas: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective` y
-`POST /api/runs/{id}/decision`. **Sin autenticación, sin roles y sin soporte multiusuario:
-mantenlo en loopback.** Referencia: [docs/reference/api.md](docs/reference/api.md).
+`POST /api/runs/{id}/decision` (1.1 agrega más rutas, listadas en la referencia). Desde 1.1 (#18) la sección `api` que escribe `harness init` exige un token
+bearer en todas las rutas, con los roles `viewer`, `reviewer` y `admin` y usuarios declarados por
+el nombre de la variable de su token; el token de quien inicia el servidor se imprime una sola vez
+en la salida de error salvo que `HARNESS_API_TOKEN` lo provea. **Un `project.yaml` sin la sección
+no tiene autenticación, roles ni soporte multiusuario, como en 1.0.0. En ambos casos, mantenlo en
+loopback.** Referencia: [docs/reference/api.md](docs/reference/api.md#authentication-and-roles).
 
 ## Esto no es un sandbox
 
@@ -392,8 +397,8 @@ Defectos de comportamiento abiertos (hito
 - [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) no hay checkpoint de aprobación del plan.
 
 Limitaciones declaradas: sin aislamiento a nivel de sistema operativo
-([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), sin autenticación ni soporte
-multiusuario en el tablero, sin ejecución distribuida, sin firma externa de la evidencia, sin
+([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), solo autenticación local
+por token en el tablero (ninguna sin la sección `api`), sin ejecución distribuida, sin firma externa de la evidencia, sin
 integraciones nativas con proveedores, y métricas de tokens y costo solo cuando un proveedor las
 reporta.
 

@@ -237,6 +237,12 @@ architecture:
   mode: agent
   refresh: manual
   enforce: enforce
+api:
+  auth: token
+  tokenEnv: HARNESS_API_TOKEN
+  tokenUser: human.web
+  tokenRole: admin
+  users: []
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -1117,6 +1123,25 @@ confirmContract: true
 | `delivery.pullRequest` | none | `create: false`, `draft: true` | `create` the pull or merge request after the push, and `draft` (over `delivery.forge.draft`). The forge, the repository, the base (`delivery.forge.baseBranch`, else the remote's default branch), the labels and the template (followed by the decision brief) are the forge layer's: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from `origin` unless `delivery.forge` names it (see [forges](../guides/forges.md)). Created once per run; the contract's `createPullRequest` overrides `create`. |
 | `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request through the same forge (one comment per run, updated on a retry) when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
 | `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
+
+## API authentication
+
+Since 1.1 (#18). The `api` section governs `harness api serve`; the full description, the routes
+and the audit log are in [the API reference](api.md#authentication-and-roles).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `api` | no authentication, as in 1.0.0 | the keys below | With the section every route requires `Authorization: Bearer TOKEN`; the section is left out of the configuration digest when absent. |
+| `api.auth` | `token` (with the section) | `token` | `off` serves without authentication. |
+| `api.tokenEnv` | `HARNESS_API_TOKEN` | `HARNESS_API_TOKEN` | Variable holding the token of the person who starts the server; when it is not set, `harness api serve` generates a token and prints it once on standard error. |
+| `api.tokenUser` | `human.web` | `human.web` | Actor id recorded on that person's decisions. |
+| `api.tokenRole` | `admin` | `admin` | `viewer` (every `GET`), `reviewer` (also decide) or `admin` (also `GET /api/config`). |
+| `api.users` | none | `[]` | Further people: `id` (an actor id, never `agent.*`, `validator.*` or `harness.*`), `role` and `tokenEnv`, the NAME of the variable holding their token. A literal token is refused. |
+
+Quick start: `export HARNESS_API_TOKEN=...` with a value of at least 16 characters (or let the
+server generate one), run `harness api serve`, open the printed address and paste the token once;
+the tab keeps it until it is closed. To add a reviewer, declare them under `users`, set their
+variable in the server's environment and give them their token by a separate channel.
 
 ## Technology profiles
 
