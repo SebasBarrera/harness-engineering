@@ -38,6 +38,8 @@ class SimulatedAgentContext:
     cancellation: CancellationToken
     context_manifest_ref: str | None = None
     memory_context: dict[str, Any] | None = None
+    feedback: dict[str, Any] | None = None
+    """Serialized ``ProviderFeedback`` for a correction attempt; ``None`` on a first attempt."""
 
 
 class SimulatedAgentProvider:

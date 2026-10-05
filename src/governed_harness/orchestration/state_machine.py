@@ -60,6 +60,23 @@ class NormativeStateMachine:
             ),
         )
 
+    def authorize_verification_correction(self, phase: PhaseId) -> TransitionDecision:
+        """The automatic correction of ``runtime.verificationCorrections``: a failed
+        VERIFICATION returns to IMPLEMENTATION and its result stops counting, as after a
+        REQUEST_CHANGES decision."""
+        if phase is not PhaseId.VERIFICATION:
+            raise InvalidTransition("an automatic correction may only start from VERIFICATION")
+        return TransitionDecision(
+            source=PhaseId.VERIFICATION,
+            target=PhaseId.IMPLEMENTATION,
+            invalidated=(
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
     @staticmethod
     def approval_is_current(approved_digest: str, current_digest: str) -> bool:
         return approved_digest == current_digest

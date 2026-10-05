@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -8,6 +9,7 @@ from typing import Any, Literal, cast
 
 from governed_harness import __version__
 from governed_harness.agents import (
+    AgentExecutionResult,
     AgentProvider,
     CommandAgentConfiguration,
     CommandAgentProvider,
@@ -31,6 +33,7 @@ from governed_harness.domain.errors import (
 )
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
+    FEEDBACK_RATIONALE_CHARS,
     HARNESS_ACTOR,
     Actor,
     Artifact,
@@ -43,6 +46,8 @@ from governed_harness.domain.models import (
     ConfigurationSnapshot,
     Evidence,
     Execution,
+    FeedbackDecision,
+    FeedbackGate,
     Finding,
     FindingLocation,
     GateEvaluation,
@@ -51,6 +56,7 @@ from governed_harness.domain.models import (
     Plan,
     PlanStep,
     Provenance,
+    ProviderFeedback,
     Task,
     ToolInvocation,
     ValidationResult,
@@ -67,6 +73,14 @@ from governed_harness.intake import (
     task_digest,
 )
 from governed_harness.memory import MemoryStore, context_manifest
+from governed_harness.orchestration.feedback import (
+    TRANSIENT_SCAN_BYTES,
+    FeedbackBuilder,
+    failing_validations,
+    head,
+    transient_cause,
+    verification_reason_codes,
+)
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
@@ -99,6 +113,11 @@ from governed_harness.validators import (
 
 NON_HUMAN_ACTOR_PREFIXES = ("agent.", "validator.", "harness.")
 """Actor id namespaces the harness assigns to agents, validators and itself."""
+
+UNSUPPORTED_CLAIM_RULE = "agent.unsupported-claim"
+"""Rule id of the finding recorded when an agent reported success and verification failed."""
+CLAIM_CHECK_ID = "harness.claim-check"
+"""Validator id of that finding: the harness compares the claim with recorded results."""
 
 
 @dataclass(frozen=True)
@@ -272,9 +291,14 @@ class RunEngine:
                     PhaseId.VERIFICATION: self._phase_verification,
                     PhaseId.INDEPENDENT_REVIEW: self._phase_independent_review,
                 }[execution.current_phase]
+                phase_id = execution.current_phase
                 outcome = self._run_phase(execution, handler)
                 execution = self.get_execution(execution_id)
                 if outcome.status is not ResultStatus.PASSED:
+                    if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(
+                        execution, outcome
+                    ):
+                        continue
                     return execution
             if execution.status in {
                 ResultStatus.PASSED,
@@ -372,6 +396,27 @@ class RunEngine:
                 },
                 actor=actor,
             )
+            if self._feedback_applies(execution_id):
+                validations, findings = self._gate_inputs(gate)
+                self._record_feedback(
+                    updated,
+                    PhaseId.DECISION,
+                    trigger="CHANGES_REQUESTED",
+                    change_set_digest=change_set_digest,
+                    gate=FeedbackGate(
+                        gate_id="delivery_candidate",
+                        gate_evaluation_id=gate.gate_evaluation_id,
+                        status=gate.status,
+                        reason_codes=gate.reason_codes,
+                    ),
+                    validations=validations,
+                    findings=findings,
+                    decision=FeedbackDecision(
+                        decision=decision,
+                        rationale=head(record.rationale, FEEDBACK_RATIONALE_CHARS),
+                        actor_id=actor.actor_id,
+                    ),
+                )
         elif decision is DecisionKind.REJECT:
             updated = updated.model_copy(
                 update={
@@ -927,48 +972,57 @@ class RunEngine:
         if context_uri:
             manifest = json.loads(self.s.artifacts.get(context_uri))
             memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
-        result = provider.implement(
-            task,
-            plan,
-            SimulatedAgentContext(
-                execution_id=execution.execution_id,
-                workspace=self.s.paths.workspace,
-                grants=grants,
-                artifact_store=self.s.artifacts,
-                process_runner=runner,
-                patch_applier=PatchApplier(self.s.paths.workspace),
-                provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-                timeout_seconds=self.s.resolved.project.runtime.command_timeout_seconds,
-                max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                cancellation=cancellation,
-                context_manifest_ref=context_uri,
-                memory_context=memory_context,
-            ),
-        )
-        self.s.state.put(
-            "agent_invocation",
-            result.invocation.invocation_id,
-            result.invocation,
+        runtime = self.s.resolved.project.runtime
+        context = SimulatedAgentContext(
             execution_id=execution.execution_id,
-            project_id=execution.project_id,
+            workspace=self.s.paths.workspace,
+            grants=grants,
+            artifact_store=self.s.artifacts,
+            process_runner=runner,
+            patch_applier=PatchApplier(self.s.paths.workspace),
+            provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+            timeout_seconds=runtime.command_timeout_seconds,
+            max_output_bytes=runtime.max_output_bytes,
+            cancellation=cancellation,
+            context_manifest_ref=context_uri,
+            memory_context=memory_context,
+            feedback=self._pending_feedback(execution, phase),
         )
-        for tool in result.tool_invocations:
-            self._save_tool(execution, tool)
-        if result.usage is not None:
-            self.s.state.put(
-                "resource_usage",
-                result.usage.usage_id,
-                result.usage,
-                execution_id=execution.execution_id,
-                project_id=execution.project_id,
+        retries = 0
+        while True:
+            result = provider.implement(task, plan, context)
+            self._save_agent_result(execution, phase, result)
+            cause = (
+                self._transient_cause(result)
+                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+                else None
             )
-        self.s.events.append(
-            execution.execution_id,
-            "agent.invocation.completed",
-            result.invocation.model_dump(mode="json"),
-            actor=result.invocation.actor,
-            phase_execution_id=phase.phase_execution_id,
-        )
+            if cause is None:
+                break
+            retries += 1
+            # The repeated call runs through the same provider, so under the same sandbox
+            # prefix; a write the sandbox denied on the failed call is still reported.
+            if sandbox is not None:
+                self._record_denied_writes(execution, result.tool_invocations)
+            self._record_provider_retry(execution, phase, result, cause, retries)
+            if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+        if (
+            result.status is ResultStatus.PASSED
+            and runtime.claim_check_enabled
+            and self._external_provider(execution.execution_id)
+        ):
+            self.s.state.set_flag(
+                f"claim:{execution.execution_id}",
+                json.dumps(
+                    {
+                        "invocationId": result.invocation.invocation_id,
+                        "status": result.status.value,
+                        "summary": result.summary,
+                        "outputRef": result.output_ref,
+                    }
+                ),
+            )
         if result.status is not ResultStatus.PASSED:
             if sandbox is not None:
                 self._record_denied_writes(execution, result.tool_invocations)
@@ -1342,6 +1396,343 @@ class RunEngine:
             (evidence.artifact_ref, metrics_ref.uri, retrospective_ref.uri),
         )
 
+    # ----- correction loop --------------------------------------------------------
+    def _external_provider(self, execution_id: str) -> bool:
+        """Whether the run uses a configured command provider. The simulated provider is
+        deterministic and reads no feedback: the correction loop does not apply to it."""
+        return (self.s.state.get_flag(f"provider:{execution_id}") or "simulated") != "simulated"
+
+    def _feedback_applies(self, execution_id: str) -> bool:
+        return self.s.resolved.project.runtime.feedback_enabled and self._external_provider(
+            execution_id
+        )
+
+    def _after_failed_verification(self, execution: Execution, outcome: PhaseOutcome) -> bool:
+        """Record what a failed VERIFICATION says about the agent's claim and, while the
+        ``runtime.verificationCorrections`` budget lasts, send the run back to IMPLEMENTATION.
+
+        Only a ``FAILED`` verification with failing mandatory validators qualifies: a blocked,
+        timed-out or erroring validator is not something the agent can correct. Returns whether
+        a correction cycle was authorized; otherwise the run stops as it did before."""
+        runtime = self.s.resolved.project.runtime
+        if (
+            outcome.status is not ResultStatus.FAILED
+            or not execution.change_set_digest
+            or not self._external_provider(execution.execution_id)
+        ):
+            return False
+        validations = self._latest_validations(execution.execution_id, execution.change_set_digest)
+        failing = failing_validations(validations)
+        if not failing:
+            return False
+        if runtime.claim_check_enabled:
+            self._record_unsupported_claim(execution, failing)
+        used = sum(
+            1
+            for event in self.s.events.list(execution.execution_id)
+            if event.event_type == "correction.authorized"
+            and event.payload.get("trigger") == "VERIFICATION_FAILED"
+        )
+        limit = runtime.correction_limit
+        failed_ids = [item.validator_id for item in failing]
+        if used >= limit:
+            if limit > 0:
+                self.s.events.append(
+                    execution.execution_id,
+                    "correction.exhausted",
+                    {
+                        "trigger": "VERIFICATION_FAILED",
+                        "cycles": used,
+                        "maxCycles": limit,
+                        "failedValidators": failed_ids,
+                        "changeSetDigest": execution.change_set_digest,
+                    },
+                )
+            return False
+        feedback_ref: str | None = None
+        if self._feedback_applies(execution.execution_id):
+            findings = [
+                item
+                for item in self.s.state.list(
+                    "finding", Finding, execution_id=execution.execution_id
+                )
+                if any(item.finding_id in validation.finding_ids for validation in validations)
+            ]
+            feedback_ref = self._record_feedback(
+                execution,
+                PhaseId.VERIFICATION,
+                trigger="VERIFICATION_FAILED",
+                change_set_digest=execution.change_set_digest,
+                gate=FeedbackGate(
+                    gate_id="verification",
+                    status=outcome.status,
+                    reason_codes=verification_reason_codes(failing),
+                ),
+                validations=validations,
+                findings=findings + self._claim_findings(execution, failing),
+            )
+        transition = self.state_machine.authorize_verification_correction(PhaseId.VERIFICATION)
+        self._save_execution(
+            execution.model_copy(
+                update={
+                    "status": ResultStatus.PENDING,
+                    "current_phase": transition.target,
+                    "gate_evaluation_id": None,
+                    "human_decision_id": None,
+                    "terminal_reason": None,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "correction.authorized",
+            {
+                "trigger": "VERIFICATION_FAILED",
+                "cycle": used + 1,
+                "maxCycles": limit,
+                "failedValidators": failed_ids,
+                "changeSetDigest": execution.change_set_digest,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+                "feedbackRef": feedback_ref,
+            },
+        )
+        return True
+
+    def _record_unsupported_claim(
+        self, execution: Execution, failing: list[ValidationResult]
+    ) -> None:
+        """An agent that reported success on work that then failed verification made a claim
+        the evidence does not support. The finding is evidence for the reviewer and the metrics;
+        it is not an input of the gate, which evaluates the current ChangeSet."""
+        key = f"claim:{execution.execution_id}"
+        raw = self.s.state.get_flag(key)
+        if not raw:
+            return
+        self.s.state.set_flag(key, "")
+        claim = json.loads(raw)
+        summary = head(str(claim.get("summary", "")), 500)
+        failed = ", ".join(f"{item.validator_id} {item.status}" for item in failing)
+        output_ref = claim.get("outputRef")
+        finding = Finding(
+            finding_id=new_id("finding"),
+            execution_id=execution.execution_id,
+            validator_id=CLAIM_CHECK_ID,
+            rule_id=UNSUPPORTED_CLAIM_RULE,
+            category="agent-claim",
+            severity=self.s.resolved.project.runtime.claim_severity,
+            message=(
+                f"The agent reported {claim.get('status', 'PASSED')} ({summary!r}) "
+                f"but verification failed: {failed}"
+            ),
+            evidence_refs=tuple(
+                ([output_ref] if isinstance(output_ref, str) else [])
+                + [item.evidence_refs[0] for item in failing]
+            ),
+            recommendation=(
+                "Compare the agent's summary with the validator output before trusting its "
+                "reports; the verified outcome is what the gate evaluates."
+            ),
+            provenance=self._provenance(execution),
+        )
+        self.s.state.put(
+            "finding",
+            finding.finding_id,
+            finding,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "finding.recorded",
+            finding.model_dump(mode="json"),
+            actor=finding.provenance.actor,
+        )
+
+    def _claim_findings(
+        self, execution: Execution, failing: list[ValidationResult]
+    ) -> list[Finding]:
+        """Unsupported-claim findings that cite the failing validations of this verification."""
+        cited = {item.evidence_refs[0] for item in failing}
+        return [
+            item
+            for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
+            if item.rule_id == UNSUPPORTED_CLAIM_RULE and cited & set(item.evidence_refs)
+        ]
+
+    def _gate_inputs(self, gate: GateEvaluation) -> tuple[list[ValidationResult], list[Finding]]:
+        validations: list[ValidationResult] = []
+        findings: list[Finding] = []
+        for ref in gate.input_refs:
+            if ref.startswith("record://validation/"):
+                validations.append(
+                    self.s.state.get(
+                        "validation", ref.removeprefix("record://validation/"), ValidationResult
+                    )
+                )
+            elif ref.startswith("record://finding/"):
+                findings.append(
+                    self.s.state.get("finding", ref.removeprefix("record://finding/"), Finding)
+                )
+        return validations, findings
+
+    def _record_feedback(
+        self,
+        execution: Execution,
+        phase_id: PhaseId,
+        *,
+        trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"],
+        change_set_digest: str,
+        gate: FeedbackGate,
+        validations: list[ValidationResult],
+        findings: list[Finding],
+        decision: FeedbackDecision | None = None,
+    ) -> str:
+        """Store the feedback for the next IMPLEMENTATION attempt as evidence and remember it
+        for the provider request."""
+        attempt = 1 + sum(
+            1
+            for item in self.s.state.list(
+                "phase", PhaseExecution, execution_id=execution.execution_id
+            )
+            if item.phase_id is PhaseId.IMPLEMENTATION
+        )
+        feedback = FeedbackBuilder(self.s.artifacts).build(
+            trigger=trigger,
+            attempt=max(attempt, 2),
+            change_set_digest=change_set_digest,
+            gate=gate,
+            validations=validations,
+            findings=findings,
+            decision=decision,
+        )
+        ref = self.s.artifacts.put_json(
+            feedback.model_dump(mode="json", by_alias=True),
+            metadata={"kind": "provider-feedback", "executionId": execution.execution_id},
+        )
+        self._record_evidence(
+            execution,
+            phase_id,
+            EvidenceKind.OTHER,
+            ref,
+            f"Provider feedback for IMPLEMENTATION attempt {feedback.attempt} ({trigger})",
+        )
+        self.s.state.set_flag(f"feedback:{execution.execution_id}", ref.uri)
+        return ref.uri
+
+    def _pending_feedback(
+        self, execution: Execution, phase: PhaseExecution
+    ) -> dict[str, Any] | None:
+        """The latest recorded feedback, sent with every attempt that follows a correction."""
+        if not self._feedback_applies(execution.execution_id):
+            return None
+        uri = self.s.state.get_flag(f"feedback:{execution.execution_id}")
+        if not uri:
+            return None
+        feedback = ProviderFeedback.model_validate_json(self.s.artifacts.get(uri))
+        if phase.attempt >= 2:
+            feedback = feedback.model_copy(update={"attempt": phase.attempt})
+        value: dict[str, Any] = feedback.model_dump(mode="json", by_alias=True)
+        return value
+
+    # ----- agent invocations ------------------------------------------------------
+    def _save_agent_result(
+        self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
+    ) -> None:
+        self.s.state.put(
+            "agent_invocation",
+            result.invocation.invocation_id,
+            result.invocation,
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        for tool in result.tool_invocations:
+            self._save_tool(execution, tool)
+        if result.usage is not None:
+            self.s.state.put(
+                "resource_usage",
+                result.usage.usage_id,
+                result.usage,
+                execution_id=execution.execution_id,
+                project_id=execution.project_id,
+            )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.invocation.completed",
+            result.invocation.model_dump(mode="json"),
+            actor=result.invocation.actor,
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _transient_cause(self, result: AgentExecutionResult) -> str | None:
+        """The configured pattern that marks a failed command-provider call as transient.
+
+        A process the runner killed at its timeout, a cancelled call and a call that passed are
+        never transient; the patterns are looked for in the end of the (redacted) stderr and
+        stdout of the call, which also holds the provider's JSON result."""
+        if result.status in {ResultStatus.PASSED, ResultStatus.CANCELLED} or not (
+            result.tool_invocations
+        ):
+            return None
+        tool = result.tool_invocations[0]
+        if tool.timed_out or tool.cancelled:
+            return None
+        texts = []
+        for uri in (tool.stderr_ref, tool.stdout_ref):
+            if not uri:
+                continue
+            data = self.s.artifacts.get(uri)[-TRANSIENT_SCAN_BYTES:]
+            texts.append(data.decode("utf-8", "replace"))
+        return transient_cause(texts, self.s.resolved.project.runtime.transient_patterns)
+
+    def _record_provider_retry(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        cause: str,
+        retry: int,
+    ) -> None:
+        runtime = self.s.resolved.project.runtime
+        tool = result.tool_invocations[0]
+        payload = {
+            "retry": retry,
+            "maxRetries": runtime.retry_limit,
+            "delaySeconds": runtime.retry_delay_seconds,
+            "matchedPattern": cause,
+            "invocationId": result.invocation.invocation_id,
+            "status": result.status.value,
+            "exitCode": tool.exit_code,
+            "stdoutRef": tool.stdout_ref,
+            "stderrRef": tool.stderr_ref,
+        }
+        ref = self.s.artifacts.put_json(
+            payload, metadata={"kind": "provider-retry", "executionId": execution.execution_id}
+        )
+        self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.COMMAND,
+            ref,
+            f"Transient provider failure ({cause!r}); retry {retry} of {runtime.retry_limit}",
+            supports=(result.invocation.invocation_id,),
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.invocation.retried",
+            payload,
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _wait_for_retry(self, execution_id: str, delay: float) -> bool:
+        """Wait ``delay`` seconds before a retry; ``False`` when the run is cancelled meanwhile."""
+        deadline = time.monotonic() + delay
+        while (remaining := deadline - time.monotonic()) > 0:
+            if self.is_cancelled(execution_id):
+                return False
+            time.sleep(min(remaining, 1.0))
+        return not self.is_cancelled(execution_id)
+
     # ----- helpers ----------------------------------------------------------------
     def _compute_owned_diff(self, execution: Execution) -> WorkspaceDiff:
         """Compute the task-owned diff without persisting unredacted content."""
@@ -1451,19 +1842,7 @@ class RunEngine:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
             if gate.change_set_digest == change_set.digest:
                 return gate
-        # Only the latest attempt of each validator for the current digest counts: a failure
-        # caused by the environment and fixed before a retry must not keep the gate closed.
-        # Earlier attempts stay in the record and in the trace as history.
-        latest: dict[str, ValidationResult] = {}
-        for item in self.s.state.list(
-            "validation", ValidationResult, execution_id=execution.execution_id
-        ):
-            if item.change_set_digest != change_set.digest:
-                continue
-            previous = latest.get(item.validator_id)
-            if previous is None or item.finished_at >= previous.finished_at:
-                latest[item.validator_id] = item
-        validations = list(latest.values())
+        validations = self._latest_validations(execution.execution_id, change_set.digest)
         findings = [
             item
             for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
@@ -1510,6 +1889,19 @@ class RunEngine:
             gate.model_dump(mode="json"),
         )
         return gate
+
+    def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]:
+        # Only the latest attempt of each validator for the current digest counts: a failure
+        # caused by the environment and fixed before a retry must not keep the gate closed.
+        # Earlier attempts stay in the record and in the trace as history.
+        latest: dict[str, ValidationResult] = {}
+        for item in self.s.state.list("validation", ValidationResult, execution_id=execution_id):
+            if item.change_set_digest != digest:
+                continue
+            previous = latest.get(item.validator_id)
+            if previous is None or item.finished_at >= previous.finished_at:
+                latest[item.validator_id] = item
+        return list(latest.values())
 
     def _save_validator_output(self, execution: Execution, output: Any) -> None:
         result: ValidationResult = output.result

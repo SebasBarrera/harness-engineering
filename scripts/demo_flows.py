@@ -2,12 +2,12 @@
 """Reproduce the demonstration flows of the thesis with the installed ``harness`` CLI.
 
 Every flow runs in a fresh temporary Git repository with the deterministic ``simulated``
-provider, and every command's exit code is checked against the documented expectation.
-The script is used by CI in three ways:
+provider or a fixture command provider that calls no model, and every command's exit code is
+checked against the documented expectation. The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
-  clarification and traceability flows, leaving the projects in ``--workdir`` so
+  clarification, traceability and corrections flows, leaving the projects in ``--workdir`` so
   ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
@@ -932,6 +932,111 @@ def flow_traceability(t: Transcript, root: Path) -> None:
     t.run(flow, root, [*decide, "--decision", "REJECT", "--rationale", "A2 has no test"], 6)
 
 
+CORRECTING_AGENT = """\
+import json
+import sys
+from pathlib import Path
+
+# A command provider for the corrections flow. "fix" leaves apply_discount unchanged until the
+# request carries feedback, "stubborn" never changes it, "flaky" fails once as an overloaded
+# service would and then implements the rule. None of them calls a model.
+mode = sys.argv[1]
+request = json.load(sys.stdin)
+state = Path(".agent-calls")
+calls = int(state.read_text()) + 1 if state.exists() else 1
+state.write_text(str(calls))
+if mode == "flaky" and calls == 1:
+    sys.stderr.write("upstream error: the model is overloaded, try again later\\n")
+    sys.exit(1)
+fixed = mode == "flaky" or (mode == "fix" and "feedback" in request)
+body = "subtotal * (1 - rate) if subtotal >= threshold else subtotal" if fixed else "subtotal"
+Path("src/sample/pricing.py").write_text(
+    "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
+    f"    return {body}\\n"
+)
+Path("tests/test_threshold.py").write_text(
+    "from sample import apply_discount\\n\\n\\n"
+    "def test_at_threshold() -> None:\\n"
+    "    assert apply_discount(100, 100, 0.1) == 90\\n"
+)
+print(json.dumps({"status": "PASSED", "summary": "Implemented the threshold discount"}))
+"""
+
+CORRECTION_TASK = """\
+taskId: {task_id}
+title: Threshold discount
+intent: Apply the configured discount at or above the threshold.
+acceptanceCriteria:
+  - criterionId: ac_threshold
+    text: apply_discount(100, 100, 0.1) returns 90.
+metadata:
+  ownedPaths: [src/sample/pricing.py, tests/test_threshold.py]
+"""
+
+
+def flow_corrections(t: Transcript, root: Path) -> None:
+    """The feedback loop that init enables for command providers. An agent whose first change
+    fails VERIFICATION gets the validator output as feedback, corrects it and the run reaches
+    DECISION (exit 4) with one automatic correction and one unsupported-claim finding. An agent
+    that never corrects stops in VERIFICATION after the two corrections init allows (exit 6). A
+    call that fails because the service is overloaded is repeated and the run reaches DECISION."""
+    flow = "corrections"
+    python_project(root)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    (root / "agent.py").write_text(CORRECTING_AGENT)
+    config = root / ".harness" / "project.yaml"
+    # The flow runs on hosts without a sandbox mechanism (CI Linux without bwrap, Windows).
+    config.write_text(
+        config.read_text()
+        .replace("providerRetryDelaySeconds: 60", "providerRetryDelaySeconds: 0")
+        .replace("agentSandbox: enforce", "agentSandbox: 'off'")
+        + "agentProviders:\n"
+        + "".join(
+            f"  {mode}:\n    kind: command\n    command: [python, agent.py, {mode}]\n"
+            for mode in ("fix", "stubborn", "flaky")
+        )
+    )
+
+    def start(task_id: str, provider: str, expect: int) -> str:
+        (root / f"{task_id}.yaml").write_text(CORRECTION_TASK.format(task_id=task_id))
+        t.run(flow, root, ["task", "create", *here, "--file", f"{task_id}.yaml"], 0)
+        (root / ".agent-calls").unlink(missing_ok=True)
+        started = ["run", "start", *here, "--task", task_id, "--provider", provider]
+        return str(t.json(flow, root, started, expect)["executionId"])
+
+    def metrics(run_id: str) -> dict[str, Any]:
+        status = t.json(flow, root, ["status", *here, "--run", run_id], 0)
+        return {key: value["value"] for key, value in status["metrics"].items()}
+
+    fixed = start("task_corrected", "fix", 4)
+    values = metrics(fixed)
+    t.check(
+        flow,
+        values["correction.verification_cycles"] == 1
+        and values["implementation.attempts"] == 2
+        and values["agent.unsupported_claims"] == 1,
+        "a failed verification returned to IMPLEMENTATION once and the agent corrected it",
+    )
+    approve(t, flow, root, fixed, "Corrected change passed verification")
+
+    stubborn = start("task_stubborn", "stubborn", 6)
+    values = metrics(stubborn)
+    t.check(
+        flow,
+        values["correction.cycles"] == 2 and values["implementation.attempts"] == 3,
+        "after two corrections the run stopped in VERIFICATION",
+    )
+
+    flaky = start("task_flaky", "flaky", 4)
+    values = metrics(flaky)
+    t.check(
+        flow,
+        values["agent.transient_retries"] == 1 and values["agent.invocations"] == 2,
+        "the overloaded call was repeated once",
+    )
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -941,6 +1046,7 @@ FLOWS = {
     "memory": flow_memory,
     "clarification": flow_clarification,
     "traceability": flow_traceability,
+    "corrections": flow_corrections,
 }
 
 

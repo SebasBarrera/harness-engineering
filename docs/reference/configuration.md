@@ -43,6 +43,11 @@ runtime:
   - ~/Library/Caches
   - ~/.config
   - ~/.npm
+  verificationCorrections: 2
+  providerFeedback: true
+  unsupportedClaimSeverity: MEDIUM
+  providerRetries: 3
+  providerRetryDelaySeconds: 60
 retention:
   artifactDays: 30
   eventDays: 365
@@ -74,6 +79,12 @@ verification:
 | `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
 | `runtime.agentSandbox` | `off` when the key is absent; `init` writes `enforce` | Write confinement of command-provider (agent) processes: `enforce` or `off`. See [agent sandbox](#agent-sandbox). |
 | `runtime.sandboxWritePaths` | none when absent; `init` writes the list above | Paths the agent may write besides the workspace and `$TMPDIR`: absolute or starting with `~/`, no `$` variables, an optional single trailing `*` for a name prefix. |
+| `runtime.verificationCorrections` | `0` when absent; `init` writes `2` | Automatic corrections (0 to 10) after a failed `VERIFICATION` of a command provider's change. Its presence, with any value, also turns on the unsupported-claim check. See [provider feedback loop](#provider-feedback-loop). |
+| `runtime.providerFeedback` | `false` when absent; `init` writes `true` | Send a `feedback` block to the command provider on the attempt that follows a failed `VERIFICATION` or a `REQUEST_CHANGES` decision. |
+| `runtime.unsupportedClaimSeverity` | `MEDIUM` | Severity of the `agent.unsupported-claim` finding (`INFO` to `CRITICAL`). |
+| `runtime.providerRetries` | `0` when absent; `init` writes `3` | Repetitions (0 to 10) of a command-provider call that failed with a transient cause. |
+| `runtime.providerRetryDelaySeconds` | `0` when absent; `init` writes `60` | Wait before each repetition (0 to 3600 seconds). |
+| `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
@@ -207,8 +218,8 @@ task.
 
 The harness contains its own file handling to the workspace, but a command provider (an agent CLI)
 is a separate process with your user's permissions. With `runtime.agentSandbox: enforce` the
-harness wraps every command-provider invocation in `IMPLEMENTATION` (the first one and each one
-after `REQUEST_CHANGES`) so that the operating system denies any file write outside:
+harness wraps every command-provider invocation in `IMPLEMENTATION` (the first one, each one
+after `REQUEST_CHANGES` or an automatic correction, and each repeated call) so that the operating system denies any file write outside:
 
 - the workspace (always);
 - the resolved `$TMPDIR` of the harness process (always);
@@ -305,6 +316,55 @@ how it matched), is stored as `VERIFICATION` evidence of kind `TEST_REPORT` (sch
 A `project.yaml` written before this section existed has no `verification` key and runs with
 `off`; its configuration snapshot is serialized without the section, so its digest does not
 change.
+
+## Provider feedback loop
+
+The feedback-loop settings in `runtime` act on a run whose provider is a configured command
+provider (see [external agents](../guides/external-agents.md)); under `agentSandbox: enforce` a
+correction attempt and a repeated call run in the same sandbox as the first call. The simulated
+provider is deterministic and reads no feedback, so a run with it behaves as before whatever the
+settings say. A `project.yaml` without these keys behaves as 1.0.0 and its configuration snapshot
+is serialized without them, so its digest does not change; `harness config validate` shows the
+effective values under `feedbackLoop`.
+
+**Automatic corrections (`verificationCorrections`).** When `VERIFICATION` ends `FAILED` because a
+mandatory validator ran and failed, the run returns to `IMPLEMENTATION` instead of stopping, at
+most N times per run. Each cycle is a `correction.authorized` event with `trigger:
+VERIFICATION_FAILED`, the cycle number, `maxCycles`, the failed validators and the reference of the
+feedback it sent; it counts in the metrics `correction.cycles` and
+`correction.verification_cycles`. As after `REQUEST_CHANGES`, the failed verification stops
+counting (gate and decision are cleared) and the next candidate is verified again from the start:
+a run never passes `VERIFICATION` with a failing mandatory validator. A verification that is
+`BLOCKED`, `TIMED_OUT`, `ERROR` or `INCONCLUSIVE` (a missing tool, a timeout) is not corrected,
+because the agent cannot fix it. When the N cycles are used, the run stops at `VERIFICATION` with
+`FAILED` exactly as without the setting, and a `correction.exhausted` event records the count.
+The budget is per run: `harness run continue` after that re-runs `VERIFICATION` without new cycles.
+
+**Feedback (`providerFeedback`).** The attempt after a correction carries a `feedback` block in the
+provider request (schema `provider-feedback.schema.json`, described in
+[the protocol](../guides/external-agents.md#the-protocol)): the gate or verification status and its
+reason codes, up to 20 findings, the end of each failing mandatory validator's redacted output
+(4,000 characters per stream, 16,000 in all) and, after `REQUEST_CHANGES`, the decision with its
+rationale. The block is stored as an artifact and recorded as evidence before it is sent.
+
+**Unsupported claims.** When the agent answered `PASSED` and the verification of its change then
+fails, the harness records a finding `agent.unsupported-claim` (validator `harness.claim-check`,
+category `agent-claim`, severity `unsupportedClaimSeverity`) with an excerpt of the agent's summary
+and the failed validators, citing the agent output and the validation reports. It measures the gap
+between what the agent reported and what was verified (metric `agent.unsupported_claims`). It is
+not an input of the gate, which evaluates the current ChangeSet.
+
+**Transient failures (`providerRetries`, `providerRetryDelaySeconds`,
+`providerTransientPatterns`).** When a command-provider call does not pass and the end of its
+standard error or standard output (which holds its JSON result) contains one of the patterns, the
+harness waits the delay and sends the same request again, up to N times per attempt. A process the
+runner killed at `commandTimeoutSeconds`, a cancelled call and a call that passed are never
+repeated; a cancellation during the wait stops the run (`CANCELLED`). Each repetition is an
+`agent.invocation.retried` event with the matched pattern and an evidence record; the failed call
+stays recorded as an agent invocation. Repetitions count in `agent.transient_retries`, not as
+correction cycles or implementation attempts. The default patterns are `timed out`,
+`connection reset`, `went to sleep`, `overloaded`, `429`, `529`, `rate limit` and `usage limit`; a
+pattern that starts or ends with a digit does not match inside a longer number.
 
 ## Technology profiles
 

@@ -41,7 +41,17 @@ def test_project_file_without_the_sandbox_keys_is_off_and_keeps_its_snapshot(
 ) -> None:
     """A project.yaml written by 1.0.0 has neither key: the agent runs unconfined, as before,
     and the resolved configuration serializes without them, so its digest does not change."""
-    _set_runtime(python_workspace, agentSandbox=None, sandboxWritePaths=None)
+    # A 1.0.0 file has none of the later runtime keys (the feedback loop ones included).
+    _set_runtime(
+        python_workspace,
+        agentSandbox=None,
+        sandboxWritePaths=None,
+        verificationCorrections=None,
+        providerFeedback=None,
+        unsupportedClaimSeverity=None,
+        providerRetries=None,
+        providerRetryDelaySeconds=None,
+    )
     resolved = ConfigurationResolver().resolve(python_workspace)
     assert resolved.project.runtime.agent_sandbox is None
     assert resolved.project.runtime.effective_agent_sandbox == "off"
