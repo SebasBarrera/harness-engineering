@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from governed_harness.configuration.models import DEFAULT_SANDBOX_WRITE_PATHS
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -40,6 +41,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "maxOutputBytes": 1000000,
             "maxParallel": 2,
             "allowNetwork": False,
+            "agentSandbox": "enforce",
+            "sandboxWritePaths": [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS],
             "verificationCorrections": 2,
             "providerFeedback": True,
             "unsupportedClaimSeverity": "MEDIUM",
@@ -48,6 +51,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "retention": {"artifactDays": 30, "eventDays": 365},
         "intake": {"criteriaPolicy": "enforce"},
+        "verification": {"requirementTraceability": "enforce"},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

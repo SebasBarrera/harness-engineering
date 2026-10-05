@@ -90,3 +90,60 @@ def test_unknown_criteria_policy_is_a_configuration_error(python_workspace: Path
     _set_intake(python_workspace, {"criteriaPolicy": "strict"})
     with pytest.raises(ConfigurationError):
         ConfigurationResolver().resolve(python_workspace)
+
+
+def _set_verification(workspace: Path, verification: dict[str, str] | None) -> None:
+    path = workspace / ".harness" / "project.yaml"
+    value = yaml.safe_load(path.read_text())
+    if verification is None:
+        del value["verification"]
+    else:
+        value["verification"] = verification
+    path.write_text(yaml.safe_dump(value, sort_keys=False))
+
+
+def test_init_writes_the_enforce_requirement_traceability(python_workspace: Path) -> None:
+    value = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
+    assert value["verification"] == {"requirementTraceability": "enforce"}
+    resolved = ConfigurationResolver().resolve(python_workspace)
+    assert resolved.project.requirement_traceability == "enforce"
+    assert HarnessApplication().validate_config(python_workspace)["verification"] == {
+        "requirementTraceability": "enforce"
+    }
+
+
+def test_project_file_without_verification_is_off_and_keeps_its_snapshot(
+    python_workspace: Path,
+) -> None:
+    """A project.yaml written by 1.0.0 has no verification section: the check is off and the
+    resolved configuration serializes without the section, so the configuration snapshot of an
+    existing project keeps its content and digest."""
+    _set_verification(python_workspace, None)
+    resolved = ConfigurationResolver().resolve(python_workspace)
+    assert resolved.project.verification is None
+    assert resolved.project.requirement_traceability == "off"
+    assert "verification" not in resolved.model_dump(mode="json", by_alias=True)["project"]
+
+
+@pytest.mark.parametrize("policy", ["enforce", "warn", "off"])
+def test_requirement_traceability_values(python_workspace: Path, policy: str) -> None:
+    _set_verification(python_workspace, {"requirementTraceability": policy})
+    resolved = ConfigurationResolver().resolve(python_workspace)
+    assert resolved.project.requirement_traceability == policy
+
+
+def test_empty_verification_section_is_off(python_workspace: Path) -> None:
+    _set_verification(python_workspace, {})
+    resolved = ConfigurationResolver().resolve(python_workspace)
+    assert resolved.project.requirement_traceability == "off"
+
+
+@pytest.mark.parametrize(
+    "verification", [{"requirementTraceability": "strict"}, {"traceability": "enforce"}]
+)
+def test_unknown_requirement_traceability_is_a_configuration_error(
+    python_workspace: Path, verification: dict[str, str]
+) -> None:
+    _set_verification(python_workspace, verification)
+    with pytest.raises(ConfigurationError):
+        ConfigurationResolver().resolve(python_workspace)

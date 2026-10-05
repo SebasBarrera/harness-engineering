@@ -4,6 +4,7 @@ corrections after a failed VERIFICATION, the unsupported-claim finding and trans
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from governed_harness.domain.models import (
     Execution,
     Finding,
 )
+from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.storage import SQLiteStateStore
 
 LOOP_KEYS = (
@@ -102,6 +104,8 @@ def configure(
         "fixture_agent": {"kind": "command", "command": ["python", "agent.py"]}
     }
     config["runtime"]["providerRetryDelaySeconds"] = 0
+    # About the feedback loop; the sandbox is covered below and by its own tests.
+    config["runtime"]["agentSandbox"] = "off"
     for key, value in (runtime or {}).items():
         if value is None:
             config["runtime"].pop(key, None)
@@ -479,3 +483,32 @@ def test_cancellation_during_the_retry_delay_stops_the_run(
     application, run = start(python_workspace, tmp_path)
     assert application.status(python_workspace, run)["execution"]["status"] == "CANCELLED"
     assert len(requests(log)) == 1
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the stand-in wrapper is a POSIX shell script")
+@pytest.mark.parametrize(
+    ("mode", "sandboxed_phases"), [("fix-on-feedback", 2), ("transient-stderr", 1)]
+)
+def test_corrections_and_retries_run_under_the_agent_sandbox(
+    python_workspace: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+    sandboxed_phases: int,
+) -> None:
+    """Every provider call of the loop, a correction attempt or a repeated call, goes through
+    the same sandbox prefix as the first call. The host is injected, so this holds on hosts
+    without a mechanism too."""
+    wrapper_log = tmp_path / "wrapper.log"
+    wrapper = tmp_path / "fake-sandbox-exec"
+    wrapper.write_text(f'#!/bin/sh\necho "$1" >> "{wrapper_log}"\nshift 2\nexec "$@"\n')
+    wrapper.chmod(0o755)
+    host = SandboxHost(system="Darwin", home=tmp_path, temp_dir=tmp_path, sandbox_exec=str(wrapper))
+    monkeypatch.setattr(SandboxHost, "detect", classmethod(lambda cls: host))
+    log = configure(python_workspace, tmp_path, mode, {"agentSandbox": "enforce"})
+    application, run = start(python_workspace, tmp_path)
+    assert application.status(python_workspace, run)["execution"]["currentPhase"] == "DECISION"
+    assert len(requests(log)) == 2
+    assert wrapper_log.read_text().splitlines() == ["-p", "-p"]
+    applied = events(application, python_workspace, run, "agent.sandbox.applied")
+    assert len(applied) == sandboxed_phases

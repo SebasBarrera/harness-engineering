@@ -33,6 +33,16 @@ runtime:
   maxOutputBytes: 1000000
   maxParallel: 2
   allowNetwork: false
+  agentSandbox: enforce
+  sandboxWritePaths:
+  - /tmp
+  - /var/folders
+  - ~/.claude
+  - ~/.claude.json*
+  - ~/.cache
+  - ~/Library/Caches
+  - ~/.config
+  - ~/.npm
   verificationCorrections: 2
   providerFeedback: true
   unsupportedClaimSeverity: MEDIUM
@@ -43,6 +53,8 @@ retention:
   eventDays: 365
 intake:
   criteriaPolicy: enforce
+verification:
+  requirementTraceability: enforce
 ```
 
 ## Fields
@@ -65,6 +77,8 @@ intake:
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
 | `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially). |
 | `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
+| `runtime.agentSandbox` | `off` when the key is absent; `init` writes `enforce` | Write confinement of command-provider (agent) processes: `enforce` or `off`. See [agent sandbox](#agent-sandbox). |
+| `runtime.sandboxWritePaths` | none when absent; `init` writes the list above | Paths the agent may write besides the workspace and `$TMPDIR`: absolute or starting with `~/`, no `$` variables, an optional single trailing `*` for a name prefix. |
 | `runtime.verificationCorrections` | `0` when absent; `init` writes `2` | Automatic corrections (0 to 10) after a failed `VERIFICATION` of a command provider's change. Its presence, with any value, also turns on the unsupported-claim check. See [provider feedback loop](#provider-feedback-loop). |
 | `runtime.providerFeedback` | `false` when absent; `init` writes `true` | Send a `feedback` block to the command provider on the attempt that follows a failed `VERIFICATION` or a `REQUEST_CHANGES` decision. |
 | `runtime.unsupportedClaimSeverity` | `MEDIUM` | Severity of the `agent.unsupported-claim` finding (`INFO` to `CRITICAL`). |
@@ -73,6 +87,7 @@ intake:
 | `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
+| `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 
 ## Policies
 
@@ -199,14 +214,118 @@ The revision must end up with at least one acceptance criterion, from the answer
 criteria the marker is removed and INTENT assesses the criteria with the other rules, as for any
 task.
 
+## Agent sandbox
+
+The harness contains its own file handling to the workspace, but a command provider (an agent CLI)
+is a separate process with your user's permissions. With `runtime.agentSandbox: enforce` the
+harness wraps every command-provider invocation in `IMPLEMENTATION` (the first one, each one
+after `REQUEST_CHANGES` or an automatic correction, and each repeated call) so that the operating system denies any file write outside:
+
+- the workspace (always);
+- the resolved `$TMPDIR` of the harness process (always);
+- each path in `runtime.sandboxWritePaths`, with `~` expanded and symbolic links resolved (on macOS
+  `/tmp` is `/private/tmp` and `/var/folders` is `/private/var/folders`).
+
+Reads, network access and process execution stay allowed: an agent reads the system, calls its
+model API and runs tools. The simulated provider and the validators are the harness's own code and
+are not wrapped.
+
+| Platform | Mechanism |
+|---|---|
+| macOS | `/usr/bin/sandbox-exec -p <profile>`: `(allow default)`, `(deny file-write*)`, then `(allow file-write* ...)` for each allowed path (`subpath`, or a `regex` for a trailing `*`) and for `/dev/null`, `/dev/zero`, `/dev/stdout`, `/dev/stderr`, `/dev/ptmx`, `/dev/dtracehelper`, `/dev/fd/*` and `/dev/tty*`. |
+| Linux with `bwrap` | `bwrap --ro-bind / / --dev-bind /dev /dev --die-with-parent --bind <path> <path> ... --`. A bind needs an existing source, so a path that does not exist is skipped and recorded, and a trailing `*` binds each existing file that matches. Not exercised in this repository's CI. |
+| Linux without `bwrap`, Windows, others | None. `IMPLEMENTATION` is `BLOCKED` before the provider starts (`run start` exits with 6) with a `HIGH` finding `sandbox.unavailable` of `harness.sandbox`. Install bubblewrap, or set `agentSandbox: 'off'` to run the agent unconfined. |
+
+Each confined invocation records `IMPLEMENTATION` evidence (an `agent-sandbox` artifact with the
+mechanism, the platform, the profile or `bwrap` arguments, its SHA-256 digest and the allowed and
+skipped paths) and an `agent.sandbox.applied` event with the digest. When the provider exits with an
+error and its standard error reports a denied write (`Operation not permitted`, `Read-only file
+system`, `sandbox`), the run gets a `MEDIUM` finding `sandbox.write-denied` naming the path when
+the message contains one. Neither finding is attached to a validation, so neither reaches the gate.
+
+Write paths that `init` declares, and why:
+
+| Path | Why an agent CLI writes there |
+|---|---|
+| `/tmp` | Shared temporary directory: compilers, npm and git use it. |
+| `/var/folders` | Per-user temporary and cache directories of macOS; `$TMPDIR` lives here. |
+| `~/.claude` | Claude Code keeps its settings, session state, todos and logs here. |
+| `~/.claude.json*` | Claude Code rewrites its configuration file through temporary, backup and lock files next to it. |
+| `~/.cache` | XDG cache directory used by agent CLIs, pip, uv and many tools. |
+| `~/Library/Caches` | Per-user cache directory of macOS (update checks, node caches). |
+| `~/.config` | XDG configuration directory where agent CLIs keep state and credentials. |
+| `~/.npm` | npm cache and logs: npx-launched agents and MCP servers write here. |
+
+Add the paths your own agent setup writes to (hooks, plugin logs). A write the sandbox denies is
+reported to the agent as `EPERM`/`Operation not permitted`; macOS also logs it, for example
+`log show --last 5m --predicate 'sender == "Sandbox"'`. Under `sandbox-exec` a confined process
+cannot execute setuid programs (`forbidden-exec-sugid`).
+
+A `project.yaml` written before this setting existed has neither key and runs with `off`, as in
+1.0.0; its configuration snapshot is serialized without them, so its digest does not change. YAML
+1.1 reads a bare `off` as `false`; the harness accepts that as `off`.
+
+## Requirement traceability
+
+Agents tend to report that every requirement has tests. With
+`verification.requirementTraceability` set, `VERIFICATION` checks it: after the technology
+validators it relates each identified requirement of the task to the tests of the workspace,
+deterministically and without running anything.
+
+**Identifier of a requirement.** The token that starts its text, matching
+`^\s*(?:\[ID\][.:)]?|ID[.:)])\s` with `ID` = `[A-Z]{1,3}\d{1,3}(?:\.\d+)?`: `A1. Round to
+cents.`, `[B12] Reject an empty basket.`, `X8: ...`, `C3.1) ...`. A requirement without such a token
+is identified by its `requirementId` when the task file sets one (`requirementId: req_discount`);
+the id the harness generates when the file gives none (`req_` followed by 32 hexadecimal digits)
+does not count. When both exist, the text token is used. Requirements without an identifier are
+skipped; the report counts them.
+
+**Test files.** Anywhere in the workspace: for the Python profile, `test_*.py` and `*_test.py`;
+for the Node profile, `*.test.*`, `*-test.*`, `*_test.*`, the same with `spec`, `test-*`, `test.*`
+and every file under a `test`, `tests` or `__tests__` directory (extensions `js`, `cjs`, `mjs`,
+`ts`, `cts`, `mts`, `jsx`, `tsx`). Hidden directories, `node_modules`, `__pycache__`, `venv`, `site-packages`, `build`,
+`dist` and symbolic links are not searched; a file larger than 2,000,000 bytes is listed as unread.
+
+**A test names a requirement** when
+
+- the name of its file, class or function contains the identifier as a token, in any case:
+  `test_a1_rounding`, `test_A1`, `TestA1`, `TestA1Rounding`, `tests/test_a1.py`
+  (`test_a12` does not name `A1`; a dot becomes an underscore: `test_c3_1_...` names `C3.1`); or
+- its docstring, string constants (a `pytest.param(..., id="A1")`, a Node `test('A1: ...')`
+  title) or source lines, comments included, contain the identifier as a whole word, case
+  sensitive (`A1` matches `A1:` and `[A1]`, not `A12`, `A1.2` or `a1`).
+
+Python tests (functions named `test*`, classes named `Test*` and their methods) are read with
+`ast`; a module docstring counts for the file. A Python file that does not parse and every Node
+file are read as text, and a Node match outside a test title is attributed to the file.
+
+| Policy | Identified requirement that no test names |
+|---|---|
+| `enforce` | One `HIGH` finding `traceability.requirement-untested` per requirement. With the default `findingBlockSeverities` the gate is `FAILED`: `APPROVE` exits with 5, and the person decides `REQUEST_CHANGES`, `APPROVE_EXCEPTION` with a rationale, or `REJECT`. |
+| `warn` | One `LOW` finding per requirement; the gate does not count it. |
+| `off` | No check: VERIFICATION behaves as in 1.0.0. |
+
+The finding names the identifier and the first 80 characters of the requirement text, for example
+`No test names requirement A2: A2. A subtotal below the threshold is unchanged.` With `enforce` and
+`warn` the check is recorded as a validation result of `traceability.requirements` (`PASSED` when
+the check ran, mandatory under `enforce`, so it appears in `validationSummary`) and the mapping,
+each requirement with its identifier, where it came from and the tests that name it (node id, file,
+how it matched), is stored as `VERIFICATION` evidence of kind `TEST_REPORT` (schema
+`requirement-traceability.schema.json`). The plan of `PLANNING` lists the validator.
+
+A `project.yaml` written before this section existed has no `verification` key and runs with
+`off`; its configuration snapshot is serialized without the section, so its digest does not
+change.
+
 ## Provider feedback loop
 
-Four settings in `runtime` act on a run whose provider is a configured command provider (see
-[external agents](../guides/external-agents.md)). The simulated provider is deterministic and reads
-no feedback, so a run with it behaves as before whatever the settings say. A `project.yaml`
-without these keys behaves as 1.0.0 and its configuration snapshot is serialized without them, so
-its digest does not change; `harness config validate` shows the effective values under
-`feedbackLoop`.
+The feedback-loop settings in `runtime` act on a run whose provider is a configured command
+provider (see [external agents](../guides/external-agents.md)); under `agentSandbox: enforce` a
+correction attempt and a repeated call run in the same sandbox as the first call. The simulated
+provider is deterministic and reads no feedback, so a run with it behaves as before whatever the
+settings say. A `project.yaml` without these keys behaves as 1.0.0 and its configuration snapshot
+is serialized without them, so its digest does not change; `harness config validate` shows the
+effective values under `feedbackLoop`.
 
 **Automatic corrections (`verificationCorrections`).** When `VERIFICATION` ends `FAILED` because a
 mandatory validator ran and failed, the run returns to `IMPLEMENTATION` instead of stopping, at

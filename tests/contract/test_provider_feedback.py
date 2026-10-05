@@ -59,7 +59,12 @@ def test_project_schema_accepts_the_loop_settings_and_their_absence(
     python_workspace: Path,
 ) -> None:
     value = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
-    assert value["runtime"] == {
+    loop = {
+        key: item
+        for key, item in value["runtime"].items()
+        if key not in {"agentSandbox", "sandboxWritePaths"}
+    }
+    assert loop == {
         "commandTimeoutSeconds": 900,
         "maxOutputBytes": 1000000,
         "maxParallel": 2,
@@ -102,6 +107,7 @@ def test_feedback_sent_to_the_provider_matches_its_schema(
     config["agentProviders"] = {
         "fixture_agent": {"kind": "command", "command": ["python", "agent.py"]}
     }
+    config["runtime"]["agentSandbox"] = "off"  # about the protocol; the sandbox has its own tests
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     task_path = tmp_path / "task.yaml"
     task_path.write_text(TASK)

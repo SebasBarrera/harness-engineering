@@ -37,7 +37,7 @@ Version: 0.8.0 research beta
 
 | Area | Current implementation | Remaining work for production |
 |---|---|---|
-| Sandboxing | Application-level capabilities, path checks, timeout/cancellation | Container/VM/OS sandbox; CPU/memory/PID/network controls; filesystem mounts |
+| Sandboxing | Application-level capabilities, path checks, timeout/cancellation; write confinement of agent providers (`runtime.agentSandbox`: `sandbox-exec` on macOS, `bwrap` on Linux) | Container/VM/OS sandbox for validators and plugins; read, network, CPU/memory/PID controls |
 | Git | Read-only baseline metadata and workspace diff | Stage/commit/push adapters, ownership by hunk and signed attestations |
 | Coverage | Can run profile commands; whole-project tools can be configured | Normalized diff-coverage adapter per stack |
 | SAST/SCA | External command/plugin contract supports them | Built-in parsers and curated default policies |

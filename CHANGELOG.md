@@ -31,6 +31,39 @@
   criteria is asked again. The task, clarification-request and clarification-record schemas gain
   `criteriaPending` and the rule id `C0`. The clarification demo flow now also runs a
   one-sentence task.
+- Agent providers run write-confined (#34). In an evaluation an agent CLI wrote files outside its
+  workspace: the harness's path containment covers its own file handling, not the agent process.
+  The new `runtime.agentSandbox: enforce | off` wraps every command-provider invocation in
+  `IMPLEMENTATION`, including those after `REQUEST_CHANGES`, in `sandbox-exec` (macOS) or `bwrap`
+  (Linux) so that writes outside the workspace, `$TMPDIR` and `runtime.sandboxWritePaths` fail;
+  reads, network and process execution stay allowed. `harness init` writes `enforce` with default
+  write paths for agent CLIs (`/tmp`, `/var/folders`, `~/.claude`, `~/.claude.json*`, `~/.cache`,
+  `~/Library/Caches`, `~/.config`, `~/.npm`). The profile digest and the allowed paths are recorded
+  as `IMPLEMENTATION` evidence and an `agent.sandbox.applied` event; a host without a mechanism
+  blocks `IMPLEMENTATION` with a `sandbox.unavailable` finding (`run start` exits with 6), and a
+  provider that fails on a denied write gets a `sandbox.write-denied` finding. A `project.yaml`
+  without the key runs with `off` and keeps its configuration snapshot digest. The simulated
+  provider and the validators are not wrapped. The usage flow of `scripts/demo_flows.py` sets
+  `agentSandbox: 'off'`, since it runs on hosts without a mechanism.
+- `VERIFICATION` reports requirements that no test names (#35). Agents claimed that every
+  requirement had tests, and the suite ran without relating requirements to tests. A new step,
+  `traceability.requirements`, runs after the technology validators: it identifies a requirement by
+  the token that starts its text (`A1.`, `[B12]` or `X8:` followed by a space) or by a `requirementId` written in the
+  task file (generated ids do not count; requirements without an identifier are skipped and
+  counted), and looks for a test whose file, class or function name contains the identifier as a
+  token (`test_a1_...`, `TestA1`) or whose docstring, string constants or source contain it as a
+  whole word (Python tests read with `ast`, Node tests and unparsable files as text). The new
+  `verification.requirementTraceability` setting decides what an untraced requirement means:
+  `enforce` (written by `harness init`) records a `HIGH` finding
+  `traceability.requirement-untested`, so the gate is `FAILED` and `APPROVE` exits with 5; `warn`
+  records a `LOW` finding; `off` skips the check. A `project.yaml` without the key runs with `off`
+  and keeps its configuration snapshot digest. The requirement-to-test mapping is `VERIFICATION`
+  evidence; new contract: `requirement-traceability.schema.json`. Because `init` enables the
+  check, the tasks of the quickstart (`docs/guides/task.yaml`), `examples/task-python.yaml` and the
+  demonstration flows name their requirement in the added test (`test_req_discount_at_threshold`,
+  a `req_precedence:` test title), the brownfield example identifies its requirement as
+  `base64_decode_rejects_non_ascii` (its patch is unchanged), and a traceability flow was added to
+  `scripts/demo_flows.py`.
 - A feedback loop around command providers (#36). A failed `VERIFICATION` stopped the run and a
   `REQUEST_CHANGES` decision sent the agent the same request again, so the agent never learned
   why its attempt was not accepted, an agent that reported success on a failing change left no
@@ -49,7 +82,8 @@
   `providerRetryDelaySeconds` (init 60) repeat a call whose stderr or JSON result matches
   `providerTransientPatterns` (default: timed out, connection reset, went to sleep, overloaded,
   429, 529, rate limit, usage limit), never a process killed at its timeout, each repetition an
-  `agent.invocation.retried` event with evidence. New metrics `correction.verification_cycles`,
+  `agent.invocation.retried` event with evidence. Under `runtime.agentSandbox: enforce` a
+  correction attempt and a repeated call run in the same sandbox as the first call. New metrics `correction.verification_cycles`,
   `agent.unsupported_claims` and `agent.transient_retries`; `correction.cycles` counts both kinds
   of correction and the retrospective keeps reporting the human-authorized ones. A
   `project.yaml` without the settings behaves as before, sends the same provider request and
