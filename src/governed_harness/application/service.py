@@ -78,6 +78,7 @@ from .agent_results import (
     plan_state,
     quarantine_run,
     raise_budget,
+    routing_calibration,
 )
 from .clarification_loader import load_clarification_file
 from .exceptions import (
@@ -382,6 +383,11 @@ class HarnessApplication:
             execution_id = self._run_id(services, execution_id)
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    def routing_calibration(self, path: Path) -> dict[str, Any]:
+        """Cost per approved task of the routing decisions recorded in the project (#44)."""
+        with self._services(path) as services:
+            return routing_calibration(services)
 
     def budget(self, path: Path, execution_id: str) -> dict[str, Any]:
         """Usage of a run and its task against the budget limits (#42)."""

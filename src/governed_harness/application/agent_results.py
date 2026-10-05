@@ -16,6 +16,63 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices
 
 
+def routing_calibration(services: EngineServices) -> dict[str, Any]:
+    """Cost per approved task by provider family, call kind, size, model and effort, from the
+    routing decisions and the usage the providers reported (N14). The suggested table is a
+    suggestion: nothing is applied."""
+    from governed_harness.agents.routing import CalibrationRow, calibrate, suggest_table
+    from governed_harness.domain.models import AgentInvocation, Execution, ResourceUsage
+
+    project_id = services.resolved.project.project_id
+    usages = {
+        item.invocation_id: item
+        for item in services.state.list("resource_usage", ResourceUsage, project_id=project_id)
+        if item.invocation_id
+    }
+    invocations = services.state.list("agent_invocation", AgentInvocation, project_id=project_id)
+    rows: list[CalibrationRow] = []
+    for execution in services.state.list("execution", Execution, project_id=project_id):
+        approved = execution.status is ResultStatus.PASSED
+        for event in services.events.list(execution.execution_id):
+            if event.event_type != "agent.routing.decided":
+                continue
+            payload = event.payload
+            kind = str(payload.get("callKind"))
+            model = payload.get("model")
+            costs = [
+                usages[item.invocation_id].cost_usd
+                for item in invocations
+                if item.execution_id == execution.execution_id
+                and (item.call_kind or "implement") == kind
+                and (model is None or item.model == model)
+                and item.invocation_id in usages
+                and usages[item.invocation_id].cost_usd is not None
+            ]
+            rows.append(
+                CalibrationRow(
+                    family=str(payload.get("family")),
+                    call_kind=kind,
+                    size=payload.get("size"),
+                    model=model,
+                    effort=payload.get("effort"),
+                    cost_usd=sum(item for item in costs if item is not None) if costs else None,
+                    approved=approved,
+                    run_id=execution.execution_id,
+                )
+            )
+    groups = calibrate(rows)
+    return {
+        "projectId": project_id,
+        "decisions": len(rows),
+        "groups": groups,
+        "suggestedTables": suggest_table(groups),
+        "note": (
+            "Cost per approved task from the recorded decisions and reported usage; the "
+            "suggested tables need at least two approved runs per group and are not applied."
+        ),
+    }
+
+
 def budget_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
     """Usage of a run and its task against the configured limits (``budget``)."""
     from governed_harness.orchestration.engine import RunEngine

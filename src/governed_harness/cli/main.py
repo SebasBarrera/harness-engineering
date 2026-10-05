@@ -469,6 +469,19 @@ def plan_decide(
         _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
+@routing_app.command("calibrate")
+def routing_calibrate(
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Report the cost per approved task of every routing decision recorded in the project
+    (`agentRouting`), by provider family, call kind, task size, model and effort, and suggest
+    the cheapest implement rung per size among groups with at least two approved runs. Nothing
+    is applied: a person edits `agentRouting.tables`."""
+    _emit(_call(lambda: HarnessApplication().routing_calibration(path)), kind="routing")
+
+
 @budget_app.command("show")
 def budget_show(
     run: str = RUN_OPTION,
