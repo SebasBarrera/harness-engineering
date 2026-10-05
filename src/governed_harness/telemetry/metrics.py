@@ -35,10 +35,13 @@ HUMAN_INTERACTION_EVENTS: dict[str, str] = {
 
 def human_interactions(events: list[StoredEvent]) -> dict[str, int]:
     """The human interactions of a run by kind: events of the types above recorded with a
-    human actor."""
+    human actor. A contract confirmed in the answers to a clarification (``withAnswers``) is part
+    of that one interaction and is not counted again."""
     counts: dict[str, int] = {}
     for event in events:
         kind = HUMAN_INTERACTION_EVENTS.get(event.event_type)
+        if event.payload.get("withAnswers") is True:
+            continue
         if kind is not None and event.actor.get("actorType") == "HUMAN":
             counts[kind] = counts.get(kind, 0) + 1
     return counts

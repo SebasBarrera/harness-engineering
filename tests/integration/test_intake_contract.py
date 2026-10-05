@@ -6,6 +6,7 @@ rung, its locations in the implement request and the context manifest)."""
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from governed_harness.configuration import ConfigurationResolver
 from governed_harness.domain.enums import PhaseId, ResultStatus
 from governed_harness.domain.errors import ConfigurationError, PolicyViolationError
 from governed_harness.orchestration.engine import EngineServices
+from tests.conftest import GIT_ENV, GIT_ISOLATION, without_agent_results
 
 VAGUE = {
     "taskId": "task_vague",
@@ -320,3 +322,79 @@ def test_a_change_outside_the_contract_scope_stops_the_run(
     assert [item["condition"] for item in stops] == ["scope-contradiction"]
     metrics = application.status(python_workspace, execution.execution_id)["metrics"]
     assert metrics["human.interactions"]["value"] == 0
+
+
+def _new_project(root: Path) -> Path:
+    """A scaffold without sources: a new project, so intake.projectSetup asks its P1 questions."""
+    (root / "src" / "app").mkdir(parents=True)
+    (root / "src" / "app" / "__init__.py").write_text("", encoding="utf-8")
+    (root / "pyproject.toml").write_text(
+        "[project]\nname='app'\nversion='0.1.0'\n\n[tool.pytest.ini_options]\npythonpath=['src']\n",
+        encoding="utf-8",
+    )
+    (root / ".gitignore").write_text(".harness/\n", encoding="utf-8")
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *GIT_ISOLATION, *args], cwd=root, check=True, env=GIT_ENV)
+
+    git("init", "-q")
+    git("config", "user.email", "fixture@example.com")
+    git("config", "user.name", "Fixture")
+    git("add", ".")
+    git("commit", "-qm", "scaffold")
+    HarnessApplication().init(root)
+    without_agent_results(root)
+    return root
+
+
+def test_one_message_carries_intent_project_setup_and_contract(tmp_path: Path) -> None:
+    """Wave 5 and wave 6 share one intake: the deterministic questions, the project setup
+    questions (P1, #56) and the operational contract (#55) reach the person in one request,
+    and one answers file settles all of them."""
+    root = _new_project(tmp_path / "new")
+    configure(root, {"operationalContract": "batch", "projectSetup": "ask"})
+    value = {
+        "taskId": "task_cart",
+        "title": "Cart total",
+        "intent": "Add a total.",
+        "acceptanceCriteria": [{"criterionId": "AC-1", "text": "It works."}],
+    }
+    application = create(root, tmp_path, value)
+    execution = application.start_run(root, "task_cart")
+    assert (execution.current_phase, execution.status) == (PhaseId.INTENT, ResultStatus.BLOCKED)
+    clarifications = application.list_clarifications(root, "task_cart")
+    assert len(clarifications["requests"]) == 1
+    request = clarifications["openRequest"]
+    rules = [item["ruleId"] for item in request["questions"]]
+    assert {"C1", "T1"} <= set(rules) and rules.count("P1") == 3
+    assert request["contract"]["mode"] == "batch"
+    targets = {item["target"]: item["questionId"] for item in request["questions"]}
+    answers = {
+        item["questionId"]: "total([1.0, 2.0]) returns 3.0."
+        for item in request["questions"]
+        if item["ruleId"] != "P1"
+    }
+    answers[targets["project:architecture"]] = "Layered"
+    answers[targets["project:testing"]] = "TDD"
+    answers[targets["project:standards"]] = "default"
+    source = tmp_path / "answers.yaml"
+    source.write_text(
+        yaml.safe_dump(
+            {
+                "answers": answers,
+                "contract": {"verificationLevel": "L1", "createPullRequest": "no"},
+                "confirmContract": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    revised = application.clarify_task(
+        root, task_id="task_cart", answers_file=source, actor_id="human.author"
+    )["task"]
+    assert revised["contract"]["verificationLevel"] == "L1"
+    assert "Project setup (testing): TDD" in revised["constraints"]
+    assert application.project(root)["projectSetup"]["testing"] == "tdd"
+    kinds = [item.event_type for item in events(root, execution.execution_id)]
+    assert "contract.confirmed" in kinds
+    metrics = application.status(root, execution.execution_id)["metrics"]
+    assert metrics["human.interactions"]["value"] == 1

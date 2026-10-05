@@ -195,7 +195,8 @@ class LadderIntake:
         self.ladder.s.events.append(
             execution.execution_id,
             "contract.confirmed",
-            {"digest": summary.digest, "taskDigest": summary.task_digest},
+            # Confirmed in the answers to the clarification: the same interaction.
+            {"digest": summary.digest, "taskDigest": summary.task_digest, "withAnswers": True},
             actor=actor,
         )
         return summary.digest
