@@ -99,6 +99,57 @@
       "title": "FindingSeverity",
       "type": "string"
     },
+    "GovernanceConfig": {
+      "additionalProperties": false,
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.",
+      "properties": {
+        "confirmDecisionDigest": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmdecisiondigest"
+        },
+        "deciderIdentity": {
+          "anyOf": [
+            {
+              "enum": [
+                "git",
+                "default"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decideridentity"
+        },
+        "trustedHosts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trustedhosts"
+        }
+      },
+      "title": "GovernanceConfig",
+      "type": "object"
+    },
     "IntakeConfig": {
       "additionalProperties": false,
       "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.",
@@ -353,6 +404,17 @@
       "const": "1.0",
       "title": "Configversion",
       "type": "string"
+    },
+    "governance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GovernanceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "intake": {
       "anyOf": [

@@ -5,8 +5,8 @@ the same application layer as the CLI. It serves one project.
 
 > [!WARNING]
 > There is **no authentication, no roles and no multi-user model**. The decision endpoint accepts
-> any actor string. Keep the server on the loopback default (`--host 127.0.0.1`) or behind a
-> separately secured environment. See [SECURITY.md](https://github.com/SebasBarrera/harness-engineering/blob/develop/SECURITY.md) and issue #18.
+> any actor string outside the agent, validator and harness namespaces. Keep the server on the
+> loopback default (`--host 127.0.0.1`) or behind a separately secured environment. See [SECURITY.md](https://github.com/SebasBarrera/harness-engineering/blob/develop/SECURITY.md) and issue #18.
 
 ```bash
 harness api serve --path . --host 127.0.0.1 --port 8765
@@ -23,7 +23,7 @@ harness api serve --path . --host 127.0.0.1 --port 8765
 | `GET` | `/api/runs/{run}/evidence` | Evidence records with artifact references | 404 |
 | `GET` | `/api/runs/{run}/findings` | Structured findings | 404 |
 | `GET` | `/api/runs/{run}/retrospective` | Non-mutating retrospective | 404 |
-| `POST` | `/api/runs/{run}/decision` | The recorded decision and the updated execution | 409, 422 |
+| `POST` | `/api/runs/{run}/decision` | The recorded decision and the updated execution | 403, 409, 422 |
 | `GET` | `/` | The embedded dashboard (HTML) | — |
 
 These are the nine routes of the thesis cut: seven queries, one decision `POST` and the
@@ -49,12 +49,18 @@ curl -s -X POST http://127.0.0.1:8765/api/runs/<run>/decision \
 | `decision` | `APPROVE`, `APPROVE_EXCEPTION`, `REQUEST_CHANGES`, `REJECT` | required |
 | `change_set_digest` | string | required |
 | `rationale` | string | required |
-| `actor_id` | string | `human.web` |
+| `actor_id` | string | the Git user under `governance.deciderIdentity: git`, otherwise `human.web` |
 | `continue_after` | boolean | `true` |
 
 Every policy violation of `harness gate decide` (stale digest, `APPROVE` over a gate that did not
 pass, run not in `DECISION`, exception without rationale) is returned as **409** with the reason in
-`detail`, for example `{"detail": "human decisions are accepted only in DECISION"}`.
+`detail`, for example `{"detail": "human decisions are accepted only in DECISION"}`. An
+`actor_id` in the namespace of an agent (`agent.*`), a validator (`validator.*`) or the harness
+(`harness.*`) is refused with **403** whatever the configuration.
+
+With `governance.trustedHosts` (written by `harness init`: `127.0.0.1`, `localhost`, `::1`) every
+route answers **400** to a request whose `Host` header is not one of those names, so a web page
+cannot reach the server through DNS rebinding. Without the key every host is accepted, as in 1.0.0.
 
 ## Dashboard
 

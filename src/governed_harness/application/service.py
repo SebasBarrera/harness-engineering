@@ -11,7 +11,18 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness import __version__
-from governed_harness.configuration import ConfigurationResolver, RuntimeConfig, initialize_project
+from governed_harness.configuration import (
+    ConfigurationResolver,
+    GovernanceConfig,
+    RuntimeConfig,
+    initialize_project,
+)
+from governed_harness.domain.actors import (
+    DEFAULT_CLI_ACTOR,
+    actor_id_from_identity,
+    identity_display_name,
+    require_human_actor,
+)
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -40,6 +51,7 @@ from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
+from governed_harness.runtime import GitAdapter
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
@@ -90,6 +102,16 @@ class HarnessApplication:
                 "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
+            "governance": self._governance(resolved.project.governance_settings),
+        }
+
+    @staticmethod
+    def _governance(settings: GovernanceConfig) -> dict[str, Any]:
+        """Effective governance settings (absent keys resolve to the 1.0.0 behaviour)."""
+        return {
+            "deciderIdentity": settings.decider_identity or "default",
+            "confirmDecisionDigest": bool(settings.confirm_decision_digest),
+            "trustedHosts": list(settings.trusted_hosts) if settings.trusted_hosts else None,
         }
 
     @staticmethod
@@ -135,7 +157,7 @@ class HarnessApplication:
         *,
         task_id: str,
         answers_file: Path,
-        actor_id: str,
+        actor_id: str | None = None,
         actor_type: ActorType = ActorType.HUMAN,
     ) -> dict[str, Any]:
         """Answer the clarification questions INTENT asked about a task.
@@ -149,10 +171,11 @@ class HarnessApplication:
         (exit code 2), as is a task with a run past INTENT (exit code 5)."""
         clarification = load_clarification_file(answers_file)
         with self._services(path) as services:
+            decider, display_name = self._decider(services, actor_id)
             record, task = RunEngine(services).clarify(
                 task_id=task_id,
                 clarification=clarification,
-                actor=Actor(actor_type=actor_type, actor_id=actor_id),
+                actor=Actor(actor_type=actor_type, actor_id=decider, display_name=display_name),
             )
             return {
                 "clarification": record.model_dump(mode="json", by_alias=True),
@@ -208,9 +231,9 @@ class HarnessApplication:
         with self._services(path) as services:
             return RunEngine(services).continue_execution(execution_id)
 
-    def cancel_run(self, path: Path, execution_id: str, actor_id: str) -> Execution:
+    def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
         with self._services(path) as services:
-            return RunEngine(services).cancel(execution_id, actor_id)
+            return RunEngine(services).cancel(execution_id, self._decider(services, actor_id)[0])
 
     def decide_gate(
         self,
@@ -219,18 +242,24 @@ class HarnessApplication:
         execution_id: str,
         decision: DecisionKind,
         change_set_digest: str,
-        actor_id: str,
+        actor_id: str | None = None,
         rationale: str,
         continue_after: bool = True,
+        default_actor: str = DEFAULT_CLI_ACTOR,
     ) -> tuple[HumanDecision, Execution]:
+        """Record a human decision on the gate of a run. Without ``actor_id`` the decider is
+        the Git user under ``governance.deciderIdentity: git`` and ``default_actor`` otherwise;
+        an actor id of an agent, a validator or the harness is refused (exit code 5)."""
         with self._services(path) as services:
             engine = RunEngine(services)
+            decider, display_name = self._decider(services, actor_id, default_actor)
             record = engine.decide(
                 execution_id=execution_id,
                 decision=decision,
                 change_set_digest=change_set_digest,
-                actor_id=actor_id,
+                actor_id=decider,
                 rationale=rationale,
+                actor_display_name=display_name,
             )
             execution = (
                 engine.continue_execution(execution_id)
@@ -239,6 +268,38 @@ class HarnessApplication:
                 else engine.get_execution(execution_id)
             )
             return record, execution
+
+    def decision_summary(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """What a person is about to decide on: the phase, the gate result and the ChangeSet the
+        decision would be bound to (read-only; used by the interactive confirmation)."""
+        with self._services(path) as services:
+            execution = services.state.get("execution", execution_id, Execution)
+            gate = (
+                services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
+                if execution.gate_evaluation_id
+                else None
+            )
+            files: list[dict[str, Any]] = []
+            if execution.change_set_digest:
+                try:
+                    change_set = RunEngine(services).current_change_set(execution_id)
+                    files = [
+                        item.model_dump(mode="json", by_alias=True) for item in change_set.files
+                    ]
+                except NotFoundError:
+                    files = []
+            return {
+                "executionId": execution_id,
+                "taskId": execution.task_id,
+                "currentPhase": execution.current_phase.value,
+                "changeSetDigest": execution.change_set_digest,
+                "gateStatus": gate.status.value if gate else None,
+                "gateReasonCodes": list(gate.reason_codes) if gate else [],
+                "files": files,
+                "confirmDigest": bool(
+                    services.resolved.project.governance_settings.confirm_decision_digest
+                ),
+            }
 
     def status(self, path: Path, execution_id: str) -> dict[str, Any]:
         with self._services(path) as services:
@@ -381,7 +442,7 @@ class HarnessApplication:
         level: MemoryLevel,
         key: str,
         value: dict[str, Any],
-        actor_id: str,
+        actor_id: str | None = None,
         task_id: str | None = None,
         execution_id: str | None = None,
         valid_until: datetime | None = None,
@@ -392,6 +453,9 @@ class HarnessApplication:
         """Record a memory entry. Normative, project and retrospective entries only enter a
         context once approved; the approval is an explicit act of the recorded actor."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            if approved:
+                require_human_actor(actor_id, "approve a memory record")
             store = MemoryStore(services.state)
             project_id = services.resolved.project.project_id
             if not key.strip():
@@ -415,7 +479,9 @@ class HarnessApplication:
                 key=key.strip(),
                 value=value,
                 provenance=self._human_provenance(
-                    actor_id, source_refs=(supersedes,) if supersedes else ()
+                    actor_id,
+                    source_refs=(supersedes,) if supersedes else (),
+                    display_name=display_name,
                 ),
                 valid_until=valid_until,
                 supersedes=supersedes,
@@ -466,10 +532,14 @@ class HarnessApplication:
             manifest: dict[str, Any] = json.loads(services.artifacts.get(reference))
             return {"executionId": execution_id, "manifestRef": reference, **manifest}
 
-    def approve_memory(self, path: Path, *, memory_id: str, actor_id: str) -> MemoryRecord:
+    def approve_memory(
+        self, path: Path, *, memory_id: str, actor_id: str | None = None
+    ) -> MemoryRecord:
         """Approve a normative, project or retrospective record. The approval is a new record
         that supersedes the proposal, so the proposal and its approver both stay on record."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "approve a memory record")
             store = MemoryStore(services.state)
             target = self._project_memory(store, memory_id, services.resolved.project.project_id)
             if target.level not in APPROVAL_REQUIRED:
@@ -484,18 +554,22 @@ class HarnessApplication:
                     "created_at": datetime.now(UTC),
                     "supersedes": target.memory_id,
                     "approved": True,
-                    "provenance": self._human_provenance(actor_id, source_refs=(target.memory_id,)),
+                    "provenance": self._human_provenance(
+                        actor_id, source_refs=(target.memory_id,), display_name=display_name
+                    ),
                 }
             )
             store.put(record)
             return record
 
     def invalidate_memory(
-        self, path: Path, *, memory_id: str, actor_id: str, reason: str
+        self, path: Path, *, memory_id: str, actor_id: str | None = None, reason: str
     ) -> MemoryRecord:
         """Invalidate a record without deleting it: an approved, already expired record
         supersedes it and keeps who invalidated it and why."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "invalidate a memory record")
             store = MemoryStore(services.state)
             target = self._project_memory(store, memory_id, services.resolved.project.project_id)
             if not reason.strip():
@@ -509,7 +583,9 @@ class HarnessApplication:
                 level=target.level,
                 key=target.key,
                 value={"invalidated": True, "reason": reason.strip()},
-                provenance=self._human_provenance(actor_id, source_refs=(target.memory_id,)),
+                provenance=self._human_provenance(
+                    actor_id, source_refs=(target.memory_id,), display_name=display_name
+                ),
                 created_at=now,
                 valid_until=now,
                 supersedes=target.memory_id,
@@ -548,7 +624,7 @@ class HarnessApplication:
         execution_id: str,
         recommendation_id: str,
         decision: RecommendationDecision,
-        actor_id: str,
+        actor_id: str | None = None,
         rationale: str,
         statement: str | None = None,
     ) -> MemoryRecord:
@@ -559,6 +635,8 @@ class HarnessApplication:
         never enters a context. Nothing else changes: rules, gates and configuration are only
         modified by a person through a versioned change."""
         with self._services(path) as services:
+            actor_id, display_name = self._decider(services, actor_id)
+            require_human_actor(actor_id, "decide on a recommendation")
             retrospective = self._retrospective(services, execution_id)
             recommendation = next(
                 (
@@ -604,7 +682,9 @@ class HarnessApplication:
                 key=key,
                 value=value,
                 provenance=self._human_provenance(
-                    actor_id, source_refs=(retrospective.retrospective_id,)
+                    actor_id,
+                    source_refs=(retrospective.retrospective_id,),
+                    display_name=display_name,
                 ),
                 created_at=now,
                 valid_until=now if rejected else None,
@@ -664,9 +744,24 @@ class HarnessApplication:
         return f"recommendation/{recommendation_id}"
 
     @staticmethod
-    def _human_provenance(actor_id: str, *, source_refs: tuple[str, ...] = ()) -> Provenance:
+    def _decider(
+        services: EngineServices, actor_id: str | None, default: str = DEFAULT_CLI_ACTOR
+    ) -> tuple[str, str | None]:
+        """The actor id (and display name) of the person acting: the explicit ``--actor``, else
+        the Git user under ``governance.deciderIdentity: git``, else ``default``."""
+        if actor_id:
+            return actor_id, None
+        if services.resolved.project.governance_settings.git_decider:
+            name, email = GitAdapter(services.paths.workspace).user_identity()
+            return actor_id_from_identity(name, email), identity_display_name(name, email)
+        return default, None
+
+    @staticmethod
+    def _human_provenance(
+        actor_id: str, *, source_refs: tuple[str, ...] = (), display_name: str | None = None
+    ) -> Provenance:
         return Provenance(
-            actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+            actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=display_name),
             core_version=__version__,
             source_refs=source_refs,
         )

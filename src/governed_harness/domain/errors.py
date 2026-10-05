@@ -29,3 +29,8 @@ class ExecutionBlockedError(HarnessError):
 
 class CancelledError(HarnessError):
     exit_code = 130
+
+
+class NonHumanActorError(PolicyViolationError):
+    """A human act (a decision, an approval, an answer) named an agent, validator or harness
+    actor; exit code 5."""

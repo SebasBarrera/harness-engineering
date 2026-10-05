@@ -18,6 +18,10 @@ from governed_harness.agents import (
 )
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.domain.actors import (
+    NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
+)
+from governed_harness.domain.actors import require_human_actor
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -110,9 +114,6 @@ from governed_harness.validators import (
     ValidationContext,
     ValidatorRegistry,
 )
-
-NON_HUMAN_ACTOR_PREFIXES = ("agent.", "validator.", "harness.")
-"""Actor id namespaces the harness assigns to agents, validators and itself."""
 
 UNSUPPORTED_CLAIM_RULE = "agent.unsupported-claim"
 """Rule id of the finding recorded when an agent reported success and verification failed."""
@@ -322,7 +323,9 @@ class RunEngine:
         change_set_digest: str,
         actor_id: str,
         rationale: str,
+        actor_display_name: str | None = None,
     ) -> HumanDecision:
+        require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
@@ -347,7 +350,9 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
-        actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
+        actor = Actor(
+            actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
+        )
         record = HumanDecision(
             decision_id=new_id("decision"),
             execution_id=execution_id,
@@ -439,10 +444,9 @@ class RunEngine:
 
         The answers and the revision are recorded on the event chain of the run whose INTENT
         asked the questions; ``continue_execution`` then assesses the revised task."""
-        if actor.actor_type is not ActorType.HUMAN or actor.actor_id.startswith(
-            NON_HUMAN_ACTOR_PREFIXES
-        ):
+        if actor.actor_type is not ActorType.HUMAN:
             raise PolicyViolationError("only a human actor can answer clarification questions")
+        require_human_actor(actor.actor_id, "answer clarification questions")
         task = self.get_task(task_id)
         executions = [
             item

@@ -266,6 +266,53 @@ class VerificationConfig(ConfigModel):
     )
 
 
+DeciderIdentity = Literal["git", "default"]
+
+DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
+"""Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
+
+
+class GovernanceConfig(ConfigModel):
+    """Integrity settings of the human decisions, the workspace and the record (since 1.1).
+
+    Every key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of
+    the serialized configuration, so the snapshot digest of an existing project does not
+    change. ``harness init`` writes them all.
+
+    * ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the
+      person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed
+      ``human.local`` and ``human.web`` identifiers.
+    * ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and
+      asks for the first characters of the ChangeSet digest before recording it.
+    * ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these
+      names (DNS-rebinding protection); absent, every host is accepted."""
+
+    decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
+    confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
+    trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
+
+    @field_validator("trusted_hosts")
+    @classmethod
+    def _hosts_are_names(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for host in value or ():
+            if not host.strip() or any(char.isspace() or char == "/" for char in host):
+                raise ValueError(f"trusted host must be a host name or address: {host!r}")
+        return value
+
+    @property
+    def git_decider(self) -> bool:
+        return self.decider_identity == "git"
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_settings(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, field in type(self).model_fields.items():
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(field.alias or name, None)
+        return data
+
+
 class ProjectConfiguration(ConfigModel):
     config_version: Literal["1.0"] = Field(alias="configVersion")
     project_id: str = Field(alias="projectId")
@@ -283,6 +330,12 @@ class ProjectConfiguration(ConfigModel):
     retention: dict[str, Any] = Field(default_factory=dict)
     intake: IntakeConfig | None = None
     verification: VerificationConfig | None = None
+    governance: GovernanceConfig | None = None
+
+    @property
+    def governance_settings(self) -> GovernanceConfig:
+        """The governance settings, all absent (1.0.0 behaviour) when the section is."""
+        return self.governance or GovernanceConfig()
 
     @field_validator("profiles")
     @classmethod
@@ -315,6 +368,8 @@ class ProjectConfiguration(ConfigModel):
             data.pop("intake", None)
         if self.verification is None:
             data.pop("verification", None)
+        if self.governance is None:
+            data.pop("governance", None)
         return data
 
 

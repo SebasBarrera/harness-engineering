@@ -210,7 +210,7 @@ harness task clarify [OPTIONS]
 |---|---|---|---|---|
 | `--task` | str | yes |  | Task identifier (taskId) |
 | `--file` | file | yes |  | Answers file (YAML or JSON): answers by question id, optional criteria and requirement changes |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness run start
@@ -257,7 +257,7 @@ harness run cancel [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--run` | str | yes |  | Run (execution) identifier |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness run list
@@ -275,7 +275,11 @@ harness run list [OPTIONS]
 ## harness gate decide
 
 Record a human decision bound to the current ChangeSet digest. A decision for a stale
-digest, or APPROVE over a gate that did not pass, is rejected with exit code 5.
+digest, APPROVE over a gate that did not pass, or an actor id of an agent, validator or the
+harness is rejected with exit code 5. Under `governance.confirmDecisionDigest: true` and on a
+terminal, the decision, the gate and the changed files are shown first and the first
+characters of the ChangeSet digest must be typed to confirm (a wrong answer exits with 5 and
+records nothing).
 
 ```text
 harness gate decide [OPTIONS]
@@ -287,7 +291,7 @@ harness gate decide [OPTIONS]
 | `--decision` | `APPROVE` \| `REJECT` \| `REQUEST_CHANGES` \| `APPROVE_EXCEPTION` | yes |  | Human decision |
 | `--change-set-digest` | str | yes |  | Current ChangeSet digest shown by status (sha256:...) |
 | `--rationale` | str | yes |  | Justification recorded with the decision |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--continue`, `--no-continue` | flag | no | --continue | Resume the run after recording the decision |
 | `--path` | path | no |  | Project directory |
 
@@ -337,7 +341,7 @@ harness memory add [OPTIONS]
 | `--supersedes` | str | no |  | Identifier of the record this one replaces |
 | `--sensitive` | flag | no | false | Withhold the value from the context manifest and the agent |
 | `--approve` | flag | no | false | Record the entry as approved by the acting person |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness memory list
@@ -381,7 +385,7 @@ harness memory approve [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--memory` | str | yes |  | Memory record identifier |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness memory invalidate
@@ -397,7 +401,7 @@ harness memory invalidate [OPTIONS]
 |---|---|---|---|---|
 | `--memory` | str | yes |  | Memory record identifier |
 | `--reason` | str | yes |  | Why the record no longer applies |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness recommendation list
@@ -431,7 +435,7 @@ harness recommendation decide [OPTIONS]
 | `--decision` | `ACCEPT` \| `EDIT` \| `REJECT` | yes |  | Decision on the recommendation |
 | `--rationale` | str | yes |  | Justification recorded with the decision |
 | `--statement` | str | no |  | Edited text of the recommendation; required with EDIT |
-| `--actor` | str | no | `human.local` | Identifier of the person acting (recorded, not authenticated) |
+| `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--path` | path | no |  | Project directory |
 
 ## harness plugins list

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,13 @@ app.add_typer(recommendation_app, name="recommendation")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
+
+
+ACTOR_HELP = (
+    "Identifier of the person acting (recorded, not authenticated). Defaults to the Git user "
+    "under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators "
+    "and the harness (agent.*, validator.*, harness.*) are refused with exit code 5."
+)
 
 
 def _emit(value: object, json_output: bool = True) -> None:
@@ -214,10 +222,11 @@ def task_clarify(
         help="Answers file (YAML or JSON): answers by question id, optional criteria and "
         "requirement changes",
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -277,10 +286,11 @@ def run_continue(
 @run_app.command("cancel")
 def run_cancel(
     run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -402,10 +412,11 @@ def memory_add(
     approve: bool = typer.Option(
         False, "--approve", help="Record the entry as approved by the acting person"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -460,10 +471,11 @@ def memory_manifest(
 @memory_app.command("approve")
 def memory_approve(
     memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -480,10 +492,11 @@ def memory_approve(
 def memory_invalidate(
     memory: str = typer.Option(..., "--memory", help="Memory record identifier"),
     reason: str = typer.Option(..., "--reason", help="Why the record no longer applies"),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
@@ -512,10 +525,11 @@ def gate_decide(
     rationale: str = typer.Option(
         ..., "--rationale", help="Justification recorded with the decision"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
@@ -525,7 +539,12 @@ def gate_decide(
     ),
 ) -> None:
     """Record a human decision bound to the current ChangeSet digest. A decision for a stale
-    digest, or APPROVE over a gate that did not pass, is rejected with exit code 5."""
+    digest, APPROVE over a gate that did not pass, or an actor id of an agent, validator or the
+    harness is rejected with exit code 5. Under `governance.confirmDecisionDigest: true` and on a
+    terminal, the decision, the gate and the changed files are shown first and the first
+    characters of the ChangeSet digest must be typed to confirm (a wrong answer exits with 5 and
+    records nothing)."""
+    _confirm_decision(path, run, decision, change_set_digest)
     record, execution = _call(
         lambda: HarnessApplication().decide_gate(
             path,
@@ -544,6 +563,54 @@ def gate_decide(
         }
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
+
+
+CONFIRM_PREFIX_CHARS = 12
+"""Hex characters of the ChangeSet digest typed to confirm an interactive decision."""
+
+
+def _interactive() -> bool:
+    """Whether a person is at the terminal (standard input and error are terminals)."""
+    return sys.stdin.isatty() and sys.stderr.isatty()
+
+
+def _confirm_decision(path: Path, run: str, decision: DecisionKind, change_set_digest: str) -> None:
+    if not _interactive():
+        return
+    summary = _call(lambda: HarnessApplication().decision_summary(path, run))
+    if not summary["confirmDigest"]:
+        return
+    current = str(summary["changeSetDigest"] or "")
+    typer.echo(
+        f"Run {summary['executionId']} (task {summary['taskId']}), phase "
+        f"{summary['currentPhase']}\nGate: {summary['gateStatus']} "
+        f"{' '.join(summary['gateReasonCodes'])}\nChangeSet {current}:",
+        err=True,
+    )
+    for item in summary["files"]:
+        typer.echo(
+            f"  {item['status']:<9} {item['path']} (+{item['additions']} -{item['deletions']})",
+            err=True,
+        )
+    expected = current.removeprefix("sha256:")[:CONFIRM_PREFIX_CHARS]
+    answer = typer.prompt(
+        f"Decision {decision.value} on {change_set_digest}. Type the first "
+        f"{CONFIRM_PREFIX_CHARS} characters of the ChangeSet digest after 'sha256:' to confirm",
+        err=True,
+    )
+    if not expected or answer.strip().lower() != expected:
+        typer.echo(
+            json.dumps(
+                {
+                    "status": "ERROR",
+                    "error": "decision not confirmed: the typed characters do not match the "
+                    "current ChangeSet digest; nothing was recorded",
+                },
+                indent=2,
+            ),
+            err=True,
+        )
+        raise typer.Exit(code=5)
 
 
 @app.command()
@@ -584,10 +651,11 @@ def recommendation_decide(
     statement: str | None = typer.Option(
         None, "--statement", help="Edited text of the recommendation; required with EDIT"
     ),
-    actor: str = typer.Option(
-        "human.local",
+    actor: str | None = typer.Option(
+        None,
         "--actor",
-        help="Identifier of the person acting (recorded, not authenticated)",
+        help=ACTOR_HELP,
+        show_default=False,
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"

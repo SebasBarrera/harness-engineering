@@ -98,6 +98,21 @@
   the ChangeSet digest covers the diff, so a run recorded with this version has a different
   ChangeSet digest than the same change recorded by 1.0.0. Records written by earlier versions
   are read as they are and keep their digests.
+- Agents, validators and the harness can no longer record a human decision (#45). `harness gate
+  decide --actor agent.claude-code --decision APPROVE_EXCEPTION` exited with 0, was recorded as a
+  `HUMAN` decision and closed the run; only `task clarify` refused those namespaces. Every human
+  act (`gate decide` with any decision, `recommendation decide`, `memory approve`,
+  `memory invalidate`, `memory add --approve`, `task clarify`) now refuses an actor id in
+  `agent.*`, `validator.*` or `harness.*` (or one of those words alone) with exit code 5, and the
+  decision endpoint of the local API with 403. This is a defect fix and applies to every project.
+  A new optional `governance` section, written by `harness init`, adds: `deciderIdentity: git`,
+  which records the Git user (`actorId` from `user.email`, `displayName` `Name <email>`) when no
+  `--actor` is given (otherwise `human.local` and `human.web` as before); `confirmDecisionDigest`,
+  which on a terminal shows the gate, the ChangeSet digest and its files and asks for the first 12
+  characters of the digest before `gate decide` records anything (exit 5 on a wrong answer); and
+  `trustedHosts` (`127.0.0.1`, `localhost`, `::1`), which makes the local API answer 400 to any
+  other `Host` header. A `project.yaml` without the section keeps the 1.0.0 behaviour and its
+  configuration snapshot digest. The `--actor` options default to none in the CLI reference.
 
 ## 1.0.0 - 2026-10-01
 

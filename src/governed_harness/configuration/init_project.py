@@ -5,7 +5,10 @@ from pathlib import Path
 
 import yaml
 
-from governed_harness.configuration.models import DEFAULT_SANDBOX_WRITE_PATHS
+from governed_harness.configuration.models import (
+    DEFAULT_SANDBOX_WRITE_PATHS,
+    DEFAULT_TRUSTED_HOSTS,
+)
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -52,6 +55,11 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "retention": {"artifactDays": 30, "eventDays": 365},
         "intake": {"criteriaPolicy": "enforce"},
         "verification": {"requirementTraceability": "enforce"},
+        "governance": {
+            "deciderIdentity": "git",
+            "confirmDecisionDigest": True,
+            "trustedHosts": list(DEFAULT_TRUSTED_HOSTS),
+        },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

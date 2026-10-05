@@ -55,6 +55,13 @@ intake:
   criteriaPolicy: enforce
 verification:
   requirementTraceability: enforce
+governance:
+  deciderIdentity: git
+  confirmDecisionDigest: true
+  trustedHosts:
+  - 127.0.0.1
+  - localhost
+  - ::1
 ```
 
 ## Fields
@@ -88,6 +95,7 @@ verification:
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
+| `governance.*` | 1.0.0 behaviour when absent; `init` writes every key | Decider identity and confirmation, trusted API hosts and the other integrity settings. See [governance](#governance). |
 
 ## Policies
 
@@ -365,6 +373,32 @@ stays recorded as an agent invocation. Repetitions count in `agent.transient_ret
 correction cycles or implementation attempts. The default patterns are `timed out`,
 `connection reset`, `went to sleep`, `overloaded`, `429`, `529`, `rate limit` and `usage limit`; a
 pattern that starts or ends with a digit does not match inside a longer number.
+
+## Governance
+
+The `governance` section protects the human decision, the workspace and the record. Every key is
+optional and `harness init` writes all of them; a `project.yaml` without the section (or without
+a key) keeps the 1.0.0 behaviour, and its configuration snapshot is serialized without them, so
+its digest does not change. `harness config validate` shows the effective values under
+`governance`.
+
+### Who decides
+
+A human decision (`gate decide`, including `APPROVE_EXCEPTION`, `recommendation decide`,
+`memory approve`, `memory invalidate`, `memory add --approve`, `task clarify`) is refused with exit
+code 5 when its actor id is in the namespace the harness gives to agents (`agent.*`), validators
+(`validator.*`) or itself (`harness.*`), or is one of those words alone. The local API answers the
+same request with 403. This rule applies to every project, with or without the section: it closes
+a defect where `gate decide --actor agent.claude-code --decision APPROVE_EXCEPTION` was recorded
+as a human decision and closed the run. The actor id is still not authenticated: the rule stops a
+process with access to the terminal from deciding under its own identity, not a person or a
+process that types another one.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `deciderIdentity` | `default` | `git` | `git`: when a human act has no `--actor` (API: no `actor_id`), the actor is the Git user of the workspace, recorded as `actorId` (the e-mail address in lower case, characters outside `[a-z0-9_.-]` replaced by `-`) and `displayName` (`Name <email>`); without `user.email` and `user.name` the command exits with 2. `default`: `human.local` (CLI) and `human.web` (API). |
+| `confirmDecisionDigest` | `false` | `true` | On a terminal, `gate decide` prints the run, the gate result, the ChangeSet digest and its files on standard error and asks for the first 12 hexadecimal characters of the digest; a wrong answer exits with 5 and records nothing. Without a terminal (scripts, CI) nothing is asked. |
+| `trustedHosts` | every host | `127.0.0.1`, `localhost`, `::1` | The local API answers only requests whose `Host` header is one of these names (400 otherwise), which stops DNS rebinding from a web page. |
 
 ## Technology profiles
 
