@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import click
 import typer
 
 from governed_harness import __version__
@@ -33,6 +34,7 @@ recommendation_app = typer.Typer(help="Retrospective recommendation commands")
 plugins_app = typer.Typer(help="Plugin and extension commands")
 benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
+artifact_app = typer.Typer(help="Artifact store commands")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -44,6 +46,7 @@ app.add_typer(recommendation_app, name="recommendation")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
+app.add_typer(artifact_app, name="artifact")
 
 
 JSON_OPTION: Any = typer.Option(
@@ -51,6 +54,17 @@ JSON_OPTION: Any = typer.Option(
     "--json/--no-json",
     help="Print JSON, or readable text with --no-json (default: JSON unless standard output "
     "is a terminal)",
+)
+
+RUN_OPTION: Any = typer.Option(
+    ...,
+    "--run",
+    help="Run (execution) identifier, `latest` or a unique prefix such as run_1a2b",
+)
+RUN_OPTION_LATEST: Any = typer.Option(
+    "latest",
+    "--run",
+    help="Run (execution) identifier, `latest` or a unique prefix such as run_1a2b",
 )
 
 _OUTPUT: dict[str, bool | None] = {"json": None}
@@ -328,7 +342,7 @@ def run_start(
 
 @run_app.command("continue")
 def run_continue(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -343,7 +357,7 @@ def run_continue(
 
 @run_app.command("cancel")
 def run_cancel(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     actor: str = typer.Option(
         "human.local",
         "--actor",
@@ -371,7 +385,7 @@ def run_list(
 
 @app.command()
 def status(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -384,7 +398,7 @@ def status(
 
 @app.command()
 def trace(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     format: str = typer.Option("markdown", "--format", help="markdown, json, jsonl or sarif"),
     output: Path | None = typer.Option(
         None, "--output", help="Write to this file instead of standard output"
@@ -405,7 +419,7 @@ def trace(
 
 @evidence_app.command("list")
 def evidence_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -416,7 +430,7 @@ def evidence_list(
 
 @findings_app.command("list")
 def findings_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -512,7 +526,7 @@ def memory_list(
 
 @memory_app.command("manifest")
 def memory_manifest(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -567,15 +581,23 @@ def memory_invalidate(
 
 @gate_app.command("decide")
 def gate_decide(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    decision: DecisionKind = typer.Option(
-        ..., "--decision", case_sensitive=False, help="Human decision"
+    run: str = RUN_OPTION,
+    decision: DecisionKind | None = typer.Option(
+        None,
+        "--decision",
+        case_sensitive=False,
+        help="Human decision; asked interactively when omitted on a terminal",
     ),
-    change_set_digest: str = typer.Option(
-        ..., "--change-set-digest", help="Current ChangeSet digest shown by status (sha256:...)"
+    change_set_digest: str | None = typer.Option(
+        None,
+        "--change-set-digest",
+        help="Current ChangeSet digest shown by status or review (sha256:...); confirmed "
+        "interactively when omitted on a terminal",
     ),
-    rationale: str = typer.Option(
-        ..., "--rationale", help="Justification recorded with the decision"
+    rationale: str | None = typer.Option(
+        None,
+        "--rationale",
+        help="Justification recorded with the decision; asked interactively when omitted",
     ),
     actor: str = typer.Option(
         "human.local",
@@ -585,35 +607,202 @@ def gate_decide(
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
     ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Show the decision brief and confirm the ChangeSet digest even when every option "
+        "is given",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
     """Record a human decision bound to the current ChangeSet digest. A decision for a stale
-    digest, or APPROVE over a gate that did not pass, is rejected with exit code 5."""
-    record, execution = _call(
-        lambda: HarnessApplication().decide_gate(
-            path,
-            execution_id=run,
-            decision=decision,
-            change_set_digest=change_set_digest,
-            actor_id=actor,
-            rationale=rationale,
-            continue_after=continue_after,
+    digest, or APPROVE over a gate that did not pass, is rejected with exit code 5. On a
+    terminal, omitting --decision, --change-set-digest or --rationale shows the decision brief,
+    asks for the missing values and asks the person to type the start of the digest the decision
+    binds to; a digest that is not confirmed records nothing (exit 5). Without a terminal the
+    three options are required (exit 2)."""
+    application = HarnessApplication()
+    run_id = _call(lambda: application.resolve_run(path, run))
+    missing = decision is None or change_set_digest is None or rationale is None
+    terminal = sys.stdin.isatty() and sys.stdout.isatty()
+    if missing and not (interactive or terminal):
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "missing --decision, --change-set-digest or --rationale",
+                "hint": "Pass the three options, or run `harness gate decide --run "
+                f"{run_id}` on a terminal (or with --interactive) to decide interactively.",
+            }
         )
+        raise typer.Exit(code=2)
+    if missing or interactive:
+        decision, change_set_digest, rationale = _interactive_decision(
+            application, path, run_id, decision, change_set_digest, rationale
+        )
+    assert decision is not None and change_set_digest is not None and rationale is not None
+    chosen, digest, reason = decision, change_set_digest, rationale
+    record, execution = _call(
+        lambda: application.decide_gate(
+            path,
+            execution_id=run_id,
+            decision=chosen,
+            change_set_digest=digest,
+            actor_id=actor,
+            rationale=reason,
+            continue_after=continue_after,
+        ),
+        hint=_decide_hint(application, path, run_id),
     )
     _emit(
         {
             "decision": record.model_dump(mode="json", by_alias=True),
             "execution": execution.model_dump(mode="json", by_alias=True),
-        }
+        },
+        kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
+DIGEST_CONFIRM_CHARS = 12
+"""Hex characters of the ChangeSet digest a person types to confirm an interactive decision."""
+
+
+def _interactive_decision(
+    application: HarnessApplication,
+    path: Path,
+    run_id: str,
+    decision: DecisionKind | None,
+    change_set_digest: str | None,
+    rationale: str | None,
+) -> tuple[DecisionKind, str, str]:
+    brief = _call(lambda: application.review(path, run_id))
+    typer.echo(render_human(brief, "review"))
+    typer.echo("")
+    current = brief["run"]["changeSetDigest"]
+    if not brief["run"]["awaitingDecision"] or not current:
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": f"run {run_id} is not waiting for a decision "
+                f"({brief['run']['status']} in {brief['run']['currentPhase']})",
+                "hint": "; ".join(brief["next"]) or None,
+            }
+        )
+        raise typer.Exit(code=5)
+    if decision is None:
+        choice = typer.prompt(
+            "Decision",
+            type=click.Choice([item.value for item in DecisionKind], case_sensitive=False),
+        )
+        decision = DecisionKind(str(choice).upper())
+    while not (rationale or "").strip():
+        rationale = typer.prompt("Rationale (what you checked and why)")
+    if change_set_digest is not None and change_set_digest != current:
+        # Let the engine reject it with its usual message and exit code.
+        return decision, change_set_digest, str(rationale)
+    expected = current.removeprefix("sha256:")
+    typed = typer.prompt(
+        f"Type the first {DIGEST_CONFIRM_CHARS} characters of the digest to bind this "
+        f"{decision.value} to {current}"
+    )
+    typed = typed.strip().lower().removeprefix("sha256:")
+    if len(typed) < DIGEST_CONFIRM_CHARS or not expected.startswith(typed):
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "the ChangeSet digest was not confirmed; no decision was recorded",
+                "hint": f"Type at least {DIGEST_CONFIRM_CHARS} characters of {current}.",
+            }
+        )
+        raise typer.Exit(code=5)
+    return decision, current, str(rationale)
+
+
+def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hint:
+    def hint(error: BaseException) -> str | None:
+        message = str(error)
+        try:
+            status = application.status(path, run_id)
+        except Exception:  # noqa: BLE001 - a hint must never hide the original error
+            return None
+        execution = status["execution"]
+        if "does not match the current ChangeSet" in message:
+            prior = (
+                ""
+                if status["humanDecision"]
+                else " No decision has been recorded on the current digest."
+            )
+            return (
+                f"The current ChangeSet digest is {execution['changeSetDigest']}.{prior} Review "
+                f"it with `harness review --run {run_id}` and decide on that digest (or omit "
+                "--change-set-digest on a terminal to confirm it interactively)."
+            )
+        if "accepted only in DECISION" in message:
+            return (
+                f"The run is {execution['status']} in {execution['currentPhase']}. Fix the cause "
+                f"and `harness run continue --run {run_id}`, or `harness run cancel --run "
+                f"{run_id}`; `harness review --run {run_id}` shows what did not pass."
+            )
+        if "APPROVE is only valid" in message:
+            return (
+                "The gate did not pass: decide REQUEST_CHANGES with what must change, REJECT, or "
+                f"APPROVE_EXCEPTION with a rationale. `harness review --run {run_id}` lists the "
+                "blocking findings."
+            )
+        return None
+
+    return hint
+
+
+@app.command()
+def review(
+    run: str = RUN_OPTION_LATEST,
+    diff: bool = typer.Option(False, "--diff", help="Include the ChangeSet diff (redacted)"),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the decision brief of a run: what was asked, what changed, the risks with file and
+    line, what was verified on which ChangeSet digest and what was not, active exceptions,
+    retries and corrections, what changed since the last decision and the exact decide
+    command. It only reads the record."""
+    _emit(
+        _call(lambda: HarnessApplication().review(path, run, include_diff=diff)),
+        json_output,
+        kind="review",
+    )
+
+
+@artifact_app.command("show")
+def artifact_show(
+    reference: str = typer.Argument(
+        ..., help="artifact://sha256/<hex>, sha256:<hex> or a unique hex prefix (6+ characters)"
+    ),
+    describe: bool = typer.Option(
+        False, "--describe", help="Print the descriptor (digest, size, media type, metadata)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Print an artifact's content after verifying its digest, or its descriptor with
+    --describe. Artifacts are stored redacted; a digest mismatch exits with 1."""
+    descriptor, data = _call(lambda: HarnessApplication().show_artifact(path, reference))
+    if describe:
+        _emit(descriptor)
+        return
+    sys.stdout.flush()
+    sys.stdout.buffer.write(data)
+    sys.stdout.flush()
+
+
 @app.command()
 def retrospect(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -625,7 +814,7 @@ def retrospect(
 
 @recommendation_app.command("list")
 def recommendation_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -636,7 +825,7 @@ def recommendation_list(
 
 @recommendation_app.command("decide")
 def recommendation_decide(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     recommendation: str = typer.Option(
         ..., "--recommendation", help="Recommendation identifier shown by retrospect"
     ),

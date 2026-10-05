@@ -55,6 +55,7 @@ from .onboarding import (
     validator_checks,
     write_example_task,
 )
+from .review import build_brief
 from .task_loader import load_task_file
 
 
@@ -276,10 +277,12 @@ class HarnessApplication:
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             return RunEngine(services).continue_execution(execution_id)
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str) -> Execution:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             return RunEngine(services).cancel(execution_id, actor_id)
 
     def decide_gate(
@@ -294,6 +297,7 @@ class HarnessApplication:
         continue_after: bool = True,
     ) -> tuple[HumanDecision, Execution]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             engine = RunEngine(services)
             record = engine.decide(
                 execution_id=execution_id,
@@ -312,6 +316,7 @@ class HarnessApplication:
 
     def status(self, path: Path, execution_id: str) -> dict[str, Any]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             execution = services.state.get("execution", execution_id, Execution)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
             validations = services.state.list(
@@ -361,6 +366,7 @@ class HarnessApplication:
 
     def trace(self, path: Path, execution_id: str, format: str = "markdown") -> bytes:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             execution = services.state.get("execution", execution_id, Execution)
             task = services.state.get("task", execution.task_id, Task)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
@@ -408,16 +414,19 @@ class HarnessApplication:
 
     def list_evidence(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             evidence = services.state.list_dicts("evidence", execution_id=execution_id)
             artifacts = services.state.list_dicts("artifact", execution_id=execution_id)
             return [{"evidence": evidence, "artifacts": artifacts}]
 
     def list_findings(self, path: Path, execution_id: str) -> list[Finding]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             return services.state.list("finding", Finding, execution_id=execution_id)
 
     def retrospect(self, path: Path, execution_id: str) -> Retrospective:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             records = services.state.list("retrospective", Retrospective, execution_id=execution_id)
             if records:
                 return records[-1]
@@ -529,6 +538,7 @@ class HarnessApplication:
         """Return the context manifest recorded for a run: the memory it applied and the
         candidates it left out, as they were when the run was planned."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             services.state.get("execution", execution_id, Execution)
             reference = services.state.get_flag(f"context:{execution_id}")
             if not reference:
@@ -591,6 +601,7 @@ class HarnessApplication:
     def list_recommendations(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         """List the recommendations of a run with the decision recorded for each, if any."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             retrospective = self._retrospective(services, execution_id)
             decided = {
                 item.key: item
@@ -629,6 +640,7 @@ class HarnessApplication:
         never enters a context. Nothing else changes: rules, gates and configuration are only
         modified by a person through a versioned change."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             retrospective = self._retrospective(services, execution_id)
             recommendation = next(
                 (
@@ -725,6 +737,88 @@ class HarnessApplication:
             else "FAILED"
         )
         return {"status": status, "version": __version__, "checks": checks}
+
+    def resolve_run(self, path: Path, reference: str) -> str:
+        """The run id a reference names: an exact id, ``latest`` or a unique prefix."""
+        with self._services(path) as services:
+            return self._run_id(services, reference)
+
+    def review(
+        self, path: Path, execution_id: str, *, include_diff: bool = False
+    ) -> dict[str, Any]:
+        """The decision brief of a run (see ``application.review``)."""
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id)
+            return build_brief(services, run_id, include_diff=include_diff)
+
+    def show_artifact(self, path: Path, reference: str) -> tuple[dict[str, Any], bytes]:
+        """An artifact's descriptor and its content, read with digest verification. The
+        reference is ``artifact://sha256/<hex>``, ``sha256:<hex>`` or a unique hex prefix of at
+        least 6 characters."""
+        with self._services(path) as services:
+            uri = self._artifact_uri(services, reference.strip())
+            descriptor = services.artifacts.describe(uri)
+            data = services.artifacts.get(uri)
+            return {
+                "uri": descriptor.uri,
+                "digest": descriptor.digest,
+                "sizeBytes": descriptor.size_bytes,
+                "mediaType": descriptor.media_type,
+                "redacted": descriptor.redacted,
+                "verified": True,
+                "metadata": descriptor.metadata or {},
+            }, data
+
+    @staticmethod
+    def _artifact_uri(services: EngineServices, reference: str) -> str:
+        hex_part = reference
+        for prefix in ("artifact://sha256/", "sha256:"):
+            if reference.startswith(prefix):
+                hex_part = reference[len(prefix) :]
+        hex_part = hex_part.lower()
+        if len(hex_part) < 6 or any(char not in "0123456789abcdef" for char in hex_part):
+            raise ConfigurationError(
+                f"not an artifact reference or digest prefix (6+ hex characters): {reference}"
+            )
+        meta_root = services.artifacts.meta_root
+        if len(hex_part) == 64:
+            matches = [hex_part] if (meta_root / f"{hex_part}.json").exists() else []
+        else:
+            matches = sorted(item.stem for item in meta_root.glob(f"{hex_part}*.json"))
+        if not matches:
+            raise NotFoundError(f"artifact not found: {reference}")
+        if len(matches) > 1:
+            raise ConfigurationError(
+                f"artifact prefix {reference} matches {len(matches)} artifacts; use more characters"
+            )
+        return f"artifact://sha256/{matches[0]}"
+
+    @staticmethod
+    def _run_id(services: EngineServices, reference: str) -> str:
+        reference = reference.strip()
+        try:
+            services.state.get("execution", reference, Execution)
+            return reference
+        except NotFoundError:
+            pass
+        runs = services.state.list(
+            "execution", Execution, project_id=services.resolved.project.project_id
+        )
+        if reference == "latest":
+            if not runs:
+                raise NotFoundError("execution not found: latest (the project has no runs)")
+            return max(runs, key=lambda item: item.created_at).execution_id
+        prefixes = (reference, f"run_{reference}")
+        matches = sorted(
+            item.execution_id for item in runs if item.execution_id.startswith(prefixes)
+        )
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ConfigurationError(
+                f"run prefix {reference} matches {len(matches)} runs: {', '.join(matches[:5])}"
+            )
+        raise NotFoundError(f"execution not found: {reference}")
 
     @contextmanager
     def _services(self, path: Path) -> Iterator[EngineServices]:

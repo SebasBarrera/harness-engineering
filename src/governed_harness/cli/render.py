@@ -294,6 +294,120 @@ def _init(value: Mapping[str, Any]) -> list[str]:
     return lines
 
 
+def _review(brief: Mapping[str, Any]) -> list[str]:
+    run = brief["run"]
+    waiting = ", waiting for your decision" if run["awaitingDecision"] else ""
+    lines = [
+        f"Decision brief - run {run['executionId']} ({run['status']} in "
+        f"{run['currentPhase']}{waiting})",
+        f"ChangeSet {run['changeSetDigest'] or 'not computed yet'}",
+        "",
+        "What was asked",
+        f"  {brief['asked']['title']}",
+        f"  intent: {short(brief['asked']['intent'], 100)}",
+    ]
+    for item in brief["asked"]["requirements"]:
+        lines.append(f"  requirement {item['requirementId']}: {short(item['text'], 90)}")
+    for item in brief["asked"]["acceptanceCriteria"]:
+        lines.append(
+            f"  criterion {item['criterionId']} [{item['priority']}]: {short(item['text'], 90)}"
+        )
+    for item in brief["asked"]["constraints"]:
+        lines.append(f"  constraint: {short(item, 100)}")
+    changed = brief["changed"]
+    totals = changed.get("totals") or {"files": 0, "additions": 0, "deletions": 0}
+    lines.extend(
+        [
+            "",
+            f"What changed ({totals['files']} file(s), +{totals['additions']} "
+            f"-{totals['deletions']})",
+        ]
+    )
+    for item in changed.get("files", []):
+        lines.append(
+            f"  {item['status']:<9} {item['path']}  +{item['additions']} -{item['deletions']}"
+        )
+    gate = brief.get("gate")
+    lines.append("")
+    if gate:
+        lines.append(f"Gate {gate['status']}")
+        lines.extend(f"  - {item['explanation']}" for item in gate["reasons"])
+    else:
+        lines.append("Gate: not evaluated yet")
+    risks = brief.get("risks", [])
+    lines.extend(["", f"Risks ({len(risks)})"])
+    if not risks:
+        lines.append("  no current finding")
+    for item in risks:
+        flag = "BLOCKS" if item["blocking"] else "info"
+        lines.append(
+            f"  {flag:<6} {item['severity']:<8} {item['ruleId']}  {item['location']}  "
+            f"{short(item['message'], 80)}"
+        )
+    verified = brief["verified"]
+    lines.extend(["", f"Verified on {verified['changeSetDigest']}"])
+    for item in verified["validations"]:
+        kind = "mandatory" if item["mandatory"] else "optional"
+        retry = f", {item['attempts']} attempts" if item["attempts"] > 1 else ""
+        lines.append(f"  {item['status']:<14} {item['validatorId']} ({kind}{retry})")
+    for item in verified["requirements"]:
+        tests = ", ".join(item["tests"]) or "no test"
+        lines.append(f"  requirement {item['requirementId']}: {tests}")
+    if brief.get("notVerified"):
+        lines.extend(["", "Not verified"])
+        lines.extend(f"  - {item}" for item in brief["notVerified"])
+    exceptions = brief.get("exceptions") or []
+    if exceptions:
+        lines.extend(["", "Exceptions in force"])
+        for item in exceptions:
+            lines.append(
+                f"  {item['exceptionId']} by {item['actorId']} until {item['expiresAt']}: "
+                f"{short(item['rationale'], 70)}"
+            )
+    history = brief["history"]
+    lines.extend(
+        [
+            "",
+            "History: "
+            f"{history['implementationAttempts']} implementation attempt(s), "
+            f"{history['verificationAttempts']} verification attempt(s), "
+            f"{history['automaticCorrections']} automatic correction(s), "
+            f"{history['requestedChanges']} requested change(s), "
+            f"{history['providerRetries']} provider retry(ies), "
+            f"{history['supersededFindings']} superseded finding(s)",
+        ]
+    )
+    if history["passedAfterRetry"]:
+        lines.append(
+            "  passed only after an earlier failure on this digest: "
+            + ", ".join(history["passedAfterRetry"])
+        )
+    delta = brief.get("delta")
+    if delta:
+        since = delta["sinceDecision"]
+        lines.extend(
+            [
+                "",
+                f"Since the last decision ({since['decision']} by {since['actorId']} on "
+                f"{since['changeSetDigest']})",
+            ]
+        )
+        if delta.get("unchanged"):
+            lines.append("  the ChangeSet is the one that decision was bound to")
+        else:
+            for key in ("added", "changed", "removed"):
+                if delta["files"][key]:
+                    lines.append(f"  files {key}: {', '.join(delta['files'][key])}")
+            for key, title in (("findingsResolved", "resolved"), ("findingsNew", "new")):
+                for item in delta[key]:
+                    lines.append(f"  {title}: {item['ruleId']} {item['location']}")
+    if brief.get("next"):
+        lines.extend(["", "Next:", *(f"  {step}" for step in brief["next"])])
+    if changed.get("diff"):
+        lines.extend(["", "Diff", changed["diff"]])
+    return lines
+
+
 Renderer = Callable[[Any], list[str]]
 
 RENDERERS: dict[str, Renderer] = {
@@ -305,6 +419,7 @@ RENDERERS: dict[str, Renderer] = {
     "decision": _decision,
     "doctor": _doctor,
     "init": _init,
+    "review": _review,
 }
 
 

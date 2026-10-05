@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- Decision brief (#53). `harness review [--run latest] [--diff]` shows, for one ChangeSet digest,
+  what was asked (intent, requirements, criteria, constraints), what changed (files and line
+  counts), the gate with each reason explained, the current findings with `file:line` (blocking
+  ones first), what was verified on which digest (latest attempt of each validator, requirement
+  to test mapping) and what was not (validators that did not run, optional failures without
+  effect on the gate, untraced requirements), retries and corrections (attempts, automatic and
+  requested corrections, provider retries, validators that passed only after failing on the same
+  digest, superseded findings), what changed since the last decision (files and findings by
+  fingerprint) and the exact decide command. It is built from the record by fixed rules and
+  writes nothing; `GET /api/runs/{run}/review` serves it and the dashboard renders it. `--run`
+  accepts `latest` and a unique prefix in every command, and the read-only commands default to
+  `latest`. `harness artifact show <ref|digest prefix> [--describe]` prints a stored artifact after
+  verifying its digest. On a terminal `harness gate decide` without `--decision`,
+  `--change-set-digest` or `--rationale` shows the brief, asks for them and requires typing the
+  first 12 characters of the digest; a wrong confirmation records nothing (exit 5). Without a
+  terminal the options are still required (exit 2). A rejected decision explains the way out
+  (the current digest, the phase, the decisions a failed gate admits). The dashboard gains
+  `REQUEST_CHANGES` and a confirmation with the digest and the files, and escapes the values it
+  renders.
+
 - Onboarding (#53). `harness --version` prints the version (it was `No such option`, exit 2). On
   a terminal every command prints readable text; JSON stays the default when standard output is
   not a terminal, `--json` forces it and `--no-json` forces text (it printed a Python `repr`),
