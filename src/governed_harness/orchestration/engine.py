@@ -52,6 +52,7 @@ from governed_harness.domain.models import (
     Actor,
     Artifact,
     ChangedFile,
+    ChangeRequestItem,
     ChangeSet,
     ClarificationAnswer,
     ClarificationQuestion,
@@ -438,6 +439,8 @@ class RunEngine:
         actor_display_name: str | None = None,
         identity_source: IdentitySource | None = None,
         expires_at: datetime | None = None,
+        acknowledged_risks: tuple[str, ...] = (),
+        change_requests: tuple[ChangeRequestItem, ...] = (),
     ) -> HumanDecision:
         require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
@@ -464,6 +467,11 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
+        if acknowledged_risks or change_requests or self.results.active:
+            # Risk factors to acknowledge and structured change requests (#52).
+            self.results.check_decision(
+                execution, decision, change_set_digest, acknowledged_risks, change_requests
+            )
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
@@ -489,6 +497,8 @@ class RunEngine:
             expires_at=expires_at
             if expires_at is not None
             else (decided_at + timedelta(hours=expiry) if expiry else None),
+            acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
+            change_requests=change_requests,
         )
         self.s.state.put(
             "decision",
@@ -507,6 +517,8 @@ class RunEngine:
             update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
         )
         if decision is DecisionKind.REQUEST_CHANGES:
+            if change_requests:
+                self.results.open_change_requests(execution, record)
             transition = self.state_machine.authorize_correction(PhaseId.DECISION)
             updated = updated.model_copy(
                 update={
@@ -544,7 +556,15 @@ class RunEngine:
                     findings=findings,
                     decision=FeedbackDecision(
                         decision=decision,
-                        rationale=head(record.rationale, FEEDBACK_RATIONALE_CHARS),
+                        rationale=head(
+                            record.rationale
+                            + "".join(
+                                f"\n{item.item_id} (blocking, verified by {item.condition}): "
+                                f"{item.description}"
+                                for item in change_requests
+                            ),
+                            FEEDBACK_RATIONALE_CHARS,
+                        ),
                         actor_id=actor.actor_id,
                     ),
                 )
@@ -1815,6 +1835,11 @@ class RunEngine:
             outputs.append(
                 self._verify_requirement_traceability(execution, phase, change_set, policy)
             )
+        if self.results.active:
+            # Deterministic checks of the agent-results settings, then the comparison of
+            # failing validators with the baseline (verification.differential, #7).
+            outputs.extend(self.results.verification.run(execution, phase, change_set))
+            outputs = self.results.after_verification(execution, phase, change_set, outputs)
         mandatory_non_passed = [
             output.result
             for output in outputs
@@ -1888,7 +1913,12 @@ class RunEngine:
         grants = grants_from_rules(
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
-        output = IndependentReviewValidator().execute(
+        skip = (
+            frozenset({"review.possible-secret"})
+            if self.results.active and self.results.secrets_in_context
+            else frozenset()
+        )
+        output = IndependentReviewValidator(skip).execute(
             ValidationContext(
                 execution_id=execution.execution_id,
                 workspace=self.s.paths.workspace,

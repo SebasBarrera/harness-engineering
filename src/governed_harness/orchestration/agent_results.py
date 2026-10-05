@@ -25,20 +25,24 @@ from governed_harness.configuration.agent_results import AgentCallConfig, Budget
 from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.enums import (
     ActorType,
+    DecisionKind,
     EvidenceKind,
     FindingSeverity,
     PhaseId,
     ResultStatus,
     ValidationKind,
 )
+from governed_harness.domain.errors import ConfigurationError, PolicyViolationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
     AgentInvocation,
     CapabilityGrant,
+    ChangeRequestItem,
     Execution,
     Finding,
     FindingLocation,
+    HumanDecision,
     PhaseExecution,
     ResourceUsage,
     Task,
@@ -47,7 +51,12 @@ from governed_harness.domain.models import (
 )
 from governed_harness.orchestration import budget as budget_rules
 from governed_harness.orchestration.workspace_ops import changes_since, restore_changes
-from governed_harness.runtime import CancellationToken, PatchApplier, WorkspaceSnapshotter
+from governed_harness.runtime import (
+    CancellationToken,
+    PatchApplier,
+    WorkspaceSnapshot,
+    WorkspaceSnapshotter,
+)
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
@@ -83,10 +92,38 @@ class AgentCallOutcome:
 
 class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
+        from governed_harness.orchestration.differential import Differential
         from governed_harness.orchestration.intent_review import IntentReview
+        from governed_harness.orchestration.verification_checks import VerificationChecks
 
         self.engine = engine
         self.intent = IntentReview(self)
+        self.verification = VerificationChecks(self)
+        self.differential = Differential(self)
+        self._baselines: dict[str, WorkspaceSnapshot | None] = {}
+
+    def after_verification(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        change_set: Any,
+        outputs: list[Any],
+    ) -> list[Any]:
+        """Reclassify failing validators against the baseline (``verification.differential``,
+        ``verification.ratchet``)."""
+        return self.differential.reclassify(execution, phase, change_set, outputs)
+
+    def baseline_snapshot(self, execution: Execution) -> WorkspaceSnapshot | None:
+        """The workspace as DISCOVERY recorded it (with file texts), or ``None``."""
+        key = execution.execution_id
+        if key not in self._baselines:
+            uri = self.s.state.get_flag(f"baseline:{key}")
+            self._baselines[key] = (
+                self.engine._snapshot_from_dict(json.loads(self.s.artifacts.get(uri)))
+                if uri
+                else None
+            )
+        return self._baselines[key]
 
     # ----- configuration -------------------------------------------------------------------
     @property
@@ -148,6 +185,80 @@ class AgentResults:
                 project.agent_routing is not None,
             )
         )
+
+    # ----- decisions: risk factors and structured change requests (#52) --------------------
+    def required_acknowledgements(self, execution: Execution, digest: str) -> list[str]:
+        from governed_harness.orchestration.verification_checks import RISK_ACK_FLAG
+
+        value = self.flag_json(f"{RISK_ACK_FLAG}:{execution.execution_id}:{digest}")
+        return [str(item) for item in value] if isinstance(value, list) else []
+
+    def check_decision(
+        self,
+        execution: Execution,
+        decision: DecisionKind,
+        digest: str,
+        acknowledged: tuple[str, ...],
+        change_requests: tuple[ChangeRequestItem, ...],
+    ) -> None:
+        from governed_harness.configuration.agent_results import RISK_FACTORS
+
+        unknown = sorted(set(acknowledged) - set(RISK_FACTORS))
+        if unknown:
+            raise ConfigurationError(
+                f"unknown risk factor(s): {', '.join(unknown)}; known: {', '.join(RISK_FACTORS)}"
+            )
+        if change_requests:
+            review = self.project.review
+            if decision is not DecisionKind.REQUEST_CHANGES:
+                raise ConfigurationError("change requests need the REQUEST_CHANGES decision")
+            if not (review and review.structured_changes):
+                raise ConfigurationError(
+                    "change requests need review.structuredChanges: true in project.yaml"
+                )
+        if decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
+            missing = [
+                item
+                for item in self.required_acknowledgements(execution, digest)
+                if item not in acknowledged
+            ]
+            if missing:
+                raise PolicyViolationError(
+                    "this ChangeSet has risk factors a person must acknowledge before approving: "
+                    + ", ".join(missing)
+                    + " (use --acknowledge-risk for each)"
+                )
+
+    def open_change_requests(self, execution: Execution, decision: HumanDecision) -> None:
+        """Keep the blocking items of a structured REQUEST_CHANGES as temporary criteria that
+        every later VERIFICATION of the run checks."""
+        key = f"changerequests:{execution.execution_id}"
+        current = self.flag_json(key) or []
+        current.extend(
+            {**item.model_dump(mode="json", by_alias=True), "decisionId": decision.decision_id}
+            for item in decision.change_requests
+        )
+        self.set_flag_json(key, current)
+        self.s.events.append(
+            execution.execution_id,
+            "change.requests.opened",
+            {
+                "decisionId": decision.decision_id,
+                "items": [
+                    item.model_dump(mode="json", by_alias=True) for item in decision.change_requests
+                ],
+            },
+            actor=decision.actor,
+        )
+
+    def change_requests(self, execution: Execution) -> list[dict[str, Any]]:
+        value = self.flag_json(f"changerequests:{execution.execution_id}")
+        return value if isinstance(value, list) else []
+
+    @property
+    def secrets_in_context(self) -> bool:
+        verification = self.project.verification
+        return bool(verification and verification.secrets == "context")
 
     # ----- records -------------------------------------------------------------------------
     def record_finding(

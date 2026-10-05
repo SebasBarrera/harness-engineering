@@ -496,6 +496,27 @@ class GateEvaluation(StrictModel):
     provenance: Provenance
 
 
+class ChangeRequestItem(StrictModel):
+    """A blocking item of a structured REQUEST_CHANGES: what must change and the condition
+    that verifies it. ``test:<pytest node id>`` must pass; ``absent:<regex>`` must not match
+    any added line of the ChangeSet; ``text`` items are sent to the agent and shown to the
+    reviewer but are not checked by a tool."""
+
+    item_id: str = Field(pattern=r"^CR-[1-9][0-9]*$")
+    description: str = Field(min_length=1, max_length=2000)
+    condition: str = Field(min_length=1, max_length=1000)
+
+    @field_validator("condition")
+    @classmethod
+    def _known_condition(cls, value: str) -> str:
+        kind = value.split(":", 1)[0] if ":" in value else value
+        if kind not in {"test", "absent", "text"}:
+            raise ValueError("a condition is test:<node id>, absent:<regex> or text")
+        if kind in {"test", "absent"} and not value.split(":", 1)[1].strip():
+            raise ValueError(f"the {kind} condition needs a value")
+        return value
+
+
 class HumanDecision(StrictModel):
     schema_version: Literal["1.0"] = "1.0"
     decision_id: str
@@ -517,6 +538,12 @@ class HumanDecision(StrictModel):
     """Where the actor id came from under ``governance.deciderIdentity: git``: ``--actor``
     (``explicit``), the Git user (``git``) or, when Git has no usable identity, the default
     actor (``fallback``). Left out when absent, like ``acceptance_contract_digest``."""
+    acknowledged_risks: tuple[str, ...] = ()
+    """Risk factors of the ChangeSet the person acknowledged (``verification.riskFactors``
+    with ``acknowledge``, #52); left out when empty."""
+    change_requests: tuple[ChangeRequestItem, ...] = ()
+    """Blocking items of a structured REQUEST_CHANGES (``review.structuredChanges``, #52);
+    left out when empty."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -526,6 +553,13 @@ class HumanDecision(StrictModel):
             ("identity_source", "identitySource"),
         ):
             if getattr(self, name) is None:
+                data.pop(alias, None)
+                data.pop(name, None)
+        for name, alias in (
+            ("acknowledged_risks", "acknowledgedRisks"),
+            ("change_requests", "changeRequests"),
+        ):
+            if not getattr(self, name):
                 data.pop(alias, None)
                 data.pop(name, None)
         return data

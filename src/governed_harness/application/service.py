@@ -70,6 +70,7 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
+from .agent_results import parse_change_requests
 from .clarification_loader import load_clarification_file
 from .exceptions import (
     ExceptionOptions,
@@ -448,6 +449,8 @@ class HarnessApplication:
         continue_after: bool = True,
         default_actor: str = DEFAULT_CLI_ACTOR,
         exception: ExceptionOptions | None = None,
+        acknowledged_risks: tuple[str, ...] = (),
+        change_requests: tuple[str, ...] = (),
     ) -> tuple[HumanDecision, Execution]:
         """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
         records an exception with an expiry (``expires_in``/``expires_at``, else
@@ -496,6 +499,8 @@ class HarnessApplication:
                 if services.resolved.project.governance_settings.git_decider
                 else None,
                 expires_at=expiry,
+                acknowledged_risks=acknowledged_risks,
+                change_requests=parse_change_requests(change_requests),
             )
             if records_exception:
                 granted = record_exception(

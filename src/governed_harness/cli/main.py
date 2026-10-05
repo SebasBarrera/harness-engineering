@@ -718,6 +718,20 @@ def gate_decide(
         help="Show the decision brief and confirm the ChangeSet digest even when every option "
         "is given",
     ),
+    acknowledge_risk: list[str] | None = typer.Option(
+        None,
+        "--acknowledge-risk",
+        help="APPROVE or APPROVE_EXCEPTION under verification.riskFactors: a risk factor of the "
+        "ChangeSet the decider acknowledges (repeatable; required for every factor whose "
+        "action is acknowledge)",
+    ),
+    change_request: list[str] | None = typer.Option(
+        None,
+        "--change-request",
+        help="REQUEST_CHANGES under review.structuredChanges: a blocking item as "
+        "'description::condition' where the condition is test:<pytest node id>, "
+        "absent:<regex> or text (repeatable)",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -772,6 +786,8 @@ def gate_decide(
             rationale=reason,
             continue_after=continue_after,
             exception=exception,
+            acknowledged_risks=tuple(acknowledge_risk or ()),
+            change_requests=tuple(change_request or ()),
         ),
         hint=_decide_hint(application, path, run_id),
     )
