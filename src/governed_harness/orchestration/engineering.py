@@ -86,6 +86,8 @@ class Engineering:
     def __init__(self, results: AgentResults) -> None:
         self.results = results
         self._standards: ProjectStandards | None = None
+        self._detected: Strategy | None = None
+        """The detected strategy, read once per command (the workspace is walked once)."""
 
     # ----- settings -----------------------------------------------------------------------------
     @property
@@ -142,13 +144,20 @@ class Engineering:
 
     # ----- testing strategy ------------------------------------------------------------------
     def strategy(self, project_id: str) -> Strategy:
+        """The testing strategy: the configuration, else a person's answer (rule ``P1``), else,
+        only under ``testing.strategy: auto``, what the repository shows. Without the
+        ``testing`` section nothing is detected: the 1.1 behaviour (``conventional``)."""
         config = self.testing_config
         if config is not None and config.strategy not in {None, "auto"}:
             return Strategy(str(config.strategy), "configuration")
         answered = self.setup_record(project_id).get("testing")
         if isinstance(answered, str) and answered in {"tdd", "bdd", "conventional"}:
             return Strategy(answered, "project-setup")
-        return detect_testing(self.results.s.paths.workspace, self.technologies())
+        if config is None:
+            return Strategy("conventional", "off")
+        if self._detected is None:
+            self._detected = detect_testing(self.results.s.paths.workspace, self.technologies())
+        return self._detected
 
     def features_directory(self) -> str:
         config = self.testing_config
