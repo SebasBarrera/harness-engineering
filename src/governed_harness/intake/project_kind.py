@@ -23,6 +23,8 @@ from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 SCAFFOLD_LINES = 15
 """An entry point with at most this many non-blank lines counts as scaffolding."""
 _MAX_FILES = 20_000
+_ENOUGH = 20
+"""Counting stops here: ``source_files`` is exact below it and a lower bound at it."""
 
 
 @dataclass(frozen=True)
@@ -33,7 +35,8 @@ class ProjectKind:
     commits: int | None
     """Commits on ``HEAD`` (``None`` when the workspace is not a Git repository)."""
     source_files: int
-    """Source files beyond scaffolding."""
+    """Source files beyond scaffolding, counted up to 20 (a large repository is not read
+    whole)."""
     scaffolding: tuple[str, ...] = field(default_factory=tuple)
 
     @property
@@ -97,7 +100,8 @@ def detect_project_kind(workspace: Path) -> ProjectKind:
     scaffolding: list[str] = []
     stack = [root]
     seen = 0
-    while stack and seen < _MAX_FILES:
+    # One source file beyond scaffolding settles it: a large repository is not read whole.
+    while stack and seen < _MAX_FILES and substantive < _ENOUGH:
         directory = stack.pop()
         try:
             entries = sorted(directory.iterdir(), key=lambda item: item.name)
@@ -117,6 +121,8 @@ def detect_project_kind(workspace: Path) -> ProjectKind:
                 scaffolding.append(relative)
             else:
                 substantive += 1
+                if substantive >= _ENOUGH:
+                    break
     if commits == 0:
         return ProjectKind(
             "new", "the Git repository has no commit", commits, substantive, tuple(scaffolding)
@@ -127,7 +133,8 @@ def detect_project_kind(workspace: Path) -> ProjectKind:
         )
     return ProjectKind(
         "existing",
-        f"{substantive} source file(s) beyond scaffolding"
+        ("source files" if substantive >= _ENOUGH else f"{substantive} source file(s)")
+        + " beyond scaffolding"
         + (f" and {commits} commit(s)" if commits else ""),
         commits,
         substantive,

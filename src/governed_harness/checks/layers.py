@@ -108,9 +108,9 @@ class LayerRules:
             f"src/{as_path}.py",
             f"src/{as_path}/__init__.py",
         ):
-            layer = self.layer_of_path(candidate)
-            if layer is not None:
-                return layer
+            found = self.layer_of_path(candidate)
+            if found is not None:
+                return found
         return None
 
     def allowed(self, source: str, target: str) -> bool:

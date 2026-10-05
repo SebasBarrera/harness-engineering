@@ -1447,7 +1447,9 @@ def flow_tdd(t: Transcript, root: Path) -> None:
         "the python cards apply to the touched file",
     )
     (root / "red.yaml").write_text(
-        TDD_TASK.format(task_id="task_red", test="at_threshold", subtotal=100, expected=90, body=TDD_BODY)
+        TDD_TASK.format(
+            task_id="task_red", test="at_threshold", subtotal=100, expected=90, body=TDD_BODY
+        )
     )
     t.run(flow, root, ["task", "create", *here, "--file", "red.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_red"], 4)["executionId"]
@@ -1456,7 +1458,9 @@ def flow_tdd(t: Transcript, root: Path) -> None:
     t.check(flow, bool(tdd) and tdd[-1]["status"] == "PASSED", "red, green and refactor recorded")
     approve(t, flow, root, run_id, "Test written first")
     (root / "green.yaml").write_text(
-        TDD_TASK.format(task_id="task_after", test="far_below", subtotal=10, expected=10, body=TDD_LATE_BODY)
+        TDD_TASK.format(
+            task_id="task_after", test="far_below", subtotal=10, expected=10, body=TDD_LATE_BODY
+        )
     )
     t.run(flow, root, ["task", "create", *here, "--file", "green.yaml"], 0)
     late = t.json(flow, root, ["run", "start", *here, "--task", "task_after"], 6)["executionId"]
