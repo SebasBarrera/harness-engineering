@@ -359,8 +359,8 @@ class RunEngine:
         try:
             execution = self._continue_execution(execution_id)
             if self.results.active:
-                # governance.stopTheLine: quarantine or block a run that stopped unapproved.
-                execution = self.results.stop_line.after_continue(execution)
+                # governance.stopTheLine and memory.learnFromFindings at the end of a step.
+                execution = self.results.after_run(execution)
             return execution
         finally:
             self.anchor_chain(execution_id)

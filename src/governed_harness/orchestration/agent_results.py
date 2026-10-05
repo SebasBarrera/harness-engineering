@@ -98,6 +98,7 @@ class AgentResults:
         from governed_harness.orchestration.differential import Differential
         from governed_harness.orchestration.gate_contract import GateContract
         from governed_harness.orchestration.intent_review import IntentReview
+        from governed_harness.orchestration.lessons import Lessons
         from governed_harness.orchestration.stop_line import StopLine
         from governed_harness.orchestration.verification_checks import VerificationChecks
 
@@ -110,6 +111,7 @@ class AgentResults:
         self.corrections = Corrections(self)
         self.agent_review = AgentReview(self)
         self.decomposition = Decomposition(self)
+        self.lessons = Lessons(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(
@@ -856,7 +858,73 @@ class AgentResults:
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> dict[str, Any]:
         """The context manifest (#41) and the active lessons (#43) of an implement call."""
-        return {}
+        from governed_harness.agents.context_manifest import build_manifest
+        from governed_harness.configuration.agent_results import (
+            DEFAULT_CONTEXT_MAX_BYTES,
+            DEFAULT_CONTEXT_MAX_FILES,
+        )
+        from governed_harness.orchestration.verification_checks import declared_interfaces
+
+        extra: dict[str, Any] = {}
+        context = self.project.context
+        baseline = self.baseline_snapshot(execution)
+        changed = (
+            [item.path for item in changes_since(self.s.paths.workspace, baseline).changes]
+            if baseline is not None
+            else []
+        )
+        owned = [str(item) for item in task.metadata.get("ownedPaths") or []]
+        lessons = self.lessons.for_request(execution, phase, task, [*owned, *changed])
+        if lessons:
+            extra["lessons"] = lessons
+        if context is not None and context.enabled:
+            interfaces = [path for pair in declared_interfaces(task) for path in pair]
+            lesson_paths = [path for item in lessons for path in item.get("paths", [])]
+            manifest = build_manifest(
+                self.s.paths.workspace,
+                task,
+                changed_paths=changed,
+                interface_paths=interfaces,
+                lesson_paths=lesson_paths,
+                max_files=context.max_files or DEFAULT_CONTEXT_MAX_FILES,
+                max_bytes=context.max_bytes or DEFAULT_CONTEXT_MAX_BYTES,
+            )
+            if lessons:
+                manifest["lessons"] = [item["memoryId"] for item in lessons]
+            ref = self.record_json(
+                execution,
+                phase.phase_id,
+                manifest,
+                kind="context-files-manifest",
+                summary=(
+                    f"Context manifest: {len(manifest['files'])} file(s), "
+                    f"{manifest['totalBytes']} bytes, {manifest['omitted']} candidate(s) left out"
+                ),
+            )
+            self.s.events.append(
+                execution.execution_id,
+                "context.manifest.built",
+                {
+                    "files": len(manifest["files"]),
+                    "totalBytes": manifest["totalBytes"],
+                    "digest": manifest["digest"],
+                    "evidenceRef": ref,
+                },
+                phase_execution_id=phase.phase_execution_id,
+            )
+            extra["contextFiles"] = manifest
+        return extra
+
+    def after_run(self, execution: Execution) -> Execution:
+        """What happens when a ``run continue`` ends: stop the line for an unapproved stop,
+        lessons from the corrections of a closed run."""
+        execution = self.stop_line.after_continue(execution)
+        if execution.status is ResultStatus.PASSED and not self.s.state.get_flag(
+            f"lessons:{execution.execution_id}"
+        ):
+            self.s.state.set_flag(f"lessons:{execution.execution_id}", "1")
+            self.lessons.propose(execution)
+        return execution
 
     # ----- second reviewer corrections (#38) -----------------------------------------------
     def _corrections_used(self, execution: Execution, trigger: str) -> int:
