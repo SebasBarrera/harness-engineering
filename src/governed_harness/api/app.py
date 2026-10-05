@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal, NoReturn
+from typing import Any, Literal, NoReturn
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -268,6 +268,47 @@ def create_app(
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    def metrics_report(
+        since: str | None, task: str | None, model: str | None, agent: str | None, all_repos: bool
+    ) -> dict[str, Any]:
+        from governed_harness.metrics import Filters, parse_since
+
+        try:
+            filters = Filters(
+                since=parse_since(since), task=task, model=model, agent=agent, all_repos=all_repos
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        try:
+            report, _settings = application.metrics(root, filters=filters)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return report
+
+    @api.get("/api/metrics")
+    def metrics(
+        since: str | None = None,
+        task: str | None = None,
+        model: str | None = None,
+        agent: str | None = None,
+        all_repos: bool = False,
+    ) -> dict[str, Any]:
+        """``harness metrics --format json`` (#58): computed from the records, no model call."""
+        return metrics_report(since, task, model, agent, all_repos)
+
+    @api.get("/api/metrics/report", response_class=HTMLResponse)
+    def metrics_page(
+        since: str | None = None,
+        task: str | None = None,
+        model: str | None = None,
+        agent: str | None = None,
+        all_repos: bool = False,
+    ) -> str:
+        """The self-contained HTML report of ``harness metrics --format html``."""
+        from governed_harness.metrics import render
+
+        return render(metrics_report(since, task, model, agent, all_repos), "html")
+
     @api.get("/", response_class=HTMLResponse)
     def index() -> str:
         return _dashboard_html()
@@ -365,12 +406,25 @@ ul { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; } code { overflow-
 .status { font-weight: 700; } .PASSED { color: #34d399; } .BLOCKED,.FAILED,.INCONCLUSIVE { color: #fbbf24; } .ERROR { color: #fb7185; }
 .blocks { color: #fb7185; font-weight: 700; }
 .notice { margin-top: 10px; padding: 9px; border-radius: 8px; background: #0f172a; font-size: 13px; }
+[hidden] { display: none !important; }
+.tabs { display: flex; gap: 8px; padding: 16px 32px 0; } .tabs [aria-selected="true"] { border-color: #34d399; }
+.metrics { margin: 24px 32px; }
 @media (max-width: 850px) { main { grid-template-columns: 1fr; padding: 16px; } .actions { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
 <header><h1>Governed Agent Harness</h1><div>Local observability and explicit, digest-bound human decisions.</div><div id="session" class="notice"></div></header>
-<main>
+<nav class="tabs" role="tablist" aria-label="Views">
+<button role="tab" id="tab-runs" aria-selected="true" aria-controls="view-runs">Runs</button>
+<button role="tab" id="tab-metrics" aria-selected="false" aria-controls="view-metrics">Metrics</button>
+</nav>
+<section id="view-metrics" role="tabpanel" aria-labelledby="tab-metrics" class="metrics" hidden>
+<h2>Metrics</h2>
+<div class="notice">Computed from the run records, no model call (<code>harness metrics</code>). <label style="display:inline"><input type="checkbox" id="all-repos" style="width:auto"> All repositories of the registry</label> <button id="metrics-refresh">Refresh</button></div>
+<div id="metrics-summary">Loading...</div>
+<iframe id="metrics-report" title="Metrics report" style="width:100%;height:70vh;border:0;margin-top:12px;background:#fff;border-radius:8px"></iframe>
+</section>
+<main id="view-runs" role="tabpanel" aria-labelledby="tab-runs">
 <section><h2>Waiting for a person</h2><div id="inbox">Loading...</div>
 <h2 style="margin-top:20px">Executions</h2><div id="runs">Loading...</div>
 <h2 style="margin-top:20px">Repositories</h2><div id="registry">Loading...</div>
@@ -387,10 +441,12 @@ function signOut(){ try { sessionStorage.removeItem(TOKEN_KEY); } catch(error){}
 // Every call of the dashboard goes through request(): it sends the token kept in this tab
 // (api.auth: token) as Authorization: Bearer, and signs out when the server refuses it.
 async function request(url, options){
- const init={...(options||{})}; const headers=new Headers(init.headers||{}); const token=apiToken();
+ const init={...(options||{})}; const asText=init.asText; delete init.asText;
+ const headers=new Headers(init.headers||{}); const token=apiToken();
  if(token) headers.set('Authorization','Bearer '+token); init.headers=headers;
  const response=await fetch(url, init);
  if(response.status===401 && token){ signOut(); throw new Error('The API token was refused; sign in again.'); }
+ if(asText && response.ok) return await response.text();
  const body=await response.json();
  if(!response.ok) throw new Error(body.detail || JSON.stringify(body)); return body;
 }
@@ -486,6 +542,31 @@ async function decide(id, decision){
   decisionKey=null; await refresh();
  } catch(error){ alert(error.message); }
 }
+// The Metrics tab (#58): the summary from /api/metrics and the self-contained report, fetched
+// with the token and shown in a frame from its text (nothing is loaded from elsewhere).
+function showTab(name){
+ for(const tab of ['runs','metrics']){
+  document.getElementById('tab-'+tab).setAttribute('aria-selected', String(tab===name));
+  document.getElementById('view-'+tab).hidden = tab!==name;
+ }
+ if(name==='metrics') loadMetrics();
+}
+async function loadMetrics(){
+ const query=document.getElementById('all-repos').checked?'?all_repos=true':'';
+ const target=document.getElementById('metrics-summary');
+ try {
+  const m=await request('/api/metrics'+query); const t=m.totals;
+  const rows=[['Runs',t.runs],['Tasks',t.tasks],['Agent calls',t.agentCalls],['Tokens (input + output)',t.tokens.total],
+   ['Reported cost (USD)',t.cost.reportedUsd],['Estimated cost (USD, estimated)',t.cost.estimatedUsd],
+   ['Human interactions',t.humanInteractions],['Approvals',t.approvals],['Features delivered',t.featuresDelivered]];
+  target.innerHTML='<table><caption>Totals</caption><tbody>'+rows.map(r=>`<tr><th scope="row">${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join('')+'</tbody></table>';
+  document.getElementById('metrics-report').srcdoc=await request('/api/metrics/report'+query,{asText:true});
+ } catch(error){ target.textContent=error.message; }
+}
+document.getElementById('tab-runs').onclick=()=>showTab('runs');
+document.getElementById('tab-metrics').onclick=()=>showTab('metrics');
+document.getElementById('metrics-refresh').onclick=loadMetrics;
+document.getElementById('all-repos').onchange=loadMetrics;
 loadSession().catch(error => { document.getElementById('session').textContent=error.message; });
 refresh(); setInterval(refresh, 5000);
 </script>

@@ -196,3 +196,29 @@ def test_narrative_is_one_call_on_demand(python_workspace: Path, tmp_path: Path)
     report, _ = HarnessApplication().metrics(python_workspace, filters=Filters(), narrative=True)
     assert report["narrative"]["text"] == "One run closed."
     assert "Narrative summary" in render(report, "md")
+
+
+def test_metrics_tab_of_the_dashboard(python_workspace: Path, tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from governed_harness.api import create_app
+
+    closed_run(python_workspace, tmp_path)
+    open_client = TestClient(create_app(python_workspace), base_url="http://127.0.0.1")
+    body = open_client.get("/api/metrics").json()
+    assert body["totals"]["runs"] == 1
+    page = open_client.get("/api/metrics/report")
+    assert page.status_code == 200 and page.text.startswith("<!doctype html>")
+    assert open_client.get("/api/metrics", params={"since": "soon"}).status_code == 400
+    dashboard = open_client.get("/").text
+    assert 'id="tab-metrics"' in dashboard and "/api/metrics/report" in dashboard
+    # Under the api section (#18) the metrics routes need a token like every other route.
+    token = "tok-metrics-" + "x" * 24
+    edit_config(python_workspace, api={"auth": "token", "tokenEnv": "TEST_API_START"})
+    secured = TestClient(
+        create_app(python_workspace, start_token=token, environ={}), base_url="http://127.0.0.1"
+    )
+    assert secured.get("/api/metrics").status_code == 401
+    headers = {"Authorization": f"Bearer {token}"}
+    assert secured.get("/api/metrics", headers=headers).json()["totals"]["runs"] == 1
+    assert secured.get("/api/metrics/report", headers=headers).status_code == 200

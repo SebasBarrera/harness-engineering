@@ -94,6 +94,8 @@ each is set, never a value).
 | `GET` | `/api/runs/{run}/evidence` | Evidence records with artifact references | 404 |
 | `GET` | `/api/runs/{run}/findings` | Structured findings | 404 |
 | `GET` | `/api/runs/{run}/retrospective` | Non-mutating retrospective | 404 |
+| `GET` | `/api/metrics?since=&task=&model=&agent=&all_repos=false` | The report of `harness metrics --format json` (#58): computed from the records, no model call | 400 |
+| `GET` | `/api/metrics/report` (same parameters) | The self-contained HTML report of `harness metrics --format html` (#58) | 400 |
 | `POST` | `/api/runs/{run}/decision` | The recorded decision and the updated execution | 403, 409, 422 |
 | `GET` | `/` | The embedded dashboard (HTML) | — |
 
@@ -150,5 +152,7 @@ sent. Its left column lists what waits for a person (`/api/inbox`) and the page 
 5 seconds without discarding a rationale being typed. Since #55 the brief shows the certification
 and the deferred items, the decision form lists the checklist items to tick, and a section lists
 the repositories of the run registry (`/api/registry`). It contains no policy or workflow logic: it calls the routes
-above. The static prototype that lived in `web/` targeted routes that never existed and was
+above. Since #58 a Metrics tab shows the totals of `/api/metrics` and the self-contained report of
+`/api/metrics/report`, fetched with the same token and shown in a frame from its text (optionally
+for every repository of the registry). The static prototype that lived in `web/` targeted routes that never existed and was
 removed in v0.8.1 (issue #12).
