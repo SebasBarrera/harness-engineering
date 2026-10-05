@@ -117,6 +117,76 @@
       "title": "IntakeConfig",
       "type": "object"
     },
+    "NotificationsConfig": {
+      "additionalProperties": false,
+      "description": "Webhooks notified when a run waits for a human decision or finishes (since 1.1).\nAbsent: nothing is sent, as in 1.0.0.",
+      "properties": {
+        "webhooks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WebhookConfig"
+          },
+          "title": "Webhooks",
+          "type": "array"
+        }
+      },
+      "title": "NotificationsConfig",
+      "type": "object"
+    },
+    "RetrospectiveConfig": {
+      "additionalProperties": false,
+      "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
+      "properties": {
+        "causal": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal"
+        }
+      },
+      "title": "RetrospectiveConfig",
+      "type": "object"
+    },
+    "ReviewConfig": {
+      "additionalProperties": false,
+      "description": "How a person's exceptions are recorded (since 1.1).\n\nWith ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an\nexpiry, a scope (the findings it covers, by rule, path and fingerprint), optional\nalternative evidence and a follow-up. While it is in force, a later run of the project does\nnot block on the findings it covers; once it expires they block again, and a run waiting in\nDECISION on an expired exception is blocked. Absent or false keeps the 1.0.0 behaviour: an\nexception is a decision with a rationale and no expiry.",
+      "properties": {
+        "exceptionDays": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exceptiondays"
+        },
+        "exceptions": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exceptions"
+        }
+      },
+      "title": "ReviewConfig",
+      "type": "object"
+    },
     "RuntimeConfig": {
       "additionalProperties": false,
       "description": "Process bounds and, since 1.1, the agent sandbox and the feedback loop around the agent\nprovider.\n\nThe sandbox and loop settings are optional: a key that is absent keeps the 1.0.0 behaviour\nand is left out of the serialized configuration, so the snapshot digest of an existing\nproject does not change. ``harness init`` writes them.",
@@ -264,6 +334,18 @@
       "additionalProperties": false,
       "description": "What VERIFICATION does with identified requirements that no test names.\n\n``enforce`` records each one as a ``HIGH`` finding, which fails the gate under the default\n``findingBlockSeverities``; ``warn`` records it as a ``LOW`` finding; ``off`` skips the\ncheck.",
       "properties": {
+        "outputParsers": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputparsers"
+        },
         "requirementTraceability": {
           "default": "off",
           "enum": [
@@ -276,6 +358,67 @@
         }
       },
       "title": "VerificationConfig",
+      "type": "object"
+    },
+    "WebhookConfig": {
+      "additionalProperties": false,
+      "description": "A URL that receives a JSON ``POST`` when a run waits for a decision or finishes.\n\n``urlEnv`` names an environment variable that holds the URL, so a URL that carries a token\n(Slack, Teams) stays out of ``project.yaml`` and of the configuration snapshot. The payload\ncarries identifiers, statuses and digests only: no rationale, no output, no secret.",
+      "properties": {
+        "events": {
+          "default": [
+            "decision.pending",
+            "run.finished"
+          ],
+          "items": {
+            "enum": [
+              "decision.pending",
+              "run.finished"
+            ],
+            "type": "string"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "retries": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 5.0,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Timeoutseconds",
+          "type": "number"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "urlEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Urlenv"
+        }
+      },
+      "title": "WebhookConfig",
       "type": "object"
     },
     "WorkspaceConfig": {
@@ -365,6 +508,17 @@
       ],
       "default": null
     },
+    "notifications": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NotificationsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "policies": {
       "additionalProperties": true,
       "title": "Policies",
@@ -388,6 +542,28 @@
       "additionalProperties": true,
       "title": "Retention",
       "type": "object"
+    },
+    "retrospective": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetrospectiveConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "review": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReviewConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig"

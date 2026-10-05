@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Exceptions with expiry, scope and follow-up (#53). Under the new `review.exceptions` setting
+  (written by `harness init`), `APPROVE_EXCEPTION` sets the decision's `expiresAt` (it was always
+  null) from `--expires-in`/`--expires-at` or `review.exceptionDays`, and records an exception
+  (new contract `exception.schema.json`) with the person, rationale, run, gate, digest, scope,
+  alternative evidence and follow-up, as `DECISION` evidence and an `exception.granted` event.
+  The default scope is the gate's blocking findings by rule, path and fingerprint; `--scope
+  RULE[:PATH]` widens it. While an exception is in force, a later run's gate does not count the
+  findings it covers and says so (`EXCEPTION_APPLIED_<id>`); once it expires they block again,
+  also for a run waiting in `DECISION`, and a run whose own exception expired before closing is
+  `BLOCKED`. A failing mandatory validator is never covered. `harness exceptions list` and
+  `GET /api/exceptions` are the ledger; the brief and the interactive decision show and ask for
+  them. Without the setting `APPROVE_EXCEPTION` behaves as in 1.0.0 and the exception options are
+  rejected (exit 2).
+
 - Decision brief (#53). `harness review [--run latest] [--diff]` shows, for one ChangeSet digest,
   what was asked (intent, requirements, criteria, constraints), what changed (files and line
   counts), the gate with each reason explained, the current findings with `file:line` (blocking

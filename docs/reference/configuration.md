@@ -88,6 +88,40 @@ verification:
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
+| `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
+| `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
+
+## Exceptions
+
+Without `review.exceptions` an `APPROVE_EXCEPTION` decision is what it was in 1.0.0: a decision
+with a rationale that closes the run, with no expiry and no effect on later runs. With
+`review.exceptions: true`:
+
+- The decision carries an expiry: `harness gate decide ... --decision APPROVE_EXCEPTION
+  --expires-in 14d` (also `36h`, `2w`), `--expires-at <ISO 8601>` or, with neither,
+  `review.exceptionDays`. An expiry must be in the future and at most 365 days away.
+- An exception record (schema `exception.schema.json`) is stored with the person, the rationale,
+  the decision, the gate and the ChangeSet digest it was granted on, the scope, the
+  `--alternative-evidence` and `--follow-up` texts and its provenance; it is recorded as
+  `DECISION` evidence and as an `exception.granted` event on the run's chain, before the run
+  closes. The harness records the alternative evidence and the follow-up, it does not check them.
+- The scope is, by default, every blocking finding of the gate, each by rule, path and
+  fingerprint (rule, validator, path and message, without line numbers), so only the same problem
+  is covered. `--scope RULE` or `--scope RULE:PATH` (repeatable) widens it to a rule, optionally
+  in one file.
+- While the exception is in force, the gate of a later run of the project does not count the
+  findings it covers: they stay in the record and the gate lists them as inputs together with
+  the reason code `EXCEPTION_APPLIED_<exceptionId>`. A mandatory validator that does not pass
+  still fails the gate: an exception covers findings, not failing tests.
+- Once it expires the findings block again, also for a run already waiting in `DECISION` (its
+  gate is evaluated again when the run continues), and a run whose own `APPROVE_EXCEPTION` expired
+  before it closed is `BLOCKED` until a new decision.
+
+`harness exceptions list [--status active|expired] [--expiring-within DAYS]` is the ledger: who
+granted each exception, on which run and digest, its scope, evidence and follow-up, the days left
+and the runs whose gate relied on it. `harness review` shows the exceptions granted in a run or
+relied on by its gate. Interactive decisions ask for the expiry, the alternative evidence and
+the follow-up.
 
 ## Policies
 
