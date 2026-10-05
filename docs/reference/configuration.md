@@ -32,7 +32,7 @@ runtime:
   commandTimeoutSeconds: 900
   maxOutputBytes: 1000000
   maxParallel: 2
-  allowNetwork: false
+  allowNetwork: true
   agentSandbox: enforce
   sandboxWritePaths:
   - /tmp
@@ -67,6 +67,10 @@ governance:
   pinTaskRevision: true
   protectExcludedPaths: true
   workspaceLease: true
+  applyWorkflowSettings: true
+  decisionExpiryHours: 72
+  applyProfilePolicies: true
+  applyNetworkPolicy: true
 ```
 
 ## Fields
@@ -87,8 +91,8 @@ governance:
 | `agentProviders` | `{}` | Named command providers: `kind: command`, `command` (argv list, not empty), optional `model`. See [external agents](../guides/external-agents.md). |
 | `runtime.commandTimeoutSeconds` | `900` | Timeout of agent-provider processes. Validators use their own `timeoutSeconds` from the profile. |
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
-| `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially). |
-| `runtime.allowNetwork` | `false` | **Declarative: not enforced.** The local runner is not a network sandbox (issue #5). |
+| `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially); `x-declarative` in the schema. |
+| `runtime.allowNetwork` | `false`; `init` writes `true` | Under `governance.applyNetworkPolicy` and `runtime.agentSandbox: enforce`, `false` denies the agent outbound network connections (see [declared settings](#declared-settings)); otherwise **declarative**. Validators are never confined. `init` writes `true` because agent CLIs call their model API. |
 | `runtime.agentSandbox` | `off` when the key is absent; `init` writes `enforce` | Write confinement of command-provider (agent) processes: `enforce` or `off`. See [agent sandbox](#agent-sandbox). |
 | `runtime.sandboxWritePaths` | none when absent; `init` writes the list above | Paths the agent may write besides the workspace and `$TMPDIR`: absolute or starting with `~/`, no `$` variables, an optional single trailing `*` for a name prefix. |
 | `runtime.verificationCorrections` | `0` when absent; `init` writes `2` | Automatic corrections (0 to 10) after a failed `VERIFICATION` of a command provider's change. Its presence, with any value, also turns on the unsupported-claim check. See [provider feedback loop](#provider-feedback-loop). |
@@ -97,7 +101,7 @@ governance:
 | `runtime.providerRetries` | `0` when absent; `init` writes `3` | Repetitions (0 to 10) of a command-provider call that failed with a transient cause. |
 | `runtime.providerRetryDelaySeconds` | `0` when absent; `init` writes `60` | Wait before each repetition (0 to 3600 seconds). |
 | `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
-| `retention` | written by `init` | **Declarative: no retention job exists.** |
+| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)). |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 | `governance.*` | 1.0.0 behaviour when absent; `init` writes every key | Decider identity and confirmation, trusted API hosts and the other integrity settings. See [governance](#governance). |
@@ -114,8 +118,8 @@ Resolution order: core policies, then profile policies, then project policies.
 | `retrospectiveAutoApply` | `false` | **No** (locked `false`) |
 | `findingBlockSeverities` | `["HIGH", "CRITICAL"]` | Yes: severities whose findings make the gate `FAILED` |
 | `allowEmptyChangeSet` | not set (false) | Yes: allow a run whose implementation produced no change |
-| `repositoryContentTrusted` | `false` | Declared; **not read by any component** (issue #5) |
-| `destructiveActionsDefault` | `deny` | Declared; **not read by any component** (issue #5) |
+| `repositoryContentTrusted` | `false` | Declared; **not read by any component** (issue #5); reported by `config validate` |
+| `destructiveActionsDefault` | `deny` | Declared; **not read by any component** (issue #5); reported by `config validate` |
 
 Setting a locked policy to any other value fails with a configuration error (exit code 2), for
 example `project configuration may not weaken locked policy requireHumanDecision`.
@@ -475,6 +479,34 @@ implemented the change again on top of it.
 
 Restoring undoes every change to the workspace since the interrupted attempt started, including
 one a person made meanwhile.
+
+### Declared settings
+
+Several settings were declared, written by `init` or shipped in the built-in workflow and profiles,
+and read by nothing. The ones with a clear meaning now take effect behind these keys; the rest are
+marked `x-declarative` in the generated JSON Schema, and `harness config validate` lists them under
+`declarative` and adds a line to `warnings` for each one the project relies on (for example
+`runtime.maxParallel`, or `maxAttempts` while `applyWorkflowSettings` is off).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `applyWorkflowSettings` | `false` | `true` | The built-in workflow's per-phase settings apply. `maxAttempts`: once a phase has that many failed attempts (`FAILED`, `ERROR`, `TIMED_OUT`, `INTERRUPTED`; a `BLOCKED` wait in `DECISION` is not a failure), it is not started again: the run is `BLOCKED` with the reason and a `phase.attempts.exhausted` event (for example a fourth `VERIFICATION` after two automatic corrections). `timeoutSeconds`: the wall-clock budget of one attempt; the agent process and each validator get at most the time left, and an attempt that ends after it is `TIMED_OUT`. `exitGate`: recorded with every attempt in `phase.completed` (`exitGate`, `exitGateMet`, with `timeoutSeconds` and `maxAttempts`); the condition itself is evaluated by the phase. |
+| `decisionExpiryHours` | none | `72` | A human decision gets `expiresAt` that many hours after it is recorded (1 to 8760); a decision that expired before `DECISION` used it (for example one recorded with `--no-continue`) leaves `DECISION` `BLOCKED` until a new decision is recorded. |
+| `applyProfilePolicies` | `false` | `true` | The profile policies `missingTestCommand` (Python: a missing executable or module of a mandatory validator) and `missingTestScript` (Node.js: a missing package script) set the status of the unavailable mandatory validator, `BLOCKED` (the profiles' value) or `FAILED`; any other value is a configuration error. A project policy `coverage: {minimumPercent: N}` (0 to 100) adds the mandatory validator `python.coverage` to `VERIFICATION` of a Python project: it runs `python -m coverage run -m pytest -q` (the tests run a second time) and `python -m coverage report --fail-under=N`, keeping the data under `.harness/coverage/`; without the `coverage` package it is `BLOCKED` (or the `missingTestCommand` status). The profile's `coverage: optional_for_research_prototype` is not a threshold and stays declarative. |
+| `applyNetworkPolicy` | `false` | `true` | `runtime.allowNetwork: false` denies the agent outbound IP connections under `runtime.agentSandbox: enforce`: `(deny network-outbound (remote ip "*:*"))` in the Seatbelt profile (local sockets stay allowed), `--unshare-net` with `bwrap`, and `network: denied` in the sandbox evidence. |
+
+`harness gc` applies `retention` to runs that ended (closed, cancelled or rejected) longer ago than
+the setting, counted from the run's last update; open runs and memory records are never touched.
+`artifactDays` deletes the run's artifacts that no kept run references and records a
+`retention.artifacts.pruned` event listing them, so `harness verify` treats them as pruned, not
+missing; `eventDays` removes the run with its events, records, flags and artifacts. Without
+`--apply` it only prints what it would remove. `gc` is a command a person runs; nothing runs it
+automatically.
+
+Still declarative: `workspace.units`, `runtime.maxParallel`, the policies
+`repositoryContentTrusted`, `destructiveActionsDefault` and `ambiguousPackageManager`, and the
+workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase `validators` and
+`invariants`.
 
 ## Technology profiles
 

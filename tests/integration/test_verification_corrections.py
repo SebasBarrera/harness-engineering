@@ -231,12 +231,16 @@ def test_exhausted_corrections_stop_at_verification(python_workspace: Path, tmp_
     assert metric(application, python_workspace, run, "implementation.attempts") == 3
     assert metric(application, python_workspace, run, "agent.unsupported_claims") == 3
 
-    # Resuming re-runs VERIFICATION on the same candidate: it fails again, with no new cycle.
+    # Resuming does not start a fourth VERIFICATION: init writes
+    # governance.applyWorkflowSettings, and the phase used its maxAttempts (3) (#51).
     resumed = application.continue_run(python_workspace, run)
     assert resumed.current_phase is PhaseId.VERIFICATION
-    assert resumed.status is ResultStatus.FAILED
+    assert resumed.status is ResultStatus.BLOCKED
+    assert "maxAttempts (3)" in (resumed.terminal_reason or "")
     assert len(requests(log)) == 3
     assert len(events(application, python_workspace, run, "correction.authorized")) == 2
+    [exhausted] = events(application, python_workspace, run, "phase.attempts.exhausted")
+    assert exhausted.payload == {"phaseId": "VERIFICATION", "failedAttempts": 3, "maxAttempts": 3}
 
 
 def test_absent_loop_settings_keep_the_previous_behaviour(

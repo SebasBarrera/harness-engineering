@@ -166,6 +166,26 @@
   an interrupted `IMPLEMENTATION` attempt changed to the snapshot taken when it started (a
   `run.recovered` event lists them) and runs the phase again. Without the setting the 1.0.0
   behaviour and configuration digest are kept.
+- Configuration that no component read is applied or reported (#51). New `governance` keys,
+  written by `harness init`: `applyWorkflowSettings` applies the workflow's per-phase
+  `maxAttempts` (a phase with that many failed attempts is not started again; the run is
+  `BLOCKED` with a `phase.attempts.exhausted` event) and `timeoutSeconds` (the agent and the
+  validators get at most the time left of the attempt; an attempt that ends later is
+  `TIMED_OUT`), and records `exitGate` and `exitGateMet` with every attempt;
+  `decisionExpiryHours` (init 72) sets `HumanDecision.expiresAt`, and an expired decision leaves
+  `DECISION` `BLOCKED`; `applyProfilePolicies` makes `missingTestCommand` and `missingTestScript`
+  (`BLOCKED` or `FAILED`) the status of an unavailable mandatory validator and turns a project
+  policy `coverage: {minimumPercent: N}` into a mandatory `python.coverage` validator;
+  `applyNetworkPolicy` makes `runtime.allowNetwork: false` deny the agent outbound connections
+  in the sandbox (Seatbelt rule or `bwrap --unshare-net`). `harness init` now writes
+  `runtime.allowNetwork: true`, since agent CLIs call their model API. The new `harness gc
+  [--apply]` applies `retention.artifactDays` (prunes the artifacts of runs that ended, with a
+  `retention.artifacts.pruned` event that `verify` honours) and `retention.eventDays` (removes
+  the run). The remaining declared settings (`workspace.units`, `runtime.maxParallel`, three
+  policies, the workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase
+  `validators` and `invariants`) are marked `x-declarative` in the schemas, and
+  `harness config validate` lists them under `declarative` with `warnings` for the ones the
+  project relies on. Without the keys the 1.0.0 behaviour and configuration digest are kept.
 
 ## 1.0.0 - 2026-10-01
 

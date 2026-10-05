@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from governed_harness.capabilities import grants_from_rules
@@ -77,3 +78,15 @@ def test_validator_with_available_module_runs(tmp_path: Path) -> None:
     context = run_validator(tmp_path, (sys.executable, "-m", "json.tool", "--help"), mandatory=True)
     result = CommandValidator("python.check").execute(context).result
     assert result.status is ResultStatus.PASSED
+
+
+def test_missing_test_command_status_follows_the_policy(tmp_path: Path) -> None:
+    """governance.applyProfilePolicies passes missingTestCommand as the status of an
+    unavailable mandatory validator (#51); without it the status stays BLOCKED."""
+    context = run_validator(tmp_path, (sys.executable, "-m", MISSING_MODULE), mandatory=True)
+    assert CommandValidator("python.check").execute(context).result.status is ResultStatus.BLOCKED
+    failed = CommandValidator("python.check").execute(
+        replace(context, missing_command_status=ResultStatus.FAILED)
+    )
+    assert failed.result.status is ResultStatus.FAILED
+    assert failed.result.kind is ValidationKind.CONFIGURATION_ERROR
