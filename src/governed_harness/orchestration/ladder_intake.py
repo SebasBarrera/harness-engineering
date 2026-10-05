@@ -34,7 +34,7 @@ from governed_harness.ladder.contract import ContractSummary, derive_contract
 from governed_harness.telemetry.metrics import HUMAN_INTERACTION_EVENTS, human_interactions
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.ladder import VerificationLadder
+    from governed_harness.orchestration.ladder_host import LadderHost
 
 LOCATE_MALFORMED_RULE = "locate.malformed"
 MAX_LOCATE_QUESTIONS = 10
@@ -51,7 +51,7 @@ class IntentResult:
 
 
 class LadderIntake:
-    def __init__(self, ladder: VerificationLadder) -> None:
+    def __init__(self, ladder: LadderHost) -> None:
         self.ladder = ladder
 
     # ----- configuration ----------------------------------------------------------------------

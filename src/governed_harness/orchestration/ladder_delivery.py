@@ -36,14 +36,14 @@ from governed_harness.domain.models import ChangeSet, Execution, HumanDecision, 
 if TYPE_CHECKING:
     from governed_harness.forges import BaseForge, Transport
     from governed_harness.orchestration.engine import PhaseOutcome
-    from governed_harness.orchestration.ladder import VerificationLadder
+    from governed_harness.orchestration.ladder_host import LadderHost
 
 TRANSPORT: dict[str, Transport | None] = {"override": None}
 """A transport that replaces the forge's network transport (tests talk to a fake forge)."""
 
 
 class LadderDelivery:
-    def __init__(self, ladder: VerificationLadder) -> None:
+    def __init__(self, ladder: LadderHost) -> None:
         self.ladder = ladder
 
     def authorisation(self, task: Task) -> dict[str, Any]:

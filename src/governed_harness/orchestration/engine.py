@@ -115,8 +115,6 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
-from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
-from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
@@ -345,6 +343,11 @@ class RunEngine:
         )
         self._phase_deadline: float | None = None
         self.results = AgentResults(self)
+        # Imported here: the ladder modules type against the engine, so a module-level import
+        # would close an import cycle.
+        from governed_harness.orchestration.friction import Friction
+        from governed_harness.orchestration.ladder import VerificationLadder
+
         self.ladder = VerificationLadder(self)
         self.friction = Friction(self)
 
@@ -2413,6 +2416,8 @@ class RunEngine:
                 ),
                 lambda output: self._save_validator_output(execution, output),
             )
+            from governed_harness.orchestration.friction import AFFECTED_TESTS_ID
+
             if (
                 outputs
                 and outputs[-1].result.validator_id == AFFECTED_TESTS_ID

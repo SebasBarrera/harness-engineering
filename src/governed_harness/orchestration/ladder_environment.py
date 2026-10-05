@@ -38,7 +38,7 @@ from governed_harness.validators import ValidationContext
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine import PhaseOutcome
-    from governed_harness.orchestration.ladder import VerificationLadder
+    from governed_harness.orchestration.ladder_host import LadderHost
 
 ENVIRONMENT_ID = "harness.environment"
 _TIMEOUT = 15
@@ -134,7 +134,7 @@ def environment_checks(
 
 
 class EnvironmentPreflight:
-    def __init__(self, ladder: VerificationLadder) -> None:
+    def __init__(self, ladder: LadderHost) -> None:
         self.ladder = ladder
 
     @property
