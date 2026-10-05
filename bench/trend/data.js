@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791207654913,
+  "lastUpdate": 1791219521239,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2747,6 +2747,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 7.575,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "0345cb5a762ad4eb8a3fc01011d85bc860fc9003",
+          "message": "Merge branch 'feat/wave2-agent-results' into develop\n\nWave 2 improves what the agent delivers: provider protocol 1.1 with read-only\nclarify, acceptance, plan and review calls; an agent ambiguity and completeness\nreview in INTENT with answer validation; interface, architecture, security,\nconstraint, weakened-control, test-quality, context-aware secret, SARIF,\ninvariant and risk-factor checks; differential verification against the\nbaseline (pre-existing vs introduced failures, #7) and a Ruff/Mypy ratchet;\nstop-the-line quarantine; the gate contract and harness check for the agent;\nreproduce-first corrections; a second-agent review; decomposition of large\ntasks with an approved plan and adaptive granularity; frozen independent\nacceptance tests; a bounded context manifest and lessons from recurring\nfindings; a governed budget; and an auditable model/effort router with\nescalation. Behaviour changes sit behind keys harness init writes; a\nproject.yaml without them keeps the 1.0.0 behaviour and digest.\n\nCloses #37, #38, #39, #40, #41, #42, #43, #44, #52\n\nVerification on the branch head a5f2f1a67b4e: 21 CI job(s) succeeded, no blocking job failed.\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403108\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403115\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403146\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403217\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403270\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37342403417\nFiles of the v0.8.0 cut in the tree: matched: 85/232  mismatched: 123  missing: 24",
+          "timestamp": "2026-10-05T11:57:49-05:00",
+          "tree_id": "b1a7a97a8abcc2df4bbd55544af5f09ab58373b2",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/0345cb5a762ad4eb8a3fc01011d85bc860fc9003"
+        },
+        "date": 1791219520344,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001232,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001904,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011502,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.074569,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.265678,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.961399,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.530169,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 5.011,
             "unit": "%"
           }
         ]
