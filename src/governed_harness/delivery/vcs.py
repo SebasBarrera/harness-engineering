@@ -7,6 +7,7 @@ configuration (including commit signing)."""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -136,6 +137,22 @@ class Git:
             if len(values) > 1:
                 found.append(values)
         return found
+
+
+_GITHUB_REMOTE = re.compile(
+    r"(?:git@github\.com:|https://(?:[^@/]+@)?github\.com/|ssh://git@github\.com/)"
+    r"(?P<owner>[A-Za-z0-9_.-]+)/(?P<name>[A-Za-z0-9_.-]+?)(?:\.git)?/?$"
+)
+
+
+def repository_from_remote(root: Path, remote: str = "origin") -> str | None:
+    """``owner/name`` of a GitHub remote, or ``None``."""
+    git = Git(root)
+    if not git.is_repository():
+        return None
+    url = git.run("remote", "get-url", remote, check=False).stdout.decode().strip()
+    match = _GITHUB_REMOTE.match(url)
+    return f"{match.group('owner')}/{match.group('name')}" if match else None
 
 
 def _entries(

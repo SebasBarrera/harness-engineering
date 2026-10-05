@@ -49,6 +49,7 @@ EVENTS = "events.jsonl"
 RECORDS = "records.json"
 ARTIFACT_PREFIX = "artifact://sha256/"
 DECISION_EVENT = "human.decision.recorded"
+PRUNED_EVENT = "retention.artifacts.pruned"
 APPROVALS = frozenset({DecisionKind.APPROVE.value, DecisionKind.APPROVE_EXCEPTION.value})
 MAX_MEMBER_BYTES = 512 * 1024 * 1024
 _TAR_MTIME = 0  # deterministic member times
@@ -266,7 +267,7 @@ def _check_chain(lines: list[dict[str, Any]], execution_id: str) -> list[str]:
     return problems
 
 
-def _decisions(events: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
+def decision_entries(events: list[dict[str, Any]], now: datetime) -> list[dict[str, Any]]:
     found = []
     for event in events:
         if event.get("eventType") != DECISION_EVENT:
@@ -328,7 +329,7 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
         head = events[-1].get("eventDigest") if events else None
         if head != manifest.event_chain_head:
             problems.append("the last event is not the chain head of the manifest")
-        decisions = _decisions(events, now or utc_now())
+        decisions = decision_entries(events, now or utc_now())
         try:
             records = json.loads(contents.data.get(RECORDS, b"{}"))
         except ValueError as error:
@@ -353,8 +354,15 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
             if name.startswith("artifacts/") and not name.endswith(".json")
         }
         referenced = artifact_refs(events) | artifact_refs(records)
+        # Artifacts that harness gc pruned under retention.artifactDays are recorded as such.
+        pruned = {
+            str(uri)
+            for event in events
+            if event.get("eventType") == PRUNED_EVENT
+            for uri in (event.get("payload") or {}).get("artifactRefs", [])
+        }
         missing = sorted(
-            uri for uri in referenced if uri.removeprefix(ARTIFACT_PREFIX) not in present
+            uri for uri in referenced - pruned if uri.removeprefix(ARTIFACT_PREFIX) not in present
         )
         if missing:
             problems.append(f"{len(missing)} referenced artifact(s) are not in the bundle")
