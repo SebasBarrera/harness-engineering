@@ -186,6 +186,11 @@
   `validators` and `invariants`) are marked `x-declarative` in the schemas, and
   `harness config validate` lists them under `declarative` with `warnings` for the ones the
   project relies on. Without the keys the 1.0.0 behaviour and configuration digest are kept.
+- An `integrity` flow in `scripts/demo_flows.py` checks the settings above end to end: an
+  `agent.*` decision exits with 5 and is not recorded, `task create` on the task of an open run
+  exits with 5, `verify` exits with 0, and after an event is edited `status` reports
+  `eventChainValid: false` while `verify` and `trace` exit with 6. The script keeps the chain
+  anchors in a temporary directory of its own (`HARNESS_ANCHOR_DIR`).
 
 ## 1.0.0 - 2026-10-01
 

@@ -7,7 +7,7 @@ checked against the documented expectation. The script is used by CI in three wa
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
-  clarification, traceability and corrections flows, leaving the projects in ``--workdir`` so
+  clarification, traceability, corrections and integrity flows, leaving the projects in ``--workdir`` so
   ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
@@ -21,6 +21,7 @@ import argparse
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -1037,6 +1038,60 @@ def flow_corrections(t: Transcript, root: Path) -> None:
     )
 
 
+def flow_integrity(t: Transcript, root: Path) -> None:
+    """The integrity settings init writes (wave 1): an agent identity cannot decide, the task of
+    an open run cannot be replaced, the record verifies, and an edited event is reported by
+    status and verify and refused by trace."""
+    flow = "integrity"
+    python_project(root)
+    (root / "task.yaml").write_text(PY_TASK)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    validated = t.json(flow, root, ["config", "validate", *here], 0)
+    t.check(
+        flow,
+        any(item.startswith("runtime.maxParallel") for item in validated["warnings"]),
+        "config validate reports the declarative runtime.maxParallel",
+    )
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_add_discount"], 4)[
+        "executionId"
+    ]
+    digest = current_digest(t, flow, root, run_id)
+    decide = ["gate", "decide", *here, "--run", run_id, "--change-set-digest", digest]
+    t.run(
+        flow,
+        root,
+        [
+            *decide,
+            "--decision",
+            "APPROVE_EXCEPTION",
+            "--actor",
+            "agent.claude-code",
+            "--rationale",
+            "self-approval",
+        ],
+        5,
+    )
+    status = t.json(flow, root, ["status", *here, "--run", run_id], 0)
+    t.check(flow, status["humanDecision"] is None, "the agent's decision was not recorded")
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 5)
+    t.run(flow, root, ["verify", *here, "--run", run_id], 0)
+    approve(t, flow, root, run_id, "Discount rule reviewed")
+    t.run(flow, root, ["verify", *here], 0)
+    database = root / ".harness" / "state.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "UPDATE events SET payload_json=? WHERE execution_id=? AND event_type=?",
+            (json.dumps({"forged": True}), run_id, "human.decision.recorded"),
+        )
+    connection.close()
+    status = t.json(flow, root, ["status", *here, "--run", run_id], 0)
+    t.check(flow, status["eventChainValid"] is False, "status reports the edited event")
+    t.run(flow, root, ["verify", *here, "--run", run_id], 6)
+    t.run(flow, root, ["trace", *here, "--run", run_id, "--format", "json"], 6)
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -1047,6 +1102,7 @@ FLOWS = {
     "clarification": flow_clarification,
     "traceability": flow_traceability,
     "corrections": flow_corrections,
+    "integrity": flow_integrity,
 }
 
 
@@ -1074,8 +1130,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         workdir.mkdir(parents=True, exist_ok=True)
     transcript = Transcript(args.harness)
     # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
-    # directory; the demonstration keeps them next to its projects.
-    os.environ.setdefault("HARNESS_ANCHOR_DIR", str(workdir.resolve() / "anchors"))
+    # directory; the demonstration keeps them in a temporary directory of its own (not in the
+    # workdir, whose subdirectories are read as projects by scripts/metrics_report.py).
+    anchors = None
+    if "HARNESS_ANCHOR_DIR" not in os.environ:
+        anchors = tempfile.mkdtemp(prefix="harness-anchors-")
+        os.environ["HARNESS_ANCHOR_DIR"] = anchors
     try:
         for name in names:
             target = workdir.resolve() / name
@@ -1085,6 +1145,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     finally:
         if temp:
             shutil.rmtree(temp, ignore_errors=True)
+        if anchors:
+            shutil.rmtree(anchors, ignore_errors=True)
     if args.transcript:
         args.transcript.write_text(json.dumps(transcript.steps, indent=2) + "\n", encoding="utf-8")
     failed = [step for step in transcript.steps if not step["ok"]]
