@@ -37,6 +37,10 @@
     tokens recorded by the harness): 4670 and 4735 tokens per run before, 6359 (with the one
     architecture survey) and 5575 after; no extra agent call besides the survey.
   - Fixed: the frozen acceptance tests no longer count as changes outside a task's ownedPaths.
+  - Known limits: the forge providers, the pack tools and the MCP server are tested against
+    recorded request shapes, fake transports and fixture runners, not against the live forges,
+    linters or agents; the testing strategy detected under `auto` is read once per command, so a
+    repository that gains feature files during a run switches to BDD on the next command.
 
 - Better agent results, wave 2 (#52, closes #37, #38, #39, #40, #41, #42, #43, #44; implements
   the proposal of #7 behind a setting). The motivating figures come from the thesis evaluation
