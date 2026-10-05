@@ -142,7 +142,7 @@ class Transcript:
     ) -> subprocess.CompletedProcess[str]:
         argv = [self.harness, *args]
         proc = subprocess.run(
-            argv, cwd=cwd, capture_output=True, text=True, check=False, env=ISOLATED_GIT_ENV
+            argv, cwd=cwd, capture_output=True, text=True, check=False, env=isolated_env()
         )
         matched = proc.returncode == expect
         self.ok &= matched
@@ -173,12 +173,16 @@ class Transcript:
         print(f"[{mark}] {flow:<14} check: {description}")
 
 
-ISOLATED_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+def isolated_env() -> dict[str, str]:
+    """The environment of every command: the current one (read when the command runs, so the
+    anchor and state directories ``main`` sets reach the harness) without the developer's global
+    or system Git configuration."""
+    return {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 
 def git_output(cwd: Path, *args: str) -> str:
     return subprocess.run(
-        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=ISOLATED_GIT_ENV
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=isolated_env()
     ).stdout.strip()
 
 

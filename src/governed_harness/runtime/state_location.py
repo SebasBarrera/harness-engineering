@@ -33,6 +33,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from governed_harness.domain.errors import ConfigurationError
 from governed_harness.evidence.hashing import sha256_bytes
 
 STATE_DIR_ENV = "HARNESS_STATE_DIR"
@@ -130,7 +131,14 @@ def resolve_state_location(
     identity = repository_identity(root_workspace)
     root = configured_root(state_dir) / project_key(project_id, identity)
     if create:
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        try:
+            root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        except OSError as error:
+            raise ConfigurationError(
+                f"cannot create the run registry {root} (runtime.stateDir: {state_dir}): "
+                f"{error.strerror or error}; set {STATE_DIR_ENV} or runtime.stateDir to a "
+                "writable directory"
+            ) from error
         _register(root, project_id, root_workspace, identity)
     return StateLocation(root, root / "state.db", root / "artifacts", True)
 
