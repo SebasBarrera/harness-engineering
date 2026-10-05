@@ -64,6 +64,23 @@ def _emit(value: object, json_output: bool = True) -> None:
         typer.echo(value)
 
 
+_ACTING: list[HarnessApplication] = []
+
+
+def _acting() -> HarnessApplication:
+    """The application for a human act; its notices (for example a Git identity that could
+    not be used) are printed on standard error by ``_call``."""
+    application = HarnessApplication()
+    _ACTING.append(application)
+    return application
+
+
+def _flush_notices() -> None:
+    while _ACTING:
+        for notice in _ACTING.pop().notices:
+            typer.echo(f"warning: {notice}", err=True)
+
+
 def _call[T](operation: Callable[[], T]) -> T:
     try:
         return operation()
@@ -79,6 +96,8 @@ def _call[T](operation: Callable[[], T]) -> T:
             err=True,
         )
         raise typer.Exit(code=1) from error
+    finally:
+        _flush_notices()
 
 
 def _exit_for_execution(status: ResultStatus, phase: str) -> None:
@@ -242,11 +261,7 @@ def task_clarify(
     or an empty answer exits with 2, no open request with 3, and a task with a run past INTENT
     or an actor id of an agent, validator or the harness with 5."""
     _emit(
-        _call(
-            lambda: HarnessApplication().clarify_task(
-                path, task_id=task, answers_file=file, actor_id=actor
-            )
-        )
+        _call(lambda: _acting().clarify_task(path, task_id=task, answers_file=file, actor_id=actor))
     )
 
 
@@ -303,7 +318,7 @@ def run_cancel(
 ) -> None:
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
     event."""
-    execution = _call(lambda: HarnessApplication().cancel_run(path, run, actor))
+    execution = _call(lambda: _acting().cancel_run(path, run, actor))
     _emit(execution)
 
 
@@ -470,7 +485,7 @@ def memory_add(
     enter a context only once approved."""
     _emit(
         _call(
-            lambda: HarnessApplication().add_memory(
+            lambda: _acting().add_memory(
                 path,
                 level=level,
                 key=key,
@@ -527,9 +542,7 @@ def memory_approve(
 ) -> None:
     """Approve a proposed record. The approval is a new record that supersedes the proposal;
     approving a record that needs no approval or is already approved exits with code 5."""
-    _emit(
-        _call(lambda: HarnessApplication().approve_memory(path, memory_id=memory, actor_id=actor))
-    )
+    _emit(_call(lambda: _acting().approve_memory(path, memory_id=memory, actor_id=actor)))
 
 
 @memory_app.command("invalidate")
@@ -550,7 +563,7 @@ def memory_invalidate(
     the reason stay on record."""
     _emit(
         _call(
-            lambda: HarnessApplication().invalidate_memory(
+            lambda: _acting().invalidate_memory(
                 path, memory_id=memory, actor_id=actor, reason=reason
             )
         )
@@ -590,7 +603,7 @@ def gate_decide(
     records nothing)."""
     _confirm_decision(path, run, decision, change_set_digest)
     record, execution = _call(
-        lambda: HarnessApplication().decide_gate(
+        lambda: _acting().decide_gate(
             path,
             execution_id=run,
             decision=decision,
@@ -711,7 +724,7 @@ def recommendation_decide(
     with code 5; nothing is applied to rules, gates or configuration."""
     _emit(
         _call(
-            lambda: HarnessApplication().decide_recommendation(
+            lambda: _acting().decide_recommendation(
                 path,
                 execution_id=run,
                 recommendation_id=recommendation,

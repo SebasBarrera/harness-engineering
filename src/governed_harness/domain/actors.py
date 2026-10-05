@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from .errors import ConfigurationError, NonHumanActorError
 
@@ -10,6 +11,9 @@ NON_HUMAN_ACTOR_PREFIXES = ("agent.", "validator.", "harness.")
 """Actor id namespaces the harness assigns to agents, validators and itself."""
 
 _NON_HUMAN_ACTOR_NAMES = frozenset(prefix.rstrip(".") for prefix in NON_HUMAN_ACTOR_PREFIXES)
+
+IdentitySource = Literal["explicit", "git", "fallback", "default"]
+"""Where the actor id of a human act came from (``governance.deciderIdentity``)."""
 
 DEFAULT_CLI_ACTOR = "human.local"
 DEFAULT_API_ACTOR = "human.web"

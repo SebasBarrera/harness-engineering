@@ -116,7 +116,8 @@ def create_app(workspace: Path) -> FastAPI:
     @api.post("/api/runs/{execution_id}/decision")
     def decide(execution_id: str, request: DecisionRequest) -> dict[str, object]:
         try:
-            decision, execution = application.decide_gate(
+            acting = HarnessApplication()  # its notices belong to this request only
+            decision, execution = acting.decide_gate(
                 root,
                 execution_id=execution_id,
                 decision=request.decision,
@@ -126,10 +127,13 @@ def create_app(workspace: Path) -> FastAPI:
                 continue_after=request.continue_after,
                 default_actor=DEFAULT_API_ACTOR,
             )
-            return {
+            body: dict[str, object] = {
                 "decision": decision.model_dump(mode="json", by_alias=True),
                 "execution": execution.model_dump(mode="json", by_alias=True),
             }
+            if acting.notices:
+                body["warnings"] = list(acting.notices)
+            return body
         except NonHumanActorError as error:
             raise HTTPException(status_code=403, detail=str(error)) from error
         except Exception as error:

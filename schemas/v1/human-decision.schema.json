@@ -126,6 +126,24 @@
       "title": "Gateevaluationid",
       "type": "string"
     },
+    "identitySource": {
+      "anyOf": [
+        {
+          "enum": [
+            "explicit",
+            "git",
+            "fallback",
+            "default"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identitysource"
+    },
     "policyDigest": {
       "title": "Policydigest",
       "type": "string"

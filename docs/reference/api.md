@@ -49,7 +49,7 @@ curl -s -X POST http://127.0.0.1:8765/api/runs/<run>/decision \
 | `decision` | `APPROVE`, `APPROVE_EXCEPTION`, `REQUEST_CHANGES`, `REJECT` | required |
 | `change_set_digest` | string | required |
 | `rationale` | string | required |
-| `actor_id` | string | the Git user under `governance.deciderIdentity: git`, otherwise `human.web` |
+| `actor_id` | string | the Git user under `governance.deciderIdentity: git` (`human.web` with a `warnings` entry in the response when Git has no identity), otherwise `human.web` |
 | `continue_after` | boolean | `true` |
 
 Every policy violation of `harness gate decide` (stale digest, `APPROVE` over a gate that did not

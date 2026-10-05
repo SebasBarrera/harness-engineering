@@ -405,7 +405,7 @@ process that types another one.
 
 | Key | Absent | `init` | Effect |
 |---|---|---|---|
-| `deciderIdentity` | `default` | `git` | `git`: when a human act has no `--actor` (API: no `actor_id`), the actor is the Git user of the workspace, recorded as `actorId` (the e-mail address in lower case, characters outside `[a-z0-9_.-]` replaced by `-`) and `displayName` (`Name <email>`); without `user.email` and `user.name` the command exits with 2. `default`: `human.local` (CLI) and `human.web` (API). |
+| `deciderIdentity` | `default` | `git` | `git`: when a human act has no `--actor` (API: no `actor_id`), the actor is the Git user of the workspace, recorded as `actorId` (the e-mail address in lower case, characters outside `[a-z0-9_.-]` replaced by `-`) and `displayName` (`Name <email>`). A gate decision records where the id came from as `identitySource`: `explicit` (`--actor`), `git`, or `fallback` when Git has no usable `user.email` or `user.name` (a CI runner, a fresh machine): the default id below is recorded instead and a warning on standard error (API: `warnings` in the response) says how to set the identity; the command does not fail. `default`: `human.local` (CLI) and `human.web` (API). |
 | `confirmDecisionDigest` | `false` | `true` | On a terminal, `gate decide` prints the run, the gate result, the ChangeSet digest and its files on standard error and asks for the first 12 hexadecimal characters of the digest; a wrong answer exits with 5 and records nothing. Without a terminal (scripts, CI) nothing is asked. |
 | `trustedHosts` | every host | `127.0.0.1`, `localhost`, `::1` | The local API answers only requests whose `Host` header is one of these names (400 otherwise), which stops DNS rebinding from a web page. |
 

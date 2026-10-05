@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -143,6 +144,38 @@ def test_decider_defaults_to_the_git_user(python_workspace: Path, tmp_path: Path
         "displayName": "Fixture <fixture@example.com>",
         "version": None,
     }
+    assert json.loads(result.stdout)["decision"]["identitySource"] == "git"
+    assert "warning" not in result.stderr
+
+
+def test_explicit_actor_is_recorded_as_explicit(python_workspace: Path, tmp_path: Path) -> None:
+    run, digest = _pending_run(python_workspace, tmp_path)
+    result = _decide(python_workspace, run, digest, "--actor", "human.reviewer")
+    assert result.exit_code == 0, result.stderr
+    decision = json.loads(result.stdout)["decision"]
+    assert decision["actor"]["actorId"] == "human.reviewer"
+    assert decision["identitySource"] == "explicit"
+
+
+def test_git_without_identity_falls_back_with_a_warning(
+    python_workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A machine without a Git identity (a CI runner) still decides: the 1.0.0 default actor
+    is recorded with identitySource fallback and a warning says how to fix it."""
+    empty = tmp_path / "empty-gitconfig"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for key in ("user.email", "user.name"):
+        subprocess.run(["git", "config", "--unset", key], cwd=python_workspace, check=True)
+    run, digest = _pending_run(python_workspace, tmp_path)
+    result = _decide(python_workspace, run, digest)
+    assert result.exit_code == 0, result.stderr
+    decision = json.loads(result.stdout)["decision"]
+    assert decision["actor"]["actorId"] == "human.local"
+    assert decision["identitySource"] == "fallback"
+    assert "warning: governance.deciderIdentity is git but Git has no usable" in result.stderr
 
 
 def test_decider_without_the_setting_keeps_human_local(
@@ -152,7 +185,9 @@ def test_decider_without_the_setting_keeps_human_local(
     run, digest = _pending_run(python_workspace, tmp_path)
     result = _decide(python_workspace, run, digest)
     assert result.exit_code == 0, result.stderr
-    assert json.loads(result.stdout)["decision"]["actor"]["actorId"] == "human.local"
+    decision = json.loads(result.stdout)["decision"]
+    assert decision["actor"]["actorId"] == "human.local"
+    assert "identitySource" not in decision
 
 
 def test_interactive_decision_requires_the_digest(

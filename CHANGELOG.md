@@ -107,7 +107,10 @@
   decision endpoint of the local API with 403. This is a defect fix and applies to every project.
   A new optional `governance` section, written by `harness init`, adds: `deciderIdentity: git`,
   which records the Git user (`actorId` from `user.email`, `displayName` `Name <email>`) when no
-  `--actor` is given (otherwise `human.local` and `human.web` as before); `confirmDecisionDigest`,
+  `--actor` is given (otherwise `human.local` and `human.web` as before) and records in a gate
+  decision where the id came from (`identitySource`: `explicit`, `git`, or `fallback` when Git has
+  no usable identity, in which case the default id is used with a warning instead of failing);
+  `confirmDecisionDigest`,
   which on a terminal shows the gate, the ChangeSet digest and its files and asks for the first 12
   characters of the digest before `gate decide` records anything (exit 5 on a wrong answer); and
   `trustedHosts` (`127.0.0.1`, `localhost`, `::1`), which makes the local API answer 400 to any

@@ -30,7 +30,7 @@ from governed_harness.configuration.models import (
 from governed_harness.domain.actors import (
     NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
 )
-from governed_harness.domain.actors import require_human_actor
+from governed_harness.domain.actors import IdentitySource, require_human_actor
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -430,6 +430,7 @@ class RunEngine:
         actor_id: str,
         rationale: str,
         actor_display_name: str | None = None,
+        identity_source: IdentitySource | None = None,
     ) -> HumanDecision:
         require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
@@ -473,6 +474,7 @@ class RunEngine:
             configuration_digest=execution.configuration_digest,
             policy_digest=execution.policy_digest,
             acceptance_contract_digest=contract_digest,
+            identity_source=identity_source,
             decided_at=decided_at,
             expires_at=decided_at + timedelta(hours=expiry) if expiry else None,
         )

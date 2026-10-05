@@ -485,13 +485,21 @@ class HumanDecision(StrictModel):
     """Digest of the acceptance contract frozen in SPECIFICATION that the decision is bound to
     (``governance.pinTaskRevision``); left out of the serialized record when absent, so
     decisions recorded without the setting keep their stored form."""
+    identity_source: Literal["explicit", "git", "fallback", "default"] | None = None
+    """Where the actor id came from under ``governance.deciderIdentity: git``: ``--actor``
+    (``explicit``), the Git user (``git``) or, when Git has no usable identity, the default
+    actor (``fallback``). Left out when absent, like ``acceptance_contract_digest``."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         data: dict[str, Any] = handler(self)
-        if self.acceptance_contract_digest is None:
-            data.pop("acceptanceContractDigest", None)
-            data.pop("acceptance_contract_digest", None)
+        for name, alias in (
+            ("acceptance_contract_digest", "acceptanceContractDigest"),
+            ("identity_source", "identitySource"),
+        ):
+            if getattr(self, name) is None:
+                data.pop(alias, None)
+                data.pop(name, None)
         return data
 
 

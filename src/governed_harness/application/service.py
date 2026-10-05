@@ -21,6 +21,7 @@ from governed_harness.configuration.declared import declared_settings_report
 from governed_harness.configuration.loader import find_project_config, load_yaml
 from governed_harness.domain.actors import (
     DEFAULT_CLI_ACTOR,
+    IdentitySource,
     actor_id_from_identity,
     identity_display_name,
     require_human_actor,
@@ -69,6 +70,11 @@ from .task_loader import load_task_file
 
 
 class HarnessApplication:
+    def __init__(self) -> None:
+        self.notices: list[str] = []
+        """Warnings for the person (the CLI prints them on standard error)."""
+        self.last_identity_source: IdentitySource = "default"
+
     def init(self, path: Path, *, force: bool = False) -> dict[str, Any]:
         config = initialize_project(path, force=force)
         return {"status": "PASSED", "configuration": str(config)}
@@ -307,6 +313,9 @@ class HarnessApplication:
                 actor_id=decider,
                 rationale=rationale,
                 actor_display_name=display_name,
+                identity_source=self.last_identity_source
+                if services.resolved.project.governance_settings.git_decider
+                else None,
             )
             execution = (
                 engine.continue_execution(execution_id)
@@ -851,17 +860,33 @@ class HarnessApplication:
     def _recommendation_key(recommendation_id: str) -> str:
         return f"recommendation/{recommendation_id}"
 
-    @staticmethod
     def _decider(
-        services: EngineServices, actor_id: str | None, default: str = DEFAULT_CLI_ACTOR
+        self, services: EngineServices, actor_id: str | None, default: str = DEFAULT_CLI_ACTOR
     ) -> tuple[str, str | None]:
         """The actor id (and display name) of the person acting: the explicit ``--actor``, else
-        the Git user under ``governance.deciderIdentity: git``, else ``default``."""
+        the Git user under ``governance.deciderIdentity: git``, else ``default``.
+
+        Where it came from is kept in ``last_identity_source``: ``explicit``, ``git``,
+        ``fallback`` (the Git user was asked for but Git has no usable ``user.email`` or
+        ``user.name``: the 1.0.0 default is used and a notice says so) or ``default``."""
         if actor_id:
+            self.last_identity_source = "explicit"
             return actor_id, None
         if services.resolved.project.governance_settings.git_decider:
             name, email = GitAdapter(services.paths.workspace).user_identity()
-            return actor_id_from_identity(name, email), identity_display_name(name, email)
+            try:
+                decider = actor_id_from_identity(name, email)
+            except ConfigurationError:
+                self.last_identity_source = "fallback"
+                self.notices.append(
+                    f"governance.deciderIdentity is git but Git has no usable user.email or "
+                    f"user.name; recorded the actor as {default}. Set them with git config "
+                    f"user.email / user.name, or pass --actor"
+                )
+                return default, None
+            self.last_identity_source = "git"
+            return decider, identity_display_name(name, email)
+        self.last_identity_source = "default"
         return default, None
 
     @staticmethod
