@@ -168,6 +168,24 @@
       "title": "RuntimeConfig",
       "type": "object"
     },
+    "VerificationConfig": {
+      "additionalProperties": false,
+      "description": "What VERIFICATION does with identified requirements that no test names.\n\n``enforce`` records each one as a ``HIGH`` finding, which fails the gate under the default\n``findingBlockSeverities``; ``warn`` records it as a ``LOW`` finding; ``off`` skips the\ncheck.",
+      "properties": {
+        "requirementTraceability": {
+          "default": "off",
+          "enum": [
+            "enforce",
+            "warn",
+            "off"
+          ],
+          "title": "Requirementtraceability",
+          "type": "string"
+        }
+      },
+      "title": "VerificationConfig",
+      "type": "object"
+    },
     "WorkspaceConfig": {
       "additionalProperties": false,
       "properties": {
@@ -289,6 +307,17 @@
       },
       "title": "Validators",
       "type": "array"
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "workflow": {
       "default": "default_development",

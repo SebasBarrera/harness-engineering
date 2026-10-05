@@ -45,6 +45,25 @@
   without the key runs with `off` and keeps its configuration snapshot digest. The simulated
   provider and the validators are not wrapped. The usage flow of `scripts/demo_flows.py` sets
   `agentSandbox: 'off'`, since it runs on hosts without a mechanism.
+- `VERIFICATION` reports requirements that no test names (#35). Agents claimed that every
+  requirement had tests, and the suite ran without relating requirements to tests. A new step,
+  `traceability.requirements`, runs after the technology validators: it identifies a requirement by
+  the token that starts its text (`A1.`, `[B12]` or `X8:` followed by a space) or by a `requirementId` written in the
+  task file (generated ids do not count; requirements without an identifier are skipped and
+  counted), and looks for a test whose file, class or function name contains the identifier as a
+  token (`test_a1_...`, `TestA1`) or whose docstring, string constants or source contain it as a
+  whole word (Python tests read with `ast`, Node tests and unparsable files as text). The new
+  `verification.requirementTraceability` setting decides what an untraced requirement means:
+  `enforce` (written by `harness init`) records a `HIGH` finding
+  `traceability.requirement-untested`, so the gate is `FAILED` and `APPROVE` exits with 5; `warn`
+  records a `LOW` finding; `off` skips the check. A `project.yaml` without the key runs with `off`
+  and keeps its configuration snapshot digest. The requirement-to-test mapping is `VERIFICATION`
+  evidence; new contract: `requirement-traceability.schema.json`. Because `init` enables the
+  check, the tasks of the quickstart (`docs/guides/task.yaml`), `examples/task-python.yaml` and the
+  demonstration flows name their requirement in the added test (`test_req_discount_at_threshold`,
+  a `req_precedence:` test title), the brownfield example identifies its requirement as
+  `base64_decode_rejects_non_ascii` (its patch is unchanged), and a traceability flow was added to
+  `scripts/demo_flows.py`.
 
 ## 1.0.0 - 2026-10-01
 

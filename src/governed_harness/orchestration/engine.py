@@ -89,7 +89,10 @@ from governed_harness.runtime.sandbox import (
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
+    TRACEABILITY_VALIDATOR_ID,
     IndependentReviewValidator,
+    RequirementTraceabilityValidator,
+    TraceabilityOutput,
     ValidationContext,
     ValidatorRegistry,
 )
@@ -829,6 +832,11 @@ class RunEngine:
             steps=steps,
             risks=("Repository content is untrusted", "Approval becomes stale after any change"),
             validator_ids=tuple(item.validator_id for item in self.s.resolved.effective_validators)
+            + (
+                (TRACEABILITY_VALIDATOR_ID,)
+                if self.s.resolved.project.requirement_traceability != "off"
+                else ()
+            )
             + ("review.independent",),
             provenance=self._provenance(execution),
         )
@@ -1108,6 +1116,11 @@ class RunEngine:
             )
             self._save_validator_output(execution, output)
             outputs.append(output)
+        policy = self.s.resolved.project.requirement_traceability
+        if policy != "off":
+            outputs.append(
+                self._verify_requirement_traceability(execution, phase, change_set, policy)
+            )
         mandatory_non_passed = [
             output.result
             for output in outputs
@@ -1122,6 +1135,53 @@ class RunEngine:
                 evidence,
             )
         return PhaseOutcome(ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence)
+
+    def _verify_requirement_traceability(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        change_set: ChangeSet,
+        policy: Literal["enforce", "warn"],
+    ) -> TraceabilityOutput:
+        """Relate the task's identified requirements to the tests of the workspace; the mapping
+        is recorded as VERIFICATION evidence and each untraced requirement as a finding."""
+        task = self.get_task(execution.task_id)
+        validator = RequirementTraceabilityValidator(
+            policy, (profile.technology for profile in self.s.resolved.profiles)
+        )
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id=f"validator.{validator.validator_id}", version="1"
+        )
+        output = validator.execute(
+            ValidationContext(
+                execution_id=execution.execution_id,
+                workspace=self.s.paths.workspace,
+                task=task,
+                change_set=change_set,
+                definition=ValidatorDefinition(
+                    id=validator.validator_id, mandatory=policy == "enforce"
+                ),
+                grants=grants_from_rules(
+                    execution.execution_id, actor, self.s.resolved.effective_capabilities
+                ),
+                artifact_store=self.s.artifacts,
+                process_runner=SafeProcessRunner(self.s.paths.workspace),
+                provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+                cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+                max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+            )
+        )
+        if output.report is not None and output.report_ref is not None:
+            self._record_evidence(
+                execution,
+                phase.phase_id,
+                EvidenceKind.TEST_REPORT,
+                output.report_ref,
+                f"Requirement traceability: {output.result.summary}",
+                supports=tuple(item.requirement_id for item in output.report.requirements),
+            )
+        self._save_validator_output(execution, output)
+        return output
 
     def _phase_independent_review(
         self, execution: Execution, phase: PhaseExecution

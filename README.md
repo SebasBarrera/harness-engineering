@@ -274,6 +274,10 @@ weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessB
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
 findings, `off` skips the check. Only `enforce` accepts a task without acceptance criteria;
 `INTENT` then asks for them (rule `C0`) before anything else runs.
+`verification.requirementTraceability` decides what `VERIFICATION` does with a requirement that
+carries an identifier (`A1. ...`, `[B12] ...` or an explicit `requirementId`) and that no test
+names: `enforce` (written by `init`) records a `HIGH` finding, so the gate is `FAILED`; `warn`
+records a `LOW` finding; `off` (a file without the key) skips the check.
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles

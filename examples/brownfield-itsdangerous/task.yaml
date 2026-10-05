@@ -2,7 +2,7 @@ taskId: task_itsdangerous_base64_non_ascii
 title: Reject non-ASCII input in base64_decode
 intent: base64_decode must reject non-ASCII input instead of silently dropping characters.
 requirements:
-  - requirementId: req_reject_non_ascii
+  - requirementId: base64_decode_rejects_non_ascii
     text: base64_decode raises BadData when the input contains non-ASCII characters.
     source: brownfield-demo
 acceptanceCriteria:

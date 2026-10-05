@@ -156,6 +156,16 @@ Since 0.9.0 the latest attempt of each validator counts. The rest of the case is
 exit codes for `run start` (6) and `run continue` (4), 298 tests, the same ChangeSet digest and the
 same number of events. The tag `v0.8.0` keeps the evaluated behavior.
 
+The figures above were recorded before `harness init` enabled the requirement-traceability check
+(`verification.requirementTraceability: enforce`, see the
+[configuration reference](../reference/configuration.md#requirement-traceability)). With it,
+`VERIFICATION` also records a `traceability.requirements` result and its evidence on each attempt,
+so the number of events is higher than 46; that count has not been re-recorded (the case needs
+network access). The requirement of `task.yaml` is identified by its `requirementId`,
+`base64_decode_rejects_non_ascii`, which the added test names
+(`test_base64_decode_rejects_non_ascii`), so the requirement is traced, the gate is not affected
+and the patch, and therefore the ChangeSet digest, is unchanged.
+
 ## Checklist for your own repository
 
 - [ ] Commit or stash unrelated work before `harness run start`.

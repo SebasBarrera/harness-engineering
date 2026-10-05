@@ -158,6 +158,25 @@ class IntakeConfig(ConfigModel):
     criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
 
 
+RequirementTraceabilityPolicy = Literal["enforce", "warn", "off"]
+
+DEFAULT_REQUIREMENT_TRACEABILITY: RequirementTraceabilityPolicy = "off"
+"""Policy of a project.yaml without ``verification.requirementTraceability`` (files written
+before 1.1): no traceability check, as in 1.0.0."""
+
+
+class VerificationConfig(ConfigModel):
+    """What VERIFICATION does with identified requirements that no test names.
+
+    ``enforce`` records each one as a ``HIGH`` finding, which fails the gate under the default
+    ``findingBlockSeverities``; ``warn`` records it as a ``LOW`` finding; ``off`` skips the
+    check."""
+
+    requirement_traceability: RequirementTraceabilityPolicy = Field(
+        default=DEFAULT_REQUIREMENT_TRACEABILITY, alias="requirementTraceability"
+    )
+
+
 class ProjectConfiguration(ConfigModel):
     config_version: Literal["1.0"] = Field(alias="configVersion")
     project_id: str = Field(alias="projectId")
@@ -174,6 +193,7 @@ class ProjectConfiguration(ConfigModel):
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     retention: dict[str, Any] = Field(default_factory=dict)
     intake: IntakeConfig | None = None
+    verification: VerificationConfig | None = None
 
     @field_validator("profiles")
     @classmethod
@@ -187,6 +207,16 @@ class ProjectConfiguration(ConfigModel):
         """The effective acceptance-criteria policy: ``warn`` when ``intake`` is absent."""
         return self.intake.criteria_policy if self.intake else DEFAULT_CRITERIA_POLICY
 
+    @property
+    def requirement_traceability(self) -> RequirementTraceabilityPolicy:
+        """The effective requirement-traceability policy: ``off`` when ``verification`` is
+        absent."""
+        return (
+            self.verification.requirement_traceability
+            if self.verification
+            else DEFAULT_REQUIREMENT_TRACEABILITY
+        )
+
     @model_serializer(mode="wrap")
     def _omit_absent_intake(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         # A file without the section serializes as before, so the configuration snapshot
@@ -194,6 +224,8 @@ class ProjectConfiguration(ConfigModel):
         data: dict[str, Any] = handler(self)
         if self.intake is None:
             data.pop("intake", None)
+        if self.verification is None:
+            data.pop("verification", None)
         return data
 
 

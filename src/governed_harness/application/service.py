@@ -84,6 +84,7 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "verification": {"requirementTraceability": resolved.project.requirement_traceability},
             "agentSandbox": {
                 "mode": resolved.project.runtime.effective_agent_sandbox,
                 "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),

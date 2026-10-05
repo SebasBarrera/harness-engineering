@@ -6,8 +6,8 @@ provider, and every command's exit code is checked against the documented expect
 The script is used by CI in three ways:
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
-* ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory
-  and clarification flows, leaving the projects in ``--workdir`` so
+* ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
+  clarification and traceability flows, leaving the projects in ``--workdir`` so
   ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
@@ -57,7 +57,7 @@ implementation:
       operation: append
       content: |
 
-        def test_at_threshold() -> None:
+        def test_req_discount_at_threshold() -> None:
             assert apply_discount(100, 100, 0.1) == 90
 """
 
@@ -85,7 +85,7 @@ implementation:
       operation: append
       content: |
 
-        test('task overrides repository', () => {
+        test('req_precedence: task overrides repository', () => {
           assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {mode:'task'}), {mode:'task'});
         });
 """
@@ -870,6 +870,68 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     approve(t, flow, root, run_id, "Elicited criteria covered by the validators")
 
 
+UNTRACED_TASK = """\
+taskId: task_python_untraced
+title: Apply a percentage discount above a threshold
+intent: Apply a percentage discount only when the subtotal reaches the threshold.
+requirements:
+  - "A1. A subtotal at or above the threshold is reduced by the rate."
+  - "A2. A subtotal below the threshold is unchanged."
+acceptanceCriteria:
+  - criterionId: ac_at_threshold
+    text: apply_discount(100, 100, 0.1) returns 90.
+implementation:
+  mode: patch
+  patches:
+    - path: src/sample/pricing.py
+      operation: replace
+      content: |
+        def apply_discount(subtotal: float, threshold: float, rate: float) -> float:
+            return subtotal * (1 - rate) if subtotal >= threshold else subtotal
+    - path: tests/test_pricing.py
+      operation: append
+      content: |
+
+        def test_a1_at_threshold() -> None:
+            assert apply_discount(100, 100, 0.1) == 90
+"""
+
+
+def flow_traceability(t: Transcript, root: Path) -> None:
+    """Requirement A2 is named by no test: under the enforce policy written by init it becomes a
+    HIGH finding of traceability.requirements, the gate is FAILED and APPROVE exits with 5. The
+    mapping of A1 to its test is recorded as VERIFICATION evidence."""
+    flow = "traceability"
+    python_project(root)
+    (root / "task.yaml").write_text(UNTRACED_TASK)
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_untraced"], 4)[
+        "executionId"
+    ]
+    status = t.json(flow, root, ["status", *here, "--run", run_id], 0)
+    t.check(flow, status["gate"]["status"] == "FAILED", "the gate is FAILED")
+    findings = [
+        item
+        for item in t.json(flow, root, ["findings", "list", *here, "--run", run_id], 0)
+        if item["validatorId"] == "traceability.requirements"
+    ]
+    t.check(
+        flow,
+        [(item["ruleId"], item["severity"]) for item in findings]
+        == [("traceability.requirement-untested", "HIGH")]
+        and "A2" in findings[0]["message"],
+        "one HIGH finding names the untraced requirement A2",
+    )
+    digest = current_digest(t, flow, root, run_id)
+    decide = ["gate", "decide", *here, "--run", run_id, "--change-set-digest", digest]
+    decide += ["--actor", "human.reviewer"]
+    t.run(flow, root, [*decide, "--decision", "APPROVE", "--rationale", "Tests pass"], 5)
+    # The rejected run ends FAILED, which gate decide reports with exit 6.
+    t.run(flow, root, [*decide, "--decision", "REJECT", "--rationale", "A2 has no test"], 6)
+
+
 FLOWS = {
     "quickstart": flow_quickstart,
     "later-change": flow_later_change,
@@ -878,6 +940,7 @@ FLOWS = {
     "node": flow_node,
     "memory": flow_memory,
     "clarification": flow_clarification,
+    "traceability": flow_traceability,
 }
 
 

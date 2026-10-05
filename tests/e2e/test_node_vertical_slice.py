@@ -41,7 +41,9 @@ def test_node_profile_runs_test_lint_and_typecheck(node_workspace: Path, tmp_pat
     assert pending.status is ResultStatus.BLOCKED
     assert pending.current_phase is PhaseId.DECISION
     status = app.status(node_workspace, pending.execution_id)
-    assert status["validationSummary"]["byStatus"] == {"PASSED": 4}
+    # node.test, node.lint, node.typecheck, the requirement-traceability check that init
+    # enables (the task has no requirements, so it has nothing to report) and the review.
+    assert status["validationSummary"]["byStatus"] == {"PASSED": 5}
     _, final = app.decide_gate(
         node_workspace,
         execution_id=pending.execution_id,
