@@ -151,10 +151,15 @@ class WorkspaceSnapshotter:
     def _read_text(self, path: Path, size: int) -> str | None:
         if size > self.max_text_bytes:
             return None
-        data = path.read_bytes()
-        if b"\x00" in data:
-            return None
-        try:
-            return data.decode("utf-8")
-        except UnicodeDecodeError:
-            return None
+        return decode_text(path.read_bytes(), self.max_text_bytes)
+
+
+def decode_text(data: bytes, max_text_bytes: int = 2_000_000) -> str | None:
+    """The text of a file's bytes as the ChangeSet diff reads it: ``None`` for a file larger
+    than ``max_text_bytes``, with a NUL byte or that is not UTF-8 (diffed as binary)."""
+    if len(data) > max_text_bytes or b"\x00" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None

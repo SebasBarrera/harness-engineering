@@ -26,6 +26,8 @@ from governed_harness.agents.native import native_provider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.delivery.closure import create_closure_commit
+from governed_harness.delivery.vcs import VcsError
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -1424,6 +1426,9 @@ class RunEngine:
             decision.change_set_digest, execution.change_set_digest
         ):
             return PhaseOutcome(ResultStatus.BLOCKED, "Approval does not match current ChangeSet")
+        delivered = self._deliver(execution, phase, decision)
+        if delivered is not None:
+            return delivered
         self.s.events.verify_chain(execution.execution_id)
         trace = self.s.events.export_jsonl(execution.execution_id)
         trace_ref = self.s.artifacts.put(
@@ -1491,6 +1496,58 @@ class RunEngine:
             "Execution closed with verified trace and non-mutating retrospective",
             (evidence.artifact_ref, metrics_ref.uri, retrospective_ref.uri),
         )
+
+    def _deliver(
+        self, execution: Execution, phase: PhaseExecution, decision: HumanDecision
+    ) -> PhaseOutcome | None:
+        """``delivery.closureCommit``: write the approved ChangeSet as a commit with trailers.
+        ``None`` lets CLOSURE go on; an outcome stops it."""
+        delivery = self.s.resolved.project.delivery_settings
+        if delivery.mode == "off":
+            return None
+        change_set = self.current_change_set(execution.execution_id)
+        try:
+            commit = create_closure_commit(
+                self.s.paths.workspace,
+                delivery,
+                execution_id=execution.execution_id,
+                task=self.get_task(execution.task_id),
+                change_set=change_set,
+                decision=decision,
+            )
+        except VcsError as error:
+            self.s.events.append(
+                execution.execution_id,
+                "delivery.commit.failed",
+                {"mode": delivery.mode, "reason": str(error)},
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return PhaseOutcome(ResultStatus.BLOCKED, f"Closure commit not created: {error}")
+        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        ref = self.s.artifacts.put_json(
+            record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
+        )
+        summary = (
+            f"Closure commit {commit.commit[:12]} ({commit.status.lower()})"
+            + (f" on branch {commit.branch}" if commit.branch else " on the current branch")
+            if commit.commit
+            else f"Closure commit skipped: {commit.reason}"
+        )
+        self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.OTHER,
+            ref,
+            summary,
+            supports=(change_set.change_set_id, decision.decision_id),
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "delivery.commit.skipped" if commit.status == "SKIPPED" else "delivery.commit.created",
+            record,
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return None
 
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
