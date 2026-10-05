@@ -203,6 +203,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "applyNetworkPolicy": True,
             "stopTheLine": "restore",
             "phasePermissions": True,
+            "enforceWorkflow": True,
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
