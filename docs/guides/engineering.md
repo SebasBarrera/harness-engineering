@@ -125,8 +125,8 @@ and its layers become the rules:
 harness architecture decide --run RUN --option hex --digest DIGEST --rationale "..."
 ```
 
-**Enforcement.** The rules in force (configured layers, else the approved survey or ADR) are the
-#40 forbidden-dependency check generalized to every language (validator `harness.layers`, rule
+**Enforcement.** The rules in force (configured layers, else the approved survey or ADR) are the forbidden-dependency
+check of issue #40 generalized to every language (validator `harness.layers`, rule
 `architecture.layer-violation`): the imports of each changed file are read per language (Python
 AST; JavaScript and TypeScript `import`/`require` with relative paths resolved; Java, Kotlin and
 Scala `import`; C# `using`; PHP `use`; Go import paths; Rust `use crate::`; Swift `import`; Ruby
