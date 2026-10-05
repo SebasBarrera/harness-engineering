@@ -39,6 +39,27 @@ without criteria never passes `INTENT`, whatever the policy is when the run star
 stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
 [tasks without acceptance criteria](../reference/configuration.md#tasks-without-acceptance-criteria).
 
+## Engineering settings (#56)
+
+No phase is added. Under the optional wave 6 settings (see
+[standards, principles, testing and architecture](../guides/engineering.md)):
+
+- `INTENT` decides deterministically whether the project is new or existing and, under
+  `intake.projectSetup: ask`, asks once per project the architecture, the testing strategy and
+  the standards it cannot establish (rule `P1`); for a new project with `architecture.mode:
+  agent` it asks one architecture call for options and waits until a person chooses one, which
+  is recorded as an ADR.
+- `DISCOVERY` surveys an existing project once with one architecture call, cached in
+  `.harness/architecture.md`, and waits until a person approves or rejects the layer rules it
+  inferred.
+- `SPECIFICATION` writes the criteria as Gherkin scenarios under `testing.strategy: bdd`.
+- `IMPLEMENTATION` gives the agent the standards cards of its files, the testing strategy and the
+  layers; with the `session` provider it waits for the agent session that drives the harness
+  (embedded mode).
+- `VERIFICATION` adds the principles proxies, the layer rules and, under `tdd`, the red, green
+  and refactor evidence; `INDEPENDENT_REVIEW` gives the reviewer the checklist of what no tool
+  verifies.
+
 ## Tracing requirements to tests
 
 After the technology validators, `VERIFICATION` relates every identified requirement of the task to

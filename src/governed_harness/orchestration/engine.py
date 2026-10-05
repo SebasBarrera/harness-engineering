@@ -26,6 +26,7 @@ from governed_harness.agents.environment import (
     secret_values,
 )
 from governed_harness.agents.native import native_provider
+from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
@@ -783,6 +784,9 @@ class RunEngine:
         if clarification.confirm_contract and self.ladder.active:
             # The person confirms the operational contract with the answers (#55).
             self.ladder.intake.confirm_revision(execution, revision.task, actor)
+        if self.results.active:
+            # intake.projectSetup (#56): answers to P1 questions become the project's setup.
+            self.results.project_setup.store_answers(execution, record)
         self.anchor_chain(execution.execution_id)
         return record, revision.task
 
@@ -972,6 +976,11 @@ class RunEngine:
                     ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
                 )
         if not questions and ladder_block is None:
+            if self.results.active:
+                # architecture.mode: agent (#56): options for a new project, chosen by a person.
+                advised = self.results.architecture.advise(execution, phase, task)
+                if advised is not None:
+                    return advised
             return PhaseOutcome(
                 ResultStatus.PASSED,
                 "Intent is structured and identifiable",
@@ -1135,6 +1144,11 @@ class RunEngine:
                     blocked.summary,
                     (evidence.artifact_ref, snapshot_ref.uri, *blocked.evidence_refs),
                 )
+        if self.results.active:
+            # architecture.mode: agent (#56): one cached survey per existing project.
+            surveyed = self.results.architecture.survey(updated, phase, self.run_task(updated))
+            if surveyed is not None:
+                return surveyed
         return PhaseOutcome(
             ResultStatus.PASSED,
             "Workspace and baseline discovered",
@@ -1414,6 +1428,14 @@ class RunEngine:
             provider: AgentProvider = SimulatedAgentProvider()
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
             return provider, actor, sandbox, sandbox_refs
+        if provider_id == SESSION_PROVIDER:
+            # Embedded mode (#56): the agent session that drives the harness implements.
+            def changed() -> list[str]:
+                diff = self._compute_owned_diff(execution)
+                return [item.path for item in diff.changes]
+
+            actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.session", version="1")
+            return SessionAgentProvider(changed), actor, sandbox, sandbox_refs
         provider_config = self.s.resolved.project.agent_providers.get(provider_id)
         if provider_config is None:
             return PhaseOutcome(
@@ -2417,8 +2439,11 @@ class RunEngine:
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
         """Whether the run uses a configured command provider. The simulated provider is
-        deterministic and reads no feedback: the correction loop does not apply to it."""
-        return (self.s.state.get_flag(f"provider:{execution_id}") or "simulated") != "simulated"
+        deterministic and reads no feedback: the correction loop does not apply to it. Nor does
+        it to the embedded ``session`` provider (#56): the session reads the findings and edits
+        before it continues the run."""
+        provider = self.s.state.get_flag(f"provider:{execution_id}") or "simulated"
+        return provider not in {"simulated", SESSION_PROVIDER}
 
     def _feedback_applies(self, execution_id: str) -> bool:
         return self.s.resolved.project.runtime.feedback_enabled and self._external_provider(

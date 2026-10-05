@@ -13,6 +13,12 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
+from governed_harness.configuration.engineering import (
+    DEFAULT_DUPLICATION_WINDOW,
+    DEFAULT_FEATURES_DIRECTORY,
+    DEFAULT_INHERITANCE_DEPTH,
+    DEFAULT_MAX_CARDS,
+)
 from governed_harness.configuration.ladder import (
     DEFAULT_DEFERRED_EXPIRY_DAYS,
     DEFAULT_INSTRUCTION_FILES,
@@ -95,6 +101,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "target": DEFAULT_INTERRUPTION_TARGET,
                 "stopConditions": list(STOP_CONDITIONS),
             },
+            "projectSetup": "ask",
         },
         "verification": {
             "requirementTraceability": "enforce",
@@ -132,6 +139,15 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "mode": "warn",
                 "maxHunks": DEFAULT_MUTATION_HUNKS,
                 "maxSeconds": DEFAULT_MUTATION_SECONDS,
+            },
+            "principles": {
+                "mode": "enforce",
+                "duplicationWindow": DEFAULT_DUPLICATION_WINDOW,
+                "maxInheritanceDepth": DEFAULT_INHERITANCE_DEPTH,
+                "unusedPublic": True,
+                "boyScout": True,
+                "checklist": True,
+                "severity": "MEDIUM",
             },
         },
         "review": {
@@ -185,7 +201,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
-        # Nothing leaves the machine unless the task's contract (or a person) authorises it.
+        # Nothing leaves the machine unless the task's contract (or a person) authorises it;
+        # the forge of the pull request is detected from the origin remote (delivery.forge
+        # only to override it, #56).
         "delivery": {
             "closureCommit": "branch",
             "stage": True,
@@ -198,6 +216,15 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "files": list(DEFAULT_INSTRUCTION_FILES),
             "precedence": ["harness", *DEFAULT_INSTRUCTION_FILES],
         },
+        # Wave 6 (#56): standards packs, testing strategy and architecture.
+        "standards": {
+            "packs": ["auto"],
+            "cards": "auto",
+            "maxCards": DEFAULT_MAX_CARDS,
+            "tools": "detect",
+        },
+        "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
+        "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

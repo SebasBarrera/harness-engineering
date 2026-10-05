@@ -74,6 +74,7 @@ intake:
     - unresolvable-ambiguity
     - scope-contradiction
     - destructive-collision
+  projectSetup: ask
 verification:
   requirementTraceability: enforce
   outputParsers: true
@@ -116,6 +117,14 @@ verification:
     mode: warn
     maxHunks: 10
     maxSeconds: 300
+  principles:
+    mode: enforce
+    duplicationWindow: 6
+    maxInheritanceDepth: 3
+    unusedPublic: true
+    boyScout: true
+    checklist: true
+    severity: MEDIUM
 review:
   exceptions: true
   exceptionDays: 30
@@ -215,6 +224,19 @@ instructions:
   - .cursorrules
   - .cursor/rules
   - .github/copilot-instructions.md
+standards:
+  packs:
+  - auto
+  cards: auto
+  maxCards: 12
+  tools: detect
+testing:
+  strategy: auto
+  featuresDirectory: features
+architecture:
+  mode: agent
+  refresh: manual
+  enforce: enforce
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -273,6 +295,12 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `intake.operationalContract`, `intake.interruptions`, `context.locate` | off when absent; `init` writes `batch`, the budget and `agent` | The operational contract, the interruption budget and localisation in INTENT. See [intake contract](#operational-contract-and-interruptions). |
 | `environment`, `workspace.isolation`, `runtime.stateDir`, `toolchain.extendedProfiles` | 1.0.0 behaviour when absent; `init` writes each | Environment preflight, worktree isolation (mode `none`), the run registry outside the workspace and the extended built-in profiles. See [delivery hygiene](#delivery-hygiene). |
 | `delivery.stage`, `push`, `pullRequest`, `comment`, `instructions` | off when absent; `init` writes `stage: true`, `push: false`, no pull request, `comment: notClean` and the instruction files | Complete delivery as the operational contract authorises it, and `harness config lint`. See [complete delivery](#complete-delivery). |
+| `delivery.forge` | GitHub through `delivery.publisher` when absent; `init` writes none (the forge is detected from `origin`) | The forge of `harness pr publish`, `pr create` and `pr status`: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea. See [forges](../guides/forges.md). |
+| `standards.*` | off when absent; `init` writes `packs: [auto]`, `cards: auto`, `maxCards: 12`, `tools: detect` | Language standards packs: cards for the agent, the review checklist and the validators of the tools the repository configures. See [engineering standards](../guides/engineering.md#standards-packs). |
+| `verification.principles` | off when absent; `init` writes `mode: enforce` with every proxy on and `severity: MEDIUM` | Engineering principles as deterministic proxies and a checklist in the review call. See [engineering principles](../guides/engineering.md#engineering-principles). |
+| `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
+| `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
+| `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 
 ## Located findings
 
@@ -284,7 +312,9 @@ with rule `<validator>.<tool rule>` (for example `python.ruff.F401`, `python.myp
 recognized by content: SARIF 2.1.0, ESLint JSON, Ruff JSON, JUnit XML (printed, or written to a
 file named with `--junitxml`, `--junit-xml`, `--output-file` or `-o` inside the workspace), and
 the text output of Ruff (concise and full), Mypy, TypeScript `tsc` and pytest (`FAILED`/`ERROR`
-summary lines, with the line of the test taken from the traceback). Errors keep the severity of
+summary lines, with the line of the test taken from the traceback). Since #56 also Checkstyle
+XML (Checkstyle, ktlint, detekt, golangci-lint, SwiftLint, PHPStan), RuboCop JSON and Cargo JSON
+messages (Clippy); MSBuild diagnostics (`dotnet build`) only with `parser: msbuild`. Errors keep the severity of
 the summary finding, so the gate status is the one the summary already decides; warnings are
 `LOW` and notes are not recorded. At most 200 findings are kept per validator run, and an `INFO`
 finding counts the rest. A validator that passes is not parsed. The SARIF export
@@ -837,7 +867,7 @@ The keys a validator of a profile or of the project may set since 1.1:
 
 | Key | Default | Effect |
 |---|---|---|
-| `parser` | follow `verification.outputParsers` | Parse the output of a failing run with one format: `sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`; `auto` recognizes every format; `none` never parses. See [located findings](#located-findings). |
+| `parser` | follow `verification.outputParsers` | Parse the output of a failing run with one format: `sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`, `checkstyle`, `rubocop`, `cargo`, `msbuild`; `auto` recognizes every format but `msbuild`; `none` never parses. See [located findings](#located-findings). |
 | `severity` | error as the failure finding, warning `LOW`, note `INFO` | Severity of a parsed issue by its level, for example `{error: HIGH, warning: MEDIUM}`. |
 | `failureSeverity` | `HIGH` when mandatory, `MEDIUM` otherwise | Severity of the finding of a failing run. |
 | `passEnv` | none | Variables of the harness's environment the command receives as they are; their values are redacted from every artifact. |
@@ -1084,8 +1114,8 @@ confirmContract: true
 |---|---|---|---|
 | `delivery.stage` | off | `true` | When the change is not pushed, CLOSURE stages only the run's files (`git add -- PATHS`, `git rm --cached` for deleted ones; never `add -A`). |
 | `delivery.push` | off | `false` | Push the closure commit's branch to the remote with the repository's hooks (never `--no-verify`, never forced). A refusal stops CLOSURE (`BLOCKED`); `run continue` tries again. The task's `contract.push` overrides it. |
-| `delivery.pullRequest` | none | `create: false`, `draft: true` | `create`, `base`, `labels`, `template` (a file of the repository, followed by the decision brief) and `draft`, after the push, through the forge of `delivery.publisher.kind` (GitHub; the forge interface is pluggable). The contract's `createPullRequest` overrides `create`. |
-| `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
+| `delivery.pullRequest` | none | `create: false`, `draft: true` | `create` the pull or merge request after the push, and `draft` (over `delivery.forge.draft`). The forge, the repository, the base (`delivery.forge.baseBranch`, else the remote's default branch), the labels and the template (followed by the decision brief) are the forge layer's: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from `origin` unless `delivery.forge` names it (see [forges](../guides/forges.md)). Created once per run; the contract's `createPullRequest` overrides `create`. |
+| `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request through the same forge (one comment per run, updated on a retry) when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
 | `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
 
 ## Technology profiles

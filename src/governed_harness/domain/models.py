@@ -469,12 +469,13 @@ class Task(StrictModel):
         return data
 
 
-ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2", "A3"]
+ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2", "A3", "P1"]
 """``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 1.1 ``A1`` is a question an
 agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37), ``A2``
 a question about an answer that refers to something the task and the workspace do not contain
-(``intake.validateAnswers``) and ``A3`` a question of the localisation call about where to
-intervene (``context.locate``, #55)."""
+(``intake.validateAnswers``), ``A3`` a question of the localisation call about where to
+intervene (``context.locate``, #55) and ``P1`` a project setup question (architecture, testing
+strategy, standards) of ``intake.projectSetup`` (#56), with a ``project:<part>`` target."""
 
 
 class ClarificationQuestion(StrictModel):
@@ -694,9 +695,10 @@ class AgentInvocation(StrictModel):
     usage_ref: str | None = None
     output_ref: str | None = None
     error: HarnessErrorRecord | None = None
-    call_kind: Literal["implement", "clarify", "review", "plan", "acceptance", "locate"] | None = (
-        None
-    )
+    call_kind: (
+        Literal["implement", "clarify", "review", "plan", "acceptance", "architecture", "locate"]
+        | None
+    ) = None
     """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
     so invocations recorded without the agent-results settings keep their stored form."""
     effort: str | None = None

@@ -160,6 +160,7 @@
             "review",
             "plan",
             "acceptance",
+            "architecture",
             "locate"
           ],
           "type": "string"

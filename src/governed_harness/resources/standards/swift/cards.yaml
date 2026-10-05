@@ -1,0 +1,44 @@
+pack: swift
+title: Swift
+cards:
+  - id: swift.no-force-unwrap
+    title: No force unwrapping or casting
+    rule: Do not use ! to unwrap optionals or as! to cast; use if let, guard let, ?? or as?.
+    rationale: A forced unwrap is a crash on the first nil.
+    exceptions:
+      - IBOutlets and test code where a nil means the test setup is wrong.
+    appliesTo: ["**/*.swift"]
+    verifiedBy: ["swiftlint:force_unwrapping", "swiftlint:force_cast", "swiftlint:force_try"]
+  - id: swift.value-types
+    title: Value types and let
+    rule: Prefer structs and enums with let properties; use classes for identity or shared mutable state only.
+    rationale: Value types avoid aliasing defects.
+    appliesTo: ["**/*.swift"]
+    verifiedBy: ["review"]
+  - id: swift.memory
+    title: No retain cycles
+    rule: Capture self weakly (or unowned with a proven lifetime) in escaping closures stored by self; declare delegates weak.
+    rationale: Strong cycles leak view controllers and their resources.
+    appliesTo: ["**/*.swift"]
+    verifiedBy: ["swiftlint:weak_delegate", "review"]
+  - id: swift.small-functions
+    title: Small, simple functions
+    rule: Keep function bodies short and their complexity low.
+    rationale: Complexity predicts defects.
+    appliesTo: ["**/*.swift"]
+    verifiedBy: ["swiftlint:function_body_length", "swiftlint:cyclomatic_complexity", "swiftlint:function_parameter_count"]
+    principle: kiss
+  - id: swift.naming
+    title: Swift API Design Guidelines
+    rule: Name types in UpperCamelCase and everything else in lowerCamelCase; read call sites as English phrases.
+    rationale: Conventional names make APIs predictable.
+    appliesTo: ["**/*.swift"]
+    verifiedBy: ["swiftlint:identifier_name", "swiftlint:type_name"]
+    principle: least-astonishment
+  - id: swift.ui-state
+    title: View state in a view model
+    rule: Keep SwiftUI views declarative and move state changes and business rules into an observable view model (MVVM) or a reducer (MVI).
+    rationale: Testable state outside the view hierarchy.
+    appliesTo: ["**/*View.swift", "**/*ViewModel.swift", "**/*Store.swift"]
+    verifiedBy: ["review"]
+    principle: srp

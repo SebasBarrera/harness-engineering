@@ -287,23 +287,13 @@ class EnvironmentConfig(_Section):
 
 
 class PullRequestConfig(_Section):
-    """``delivery.pullRequest``: create the pull request of an approved run's branch (#55,
-    item 13), when the operational contract authorises it."""
+    """``delivery.pullRequest``: create the pull or merge request of an approved run's branch
+    at CLOSURE (#55, item 13), when the operational contract authorises it. Where and how is
+    the forge's (``delivery.forge``, #56): the forge, the repository, ``baseBranch``, ``labels``
+    and ``template``; ``draft`` here takes precedence over ``delivery.forge.draft``."""
 
     create: bool | None = None
-    base: str | None = None
-    labels: tuple[str, ...] | None = None
-    template: str | None = None
     draft: bool | None = None
-
-    @field_validator("template")
-    @classmethod
-    def _relative_template(cls, value: str | None) -> str | None:
-        if value is not None:
-            path = PurePosixPath(value.replace("\\", "/"))
-            if path.is_absolute() or ".." in path.parts:
-                raise ValueError(f"the template path must be relative: {value!r}")
-        return value
 
 
 CommentPolicy = Literal["notClean", "always", "never"]

@@ -1,0 +1,47 @@
+pack: python
+detect:
+  markers: [pyproject.toml, setup.py, setup.cfg, requirements.txt, Pipfile]
+  extensions: [.py]
+runner:
+  test: [python, -m, pytest, -q]
+  testFiles: true
+  bdd: [python, -m, behave]
+bddFrameworks:
+  - name: behave
+    markers: [features/steps, features/environment.py]
+    dependencies: [behave]
+  - name: pytest-bdd
+    dependencies: [pytest-bdd]
+tools:
+  - id: ruff
+    title: Ruff
+    configFiles: [ruff.toml, .ruff.toml, "pyproject.toml#[tool.ruff"]
+    command: [python, -m, ruff, check, --output-format, json, .]
+    parser: ruff
+    coveredBy: [python.ruff]
+    principles: [kiss, least-astonishment]
+    recommended: |
+      [tool.ruff.lint]
+      select = ["E", "F", "W", "B", "N", "C90", "ANN", "S", "BLE", "SIM", "T20", "PLR"]
+      [tool.ruff.lint.mccabe]
+      max-complexity = 10
+  - id: mypy
+    title: Mypy
+    configFiles: [mypy.ini, .mypy.ini, "pyproject.toml#[tool.mypy", "setup.cfg#[mypy"]
+    command: [python, -m, mypy, .]
+    parser: mypy
+    coveredBy: [python.mypy]
+    recommended: |
+      [tool.mypy]
+      strict = true
+  - id: bandit
+    title: Bandit
+    configFiles: [.bandit, "pyproject.toml#[tool.bandit"]
+    command: [python, -m, bandit, -q, -r, ., -f, sarif]
+    parser: sarif
+  - id: vulture
+    title: Vulture (dead code)
+    configFiles: ["pyproject.toml#[tool.vulture", .vulture_whitelist.py]
+    command: [python, -m, vulture]
+    parser: none
+    principles: [yagni]

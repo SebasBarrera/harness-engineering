@@ -111,7 +111,10 @@ The criterion ends `WAIVED` and is never certified; the decision is on the run's
   that pass without the change are `tests.weak`.
 - **Operational contract**: INTENT records what was agreed (objective, examples, scope,
   definition of done, verification level, branch, push, pull request, comment, coverage) and,
-  when it asks questions anyway, puts the open items in the same message.
+  when it asks questions anyway, puts the open items in the same message: one clarification
+  request carries the deterministic questions (`C0`-`C3`, `T1`), the agent review (`A1`, `A2`),
+  the project setup questions (`P1`, `intake.projectSetup`), the localisation questions (`A3`)
+  and the contract.
 - **Interruption budget**: the human interactions of a run are counted against a target and the
   stop conditions are recorded.
 - **Localisation**: a read-only `locate` call for M and L tasks, once per task revision, on the
@@ -123,7 +126,8 @@ The criterion ends `WAIVED` and is never certified; the decision is on the run's
 - **Run registry**: under `runtime.stateDir: auto` the state lives outside the workspace;
   `harness registry` lists the runs of several repositories.
 - **Complete delivery**: the change is staged, or pushed with the hooks and proposed as a pull
-  request with a comment when the run is not clean, as the contract authorises.
+  or merge request on the project's [forge](forges.md) with a comment when the run is not clean,
+  as the contract authorises.
 - **`harness config lint`** reports what agent instruction files say against the configuration.
 
 ## Where each setting is tested

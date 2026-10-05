@@ -6,11 +6,14 @@ operational contract (the task's ``contract``, else ``delivery``):
 * **push** (``push``): the closure commit's branch is pushed to the remote with ``git push`` and
   the repository's hooks run (never ``--no-verify``, never a forced push). A refusal stops
   CLOSURE with the reason; ``run continue`` tries again;
-* **pull request** (``pullRequest.create``): after the push, the forge
-  (``delivery.publisher.kind``) creates the pull request into ``pullRequest.base`` with the
-  repository's template (``pullRequest.template``) followed by the decision brief, the labels
-  and ``draft``; an open pull request of the branch is reused;
-* **comment** (``comment``): the brief is commented on that pull request when the run is not
+* **pull request** (``pullRequest.create``): after the push, the forge layer of #56
+  (``create_on_forge``: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from
+  ``origin`` unless ``delivery.forge`` names it) creates the pull or merge request into
+  ``delivery.forge.baseBranch`` (else the remote's default branch) with the repository's
+  template followed by the decision brief, ``delivery.forge.labels`` and ``pullRequest.draft``
+  (else ``delivery.forge.draft``); it is created once per run, a retry reuses the recorded one;
+* **comment** (``comment``): the brief is commented (created or updated, one per run) on that
+  pull request through the same forge when the run is not
   clean (``notClean``: a gate that did not pass, an exception, a blocking finding, a
   certification that is not ``CERTIFIED``), always, or never;
 * **stage** (``stage``): when the change is not pushed, only the run's files are staged in the
@@ -24,20 +27,19 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from governed_harness.configuration.models import PublisherConfig
 from governed_harness.delivery.closure import ClosureCommit
-from governed_harness.delivery.publisher import forge_for, render_brief_markdown
-from governed_harness.delivery.vcs import Git, VcsError, repository_from_remote
+from governed_harness.delivery.publisher import render_brief_markdown
+from governed_harness.delivery.vcs import Git, VcsError
 from governed_harness.domain.enums import DecisionKind, PhaseId, ResultStatus
 from governed_harness.domain.models import ChangeSet, Execution, HumanDecision, PhaseExecution, Task
 
 if TYPE_CHECKING:
-    from governed_harness.delivery.publisher import Transport
+    from governed_harness.forges import BaseForge, Transport
     from governed_harness.orchestration.engine import PhaseOutcome
     from governed_harness.orchestration.ladder import VerificationLadder
 
 TRANSPORT: dict[str, Transport | None] = {"override": None}
-"""A transport that replaces the configured one (tests talk to a fake forge through it)."""
+"""A transport that replaces the forge's network transport (tests talk to a fake forge)."""
 
 
 class LadderDelivery:
@@ -122,31 +124,34 @@ class LadderDelivery:
             )
         report["pushed"] = state["pushed"]
         if allowed["pullRequest"] and not state.get("pullRequest"):
+            from governed_harness.application.forges import create_on_forge, forge_settings
+
+            pull = hub.project.delivery_settings.pull_request
             try:
-                forge = self._forge()
-                pull = hub.project.delivery_settings.pull_request
-                base = (pull.base if pull and pull.base else None) or self._base(git, remote)
-                body = self._template(pull.template if pull else None) + self._brief(execution)
-                created = forge.create_pull_request(
+                # The forge layer of #56 records delivery.pull-request.created itself.
+                created = create_on_forge(
+                    hub.s,
+                    execution.execution_id,
                     head=branch,
-                    base=base,
+                    base=forge_settings(hub.s).base_branch or self._base(git, remote),
                     title=task.title,
-                    body=body,
-                    labels=tuple(pull.labels or ()) if pull else (),
-                    draft=bool(pull.draft) if pull else False,
+                    draft=pull.draft if pull else None,
+                    transport_override=TRANSPORT["override"],
                 )
             except Exception as error:  # noqa: BLE001 - the reason is reported, CLOSURE waits
                 return PhaseOutcome(
                     ResultStatus.BLOCKED, f"The pull request of {branch} was not created: {error}"
                 )
-            state["pullRequest"] = created
+            state["pullRequest"] = {
+                **created["pullRequest"],
+                "forge": created["forge"]["kind"],
+                "repository": created["forge"]["repository"],
+                "head": created["head"],
+                "base": created["base"],
+                "labels": created["labels"],
+                "template": created["template"],
+            }
             results.set_flag_json(state_key, state)
-            hub.s.events.append(
-                execution.execution_id,
-                "delivery.pull-request.created",
-                created,
-                phase_execution_id=phase.phase_execution_id,
-            )
         report["pullRequest"] = state.get("pullRequest")
         number = (state.get("pullRequest") or {}).get("number")
         if isinstance(number, int) and not state.get("commented"):
@@ -154,10 +159,8 @@ class LadderDelivery:
             reasons = self.not_clean(execution, decision)
             if policy == "always" or (policy == "notClean" and reasons):
                 try:
-                    posted = self._forge().comment(
-                        pull_request=number,
-                        run_id=execution.execution_id,
-                        body=self._brief(execution),
+                    posted = self._forge().upsert_comment(
+                        number, execution.execution_id, self._brief(execution)
                     )
                 except Exception as error:  # noqa: BLE001
                     return PhaseOutcome(
@@ -197,24 +200,14 @@ class LadderDelivery:
         head = value.stdout.decode("utf-8", "replace").strip()
         return head.split("/", 1)[1] if "/" in head else "main"
 
-    def _forge(self) -> Any:
-        hub = self.ladder
-        settings = hub.project.delivery_settings.publisher or PublisherConfig()
-        repository = settings.repository or repository_from_remote(hub.s.paths.workspace)
-        if repository is None:
-            raise VcsError(
-                "no repository: set delivery.publisher.repository (no GitHub remote named "
-                "origin was found)"
-            )
-        return forge_for(settings, repository, TRANSPORT["override"])
+    def _forge(self) -> BaseForge:
+        """The forge of the workspace (#56): ``delivery.forge``, else the ``origin`` remote."""
+        from governed_harness.application.forges import forge_settings
+        from governed_harness.forges import open_forge, resolve_forge
 
-    def _template(self, template: str | None) -> str:
-        if not template:
-            return ""
-        path = self.ladder.s.paths.workspace / template
-        if not path.is_file():
-            return ""
-        return path.read_text(encoding="utf-8", errors="replace").rstrip() + "\n\n"
+        services = self.ladder.s
+        resolved = resolve_forge(services.paths.workspace, forge_settings(services))
+        return open_forge(resolved, TRANSPORT["override"])
 
     def _brief(self, execution: Execution) -> str:
         from governed_harness.application.exceptions import brief_exceptions

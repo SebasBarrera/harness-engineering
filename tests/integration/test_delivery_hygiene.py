@@ -1,6 +1,6 @@
 """Delivery hygiene (#55, items 9, 10, 12, 13 and 14): the environment preflight, the run
 registry outside the workspace, worktree isolation per run, complete delivery (staging, a push
-that honours the hooks, the pull request and its comment through a pluggable forge) and the
+that honours the hooks, the pull request and its comment through the forge layer of #56) and the
 lint of agent instruction files."""
 
 from __future__ import annotations
@@ -328,14 +328,15 @@ def test_push_pull_request_and_comment_follow_the_contract(
         python_workspace,
         delivery={
             "closureCommit": "branch",
-            "pullRequest": {
-                "create": True,
-                "base": "main",
-                "labels": ["governed"],
-                "template": ".github/pull_request_template.md",
-            },
+            "pullRequest": {"create": True, "draft": True},
             "comment": "notClean",
-            "publisher": {"repository": "owner/name"},
+            # The forge layer of #56: the remote is a local path, so the forge is named.
+            "forge": {
+                "kind": "github",
+                "repository": "owner/name",
+                "baseBranch": "main",
+                "labels": ["governed"],
+            },
         },
     )
     application, execution = start(
@@ -354,7 +355,7 @@ def test_push_pull_request_and_comment_follow_the_contract(
     assert ("POST", "repos/owner/name/issues/7/comments") in posted
     pull = next(body for method, path, body in forge.calls if path == "repos/owner/name/pulls")
     assert pull["head"] == "feature/discount" and pull["base"] == "main"
-    assert pull["body"].startswith("## Why\n")
+    assert pull["body"].startswith("## Why\n") and pull["draft"] is True
 
 
 @POSIX

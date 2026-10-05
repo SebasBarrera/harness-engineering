@@ -1,0 +1,47 @@
+pack: csharp
+title: C#
+cards:
+  - id: csharp.nullable
+    title: Nullable reference types on
+    rule: Keep nullable reference types enabled and resolve every nullable warning instead of suppressing it with !.
+    rationale: The compiler then proves where null can flow.
+    appliesTo: ["**/*.cs", "**/*.csproj"]
+    verifiedBy: ["dotnet:CS8600", "dotnet:CS8602", "dotnet:CS8618"]
+  - id: csharp.async
+    title: Async all the way
+    rule: Await tasks; never block on them with .Result or .Wait(), and pass a CancellationToken through I/O calls.
+    rationale: Blocking on tasks deadlocks and wastes threads.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:CA2007", "dotnet:VSTHRD002", "review"]
+  - id: csharp.dispose
+    title: Dispose what you create
+    rule: Wrap IDisposable and IAsyncDisposable objects in using declarations.
+    rationale: Undisposed objects leak handles and connections.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:CA2000", "dotnet:CA1816"]
+  - id: csharp.specific-exceptions
+    title: Catch specific exceptions
+    rule: Catch specific exception types; do not catch Exception to continue, and rethrow with throw; to keep the stack.
+    rationale: General catches hide defects.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:CA1031", "dotnet:CA2200"]
+  - id: csharp.validate-arguments
+    title: Validate public arguments
+    rule: Validate arguments of public members (ArgumentNullException.ThrowIfNull and range checks).
+    rationale: Failing at the boundary names the real cause.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:CA1062"]
+  - id: csharp.naming
+    title: .NET naming conventions
+    rule: Use PascalCase for types, methods and properties, camelCase for locals and parameters, and an I prefix for interfaces.
+    rationale: Conventional names make APIs predictable.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:IDE1006", "dotnet:CA1715"]
+    principle: least-astonishment
+  - id: csharp.unused
+    title: No unused code
+    rule: Remove unused usings, private members and parameters.
+    rationale: Dead code misleads readers.
+    appliesTo: ["**/*.cs"]
+    verifiedBy: ["dotnet:IDE0005", "dotnet:IDE0051", "dotnet:IDE0060"]
+    principle: yagni

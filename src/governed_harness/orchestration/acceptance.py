@@ -11,7 +11,14 @@ their digest (``harness acceptance decide``). On approval the harness writes the
 is before the change: a test that already passes there does not test the change (a MEDIUM
 finding). Every later VERIFICATION checks that the frozen files are unchanged (a modified or
 deleted file is a HIGH finding) and that they pass; the implement request names them as frozen.
-A proposal without tests is recorded and the run continues."""
+A proposal without tests is recorded and the run continues.
+
+Since #56, under ``testing.strategy: bdd`` the same call writes the criteria as Gherkin feature
+files (under ``testing.featuresDirectory``, default ``features``) instead of pytest files: a
+person approves the scenarios, the harness freezes them and runs the BDD runner of the project
+(``testing.bddCommand`` or the standards pack's runner) before the change (it must fail: the
+steps are not defined yet) and in every VERIFICATION; the implement request asks for the step
+definitions."""
 
 from __future__ import annotations
 
@@ -52,7 +59,9 @@ MAX_FILES = 20
 MAX_FILE_BYTES = 200_000
 
 
-def validate_tests(result: dict[str, Any], directory: str) -> list[dict[str, str]]:
+def validate_tests(
+    result: dict[str, Any], directory: str, *, gherkin: bool = False
+) -> list[dict[str, str]]:
     raw = result.get("tests")
     if not isinstance(raw, list):
         raise ValueError("the acceptance result needs a 'tests' list")
@@ -66,7 +75,22 @@ def validate_tests(result: dict[str, Any], directory: str) -> list[dict[str, str
         path = str(entry.get("path") or "")
         content = entry.get("content")
         parts = PurePosixPath(path).parts
-        if (
+        if gherkin:
+            if (
+                not path.startswith(directory + "/")
+                or ".." in parts
+                or not path.endswith(".feature")
+            ):
+                raise ValueError(
+                    f"feature file {index} must be {directory}/<name>.feature, got {path!r}"
+                )
+            if (
+                not isinstance(content, str)
+                or "Feature:" not in content
+                or ("Scenario" not in content)
+            ):
+                raise ValueError(f"feature file {path} needs a Feature and a Scenario")
+        elif (
             not path.startswith(directory + "/")
             or ".." in parts
             or not PurePosixPath(path).name.startswith("test_")
@@ -94,8 +118,21 @@ class AcceptanceTests:
         return verification.acceptance_tests if verification else None
 
     @property
+    def bdd(self) -> bool:
+        """``testing.strategy: bdd`` (#56): the acceptance tests are Gherkin scenarios."""
+        engineering = self.results.engineering
+        if not engineering.configured:
+            return False
+        return engineering.strategy(self.results.project.project_id).strategy == "bdd"
+
+    @property
     def enabled(self) -> bool:
-        return bool(self.config and self.config.enabled)
+        return bool(self.config and self.config.enabled) or self.bdd
+
+    def _command(self, paths: list[str]) -> tuple[str, ...]:
+        if self.bdd:
+            return self.results.engineering.bdd_command()
+        return ("python", "-m", "pytest", "-q", *paths)
 
     def _key(self, execution: Execution) -> str:
         return f"acceptance:{execution.execution_id}"
@@ -123,14 +160,18 @@ class AcceptanceTests:
                     (state["ref"],),
                 )
             return None
-        directory = self.config.path
+        gherkin = self.bdd
+        directory = self.results.engineering.features_directory() if gherkin else self.config.path
         outcome = self.results.call_agent(
             execution,
             phase,
             "acceptance",
-            {"directory": directory},
+            {"directory": directory, **({"format": "gherkin"} if gherkin else {})},
             task=task,
-            instruction_values={"directory": directory},
+            instruction_values={
+                "directory": directory,
+                "format": "gherkin" if gherkin else "pytest",
+            },
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -139,7 +180,7 @@ class AcceptanceTests:
                 outcome.evidence_refs,
             )
         try:
-            tests = validate_tests(outcome.result, directory)
+            tests = validate_tests(outcome.result, directory, gherkin=gherkin)
         except ValueError as error:
             self.results.record_finding(
                 execution,
@@ -161,6 +202,7 @@ class AcceptanceTests:
             "status": status,
             "digest": digest,
             "directory": directory,
+            "format": "gherkin" if gherkin else "pytest",
             "tests": tests,
             "invocationId": outcome.invocation_id,
         }
@@ -244,7 +286,7 @@ class AcceptanceTests:
         actor = Actor(actor_type=ActorType.TOOL, actor_id=f"validator.{ACCEPTANCE_ID}", version="1")
         process = engine._runner(execution).run(
             CommandSpec(
-                argv=("python", "-m", "pytest", "-q", *paths),
+                argv=self._command(paths),
                 cwd=results.s.paths.workspace,
                 timeout_seconds=900.0,
                 max_output_bytes=results.project.runtime.max_output_bytes,
@@ -290,6 +332,15 @@ class AcceptanceTests:
         state = self.state(execution)
         if not state or state.get("status") != "APPROVED" or not state.get("frozen"):
             return None
+        if state.get("format") == "gherkin":
+            return {
+                "paths": sorted(state["frozen"]),
+                "frozen": True,
+                "format": "gherkin",
+                "runner": list(self._command([])),
+                "note": "Write the step definitions and the code that make these scenarios "
+                "pass; do not modify or delete the feature files.",
+            }
         return {
             "paths": sorted(state["frozen"]),
             "frozen": True,
@@ -340,7 +391,7 @@ class AcceptanceTests:
                 definition=engine._bounded_definition(
                     ValidatorDefinition(
                         id=ACCEPTANCE_ID,
-                        command=("python", "-m", "pytest", "-q", *sorted(frozen)),
+                        command=self._command(sorted(frozen)),
                         mandatory=True,
                     )
                 ),

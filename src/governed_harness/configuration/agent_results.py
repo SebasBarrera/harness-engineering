@@ -38,7 +38,7 @@ class _Section(BaseModel):
 
 
 Policy = Literal["enforce", "warn", "off"]
-CallKind = Literal["implement", "clarify", "review", "plan", "acceptance", "locate"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance", "architecture", "locate"]
 
 
 class AgentCallConfig(_Section):

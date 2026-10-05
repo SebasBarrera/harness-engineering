@@ -38,7 +38,7 @@ def _state_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
     "verification": (
         "interface",
         "architecture",
@@ -53,12 +53,22 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "sarif",
         "riskFactors",
         "acceptanceTests",
+        "principles",
     ),
     "review": ("agentReview", "reviewer", "structuredChanges"),
     "runtime": ("gateContract", "reproduceFirst"),
     "governance": ("stopTheLine", "phasePermissions"),
 }
-AGENT_RESULTS_SECTIONS = ("planning", "context", "budget", "memory", "agentRouting")
+AGENT_RESULTS_SECTIONS = (
+    "planning",
+    "context",
+    "budget",
+    "memory",
+    "agentRouting",
+    "standards",
+    "testing",
+    "architecture",
+)
 LADDER_KEYS: dict[str, tuple[str, ...]] = {
     "workspace": ("isolation",),
     "runtime": ("stateDir",),
@@ -66,7 +76,7 @@ LADDER_KEYS: dict[str, tuple[str, ...]] = {
     "verification": ("ladder", "probes", "mutation"),
     "review": ("manualChecklist",),
     "toolchain": ("extendedProfiles",),
-    "delivery": ("stage", "push", "pullRequest", "comment"),
+    "delivery": ("stage", "push", "pullRequest", "comment", "forge"),
 }
 LADDER_SECTIONS = ("environment", "instructions")
 

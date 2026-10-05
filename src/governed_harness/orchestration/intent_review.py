@@ -133,6 +133,11 @@ class IntentReview:
             dangling = self.dangling_references(task, answers)
             added.extend(_numbered(start, "A2", dangling))
             start += len(dangling)
+        # intake.projectSetup (#56): architecture, testing strategy and standards, once per
+        # project, for what neither the configuration nor the repository establishes.
+        setup = self.results.project_setup.questions(execution, phase, task, start)
+        added.extend(setup)
+        start += len(setup)
         if self.enabled:
             outcome = self._agent_questions(execution, phase, task, deterministic, answers, start)
             refs.extend(outcome.evidence_refs)

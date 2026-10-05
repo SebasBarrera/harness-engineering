@@ -1,0 +1,29 @@
+pack: php
+detect:
+  markers: [composer.json]
+  extensions: [.php]
+runner:
+  test: [vendor/bin/phpunit]
+  testFiles: true
+  bdd: [vendor/bin/behat]
+bddFrameworks:
+  - name: behat
+    markers: [behat.yml, behat.yml.dist]
+    dependencies: [behat/behat]
+tools:
+  - id: phpstan
+    title: PHPStan
+    configFiles: [phpstan.neon, phpstan.neon.dist, phpstan.dist.neon]
+    command: [vendor/bin/phpstan, analyse, --no-progress, --error-format=checkstyle]
+    parser: checkstyle
+    recommended: |
+      # phpstan.neon
+      parameters:
+        level: 8
+        paths: [src, tests]
+  - id: php-cs-fixer
+    title: PHP CS Fixer
+    configFiles: [.php-cs-fixer.php, .php-cs-fixer.dist.php]
+    command: [vendor/bin/php-cs-fixer, fix, --dry-run, --format=checkstyle]
+    parser: checkstyle
+    principles: [boy-scout]

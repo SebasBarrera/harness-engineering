@@ -11,12 +11,7 @@ to the REST API through a transport:
 
 The comment carries the brief (what was asked, what changed, gate, risks, what was and was not
 verified, decisions) and no output of a validator or the agent. Nothing here decides: a comment
-or a SARIF upload is information for the people who review the pull request.
-
-Since #55 a publisher is a *forge*: it also creates the pull request of an approved run's
-branch (base, title, body from the repository's template and the brief, labels, draft) when the
-operational contract authorises it. Forges are looked up by ``delivery.publisher.kind``
-(``FORGES``); GitHub is the one implemented, and another forge only needs the same methods."""
+or a SARIF upload is information for the people who review the pull request."""
 
 from __future__ import annotations
 
@@ -225,64 +220,6 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
 class GitHubPublisher:
     transport: Transport
     repository: str
-    name = "github"
-
-    def find_pull_request(self, head: str, base: str | None = None) -> dict[str, Any] | None:
-        """An open pull request of ``head`` (into ``base`` when given), or ``None``."""
-        owner = self.repository.split("/", 1)[0]
-        query = f"repos/{self.repository}/pulls?state=open&head={owner}:{head}"
-        if base:
-            query += f"&base={base}"
-        pulls = self.transport.request("GET", query)
-        if isinstance(pulls, list) and pulls and isinstance(pulls[0], dict):
-            return pulls[0]
-        return None
-
-    def create_pull_request(
-        self,
-        *,
-        head: str,
-        base: str,
-        title: str,
-        body: str,
-        labels: tuple[str, ...] = (),
-        draft: bool = False,
-    ) -> dict[str, Any]:
-        """Create the pull request of ``head`` into ``base`` (or reuse the open one) and add
-        the labels."""
-        existing = self.find_pull_request(head, base)
-        if existing is not None:
-            created = existing
-            action = "reused"
-        else:
-            created = self.transport.request(
-                "POST",
-                f"repos/{self.repository}/pulls",
-                {"title": title, "head": head, "base": base, "body": body, "draft": draft},
-            )
-            action = "created"
-        created = created if isinstance(created, dict) else {}
-        number = created.get("number")
-        if labels and isinstance(number, int):
-            self.transport.request(
-                "POST",
-                f"repos/{self.repository}/issues/{number}/labels",
-                {"labels": list(labels)},
-            )
-        return {
-            "forge": self.name,
-            "action": action,
-            "number": number,
-            "url": created.get("html_url"),
-            "head": head,
-            "base": base,
-            "labels": list(labels),
-            "draft": draft,
-        }
-
-    def comment(self, *, pull_request: int, run_id: str, body: str) -> dict[str, Any]:
-        """Post (or update) the run's comment on a pull request."""
-        return self._comment(pull_request, run_id, body)
 
     def _comment(self, pull_request: int, run_id: str, body: str) -> dict[str, Any]:
         repo = self.repository
@@ -366,40 +303,3 @@ class GitHubPublisher:
             "comment": comment,
             "sarif": upload,
         }
-
-
-class Forge(Protocol):
-    """What delivery needs from a code-hosting platform (since #55)."""
-
-    name: str
-
-    def find_pull_request(self, head: str, base: str | None = None) -> dict[str, Any] | None: ...
-
-    def create_pull_request(
-        self,
-        *,
-        head: str,
-        base: str,
-        title: str,
-        body: str,
-        labels: tuple[str, ...] = (),
-        draft: bool = False,
-    ) -> dict[str, Any]: ...
-
-    def comment(self, *, pull_request: int, run_id: str, body: str) -> dict[str, Any]: ...
-
-
-FORGES: dict[str, type[GitHubPublisher]] = {"github": GitHubPublisher}
-"""Forges by ``delivery.publisher.kind``."""
-
-
-def forge_for(
-    config: PublisherConfig, repository: str, transport: Transport | None = None
-) -> Forge:
-    """The forge of the configuration, talking through ``transport`` (default: the
-    configured one)."""
-    try:
-        factory = FORGES[config.kind]
-    except KeyError as error:
-        raise ConfigurationError(f"no forge for publisher kind {config.kind!r}") from error
-    return factory(transport or transport_for(config), repository)

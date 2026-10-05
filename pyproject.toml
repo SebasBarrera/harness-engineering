@@ -77,6 +77,7 @@ governed_harness = [
   "resources/workflows/*.yaml",
   "resources/verification/*.yaml",
   "resources/schemas/v1/*.json",
+  "resources/standards/*/*.yaml",
 ]
 
 [tool.pytest.ini_options]

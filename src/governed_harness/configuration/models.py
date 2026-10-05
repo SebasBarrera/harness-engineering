@@ -31,6 +31,14 @@ from governed_harness.configuration.agent_results import (
     TestQualityConfig,
     off_from_yaml,
 )
+from governed_harness.configuration.engineering import (
+    ArchitectureSettings,
+    ForgeConfig,
+    PrinciplesConfig,
+    ProjectSetupMode,
+    StandardsConfig,
+    TestingConfig,
+)
 from governed_harness.configuration.ladder import (
     CommentPolicy,
     ContractMode,
@@ -469,7 +477,12 @@ class IntakeConfig(ConfigModel):
     interruptions: InterruptionConfig | None = None
     """Since #55: the interruption budget and the stop conditions of a run."""
 
-    @field_validator("ambiguity_review", "operational_contract", mode="before")
+    project_setup: ProjectSetupMode | None = Field(default=None, alias="projectSetup")
+    """Since 1.1 (#56): ``ask`` makes INTENT ask, once per project, the architecture, the
+    testing strategy and the standards of a new project, and of an existing project whatever
+    detection could not establish (rule ``P1``)."""
+
+    @field_validator("ambiguity_review", "operational_contract", "project_setup", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
         return off_from_yaml(value)
@@ -487,6 +500,7 @@ class IntakeConfig(ConfigModel):
             "validate_answers",
             "operational_contract",
             "interruptions",
+            "project_setup",
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
@@ -545,6 +559,10 @@ class VerificationConfig(ConfigModel):
     probes: tuple[ProbeDefinition, ...] | None = None
     """Behaviour probes of the project (each task may declare more)."""
     mutation: MutationConfig | None = None
+    principles: PrinciplesConfig | None = None
+    """Since 1.1 (#56): engineering principles as deterministic proxies (duplication, size and
+    complexity, dependency direction, inheritance depth, unused public API, Boy Scout scope) and
+    a checklist inside the existing review call."""
 
     @field_validator("probes")
     @classmethod
@@ -820,6 +838,9 @@ class ProjectConfiguration(ConfigModel):
     """Since #55: the generic environment preflight of DISCOVERY and ``harness doctor``."""
     instructions: InstructionsConfig | None = None
     """Since #55: the agent instruction files ``harness config lint`` reads."""
+    standards: StandardsConfig | None = None
+    testing: TestingConfig | None = None
+    architecture: ArchitectureSettings | None = None
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -906,6 +927,9 @@ class ProjectConfiguration(ConfigModel):
             "delivery",
             "environment",
             "instructions",
+            "standards",
+            "testing",
+            "architecture",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)
@@ -920,7 +944,21 @@ class DetectorMarker(ConfigModel):
     weight: float = Field(gt=0, le=1)
 
 
-OutputParser = Literal["auto", "sarif", "junit", "ruff", "mypy", "eslint", "tsc", "pytest", "none"]
+OutputParser = Literal[
+    "auto",
+    "sarif",
+    "junit",
+    "ruff",
+    "mypy",
+    "eslint",
+    "tsc",
+    "pytest",
+    "checkstyle",
+    "rubocop",
+    "cargo",
+    "msbuild",
+    "none",
+]
 IssueLevel = Literal["error", "warning", "note"]
 
 
@@ -1255,6 +1293,9 @@ class DeliveryConfig(ConfigModel):
     comment: CommentPolicy | None = None
     """Comment the decision brief on the pull request: ``notClean`` (exceptions, findings,
     partial certification), ``always`` or ``never``."""
+    forge: ForgeConfig | None = None
+    """Since 1.1 (#56): the forge of ``harness pr publish`` and ``harness pr create`` (GitHub,
+    GitLab, Bitbucket, Azure DevOps, Gitea), detected from ``origin`` unless set."""
 
     @field_validator("branch")
     @classmethod

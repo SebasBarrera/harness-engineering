@@ -81,7 +81,8 @@
             "T1",
             "A1",
             "A2",
-            "A3"
+            "A3",
+            "P1"
           ],
           "title": "Ruleid",
           "type": "string"

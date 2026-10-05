@@ -164,6 +164,10 @@ class StopLine:
         if not owned or task.implementation.mode == "patch":
             return None
         owned_set = {str(item) for item in owned}
+        # The frozen acceptance tests (or BDD feature files) were written by the harness after
+        # a person approved them, not by the agent: they are not outside the task's scope.
+        acceptance = self.results.acceptance.state(execution) or {}
+        owned_set |= set(acceptance.get("frozen") or {})
         since = self.results.baseline_changes(execution)
         if since is None:
             return None

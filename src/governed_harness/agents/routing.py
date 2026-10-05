@@ -218,6 +218,9 @@ def _kind_rung(table: FamilyTable, call_kind: CallKind, size: SizeClass) -> Rung
         # The cheapest adequate rung (#55): the family's own locate rung, else the bottom of
         # its escalation ladder.
         return table.locate or (table.ladder[0] if table.ladder else None)
+    if call_kind == "architecture":
+        # One survey or advice per project (#56): the planning rung.
+        return table.plan
     rung: Rung | None = getattr(table, call_kind)
     return rung
 
