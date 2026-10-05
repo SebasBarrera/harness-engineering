@@ -82,18 +82,26 @@ LADDER_SECTIONS = ("environment", "instructions")
 FRICTION_SECTIONS = ("friction", "metrics")
 """Wave 8 (#58): tests of the fast lane, the pre-authorised approval, the change types, the
 plan-approval checkpoint and the metrics settings turn on what they need."""
+API_SECTIONS = ("api",)
+"""API authentication (#18): fixture projects serve the API without a token, as in 1.0.0."""
 
 
 def without_agent_results(root: Path) -> None:
     """Remove the agent-results settings (#37-#44, #52), the verification-ladder settings
-    (#55) and the friction settings (#58) that ``harness init`` writes, so a fixture project
-    behaves as before them; tests of those settings turn on what they need."""
+    (#55), the friction settings (#58) and the API authentication (#18) that ``harness init``
+    writes, so a fixture project behaves as before them; tests of those settings turn on what
+    they need."""
     path = root / ".harness" / "project.yaml"
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
     for section, keys in (*AGENT_RESULTS_KEYS.items(), *LADDER_KEYS.items()):
         for key in keys:
             config.get(section, {}).pop(key, None)
-    for section in (*AGENT_RESULTS_SECTIONS, *LADDER_SECTIONS, *FRICTION_SECTIONS):
+    for section in (
+        *AGENT_RESULTS_SECTIONS,
+        *LADDER_SECTIONS,
+        *FRICTION_SECTIONS,
+        *API_SECTIONS,
+    ):
         config.pop(section, None)
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 

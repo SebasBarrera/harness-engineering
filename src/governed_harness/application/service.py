@@ -258,8 +258,33 @@ class HarnessApplication:
             "ladder": self._ladder_settings(resolved),
             "engineering": engineering_summary(resolved),
             "friction": friction_summary(resolved.project),
+            "api": self._api_settings(resolved.project),
             "declarative": declarative,
             "warnings": warnings,
+        }
+
+    @staticmethod
+    def _api_settings(project: ProjectConfiguration) -> dict[str, Any]:
+        """Effective ``harness api serve`` authentication (#18): variable names and whether
+        they are set, never a token."""
+        settings = project.api_settings
+        if not settings.enabled:
+            return {"auth": "off"}
+        return {
+            "auth": "token",
+            "tokenEnv": settings.start_token_env,
+            "tokenSet": bool(os.environ.get(settings.start_token_env)),
+            "tokenUser": settings.start_user,
+            "tokenRole": settings.start_role,
+            "users": [
+                {
+                    "id": user.user_id,
+                    "role": user.role,
+                    "tokenEnv": user.token_env,
+                    "tokenSet": bool(os.environ.get(user.token_env)),
+                }
+                for user in settings.users or ()
+            ],
         }
 
     @staticmethod

@@ -13,6 +13,7 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
+from governed_harness.configuration.api import DEFAULT_API_TOKEN_ENV, DEFAULT_API_TOKEN_ROLE
 from governed_harness.configuration.engineering import (
     DEFAULT_DUPLICATION_WINDOW,
     DEFAULT_FEATURES_DIRECTORY,
@@ -39,6 +40,7 @@ from governed_harness.configuration.models import (
     DEFAULT_SANDBOX_WRITE_PATHS,
     DEFAULT_TRUSTED_HOSTS,
 )
+from governed_harness.domain.actors import DEFAULT_API_ACTOR
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -246,6 +248,16 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "changeTypes": True,
             "planApproval": "risk",
             "targets": {size: dict(values) for size, values in DEFAULT_FRICTION_TARGETS.items()},
+        },
+        # #18: harness api serve requires a bearer token on every route. The token of the
+        # person who starts it comes from tokenEnv, or is generated and shown once; more people
+        # go under users, each with an id, a role and the NAME of their token's variable.
+        "api": {
+            "auth": "token",
+            "tokenEnv": DEFAULT_API_TOKEN_ENV,
+            "tokenUser": DEFAULT_API_ACTOR,
+            "tokenRole": DEFAULT_API_TOKEN_ROLE,
+            "users": [],
         },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

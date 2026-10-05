@@ -31,6 +31,7 @@ from governed_harness.configuration.agent_results import (
     TestQualityConfig,
     off_from_yaml,
 )
+from governed_harness.configuration.api import ApiConfig
 from governed_harness.configuration.engineering import (
     ArchitectureSettings,
     ForgeConfig,
@@ -846,11 +847,19 @@ class ProjectConfiguration(ConfigModel):
     """Since #58: the fast lane, pre-authorised approval, change types and friction targets."""
     metrics: MetricsConfig | None = None
     """Since #58: the price table and the narrative command of ``harness metrics``."""
+    api: ApiConfig | None = None
+    """Since #18: authentication and roles of ``harness api serve``; absent, no authentication
+    as in 1.0.0."""
 
     @property
     def friction_settings(self) -> FrictionConfig:
         """The friction settings, all absent (1.0.0 behaviour) when the section is."""
         return self.friction or FrictionConfig()
+
+    @property
+    def api_settings(self) -> ApiConfig:
+        """The API settings: authentication off (1.0.0 behaviour) when the section is absent."""
+        return self.api or ApiConfig(auth="off")
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -942,6 +951,7 @@ class ProjectConfiguration(ConfigModel):
             "architecture",
             "friction",
             "metrics",
+            "api",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)

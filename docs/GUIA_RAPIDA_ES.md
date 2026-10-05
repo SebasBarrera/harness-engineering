@@ -107,7 +107,7 @@ La retrospectiva genera recomendaciones; nunca modifica automáticamente reglas,
 harness api serve --path ./mi-proyecto --host 127.0.0.1 --port 8765
 ```
 
-La interfaz permite observar ejecuciones y registrar decisiones vinculadas al digest. Es una interfaz local sin autenticación; no debe exponerse públicamente.
+La interfaz permite observar ejecuciones y registrar decisiones vinculadas al digest. Con la sección `api` que escribe `harness init`, cada ruta exige un token bearer: el comando lo toma de `HARNESS_API_TOKEN` o genera uno y lo imprime una sola vez en la salida de error; el tablero lo pide una vez y lo guarda solo en la pestaña. Sin la sección no hay autenticación. En ambos casos es una interfaz local; no debe exponerse públicamente.
 
 ## Límites importantes
 

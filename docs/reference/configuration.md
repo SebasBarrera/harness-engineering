@@ -266,6 +266,12 @@ friction:
     L:
       interactions: 6
       minutes: 1440
+api:
+  auth: token
+  tokenEnv: HARNESS_API_TOKEN
+  tokenUser: human.web
+  tokenRole: admin
+  users: []
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -1171,6 +1177,25 @@ it; `harness config validate` shows the effective values under `friction`. Guide
 | `friction.targets` | the values `init` writes | `S` 1 interaction and 30 minutes, `M` 3 and 240, `L` 6 and 1440 | Friction targets per task size, reported by `harness metrics`. |
 | `metrics.prices` | none | none | US dollars per million `input`, `output` and `cache` tokens by model id (`provider/model`, model or provider id), used only to estimate the cost of calls that reported tokens without a cost; labelled `estimated`. |
 | `metrics.narrative.command`, `timeoutSeconds` | none | none | The command `harness metrics --narrative` calls once, on demand, with the prompt and the metrics on standard input. |
+
+## API authentication
+
+Since 1.1 (#18). The `api` section governs `harness api serve`; the full description, the routes
+and the audit log are in [the API reference](api.md#authentication-and-roles).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `api` | no authentication, as in 1.0.0 | the keys below | With the section every route requires `Authorization: Bearer TOKEN`; the section is left out of the configuration digest when absent. |
+| `api.auth` | `token` (with the section) | `token` | `off` serves without authentication. |
+| `api.tokenEnv` | `HARNESS_API_TOKEN` | `HARNESS_API_TOKEN` | Variable holding the token of the person who starts the server; when it is not set, `harness api serve` generates a token and prints it once on standard error. |
+| `api.tokenUser` | `human.web` | `human.web` | Actor id recorded on that person's decisions. |
+| `api.tokenRole` | `admin` | `admin` | `viewer` (every `GET`), `reviewer` (also decide) or `admin` (also `GET /api/config`). |
+| `api.users` | none | `[]` | Further people: `id` (an actor id, never `agent.*`, `validator.*` or `harness.*`), `role` and `tokenEnv`, the NAME of the variable holding their token. A literal token is refused. |
+
+Quick start: `export HARNESS_API_TOKEN=...` with a value of at least 16 characters (or let the
+server generate one), run `harness api serve`, open the printed address and paste the token once;
+the tab keeps it until it is closed. To add a reviewer, declare them under `users`, set their
+variable in the server's environment and give them their token by a separate channel.
 
 ## Technology profiles
 

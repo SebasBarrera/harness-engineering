@@ -2387,13 +2387,50 @@ def api_serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address; keep the loopback default"),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="TCP port"),
 ) -> None:
-    """Serve the local API and web dashboard. There is no authentication: keep it bound to
-    127.0.0.1."""
+    """Serve the local API and web dashboard. Keep it bound to 127.0.0.1.
+
+    With the api section that harness init writes, every route requires Authorization: Bearer
+    TOKEN. Your token comes from the variable in api.tokenEnv (HARNESS_API_TOKEN by default);
+    when it is not set, a new token is generated and printed once on standard error. Without
+    the section there is no authentication, as in 1.0.0."""
     import uvicorn
 
     from governed_harness.api import create_app
+    from governed_harness.api.auth import api_settings, start_token
 
-    uvicorn.run(create_app(path), host=host, port=port, log_level="info")
+    settings = _call(lambda: api_settings(path))
+    token = None
+    if settings.enabled:
+        token = _call(lambda: start_token(settings))
+        if token.generated:
+            # Shown once, here only: never logged, stored or sent anywhere else.
+            typer.echo(
+                f"API token of {settings.start_user} ({settings.start_role}), shown once: "
+                f"{token.value}\nSet {settings.start_token_env} to choose it instead.",
+                err=True,
+            )
+        else:
+            typer.echo(
+                f"API token of {settings.start_user} ({settings.start_role}) taken from "
+                f"{token.source}.",
+                err=True,
+            )
+    else:
+        typer.echo(
+            "warning: the API has no authentication (no api section in project.yaml, or "
+            "api.auth: off); anyone who reaches the port can read runs and record decisions.",
+            err=True,
+        )
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        typer.echo(
+            f"warning: binding to {host} exposes the API beyond this machine; the harness is "
+            "not a sandbox and the token travels over plain HTTP.",
+            err=True,
+        )
+    api = _call(lambda: create_app(path, start_token=token))
+    for notice in api.state.auth_notices:
+        typer.echo(f"warning: {notice}", err=True)
+    uvicorn.run(api, host=host, port=port, log_level="info")
 
 
 def main() -> None:

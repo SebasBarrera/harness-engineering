@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Local API authentication, roles and decision audit (#18). The optional `api` section, written
+  by `harness init`, makes `harness api serve` require `Authorization: Bearer TOKEN` on every
+  route, the dashboard included (it asks for the token once and keeps it in the tab's
+  `sessionStorage`); tokens are compared in constant time, come from environment variables named
+  in the section (the start token is generated and printed once on standard error when
+  `api.tokenEnv` is not set) and are never logged or stored. Roles: `viewer` reads, `reviewer`
+  also decides, `admin` also reads `GET /api/config`; users are declared with an id, a role and
+  the name of their token's variable. The authenticated user is the recorded decider (a different
+  `actor_id` is refused with 403) and each API decision is appended to
+  `.harness/audit/api-decisions.jsonl` without the token. A `project.yaml` without the section
+  keeps the 1.0.0 behaviour (no authentication) and its configuration digest.
 - Verification ladder, certification and delivery hygiene, wave 5 (#55). Every key is optional:
   a `project.yaml` without it keeps the earlier behaviour and configuration digest, a task without
   the new fields keeps its digest, and `harness init` writes them (`harness config validate`
