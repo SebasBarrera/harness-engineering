@@ -12,6 +12,7 @@ from typing import Any
 
 from governed_harness import __version__
 from governed_harness.configuration import ConfigurationResolver, RuntimeConfig, initialize_project
+from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
@@ -84,12 +85,37 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
-            "verification": {"requirementTraceability": resolved.project.requirement_traceability},
+            "verification": self._verification(resolved.project),
+            "review": self._review(resolved.project),
             "agentSandbox": {
                 "mode": resolved.project.runtime.effective_agent_sandbox,
                 "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
+        }
+
+    @staticmethod
+    def _verification(project: ProjectConfiguration) -> dict[str, Any]:
+        value: dict[str, Any] = {"requirementTraceability": project.requirement_traceability}
+        if project.output_parsers_enabled:
+            value["outputParsers"] = True
+        return value
+
+    @staticmethod
+    def _review(project: ProjectConfiguration) -> dict[str, Any]:
+        """Effective review settings; the URLs of webhooks are never printed."""
+        return {
+            "exceptions": project.exceptions_enabled,
+            "exceptionDays": project.exception_days if project.exceptions_enabled else None,
+            "causalRetrospective": project.causal_retrospective,
+            "webhooks": [
+                {
+                    "target": f"env:{item.url_env}" if item.url_env else "url",
+                    "events": list(item.events),
+                    "retries": item.retries,
+                }
+                for item in project.webhooks
+            ],
         }
 
     @staticmethod

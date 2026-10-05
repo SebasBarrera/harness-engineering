@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -264,6 +265,99 @@ class VerificationConfig(ConfigModel):
     requirement_traceability: RequirementTraceabilityPolicy = Field(
         default=DEFAULT_REQUIREMENT_TRACEABILITY, alias="requirementTraceability"
     )
+    output_parsers: bool | None = Field(default=None, alias="outputParsers")
+    """Since 1.1: parse the output of failing command validators (JUnit XML, Ruff, Mypy, ESLint,
+    tsc, SARIF, pytest) into one finding per reported problem, with file, line and rule. Absent
+    or false keeps the single summary finding of 1.0.0."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_parsers(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.output_parsers is None:
+            data.pop("output_parsers", None)
+            data.pop("outputParsers", None)
+        return data
+
+
+DEFAULT_EXCEPTION_DAYS = 30
+"""Validity of an exception when neither the decision nor ``review.exceptionDays`` sets one."""
+
+
+class ReviewConfig(ConfigModel):
+    """How a person's exceptions are recorded (since 1.1).
+
+    With ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an
+    expiry, a scope (the findings it covers, by rule, path and fingerprint), optional
+    alternative evidence and a follow-up. While it is in force, a later run of the project does
+    not block on the findings it covers; once it expires they block again, and a run waiting in
+    DECISION on an expired exception is blocked. Absent or false keeps the 1.0.0 behaviour: an
+    exception is a decision with a rationale and no expiry."""
+
+    exceptions: bool | None = None
+    exception_days: int | None = Field(default=None, alias="exceptionDays", ge=1, le=365)
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, alias in (("exceptions", "exceptions"), ("exception_days", "exceptionDays")):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
+
+
+NotificationEvent = Literal["decision.pending", "run.finished"]
+
+_WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+
+
+class WebhookConfig(ConfigModel):
+    """A URL that receives a JSON ``POST`` when a run waits for a decision or finishes.
+
+    ``urlEnv`` names an environment variable that holds the URL, so a URL that carries a token
+    (Slack, Teams) stays out of ``project.yaml`` and of the configuration snapshot. The payload
+    carries identifiers, statuses and digests only: no rationale, no output, no secret."""
+
+    url: str | None = None
+    url_env: str | None = Field(default=None, alias="urlEnv")
+    events: tuple[NotificationEvent, ...] = ("decision.pending", "run.finished")
+    retries: int = Field(default=2, ge=0, le=10)
+    timeout_seconds: float = Field(default=5.0, alias="timeoutSeconds", gt=0, le=60)
+
+    @model_validator(mode="after")
+    def _one_target(self) -> WebhookConfig:
+        if (self.url is None) == (self.url_env is None):
+            raise ValueError("a webhook needs exactly one of url or urlEnv")
+        if self.url is not None and not self.url.startswith(("http://", "https://")):
+            raise ValueError("a webhook url must start with http:// or https://")
+        if self.url_env is not None and not _WEBHOOK_ENV_NAME.match(self.url_env):
+            raise ValueError(f"urlEnv is not an environment variable name: {self.url_env!r}")
+        if not self.events:
+            raise ValueError("a webhook needs at least one event")
+        return self
+
+
+class NotificationsConfig(ConfigModel):
+    """Webhooks notified when a run waits for a human decision or finishes (since 1.1).
+    Absent: nothing is sent, as in 1.0.0."""
+
+    webhooks: tuple[WebhookConfig, ...] = ()
+
+
+class RetrospectiveConfig(ConfigModel):
+    """With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and
+    correction cycle to the reason code, validator or rule that caused it, ignores optional
+    validators that had no effect on the gate, and is also generated when a run is rejected or
+    cancelled. Absent or false keeps the 1.0.0 retrospective."""
+
+    causal: bool | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.causal is None:
+            data.pop("causal", None)
+        return data
 
 
 class ProjectConfiguration(ConfigModel):
@@ -283,6 +377,32 @@ class ProjectConfiguration(ConfigModel):
     retention: dict[str, Any] = Field(default_factory=dict)
     intake: IntakeConfig | None = None
     verification: VerificationConfig | None = None
+    review: ReviewConfig | None = None
+    notifications: NotificationsConfig | None = None
+    retrospective: RetrospectiveConfig | None = None
+
+    @property
+    def output_parsers_enabled(self) -> bool:
+        """Whether failing command validators are parsed into located findings."""
+        return bool(self.verification and self.verification.output_parsers)
+
+    @property
+    def exceptions_enabled(self) -> bool:
+        """Whether APPROVE_EXCEPTION records a scoped exception with an expiry."""
+        return bool(self.review and self.review.exceptions)
+
+    @property
+    def exception_days(self) -> int:
+        days = self.review.exception_days if self.review else None
+        return days or DEFAULT_EXCEPTION_DAYS
+
+    @property
+    def causal_retrospective(self) -> bool:
+        return bool(self.retrospective and self.retrospective.causal)
+
+    @property
+    def webhooks(self) -> tuple[WebhookConfig, ...]:
+        return self.notifications.webhooks if self.notifications else ()
 
     @field_validator("profiles")
     @classmethod
@@ -315,6 +435,9 @@ class ProjectConfiguration(ConfigModel):
             data.pop("intake", None)
         if self.verification is None:
             data.pop("verification", None)
+        for section in ("review", "notifications", "retrospective"):
+            if getattr(self, section) is None:
+                data.pop(section, None)
         return data
 
 
