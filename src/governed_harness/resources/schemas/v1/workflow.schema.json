@@ -21,21 +21,26 @@
       "properties": {
         "allowedCapabilities": {
           "default": [],
+          "description": "Declarative: capabilities are granted per run, not per phase (issue #4).",
           "items": {
             "type": "string"
           },
           "title": "Allowedcapabilities",
-          "type": "array"
+          "type": "array",
+          "x-declarative": true
         },
         "dependsOn": {
           "default": [],
+          "description": "Declarative: the phase order is fixed by the state machine.",
           "items": {
             "$ref": "#/$defs/PhaseId"
           },
           "title": "Dependson",
-          "type": "array"
+          "type": "array",
+          "x-declarative": true
         },
         "exitGate": {
+          "description": "Name of the condition the phase must meet to pass; recorded with each attempt (exitGate, exitGateMet) under governance.applyWorkflowSettings.",
           "title": "Exitgate",
           "type": "string"
         },
@@ -44,6 +49,7 @@
         },
         "maxAttempts": {
           "default": 1,
+          "description": "Failed attempts of the phase after which it is not started again, under governance.applyWorkflowSettings.",
           "maximum": 20,
           "minimum": 1,
           "title": "Maxattempts",
@@ -51,8 +57,10 @@
         },
         "parallelizable": {
           "default": false,
+          "description": "Declarative: phases run one at a time.",
           "title": "Parallelizable",
-          "type": "boolean"
+          "type": "boolean",
+          "x-declarative": true
         },
         "purpose": {
           "title": "Purpose",
@@ -65,17 +73,20 @@
         },
         "timeoutSeconds": {
           "default": 1800,
+          "description": "Wall-clock budget of one attempt of the phase under governance.applyWorkflowSettings.",
           "minimum": 1,
           "title": "Timeoutseconds",
           "type": "integer"
         },
         "validators": {
           "default": [],
+          "description": "Declarative: the validators come from the profiles and the project.",
           "items": {
             "type": "string"
           },
           "title": "Validators",
-          "type": "array"
+          "type": "array",
+          "x-declarative": true
         }
       },
       "required": [
@@ -128,11 +139,13 @@
     },
     "invariants": {
       "default": [],
+      "description": "Declarative: names of invariants the engine enforces in code.",
       "items": {
         "type": "string"
       },
       "title": "Invariants",
-      "type": "array"
+      "type": "array",
+      "x-declarative": true
     },
     "phases": {
       "items": {

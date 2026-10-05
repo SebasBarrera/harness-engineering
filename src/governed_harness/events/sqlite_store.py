@@ -215,6 +215,14 @@ class SQLiteEventStore:
         ).fetchall()
         return [str(row["execution_id"]) for row in rows]
 
+    def delete_execution(self, execution_id: str) -> int:
+        """Delete every event of a run (``retention.eventDays``); returns how many."""
+        with self._lock, self.connection:
+            cursor = self.connection.execute(
+                "DELETE FROM events WHERE execution_id=?", (execution_id,)
+            )
+        return int(cursor.rowcount)
+
     def count(self, execution_id: str | None = None) -> int:
         if execution_id is None:
             row = self.connection.execute("SELECT COUNT(*) AS count FROM events").fetchone()

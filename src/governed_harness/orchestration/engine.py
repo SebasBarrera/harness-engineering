@@ -7,6 +7,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -21,7 +22,11 @@ from governed_harness.agents import (
 )
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
-from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.configuration.models import (
+    ResolvedConfiguration,
+    ValidatorDefinition,
+    WorkflowPhaseDefinition,
+)
 from governed_harness.domain.actors import (
     NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
 )
@@ -121,6 +126,19 @@ from governed_harness.validators import (
     ValidationContext,
     ValidatorRegistry,
 )
+from governed_harness.validators.base import ValidatorOutput
+from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
+
+FAILED_ATTEMPT_STATUSES = frozenset(
+    {
+        ResultStatus.FAILED,
+        ResultStatus.ERROR,
+        ResultStatus.TIMED_OUT,
+        ResultStatus.INTERRUPTED,
+    }
+)
+"""Phase results that use up one of the workflow's ``maxAttempts``."""
+DEFAULT_VALIDATOR_TIMEOUT_SECONDS = 900
 
 WORKSPACE_GUARD_ID = "harness.workspace-guard"
 """Validator id of the excluded-path check (``governance.protectExcludedPaths``)."""
@@ -236,6 +254,7 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
+        self._phase_deadline: float | None = None
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -438,6 +457,8 @@ class RunEngine:
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
         contract_digest = self._current_contract_digest(execution)
+        decided_at = utc_now()
+        expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
         actor = Actor(
             actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
         )
@@ -452,6 +473,8 @@ class RunEngine:
             configuration_digest=execution.configuration_digest,
             policy_digest=execution.policy_digest,
             acceptance_contract_digest=contract_digest,
+            decided_at=decided_at,
+            expires_at=decided_at + timedelta(hours=expiry) if expiry else None,
         )
         self.s.state.put(
             "decision",
@@ -637,15 +660,22 @@ class RunEngine:
         self, execution: Execution, handler: Callable[[Execution, PhaseExecution], PhaseOutcome]
     ) -> PhaseOutcome:
         phase_id = execution.current_phase
-        attempt = 1 + len(
-            [
-                phase
-                for phase in self.s.state.list(
-                    "phase", PhaseExecution, execution_id=execution.execution_id
-                )
-                if phase.phase_id is phase_id
-            ]
-        )
+        previous = [
+            phase
+            for phase in self.s.state.list(
+                "phase", PhaseExecution, execution_id=execution.execution_id
+            )
+            if phase.phase_id is phase_id
+        ]
+        attempt = 1 + len(previous)
+        definition = self._phase_definition(phase_id)
+        if definition is not None:
+            failed = sum(1 for item in previous if item.status in FAILED_ATTEMPT_STATUSES)
+            if failed >= definition.max_attempts:
+                return self._attempts_exhausted(execution, definition, failed)
+            self._phase_deadline = time.monotonic() + definition.timeout_seconds
+        else:
+            self._phase_deadline = None
         phase = PhaseExecution(
             phase_execution_id=new_id("phase"),
             execution_id=execution.execution_id,
@@ -694,6 +724,8 @@ class RunEngine:
                 {"phaseId": phase_id, "errorType": type(error).__name__, "message": str(error)},
                 phase_execution_id=phase.phase_execution_id,
             )
+        if definition is not None:
+            outcome = self._apply_phase_settings(definition, phase, outcome)
         completed = phase.model_copy(
             update={
                 "status": outcome.status,
@@ -717,16 +749,24 @@ class RunEngine:
             execution_id=execution.execution_id,
             project_id=execution.project_id,
         )
+        completed_payload: dict[str, Any] = {
+            "phaseId": phase_id,
+            "attempt": attempt,
+            "status": outcome.status,
+            "summary": outcome.summary,
+            "evidenceRefs": list(outcome.evidence_refs),
+        }
+        if definition is not None:
+            # The exit gate the attempt met (PASSED) or did not meet; the condition itself is
+            # evaluated by the phase.
+            completed_payload["exitGate"] = definition.exit_gate
+            completed_payload["exitGateMet"] = outcome.status is ResultStatus.PASSED
+            completed_payload["timeoutSeconds"] = definition.timeout_seconds
+            completed_payload["maxAttempts"] = definition.max_attempts
         self.s.events.append(
             execution.execution_id,
             "phase.completed",
-            {
-                "phaseId": phase_id,
-                "attempt": attempt,
-                "status": outcome.status,
-                "summary": outcome.summary,
-                "evidenceRefs": list(outcome.evidence_refs),
-            },
+            completed_payload,
             phase_execution_id=phase.phase_execution_id,
         )
         latest = self.get_execution(execution.execution_id)
@@ -1051,6 +1091,7 @@ class RunEngine:
                         self.s.resolved.project.runtime.sandbox_write_paths or (),
                         self.sandbox_host,
                         protected=self._protected_paths(),
+                        allow_network=self._agent_network_allowed(),
                     )
                 except SandboxUnavailable as error:
                     self._record_sandbox_finding(
@@ -1097,7 +1138,7 @@ class RunEngine:
             process_runner=runner,
             patch_applier=PatchApplier(self.s.paths.workspace),
             provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-            timeout_seconds=runtime.command_timeout_seconds,
+            timeout_seconds=self._bounded_timeout(runtime.command_timeout_seconds),
             max_output_bytes=runtime.max_output_bytes,
             cancellation=cancellation,
             context_manifest_ref=context_uri,
@@ -1167,6 +1208,136 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    # ----- declared settings (#51) -------------------------------------------------------
+    def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:
+        """The workflow definition of a phase when ``governance.applyWorkflowSettings`` is on."""
+        if not self.s.resolved.project.governance_settings.apply_workflow_settings:
+            return None
+        return next(
+            (item for item in self.s.resolved.workflow.phases if item.phase_id is phase_id), None
+        )
+
+    def _attempts_exhausted(
+        self, execution: Execution, definition: WorkflowPhaseDefinition, failed: int
+    ) -> PhaseOutcome:
+        reason = (
+            f"{definition.phase_id} is not started again: {failed} failed attempt(s) reached its "
+            f"maxAttempts ({definition.max_attempts})"
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "phase.attempts.exhausted",
+            {
+                "phaseId": definition.phase_id,
+                "failedAttempts": failed,
+                "maxAttempts": definition.max_attempts,
+            },
+        )
+        latest = self.get_execution(execution.execution_id)
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": reason,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        return PhaseOutcome(ResultStatus.BLOCKED, reason)
+
+    def _apply_phase_settings(
+        self, definition: WorkflowPhaseDefinition, phase: PhaseExecution, outcome: PhaseOutcome
+    ) -> PhaseOutcome:
+        """An attempt that outlived ``timeoutSeconds`` is ``TIMED_OUT``."""
+        started = phase.started_at or utc_now()
+        elapsed = (utc_now() - started).total_seconds()
+        if outcome.status is ResultStatus.PASSED and elapsed > definition.timeout_seconds:
+            return PhaseOutcome(
+                ResultStatus.TIMED_OUT,
+                f"{definition.phase_id} took {elapsed:.0f} s, more than its timeoutSeconds "
+                f"({definition.timeout_seconds})",
+                outcome.evidence_refs,
+                outcome.artifact_refs,
+            )
+        return outcome
+
+    def _remaining_budget(self) -> float | None:
+        deadline = self._phase_deadline
+        if deadline is None:
+            return None
+        return max(1.0, deadline - time.monotonic())
+
+    def _bounded_timeout(self, seconds: int) -> int:
+        remaining = self._remaining_budget()
+        return seconds if remaining is None else max(1, min(seconds, int(remaining)))
+
+    def _bounded_definition(self, definition: ValidatorDefinition) -> ValidatorDefinition:
+        if self._remaining_budget() is None:
+            return definition
+        own = definition.timeout_seconds or DEFAULT_VALIDATOR_TIMEOUT_SECONDS
+        return definition.model_copy(update={"timeout_seconds": self._bounded_timeout(own)})
+
+    def _profile_policies_apply(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.apply_profile_policies)
+
+    def _unavailable_statuses(self) -> dict[str, ResultStatus | None]:
+        """``missingTestCommand`` and ``missingTestScript`` as the status of an unavailable
+        mandatory validator (``governance.applyProfilePolicies``)."""
+        if not self._profile_policies_apply():
+            return {}
+        policies = self.s.resolved.effective_policies
+        values: dict[str, ResultStatus | None] = {}
+        for key, field_name in (
+            ("missingTestCommand", "missing_command_status"),
+            ("missingTestScript", "missing_script_status"),
+        ):
+            value = policies.get(key)
+            values[field_name] = ResultStatus(str(value)) if value is not None else None
+        return values
+
+    def _coverage_minimum(self) -> float | None:
+        if not self._profile_policies_apply():
+            return None
+        return coverage_minimum(self.s.resolved.effective_policies)
+
+    def _verify_coverage(
+        self, execution: Execution, change_set: ChangeSet, minimum: float
+    ) -> ValidatorOutput:
+        validator = CoverageValidator(minimum)
+        actor = Actor(
+            actor_type=ActorType.TOOL, actor_id=f"validator.{validator.validator_id}", version="1"
+        )
+        data_dir = self.s.paths.harness_dir / "coverage"
+        data_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        output = validator.execute(
+            ValidationContext(
+                execution_id=execution.execution_id,
+                workspace=self.s.paths.workspace,
+                task=self.run_task(execution),
+                change_set=change_set,
+                definition=self._bounded_definition(validator.definition()),
+                grants=grants_from_rules(
+                    execution.execution_id, actor, self.s.resolved.effective_capabilities
+                ),
+                artifact_store=self.s.artifacts,
+                process_runner=self._runner(execution),
+                provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+                cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+                max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                **self._unavailable_statuses(),
+            ),
+            data_file=data_dir / f"{execution.execution_id}.coverage",
+        )
+        self._save_validator_output(execution, output)
+        return output
+
+    def _agent_network_allowed(self) -> bool:
+        """``runtime.allowNetwork`` reaches the agent sandbox under
+        ``governance.applyNetworkPolicy``; otherwise network access stays allowed (1.0.0)."""
+        if not self.s.resolved.project.governance_settings.apply_network_policy:
+            return True
+        return self.s.resolved.project.runtime.allow_network
 
     # ----- interruption and recovery (governance.workspaceLease) ----------------------
     def _leases_workspace(self) -> bool:
@@ -1577,7 +1748,7 @@ class RunEngine:
                     workspace=self.s.paths.workspace,
                     task=self.run_task(execution),
                     change_set=change_set,
-                    definition=definition,
+                    definition=self._bounded_definition(definition),
                     grants=grants,
                     artifact_store=self.s.artifacts,
                     process_runner=self._runner(execution),
@@ -1586,10 +1757,14 @@ class RunEngine:
                         lambda: self.is_cancelled(execution.execution_id)
                     ),
                     max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                    **self._unavailable_statuses(),
                 )
             )
             self._save_validator_output(execution, output)
             outputs.append(output)
+        coverage = self._coverage_minimum()
+        if coverage is not None:
+            outputs.append(self._verify_coverage(execution, change_set, coverage))
         policy = self.s.resolved.project.requirement_traceability
         if policy != "off":
             outputs.append(
@@ -1737,6 +1912,16 @@ class RunEngine:
                         ResultStatus.BLOCKED,
                         "Human decision is stale: it is bound to another acceptance contract",
                     )
+            if (
+                current_decision.expires_at is not None
+                and utc_now() >= current_decision.expires_at
+                and current_decision.decision is not DecisionKind.REJECT
+            ):
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    f"Human decision {current_decision.decision_id} expired at "
+                    f"{current_decision.expires_at.isoformat()}; record a new decision",
+                )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
                 return PhaseOutcome(
                     ResultStatus.PASSED,

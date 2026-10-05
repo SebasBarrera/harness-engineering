@@ -103,6 +103,9 @@ class SandboxPlan:
     protected_paths: tuple[str, ...] = field(default=())
     """Paths inside the workspace the agent may read but not write
     (``governance.protectExcludedPaths``: ``.harness`` and ``.git``)."""
+    network_denied: bool = False
+    """Outbound network access is denied (``runtime.allowNetwork: false`` under
+    ``governance.applyNetworkPolicy``)."""
 
     def evidence(self) -> dict[str, object]:
         record: dict[str, object] = {
@@ -117,6 +120,8 @@ class SandboxPlan:
         }
         if self.protected_paths:
             record["protectedPaths"] = list(self.protected_paths)
+        if self.network_denied:
+            record["network"] = "denied"
         return record
 
 
@@ -156,13 +161,15 @@ def build_sandbox(
     configured: Sequence[str],
     host: SandboxHost,
     protected: Sequence[Path] = (),
+    *,
+    allow_network: bool = True,
 ) -> SandboxPlan:
     """The confinement for one provider invocation. ``protected`` paths (inside the
     workspace) stay readable but are not writable, whatever the allowed paths say."""
     paths = resolve_write_paths(workspace, configured, host)
     denied = tuple(dict.fromkeys(_real(path) for path in protected))
     if host.system == "Darwin" and host.sandbox_exec:
-        profile = seatbelt_profile(paths, denied)
+        profile = seatbelt_profile(paths, denied, allow_network=allow_network)
         return SandboxPlan(
             mechanism="sandbox-exec",
             system=host.system,
@@ -171,9 +178,10 @@ def build_sandbox(
             profile_digest=sha256_bytes(profile.encode("utf-8")),
             allowed_paths=paths,
             protected_paths=denied,
+            network_denied=not allow_network,
         )
     if host.system == "Linux" and host.bwrap:
-        arguments, allowed, skipped = bwrap_arguments(paths, denied)
+        arguments, allowed, skipped = bwrap_arguments(paths, denied, allow_network=allow_network)
         profile = json.dumps(arguments)
         return SandboxPlan(
             mechanism="bwrap",
@@ -184,6 +192,7 @@ def build_sandbox(
             allowed_paths=allowed,
             skipped_paths=skipped,
             protected_paths=tuple(path for path in denied if Path(path).exists()),
+            network_denied=not allow_network,
         )
     if host.system == "Darwin":
         reason = f"{SANDBOX_EXEC} is not available"
@@ -198,7 +207,9 @@ def _sbpl_string(value: str) -> str:
     return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def seatbelt_profile(paths: Sequence[SandboxPath], protected: Sequence[str] = ()) -> str:
+def seatbelt_profile(
+    paths: Sequence[SandboxPath], protected: Sequence[str] = (), *, allow_network: bool = True
+) -> str:
     """Allow everything, deny every file write, then allow writes below the allowed paths and,
     last, deny them again below the protected paths.
 
@@ -218,12 +229,17 @@ def seatbelt_profile(paths: Sequence[SandboxPath], protected: Sequence[str] = ()
     if protected:
         denied = "\n  ".join(f"(subpath {_sbpl_string(path)})" for path in protected)
         profile += f"(deny file-write*\n  {denied})\n"
+    if not allow_network:
+        # Outbound IP connections; local (Unix-domain) sockets stay allowed.
+        profile += '(deny network-outbound (remote ip "*:*"))\n'
     return profile
 
 
 def bwrap_arguments(
     paths: Sequence[SandboxPath],
     protected: Sequence[str] = (),
+    *,
+    allow_network: bool = True,
 ) -> tuple[list[str], tuple[SandboxPath, ...], tuple[SandboxPath, ...]]:
     """Bind the root read-only, keep /dev, bind each existing allowed path writable and then
     bind each existing protected path read-only again (a later mount covers an earlier one).
@@ -249,6 +265,8 @@ def bwrap_arguments(
     for path in protected:
         if Path(path).exists():
             arguments.extend(("--ro-bind", path, path))
+    if not allow_network:
+        arguments.append("--unshare-net")
     return arguments, tuple(allowed), tuple(skipped)
 
 

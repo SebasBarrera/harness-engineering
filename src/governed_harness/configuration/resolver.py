@@ -15,6 +15,7 @@ from governed_harness.configuration.models import (
     TechnologyProfileDefinition,
     ValidatorDefinition,
 )
+from governed_harness.configuration.policies import validate_profile_policies
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.profiles.detectors import detect_profiles
 
@@ -58,6 +59,8 @@ class ConfigurationResolver:
             capabilities = self._without_protected_writes(capabilities)
         validators = self._resolve_validators(project.validators, profiles)
         policies = self._resolve_policies(project.policies, profiles)
+        if project.governance_settings.apply_profile_policies:
+            validate_profile_policies(policies)
         return ResolvedConfiguration(
             project=project,
             workspace_root=workspace_root,

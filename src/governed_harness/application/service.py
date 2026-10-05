@@ -17,6 +17,8 @@ from governed_harness.configuration import (
     RuntimeConfig,
     initialize_project,
 )
+from governed_harness.configuration.declared import declared_settings_report
+from governed_harness.configuration.loader import find_project_config, load_yaml
 from governed_harness.domain.actors import (
     DEFAULT_CLI_ACTOR,
     actor_id_from_identity,
@@ -54,6 +56,7 @@ from governed_harness.domain.models import (
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
+from governed_harness.orchestration.retention import RetentionCollector
 from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
@@ -89,7 +92,12 @@ class HarnessApplication:
         }
 
     def validate_config(self, path: Path) -> dict[str, Any]:
+        """The resolved configuration, the settings that are declared but not applied
+        (``declarative``) and a warning for each one this project relies on."""
         resolved = ConfigurationResolver().resolve(path)
+        declarative, warnings = declared_settings_report(
+            resolved, load_yaml(find_project_config(path))
+        )
         return {
             "status": "PASSED",
             "projectId": resolved.project.project_id,
@@ -110,6 +118,8 @@ class HarnessApplication:
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
             "governance": self._governance(resolved.project.governance_settings),
+            "declarative": declarative,
+            "warnings": warnings,
         }
 
     @staticmethod
@@ -124,6 +134,10 @@ class HarnessApplication:
             "pinTaskRevision": bool(settings.pin_task_revision),
             "protectExcludedPaths": bool(settings.protect_excluded_paths),
             "workspaceLease": bool(settings.workspace_lease),
+            "applyWorkflowSettings": bool(settings.apply_workflow_settings),
+            "decisionExpiryHours": settings.decision_expiry_hours,
+            "applyProfilePolicies": bool(settings.apply_profile_policies),
+            "applyNetworkPolicy": bool(settings.apply_network_policy),
         }
 
     @staticmethod
@@ -463,6 +477,16 @@ class HarnessApplication:
             if format != "markdown":
                 raise ConfigurationError(f"unsupported trace format: {format}")
             return reporter.render_markdown(**kwargs)
+
+    def gc(self, path: Path, *, apply: bool = False) -> dict[str, Any]:
+        """Apply ``retention.artifactDays`` and ``retention.eventDays`` to the runs that
+        ended; without ``apply`` only report what would be removed."""
+        with self._services(path) as services, self._leased(services, "gc"):
+            collector = RetentionCollector(services)
+            plan = collector.plan()
+            if apply:
+                collector.apply(plan)
+            return plan.as_dict(applied=apply)
 
     def list_evidence(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         with self._services(path) as services:

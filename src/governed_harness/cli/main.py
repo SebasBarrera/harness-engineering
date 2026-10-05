@@ -154,7 +154,8 @@ def config_validate(
     ),
 ) -> None:
     """Validate the project configuration and print the resolved profiles, workflow,
-    validators, capabilities and policies."""
+    validators, capabilities and policies, the settings that are declared but not applied
+    (`declarative`) and a warning for each one the project relies on (`warnings`)."""
     _emit(_call(lambda: HarnessApplication().validate_config(path)), json_output)
 
 
@@ -372,6 +373,23 @@ def verify(
     _emit(report)
     if not report["valid"]:
         raise typer.Exit(code=6)
+
+
+@app.command()
+def gc(
+    apply: bool = typer.Option(
+        False, "--apply", help="Delete what the report lists; without it nothing is deleted"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Apply the retention settings to runs that ended (closed, cancelled or rejected) longer
+    ago than them: `retention.artifactDays` deletes the run's artifacts that no kept run uses and
+    records a `retention.artifacts.pruned` event; `retention.eventDays` removes the run, its
+    events, records and artifacts. Open runs and memory records are never touched. Without
+    --apply only the report is printed."""
+    _emit(_call(lambda: HarnessApplication().gc(path, apply=apply)))
 
 
 @evidence_app.command("list")

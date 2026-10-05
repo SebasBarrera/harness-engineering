@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml
 
 from governed_harness.configuration.models import (
+    DEFAULT_DECISION_EXPIRY_HOURS,
     DEFAULT_SANDBOX_WRITE_PATHS,
     DEFAULT_TRUSTED_HOSTS,
 )
@@ -43,7 +44,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "commandTimeoutSeconds": 900,
             "maxOutputBytes": 1000000,
             "maxParallel": 2,
-            "allowNetwork": False,
+            # Enforced under governance.applyNetworkPolicy: agent CLIs call their model API.
+            "allowNetwork": True,
             "agentSandbox": "enforce",
             "sandboxWritePaths": [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS],
             "verificationCorrections": 2,
@@ -64,6 +66,10 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "pinTaskRevision": True,
             "protectExcludedPaths": True,
             "workspaceLease": True,
+            "applyWorkflowSettings": True,
+            "decisionExpiryHours": DEFAULT_DECISION_EXPIRY_HOURS,
+            "applyProfilePolicies": True,
+            "applyNetworkPolicy": True,
         },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
