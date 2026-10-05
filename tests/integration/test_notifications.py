@@ -194,6 +194,7 @@ def test_inbox_lists_decisions_and_clarifications(python_workspace: Path, tmp_pa
     assert kinds[blocked.execution_id]["questions"] >= 1
     text = CliRunner().invoke(app, ["--no-json", "inbox", "--path", str(python_workspace)])
     assert "decision" in text.stdout and "clarification" in text.stdout
-    client = TestClient(create_app(python_workspace))
+    # harness init writes governance.trustedHosts: loopback names only.
+    client = TestClient(create_app(python_workspace), base_url="http://127.0.0.1")
     assert len(client.get("/api/inbox").json()) == 2
     assert "setInterval(refresh, 5000)" in client.get("/").text

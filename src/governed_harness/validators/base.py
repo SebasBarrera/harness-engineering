@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Protocol
 
 from governed_harness.configuration.models import ValidatorDefinition
+from governed_harness.domain.enums import ResultStatus
 from governed_harness.domain.models import (
     CapabilityGrant,
     ChangeSet,
@@ -35,6 +36,11 @@ class ValidationContext:
     # Unredacted diff exists only in memory for security checks.  It must never be
     # persisted as an artifact or event payload.
     raw_diff: str | None = None
+    # Status of an unavailable mandatory validator (governance.applyProfilePolicies):
+    # missingTestCommand for a missing executable or Python module, missingTestScript for a
+    # missing package script. None keeps BLOCKED.
+    missing_command_status: ResultStatus | None = None
+    missing_script_status: ResultStatus | None = None
     # verification.outputParsers: parse the output of a failing command validator into one
     # located finding per reported problem (validators.parsers).
     parse_output: bool = False

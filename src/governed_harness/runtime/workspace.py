@@ -23,6 +23,41 @@ DEFAULT_EXCLUDES = {
 }
 
 
+NO_NEWLINE_MARKER = "\\ No newline at end of file\n"
+
+
+def unified_file_diff(
+    path: str, old_text: str, new_text: str, *, added: bool = False, deleted: bool = False
+) -> list[str]:
+    """The unified diff of one text file as lines that each end with a newline, in the form
+    ``git apply`` and ``patch`` read: an added file is diffed from ``/dev/null`` and a deleted
+    one to it, and a last line without a newline is followed by the ``\\ No newline at end of
+    file`` marker.
+
+    Before 1.1 the lines were joined with an extra newline (every line was followed by an empty
+    line), so ChangeSet diffs recorded by earlier versions are not valid patches; their digests
+    stay as recorded."""
+    lines: list[str] = []
+    for line in difflib.unified_diff(
+        _text_lines(old_text),
+        _text_lines(new_text),
+        fromfile="/dev/null" if added else f"a/{path}",
+        tofile="/dev/null" if deleted else f"b/{path}",
+    ):
+        if line.endswith("\n"):
+            lines.append(line)
+        else:
+            lines.extend((line + "\n", NO_NEWLINE_MARKER))
+    return lines
+
+
+def _text_lines(text: str) -> list[str]:
+    # Split on newlines only, as Git does: str.splitlines also breaks on form feeds, vertical
+    # tabs and other separators, which would make the hunks disagree with the file.
+    parts = text.split("\n")
+    return [part + "\n" for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
 @dataclass(frozen=True)
 class FileState:
     path: str
@@ -109,16 +144,8 @@ class WorkspaceSnapshotter:
             old_text = "" if old is None else old.text
             new_text = "" if new is None else new.text
             if old_text is not None and new_text is not None:
-                old_lines = old_text.splitlines(keepends=True)
-                new_lines = new_text.splitlines(keepends=True)
-                chunk = list(
-                    difflib.unified_diff(
-                        old_lines,
-                        new_lines,
-                        fromfile=f"a/{path}",
-                        tofile=f"b/{path}",
-                        lineterm="",
-                    )
+                chunk = unified_file_diff(
+                    path, old_text, new_text, added=old is None, deleted=new is None
                 )
                 for line in chunk:
                     if line.startswith("+") and not line.startswith("+++"):
@@ -126,7 +153,7 @@ class WorkspaceSnapshotter:
                     elif line.startswith("-") and not line.startswith("---"):
                         deletions += 1
                 if chunk:
-                    diff_chunks.append("\n".join(chunk) + "\n")
+                    diff_chunks.append("".join(chunk))
             else:
                 diff_chunks.append(f"Binary files differ: {path}\n")
             changes.append(

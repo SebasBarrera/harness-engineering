@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 import threading
@@ -148,6 +149,36 @@ class SQLiteStateStore:
             self.connection.execute(
                 "DELETE FROM records WHERE record_type=? AND record_id=?", (record_type, record_id)
             )
+
+    def record_types(self, execution_id: str) -> builtins.list[str]:
+        rows = self.connection.execute(
+            "SELECT DISTINCT record_type FROM records WHERE execution_id=? ORDER BY record_type",
+            (execution_id,),
+        ).fetchall()
+        return [str(row["record_type"]) for row in rows]
+
+    def flags_for(self, execution_id: str) -> dict[str, str]:
+        """The flags the engine keys by run (``<name>:<run id>``)."""
+        suffix = f":{execution_id}"
+        rows = self.connection.execute("SELECT key, value FROM flags").fetchall()
+        return {
+            str(row["key"]): str(row["value"]) for row in rows if str(row["key"]).endswith(suffix)
+        }
+
+    def delete_execution(self, execution_id: str, *, keep: frozenset[str] = frozenset()) -> None:
+        """Delete the records and flags of a run (``retention.eventDays``), except the record
+        types in ``keep``."""
+        flags = list(self.flags_for(execution_id))
+        with self._lock, self.connection:
+            for record_type in self.record_types(execution_id):
+                if record_type in keep:
+                    continue
+                self.connection.execute(
+                    "DELETE FROM records WHERE record_type=? AND execution_id=?",
+                    (record_type, execution_id),
+                )
+            for key in flags:
+                self.connection.execute("DELETE FROM flags WHERE key=?", (key,))
 
     def set_flag(self, key: str, value: str) -> None:
         now = datetime.now(UTC).isoformat()

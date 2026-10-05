@@ -29,7 +29,11 @@ class WorkspaceUnitConfig(ConfigModel):
 
 class WorkspaceConfig(ConfigModel):
     root: str = ".."
-    units: tuple[WorkspaceUnitConfig, ...] = ()
+    units: tuple[WorkspaceUnitConfig, ...] = Field(
+        default=(),
+        description="Declarative: declared units are not used by the engine.",
+        json_schema_extra={"x-declarative": True},
+    )
 
 
 class CapabilityRule(ConfigModel):
@@ -117,8 +121,23 @@ class RuntimeConfig(ConfigModel):
 
     command_timeout_seconds: int = Field(default=900, alias="commandTimeoutSeconds", ge=1)
     max_output_bytes: int = Field(default=1_000_000, alias="maxOutputBytes", ge=1024)
-    max_parallel: int = Field(default=2, alias="maxParallel", ge=1, le=32)
-    allow_network: bool = Field(default=False, alias="allowNetwork")
+    max_parallel: int = Field(
+        default=2,
+        alias="maxParallel",
+        ge=1,
+        le=32,
+        description="Declarative: phases and validators run one at a time.",
+        json_schema_extra={"x-declarative": True},
+    )
+    allow_network: bool = Field(
+        default=False,
+        alias="allowNetwork",
+        description=(
+            "Network access of the agent sandbox: false denies outbound connections under "
+            "governance.applyNetworkPolicy and runtime.agentSandbox: enforce; otherwise "
+            "declarative."
+        ),
+    )
     agent_sandbox: AgentSandboxMode | None = Field(default=None, alias="agentSandbox")
     sandbox_write_paths: tuple[str, ...] | None = Field(default=None, alias="sandboxWritePaths")
 
@@ -360,6 +379,94 @@ class RetrospectiveConfig(ConfigModel):
         return data
 
 
+DeciderIdentity = Literal["git", "default"]
+ChainAnchorMode = Literal["file", "git-note", "off"]
+
+DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
+"""Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
+
+DEFAULT_DECISION_EXPIRY_HOURS = 72
+"""Validity of a human decision that ``harness init`` writes (``governance.decisionExpiryHours``)."""
+
+
+class GovernanceConfig(ConfigModel):
+    """Integrity settings of the human decisions, the workspace and the record (since 1.1).
+
+    Every key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of
+    the serialized configuration, so the snapshot digest of an existing project does not
+    change. ``harness init`` writes them all.
+
+    * ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the
+      person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed
+      ``human.local`` and ``human.web`` identifiers.
+    * ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and
+      asks for the first characters of the ChangeSet digest before recording it.
+    * ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these
+      names (DNS-rebinding protection); absent, every host is accepted.
+    * ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records
+      against events, artifact digests, anchor) and refuses to export a run that fails, and
+      ``status`` adds the result of the record check.
+    * ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event
+      chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.
+    * ``pinTaskRevision``: a run works on the task revision it was created with (or a revision
+      made through ``task clarify``), ``task create`` refuses a task id that has an open run, and
+      a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.
+    * ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual
+      environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted
+      around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;
+      the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants
+      on ``.harness/**`` and ``.git/**`` are dropped.
+    * ``workspaceLease``: one harness process at a time executes phases in a workspace
+      (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded
+      as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness
+      left and restores the workspace an interrupted IMPLEMENTATION attempt found.
+    * ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and
+      ``exitGate`` take effect.
+    * ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it
+      is recorded; an expired decision does not let DECISION pass.
+    * ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and
+      ``missingTestScript`` set the status of an unavailable mandatory validator, and a
+      ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).
+    * ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access
+      to the agent under ``runtime.agentSandbox: enforce``."""
+
+    decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
+    confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
+    trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
+    verify_records: bool | None = Field(default=None, alias="verifyRecords")
+    chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
+    pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
+    protect_excluded_paths: bool | None = Field(default=None, alias="protectExcludedPaths")
+    workspace_lease: bool | None = Field(default=None, alias="workspaceLease")
+    apply_workflow_settings: bool | None = Field(default=None, alias="applyWorkflowSettings")
+    decision_expiry_hours: int | None = Field(
+        default=None, alias="decisionExpiryHours", ge=1, le=8760
+    )
+    apply_profile_policies: bool | None = Field(default=None, alias="applyProfilePolicies")
+    apply_network_policy: bool | None = Field(default=None, alias="applyNetworkPolicy")
+
+    @field_validator("trusted_hosts")
+    @classmethod
+    def _hosts_are_names(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for host in value or ():
+            if not host.strip() or any(char.isspace() or char == "/" for char in host):
+                raise ValueError(f"trusted host must be a host name or address: {host!r}")
+        return value
+
+    @property
+    def git_decider(self) -> bool:
+        return self.decider_identity == "git"
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_settings(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, field in type(self).model_fields.items():
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(field.alias or name, None)
+        return data
+
+
 class ProjectConfiguration(ConfigModel):
     config_version: Literal["1.0"] = Field(alias="configVersion")
     project_id: str = Field(alias="projectId")
@@ -374,12 +481,23 @@ class ProjectConfiguration(ConfigModel):
         default_factory=dict, alias="agentProviders"
     )
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
-    retention: dict[str, Any] = Field(default_factory=dict)
+    retention: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "artifactDays and eventDays: what harness gc removes for runs that ended longer ago."
+        ),
+    )
     intake: IntakeConfig | None = None
     verification: VerificationConfig | None = None
+    governance: GovernanceConfig | None = None
     review: ReviewConfig | None = None
     notifications: NotificationsConfig | None = None
     retrospective: RetrospectiveConfig | None = None
+
+    @property
+    def governance_settings(self) -> GovernanceConfig:
+        """The governance settings, all absent (1.0.0 behaviour) when the section is."""
+        return self.governance or GovernanceConfig()
 
     @property
     def output_parsers_enabled(self) -> bool:
@@ -435,7 +553,7 @@ class ProjectConfiguration(ConfigModel):
             data.pop("intake", None)
         if self.verification is None:
             data.pop("verification", None)
-        for section in ("review", "notifications", "retrospective"):
+        for section in ("governance", "review", "notifications", "retrospective"):
             if getattr(self, section) is None:
                 data.pop(section, None)
         return data
@@ -472,14 +590,54 @@ class TechnologyProfileDefinition(ConfigModel):
 class WorkflowPhaseDefinition(ConfigModel):
     phase_id: PhaseId = Field(alias="id")
     purpose: str
-    depends_on: tuple[PhaseId, ...] = Field(default=(), alias="dependsOn")
+    depends_on: tuple[PhaseId, ...] = Field(
+        default=(),
+        alias="dependsOn",
+        description="Declarative: the phase order is fixed by the state machine.",
+        json_schema_extra={"x-declarative": True},
+    )
     required: bool = True
-    parallelizable: bool = False
-    allowed_capabilities: tuple[str, ...] = Field(default=(), alias="allowedCapabilities")
-    validators: tuple[str, ...] = ()
-    exit_gate: str = Field(alias="exitGate")
-    timeout_seconds: int = Field(default=1800, alias="timeoutSeconds", ge=1)
-    max_attempts: int = Field(default=1, alias="maxAttempts", ge=1, le=20)
+    parallelizable: bool = Field(
+        default=False,
+        description="Declarative: phases run one at a time.",
+        json_schema_extra={"x-declarative": True},
+    )
+    allowed_capabilities: tuple[str, ...] = Field(
+        default=(),
+        alias="allowedCapabilities",
+        description="Declarative: capabilities are granted per run, not per phase (issue #4).",
+        json_schema_extra={"x-declarative": True},
+    )
+    validators: tuple[str, ...] = Field(
+        default=(),
+        description="Declarative: the validators come from the profiles and the project.",
+        json_schema_extra={"x-declarative": True},
+    )
+    exit_gate: str = Field(
+        alias="exitGate",
+        description=(
+            "Name of the condition the phase must meet to pass; recorded with each attempt "
+            "(exitGate, exitGateMet) under governance.applyWorkflowSettings."
+        ),
+    )
+    timeout_seconds: int = Field(
+        default=1800,
+        alias="timeoutSeconds",
+        ge=1,
+        description=(
+            "Wall-clock budget of one attempt of the phase under governance.applyWorkflowSettings."
+        ),
+    )
+    max_attempts: int = Field(
+        default=1,
+        alias="maxAttempts",
+        ge=1,
+        le=20,
+        description=(
+            "Failed attempts of the phase after which it is not started again, under "
+            "governance.applyWorkflowSettings."
+        ),
+    )
 
 
 class WorkflowTransitionDefinition(ConfigModel):
@@ -495,7 +653,11 @@ class WorkflowDefinition(ConfigModel):
     description: str = ""
     phases: tuple[WorkflowPhaseDefinition, ...]
     transitions: tuple[WorkflowTransitionDefinition, ...]
-    invariants: tuple[str, ...] = ()
+    invariants: tuple[str, ...] = Field(
+        default=(),
+        description="Declarative: names of invariants the engine enforces in code.",
+        json_schema_extra={"x-declarative": True},
+    )
 
     @model_validator(mode="after")
     def validate_graph(self) -> WorkflowDefinition:

@@ -29,7 +29,8 @@
         "CANCELLED",
         "TIMED_OUT",
         "ERROR",
-        "INCONCLUSIVE"
+        "INCONCLUSIVE",
+        "INTERRUPTED"
       ]
     },
     "terminalStatus": {
@@ -43,7 +44,8 @@
         "CANCELLED",
         "TIMED_OUT",
         "ERROR",
-        "INCONCLUSIVE"
+        "INCONCLUSIVE",
+        "INTERRUPTED"
       ]
     },
     "actor": {

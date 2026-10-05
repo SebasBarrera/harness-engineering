@@ -5,8 +5,8 @@ the same application layer as the CLI. It serves one project.
 
 > [!WARNING]
 > There is **no authentication, no roles and no multi-user model**. The decision endpoint accepts
-> any actor string. Keep the server on the loopback default (`--host 127.0.0.1`) or behind a
-> separately secured environment. See [SECURITY.md](https://github.com/SebasBarrera/harness-engineering/blob/develop/SECURITY.md) and issue #18.
+> any actor string outside the agent, validator and harness namespaces. Keep the server on the
+> loopback default (`--host 127.0.0.1`) or behind a separately secured environment. See [SECURITY.md](https://github.com/SebasBarrera/harness-engineering/blob/develop/SECURITY.md) and issue #18.
 
 ```bash
 harness api serve --path . --host 127.0.0.1 --port 8765
@@ -22,11 +22,11 @@ harness api serve --path . --host 127.0.0.1 --port 8765
 | `GET` | `/api/runs/{run}/review?diff=false` | The decision brief (what was asked, what changed, risks, what was verified on which digest and what was not, exceptions, history, delta since the last decision, next commands); `diff=true` adds the redacted diff | 404 |
 | `GET` | `/api/inbox` | Runs waiting for a person (decision or clarification), oldest first | 400 |
 | `GET` | `/api/exceptions?status=all\|active\|expired` | The exception ledger (`review.exceptions`) | 400 |
-| `GET` | `/api/runs/{run}/trace?format=json\|markdown\|jsonl\|sarif` | The trace in the requested format (`application/json`, `text/markdown`, `application/x-ndjson`, `application/sarif+json`); default `json` | 404 |
+| `GET` | `/api/runs/{run}/trace?format=json\|markdown\|jsonl\|sarif` | The trace in the requested format (`application/json`, `text/markdown`, `application/x-ndjson`, `application/sarif+json`); default `json` | 404, 409 (run does not verify under `governance.verifyRecords`) |
 | `GET` | `/api/runs/{run}/evidence` | Evidence records with artifact references | 404 |
 | `GET` | `/api/runs/{run}/findings` | Structured findings | 404 |
 | `GET` | `/api/runs/{run}/retrospective` | Non-mutating retrospective | 404 |
-| `POST` | `/api/runs/{run}/decision` | The recorded decision and the updated execution | 409, 422 |
+| `POST` | `/api/runs/{run}/decision` | The recorded decision and the updated execution | 403, 409, 422 |
 | `GET` | `/` | The embedded dashboard (HTML) | — |
 
 The thesis cut had nine routes: seven queries, one decision `POST` and the dashboard; the inbox,
@@ -53,13 +53,19 @@ curl -s -X POST http://127.0.0.1:8765/api/runs/<run>/decision \
 | `decision` | `APPROVE`, `APPROVE_EXCEPTION`, `REQUEST_CHANGES`, `REJECT` | required |
 | `change_set_digest` | string | required |
 | `rationale` | string | required |
-| `actor_id` | string | `human.web` |
+| `actor_id` | string | the Git user under `governance.deciderIdentity: git` (`human.web` with a `warnings` entry in the response when Git has no identity), otherwise `human.web` |
 | `continue_after` | boolean | `true` |
 | `expires_in`, `expires_at`, `scope`, `alternative_evidence`, `follow_up` | exception options of `APPROVE_EXCEPTION` under `review.exceptions` (see [configuration](configuration.md#exceptions)) | none |
 
 Every policy violation of `harness gate decide` (stale digest, `APPROVE` over a gate that did not
 pass, run not in `DECISION`, exception without rationale) is returned as **409** with the reason in
-`detail`, for example `{"detail": "human decisions are accepted only in DECISION"}`.
+`detail`, for example `{"detail": "human decisions are accepted only in DECISION"}`. An
+`actor_id` in the namespace of an agent (`agent.*`), a validator (`validator.*`) or the harness
+(`harness.*`) is refused with **403** whatever the configuration.
+
+With `governance.trustedHosts` (written by `harness init`: `127.0.0.1`, `localhost`, `::1`) every
+route answers **400** to a request whose `Host` header is not one of those names, so a web page
+cannot reach the server through DNS rebinding. Without the key every host is accepted, as in 1.0.0.
 
 ## Dashboard
 

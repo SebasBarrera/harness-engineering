@@ -97,6 +97,20 @@ class LocalArtifactStore:
         except (OSError, ValueError):
             return False
 
+    def delete(self, reference: ArtifactRef | str) -> bool:
+        """Remove a blob and its descriptor (retention); ``False`` when it was not stored."""
+        digest = (
+            reference.digest
+            if isinstance(reference, ArtifactRef)
+            else self._digest_from_uri(reference)
+        )
+        hex_digest = digest.split(":", 1)[1]
+        path = self._blob_path(hex_digest)
+        existed = path.exists()
+        path.unlink(missing_ok=True)
+        (self.meta_root / f"{hex_digest}.json").unlink(missing_ok=True)
+        return existed
+
     def describe(self, uri: str) -> ArtifactRef:
         digest = self._digest_from_uri(uri)
         hex_digest = digest.split(":", 1)[1]

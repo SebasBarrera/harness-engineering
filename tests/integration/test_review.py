@@ -208,7 +208,8 @@ def test_delta_since_a_requested_change(python_workspace: Path, tmp_path: Path) 
 
 def test_api_review_and_dashboard_request_changes(python_workspace: Path, tmp_path: Path) -> None:
     run_id = start(python_workspace, tmp_path)
-    client = TestClient(create_app(python_workspace))
+    # harness init writes governance.trustedHosts: loopback names only.
+    client = TestClient(create_app(python_workspace), base_url="http://127.0.0.1")
     review = client.get(f"/api/runs/{run_id}/review")
     assert review.status_code == 200
     assert review.json()["run"]["awaitingDecision"] is True

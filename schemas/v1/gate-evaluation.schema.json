@@ -189,7 +189,8 @@
         "CANCELLED",
         "TIMED_OUT",
         "ERROR",
-        "INCONCLUSIVE"
+        "INCONCLUSIVE",
+        "INTERRUPTED"
       ],
       "title": "ResultStatus",
       "type": "string"

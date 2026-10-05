@@ -70,6 +70,18 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "acceptanceContractDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Acceptancecontractdigest"
+    },
     "actor": {
       "$ref": "#/$defs/Actor"
     },
@@ -113,6 +125,24 @@
     "gateEvaluationId": {
       "title": "Gateevaluationid",
       "type": "string"
+    },
+    "identitySource": {
+      "anyOf": [
+        {
+          "enum": [
+            "explicit",
+            "git",
+            "fallback",
+            "default"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identitysource"
     },
     "policyDigest": {
       "title": "Policydigest",

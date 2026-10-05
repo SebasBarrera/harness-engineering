@@ -15,8 +15,17 @@ from governed_harness.configuration.models import (
     TechnologyProfileDefinition,
     ValidatorDefinition,
 )
+from governed_harness.configuration.policies import validate_profile_policies
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.profiles.detectors import detect_profiles
+
+PROTECTED_WRITE_ROOTS = (".harness", ".git")
+"""Directories whose write scopes are dropped under ``governance.protectExcludedPaths``."""
+
+
+def _protected_scope(scope: str) -> bool:
+    return any(scope == root or scope.startswith(f"{root}/") for root in PROTECTED_WRITE_ROOTS)
+
 
 CORE_POLICIES = {
     "requireHumanDecision": True,
@@ -46,8 +55,12 @@ class ConfigurationResolver:
         profiles = tuple(load_builtin_profile(profile_id) for profile_id in requested)
         workflow = load_builtin_workflow(project.workflow)
         capabilities = self._resolve_capabilities(project.capabilities.grants, profiles)
+        if project.governance_settings.protect_excluded_paths:
+            capabilities = self._without_protected_writes(capabilities)
         validators = self._resolve_validators(project.validators, profiles)
         policies = self._resolve_policies(project.policies, profiles)
+        if project.governance_settings.apply_profile_policies:
+            validate_profile_policies(policies)
         return ResolvedConfiguration(
             project=project,
             workspace_root=workspace_root,
@@ -79,6 +92,22 @@ class ConfigurationResolver:
             )
             for (capability, approval), scopes in sorted(merged.items())
         )
+
+    @staticmethod
+    def _without_protected_writes(
+        capabilities: tuple[CapabilityRule, ...],
+    ) -> tuple[CapabilityRule, ...]:
+        """Drop write grants on the harness state and on Git (``governance.protectExcludedPaths``):
+        the built-in profiles grant ``filesystem.write`` on ``.harness/**``."""
+        kept: list[CapabilityRule] = []
+        for rule in capabilities:
+            if rule.capability == "filesystem.write":
+                scope = tuple(item for item in rule.scope if not _protected_scope(item))
+                if not scope:
+                    continue
+                rule = rule.model_copy(update={"scope": scope})
+            kept.append(rule)
+        return tuple(kept)
 
     @staticmethod
     def _resolve_validators(

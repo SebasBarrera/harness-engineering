@@ -166,6 +166,111 @@
   `project.yaml` without the settings behaves as before, sends the same provider request and
   keeps its configuration snapshot digest. `harness config validate` shows the effective values
   under `feedbackLoop`.
+- The ChangeSet diff is a valid unified diff (#50). Every line of the stored diff was followed by an
+  empty line, so the artifact could not be applied with `git apply` and viewers showed it wrongly.
+  The diff now ends each line once, diffs an added file from `/dev/null` and a deleted one to it,
+  and marks a last line without a newline with `\ No newline at end of file`; lines are split on
+  newlines only, as Git does. A test applies a recorded diff with `git apply --check` and
+  `git apply`. This is a defect fix and applies to every project, with or without new settings:
+  the ChangeSet digest covers the diff, so a run recorded with this version has a different
+  ChangeSet digest than the same change recorded by 1.0.0. Records written by earlier versions
+  are read as they are and keep their digests.
+- Agents, validators and the harness can no longer record a human decision (#45). `harness gate
+  decide --actor agent.claude-code --decision APPROVE_EXCEPTION` exited with 0, was recorded as a
+  `HUMAN` decision and closed the run; only `task clarify` refused those namespaces. Every human
+  act (`gate decide` with any decision, `recommendation decide`, `memory approve`,
+  `memory invalidate`, `memory add --approve`, `task clarify`) now refuses an actor id in
+  `agent.*`, `validator.*` or `harness.*` (or one of those words alone) with exit code 5, and the
+  decision endpoint of the local API with 403. This is a defect fix and applies to every project.
+  A new optional `governance` section, written by `harness init`, adds: `deciderIdentity: git`,
+  which records the Git user (`actorId` from `user.email`, `displayName` `Name <email>`) when no
+  `--actor` is given (otherwise `human.local` and `human.web` as before) and records in a gate
+  decision where the id came from (`identitySource`: `explicit`, `git`, or `fallback` when Git has
+  no usable identity, in which case the default id is used with a warning instead of failing);
+  `confirmDecisionDigest`, which on a terminal sends every `gate decide` through the interactive
+  confirmation (the decision brief, then the first 12 characters of the digest; exit 5 on a wrong
+  answer), even when every option is given; and
+  `trustedHosts` (`127.0.0.1`, `localhost`, `::1`), which makes the local API answer 400 to any
+  other `Host` header. A `project.yaml` without the section keeps the 1.0.0 behaviour and its
+  configuration snapshot digest. The `--actor` options default to none in the CLI reference.
+- `harness verify` and a record that is checked against its events (#49). Editing an event payload
+  made `harness status` exit with 1 (`EventChainError`) instead of reporting the broken chain;
+  deleting the last events and rewriting the decider in the `records` projection made `status`
+  show the forged decider with `eventChainValid: true`; `trace` exported without checking
+  anything. `status` now reports `eventChainValid: false` and the reason in `eventChainError` (a
+  defect fix, applied to every project). The new `harness verify [--run <id>]` walks the event
+  chain, rebuilds every record that has an event of its own (decisions, gates, ChangeSets,
+  validations, findings, evidence, tool and agent invocations, clarifications) and compares it
+  with the stored projection, checks the run's pointers and phase results and every referenced
+  artifact against its digest, and prints a JSON report (exit 0, or 6 when a check fails); it
+  repairs nothing. Two new `governance` keys, written by `harness init`: `verifyRecords: true`
+  makes `trace` (and the API trace route) verify first and refuse a run that does not verify
+  (exit 6, API 409) and adds `recordsValid` to `status`; `chainAnchor: file | git-note | off`
+  copies the head of each run's chain, after every command that appends events, to a file under
+  the user's data directory (`$HARNESS_ANCHOR_DIR` overrides it) or to a Git note under
+  `refs/notes/governed-harness`, so `verify` reports a truncated (`truncated`) or replaced
+  (`rewritten`) chain. Without the keys, `trace` exports as in 1.0.0 and nothing is anchored.
+- The task of a run no longer changes under it (#48). `harness task create` with the id of a task
+  whose run waited in `DECISION` replaced the task silently, and every phase re-read it. Under the
+  new `governance.pinTaskRevision` (written by `harness init`) a run stores the task revision it
+  was created with (`taskDigest` and `taskRevisionRef` in `run.created`) and every phase works on
+  it; only `task clarify` during `INTENT` replaces it. `task create` with the id of a task that has
+  an open run exits with 5. `SPECIFICATION` freezes the acceptance-contract digest, and a decision
+  records it as `acceptanceContractDigest` (new optional field of `human-decision.schema.json`, left
+  out of decisions recorded without the setting) and is refused with 5 when the run's task no
+  longer produces it. Without the setting the 1.0.0 behaviour and digests are kept.
+- Writes outside the ChangeSet are detected and `.harness` and `.git` are protected from the agent
+  (#46). With the sandbox on, an agent wrote `.git/hooks/pre-commit`, `venv/lib/dep.py` and
+  `dist/payload.py`; the ChangeSet listed one file and the gate reached `DECISION` with two
+  `MEDIUM` findings. Under the new `governance.protectExcludedPaths` (written by `harness init`)
+  every file below `.git`, `.harness`, `.venv`, `venv`, `node_modules`, `dist` and `build` and
+  every symbolic link is fingerprinted before and after the agent invocations of each
+  `IMPLEMENTATION` attempt (recorded as evidence); a change is a `CRITICAL` finding
+  `workspace.out-of-changeset-write` naming the paths, and each later gate of the run gets a
+  failed mandatory validation `harness.workspace-guard`, so `APPROVE` exits with 5. The agent
+  sandbox keeps `.harness` and `.git` read-only (`protectedPaths` in its evidence) and the
+  profiles' write grants on `.harness/**` are dropped from the resolved capabilities. The
+  harness's own state, Git's index, locks and objects are not watched. Without the setting the
+  1.0.0 behaviour, sandbox profile and configuration digest are kept.
+- One harness process per workspace and a safe recovery after a crash (#47). `SIGTERM` during
+  `IMPLEMENTATION` left the phase `RUNNING` while the agent kept writing, and `run continue`
+  implemented the change again on top of it; two concurrent `run start` on one workspace
+  interfered and both failed. Under the new `governance.workspaceLease` (written by
+  `harness init`) `run start`, `run continue`, `gate decide` and `task clarify` hold a lease,
+  `.harness/lease.json` (pid, host, run, heartbeat every 10 s); another process exits with 5 and
+  names the holder, and a lease whose process is gone (or whose heartbeat is older than 60 s) is
+  taken over. While it is held, `SIGTERM` terminates the agent's process group, records the phase
+  and the run as `INTERRUPTED` (new status value in the schemas) and exits with 143. The runner
+  records the process groups it starts; `run continue` on a run a killed harness left marks a
+  `RUNNING` phase `INTERRUPTED`, terminates the recorded groups that still run, restores the files
+  an interrupted `IMPLEMENTATION` attempt changed to the snapshot taken when it started (a
+  `run.recovered` event lists them) and runs the phase again. Without the setting the 1.0.0
+  behaviour and configuration digest are kept.
+- Configuration that no component read is applied or reported (#51). New `governance` keys,
+  written by `harness init`: `applyWorkflowSettings` applies the workflow's per-phase
+  `maxAttempts` (a phase with that many failed attempts is not started again; the run is
+  `BLOCKED` with a `phase.attempts.exhausted` event) and `timeoutSeconds` (the agent and the
+  validators get at most the time left of the attempt; an attempt that ends later is
+  `TIMED_OUT`), and records `exitGate` and `exitGateMet` with every attempt;
+  `decisionExpiryHours` (init 72) sets `HumanDecision.expiresAt`, and an expired decision leaves
+  `DECISION` `BLOCKED`; `applyProfilePolicies` makes `missingTestCommand` and `missingTestScript`
+  (`BLOCKED` or `FAILED`) the status of an unavailable mandatory validator and turns a project
+  policy `coverage: {minimumPercent: N}` into a mandatory `python.coverage` validator;
+  `applyNetworkPolicy` makes `runtime.allowNetwork: false` deny the agent outbound connections
+  in the sandbox (Seatbelt rule or `bwrap --unshare-net`). `harness init` now writes
+  `runtime.allowNetwork: true`, since agent CLIs call their model API. The new
+  `harness gc [--apply]` applies `retention.artifactDays` (prunes the artifacts of runs that ended, with a
+  `retention.artifacts.pruned` event that `verify` honours) and `retention.eventDays` (removes
+  the run). The remaining declared settings (`workspace.units`, `runtime.maxParallel`, three
+  policies, the workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase
+  `validators` and `invariants`) are marked `x-declarative` in the schemas, and
+  `harness config validate` lists them under `declarative` with `warnings` for the ones the
+  project relies on. Without the keys the 1.0.0 behaviour and configuration digest are kept.
+- An `integrity` flow in `scripts/demo_flows.py` checks the settings above end to end: an
+  `agent.*` decision exits with 5 and is not recorded, `task create` on the task of an open run
+  exits with 5, `verify` exits with 0, and after an event is edited `status` reports
+  `eventChainValid: false` while `verify` and `trace` exit with 6. The script keeps the chain
+  anchors in a temporary directory of its own (`HARNESS_ANCHOR_DIR`).
 
 ## 1.0.0 - 2026-10-01
 
