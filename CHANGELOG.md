@@ -2,6 +2,60 @@
 
 ## Unreleased
 
+- Approval valid for what gets merged (#54). A decision bound the digest of the workspace
+  ChangeSet, but a team merges a pull request. Under `delivery.closureCommit` (written by
+  `harness init` as `branch`), `CLOSURE` writes the approved ChangeSet as one commit on
+  `harness/<run id>` (or on the current branch with `head`), built in a temporary index without
+  touching the working tree, with the trailers `Harness-Run`, `Harness-Task`,
+  `Harness-ChangeSet`, `Harness-Decision` and, for an exception, `Harness-Exception`; its diff is
+  recomputed and must be the approved digest before any ref moves. A run that started on
+  uncommitted changes gets no commit and the reason is recorded. `harness export --bundle`
+  writes a portable evidence bundle (event chain, records, artifacts, manifest of digests; new
+  contract `evidence-bundle-manifest.schema.json`) and `harness verify --bundle` checks it
+  without the workspace. `harness verify-approval --base --head [--bundle]` recomputes the
+  ChangeSet digest of a commit range and exits with 0 only when an unexpired approval in a
+  verified bundle (or the workspace record) is bound to it, and with 5 otherwise.
+  `harness pr publish` posts the decision brief (one comment per run) and the SARIF report on a
+  GitHub pull request through the GitHub CLI or the REST API with a token from the environment.
+  Without the key the harness never commits, as in 1.0.0.
+- Project-defined validators and profiles (#54). A project could only pick validator ids of the
+  built-in profiles. Under `toolchain`: `profilePaths` loads profiles from the repository,
+  `profileDetection: all` selects every detected profile (written by `harness init`),
+  `interpreter: auto` runs the Python validators with `.venv`/`venv`, `uv run --no-sync` or
+  `poetry run` (written by `harness init`), and `validators` replaces or adds validators with a
+  command, a named output parser (`sarif`, `junit`, `ruff`, `mypy`, `eslint`, `tsc`, `pytest`),
+  a severity mapping, a failure severity and `passEnv`. Without the section the resolved
+  configuration and its digest are unchanged.
+- Built-in agent adapters and provider environment (#54). `agentProviders.<id>.kind` accepts
+  `claude-code`, `codex`, `gemini-cli` and `aider`: the harness runs the CLI in its
+  non-interactive mode under the same grant and sandbox, renders the task, plan, memory and
+  correction feedback as a prompt, and records the session, tokens and cost the CLI reports as
+  `REPORTED` usage. The adapters are tested against fake CLIs, not live agents. A provider
+  declares `passEnv` and `env` (literal or `{fromEnv: NAME}`; a missing `fromEnv` blocks
+  `IMPLEMENTATION` before the provider starts); only names are recorded and the values are
+  redacted from every artifact and from the agent's summary. `runtime.extendedRedaction`
+  (written by `harness init`) adds model-API keys, Slack tokens, JSON Web Tokens and URL
+  passwords to the redaction rules. The adapter template of the external-agents guide, which
+  failed with `KeyError: 'AGENT_COMMAND'` because the provider only received `PATH`, `HOME`,
+  `LANG` and `TMPDIR`, now declares `passEnv`.
+- Large repositories (#54). On a generated repository of 10,001 tracked files a run took
+  16.47 s, peaked at 700,841,984 bytes and stored a 119,112,913-byte baseline holding an ignored
+  `.env`. Under `workspace.snapshot: git`, `workspace.baseline: manifest` and
+  `workspace.snapshotCache` (all written by `harness init`) files are listed through Git
+  (ignored files are never read or stored, and the out-of-ChangeSet guard watches them), the
+  baseline is a manifest of digests whose text comes from Git when a file enters a diff, and
+  digests are cached by size, modification time, change time and inode in a sealed cache; the
+  same run took 4.27 s, 94,109,696 bytes and a 1,911,156-byte manifest, without `.env`.
+  `harness gc` gains `retention.orphanArtifacts` (written by `harness init`) for artifacts
+  nothing references, and now finds artifact references inside flags that hold JSON.
+- Provenance per component and agent self-report (#54). Under `provenance.agentSnapshots`
+  (written by `harness init`) the files of the ChangeSet scope are recorded before and after
+  every agent invocation; every ChangeSet file is attributed to the invocation that wrote it or
+  recorded as an out-of-band edit (`provenance.out-of-band-edit` events, `DECISION` evidence,
+  new contract `component-provenance.schema.json`), and `harness review` shows it. Under
+  `provenance.selfReport` the agent is asked for its assumptions, discarded alternatives,
+  low-confidence areas and unrequested changes, stored as `REPORTED` data and contrasted with
+  the ChangeSet (new contract `agent-self-report.schema.json`; 34 schemas), never as a check.
 - Retrospective by cause, rule health and outcomes (#53). In the thesis evaluation the
   retrospective attributed 19 of 53 recommendations to the wrong cause (reported there, not
   re-measured here), counting optional validators without effect on the gate, and rejected runs
