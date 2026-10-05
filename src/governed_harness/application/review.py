@@ -323,7 +323,9 @@ def build_brief(
             1 for item in corrections if item.payload.get("trigger") == "VERIFICATION_FAILED"
         ),
         "requestedChanges": sum(
-            1 for item in corrections if item.payload.get("trigger") != "VERIFICATION_FAILED"
+            1
+            for item in corrections
+            if item.payload.get("trigger") not in {"VERIFICATION_FAILED", "REVIEW_FINDINGS"}
         ),
         "providerRetries": sum(
             1 for item in events if item.event_type == "agent.invocation.retried"
@@ -340,7 +342,17 @@ def build_brief(
             item["location"],
         ),
     )
-    return {
+    review_corrections = sum(
+        1 for item in corrections if item.payload.get("trigger") == "REVIEW_FINDINGS"
+    )
+    if review_corrections:
+        history["reviewCorrections"] = review_corrections
+    if any(item.validator_id == "review.agent" for item in current_validations):
+        not_verified.append(
+            "a second agent reviewed the ChangeSet (review.agentReview); it is not a person"
+        )
+    agent_results = _agent_results_section(services, execution, current_findings)
+    brief: dict[str, Any] = {
         "schemaVersion": BRIEF_SCHEMA_VERSION,
         "run": {
             "executionId": execution.execution_id,
@@ -394,4 +406,32 @@ def build_brief(
             for item in decisions
         ],
         "next": _next(execution, awaiting),
+    }
+    if agent_results:
+        brief["riskFactors"] = agent_results
+    return brief
+
+
+def _agent_results_section(
+    services: EngineServices, execution: Execution, findings: list[Finding]
+) -> dict[str, Any] | None:
+    """Risk factors of the ChangeSet (``verification.riskFactors``, #52): what blocks, what the
+    decider must acknowledge (``--acknowledge-risk``) and what only informs."""
+    signals = [item for item in findings if item.category == "risk"]
+    raw = services.state.get_flag(f"riskack:{execution.execution_id}:{execution.change_set_digest}")
+    required = json.loads(raw) if raw else []
+    if not signals and not required:
+        return None
+    return {
+        "acknowledgementRequired": required,
+        "signals": [
+            {
+                "factor": item.rule_id.removeprefix("risk."),
+                "severity": item.severity.value,
+                "message": item.message,
+                "location": item.location.path if item.location else None,
+                "line": item.location.start_line if item.location else None,
+            }
+            for item in signals
+        ],
     }

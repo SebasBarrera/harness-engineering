@@ -204,6 +204,9 @@ def test_risk_factors_need_acknowledgement(python_workspace: Path, tmp_path: Pat
     status = application.status(python_workspace, run)
     assert status["execution"]["currentPhase"] == PhaseId.DECISION
     digest = status["execution"]["changeSetDigest"]
+    brief = application.review(python_workspace, run)
+    assert brief["riskFactors"]["acknowledgementRequired"] == ["network"]
+    assert [item["factor"] for item in brief["riskFactors"]["signals"]] == ["network"]
     with pytest.raises(PolicyViolationError, match="network"):
         application.decide_gate(
             python_workspace,
