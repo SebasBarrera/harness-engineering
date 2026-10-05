@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Plan-approval checkpoint in PLANNING (closes #8). The workflow declared `approval.request`
+  and the exit gate `plan_authorized` for PLANNING, but only decomposition plans were approved.
+  Under `friction.planApproval: risk` (written by `harness init`) a task the router sizes `L` or
+  that carries a risk flag waits after PLANNING for a person to approve its plan, bound to a
+  plan digest that ignores step identifiers (`harness plan show` and `harness plan decide` with
+  `APPROVE` or `REJECT` and the digest; `run start` exits 6 while it waits, like the other waits
+  before DECISION, and `REJECT` ends the run). Other tasks skip it and the reason is recorded
+  (`plan.approval.skipped`); a pre-authorised approval in force for the run's contract covers it
+  (`plan.approval.covered`). `always` asks for every task. A `project.yaml` without the key keeps
+  the 1.0.0 behaviour.
 - Local API authentication, roles and decision audit (#18). The optional `api` section, written
   by `harness init`, makes `harness api serve` require `Authorization: Bearer TOKEN` on every
   route, the dashboard included (it asks for the token once and keeps it in the tab's
