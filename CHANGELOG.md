@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect under
+  `governance.enforceWorkflow`, which `harness init` writes; a `project.yaml` without it keeps
+  the 1.0.0 behaviour and configuration digest (closes #3). After a phase attempt passes, its exit
+  gate and the condition of the transition it takes are evaluated from the run's records; an
+  unmet one leaves the run `BLOCKED` with the reason and a `phase.exit_gate.unmet` event, and an
+  unknown name is a configuration error. The built-in DECISION gate `decision_recorded` is the same
+  check as its transition condition `decision_approved` (`REQUEST_CHANGES` and `REJECT` leave
+  DECISION through `gate decide`). A phase starts only when its `dependsOn` phases passed, and the
+  next phase comes from the workflow graph. In a parallelizable `VERIFICATION`, validators
+  declared `parallelSafe` (new optional validator key) run at once up to `runtime.maxParallel`,
+  recorded in the declared order; phases and the sub-tasks of a decomposition stay sequential on
+  the run's one workspace, recorded in `workflow.schedule`. `dependsOn`, `parallelizable` and
+  `runtime.maxParallel` are no longer marked declarative.
 - Verification ladder, certification and delivery hygiene, wave 5 (#55). Every key is optional:
   a `project.yaml` without it keeps the earlier behaviour and configuration digest, a task without
   the new fields keeps its digest, and `harness init` writes them (`harness config validate`
