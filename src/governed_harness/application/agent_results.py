@@ -16,6 +16,78 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices
 
 
+def budget_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
+    """Usage of a run and its task against the configured limits (``budget``)."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    if services.resolved.project.budget is None:
+        raise ConfigurationError("budget needs the budget section in project.yaml")
+    engine = RunEngine(services)
+    execution = engine.get_execution(execution_id)
+    check = engine.results.budget_check(execution)
+    return {
+        "executionId": execution_id,
+        "usage": {
+            "run": engine.results.run_usage(execution).as_dict(),
+            "task": engine.results.task_usage(execution).as_dict(),
+        },
+        "limits": services.resolved.project.budget.model_dump(mode="json", by_alias=True),
+        "raised": engine.results.raised_limits(execution),
+        "remaining": check.remaining if check else {},
+        "exceeded": [item.as_dict() for item in check.exceeded] if check else [],
+    }
+
+
+def raise_budget(
+    services: EngineServices,
+    execution_id: str,
+    *,
+    scope: str,
+    metric: str,
+    limit: float,
+    actor_id: str,
+    rationale: str,
+) -> dict[str, Any]:
+    """A person raises a limit of the run (recorded on its chain) so the run may continue."""
+    from governed_harness.orchestration.budget import METRICS, SCOPES, effective_limit
+    from governed_harness.orchestration.engine import RunEngine
+
+    require_human_actor(actor_id, "raise a budget limit")
+    config = services.resolved.project.budget
+    if config is None:
+        raise ConfigurationError("budget raise needs the budget section in project.yaml")
+    if scope not in SCOPES or metric not in METRICS:
+        raise ConfigurationError(
+            f"scope must be one of {', '.join(SCOPES)} and metric one of {', '.join(METRICS)}"
+        )
+    if not rationale.strip():
+        raise PolicyViolationError("raising a budget limit requires a rationale")
+    engine = RunEngine(services)
+    execution = engine.get_execution(execution_id)
+    raised = engine.results.raised_limits(execution)
+    current = effective_limit(config, scope, metric, raised)
+    if current is not None and limit <= current:
+        raise PolicyViolationError(
+            f"the new {scope} {metric} limit {limit:g} is not above the current {current:g}"
+        )
+    raised.setdefault(scope, {})[metric] = float(limit)
+    engine.results.set_flag_json(f"budgetraise:{execution_id}", raised)
+    services.events.append(
+        execution_id,
+        "budget.raised",
+        {
+            "scope": scope,
+            "metric": metric,
+            "previousLimit": current,
+            "limit": float(limit),
+            "rationale": rationale.strip(),
+        },
+        actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+    )
+    engine.anchor_chain(execution_id)
+    return budget_state(services, execution_id)
+
+
 def plan_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
     """The decomposition of a run (``planning.decomposition``) and the progress of its
     sub-tasks."""

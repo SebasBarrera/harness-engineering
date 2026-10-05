@@ -469,6 +469,49 @@ def plan_decide(
         _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
+@budget_app.command("show")
+def budget_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the usage of a run and of its task (reported tokens and cost, measured wall time of
+    the agent calls) against the `budget` limits, the limits a person raised and what remains."""
+    _emit(_call(lambda: HarnessApplication().budget(path, run)), kind="budget")
+
+
+@budget_app.command("raise")
+def budget_raise(
+    run: str = RUN_OPTION,
+    scope: str = typer.Option(..., "--scope", help="call, task or run"),
+    metric: str = typer.Option(..., "--metric", help="costUsd, tokens or wallSeconds"),
+    limit: float = typer.Option(..., "--to", help="The new limit; it must be above the current"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Raise a budget limit of a run blocked with budget.exceeded; the raise is recorded on the
+    run's event chain with the person and the rationale, then `harness run continue` resumes the
+    run. A non-human actor, a lower limit or a missing rationale exits 5."""
+    _emit(
+        _call(
+            lambda: _acting().raise_budget(
+                path,
+                execution_id=run,
+                scope=scope,
+                metric=metric,
+                limit=limit,
+                rationale=rationale,
+                actor_id=actor,
+            )
+        ),
+        kind="budget",
+    )
+
+
 @app.command("check")
 def check(
     run: str | None = typer.Option(

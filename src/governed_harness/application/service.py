@@ -71,7 +71,14 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
-from .agent_results import decide_plan, parse_change_requests, plan_state, quarantine_run
+from .agent_results import (
+    budget_state,
+    decide_plan,
+    parse_change_requests,
+    plan_state,
+    quarantine_run,
+    raise_budget,
+)
 from .clarification_loader import load_clarification_file
 from .exceptions import (
     ExceptionOptions,
@@ -375,6 +382,36 @@ class HarnessApplication:
             execution_id = self._run_id(services, execution_id)
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    def budget(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """Usage of a run and its task against the budget limits (#42)."""
+        with self._services(path) as services:
+            return budget_state(services, self._run_id(services, execution_id))
+
+    def raise_budget(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        scope: str,
+        metric: str,
+        limit: float,
+        rationale: str,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Raise a budget limit of a run (a person, recorded); ``run continue`` resumes it."""
+        with self._services(path) as services, self._leased(services, "budget raise"):
+            execution_id = self._run_id(services, execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return raise_budget(
+                services,
+                execution_id,
+                scope=scope,
+                metric=metric,
+                limit=limit,
+                actor_id=decider,
+                rationale=rationale,
+            )
 
     def plan(self, path: Path, execution_id: str) -> dict[str, Any]:
         """The decomposition of a run and the progress of its sub-tasks (#39)."""
