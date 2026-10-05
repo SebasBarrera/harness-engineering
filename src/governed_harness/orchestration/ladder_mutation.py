@@ -42,7 +42,7 @@ from governed_harness.validators import ValidatorOutput
 from governed_harness.validators.traceability import is_test_file
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.ladder import VerificationLadder
+    from governed_harness.orchestration.ladder_host import LadderHost
 
 MUTATION_ID = "harness.mutation"
 NOT_EXERCISED_RULE = "tests.change-not-exercised"
@@ -74,7 +74,7 @@ def looks_like_test(path: str, technologies: list[str]) -> bool:
 
 
 class Mutation:
-    def __init__(self, ladder: VerificationLadder) -> None:
+    def __init__(self, ladder: LadderHost) -> None:
         self.ladder = ladder
 
     @property

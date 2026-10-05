@@ -15,8 +15,8 @@ configuration digest; `harness init` writes them all (see
 ## Request kinds (provider protocol 1.1)
 
 Besides `implement`, a command provider may receive six read-only request kinds (`architecture`
-since #56, see [standards, principles, testing and architecture](engineering.md); `locate` since
-#55, see [the verification ladder](verification-ladder.md)). The request
+since #56, see [standards, principles, testing and architecture](engineering.md); `locate` since issue #55,
+see [the verification ladder](verification-ladder.md)). The request
 says `"kind"`, `"readOnly": true` and carries rendered `"instructions"`; the response is the 1.0
 object (`status`, `summary`, optional `usage`) with a `result` object:
 
@@ -47,8 +47,8 @@ output formats, not against the live agents.
 
 An implement request keeps the 1.0 form unless an agent-results key adds something to it; then
 it is version `1.1` and may carry `kind`, `instructions`, `workspace`, `gate`, `permissions`,
-`routing`, `budget`, `contextFiles`, `lessons` and `acceptanceTests`, as described below. Since
-#55 it may also carry `locations` (the answer of the `locate` call) and `attachments` (a
+`routing`, `budget`, `contextFiles`, `lessons` and `acceptanceTests`, as described below. Since issue #55
+it may also carry `locations` (the answer of the `locate` call) and `attachments` (a
 person's intake attachments), each only when there is something to send. See
 [verification ladder](verification-ladder.md).
 
