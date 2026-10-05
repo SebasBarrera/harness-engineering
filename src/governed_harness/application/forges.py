@@ -151,6 +151,8 @@ def create_on_forge(
             "head": branch,
             "base": target,
             "number": created.get("number"),
+            "url": created.get("url"),
+            "host": resolved.location.host,
             "labels": list(all_labels),
             "template": template_source,
         },
