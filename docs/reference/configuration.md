@@ -91,6 +91,7 @@ verification:
 | `verification.outputParsers` | `false` when the key is absent; `init` writes `true` | Parse the output of a failing command validator into one finding per reported problem, with path, line and the tool's rule. See [located findings](#located-findings). |
 | `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
+| `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
 
 ## Located findings
@@ -142,6 +143,37 @@ granted each exception, on which run and digest, its scope, evidence and follow-
 and the runs whose gate relied on it. `harness review` shows the exceptions granted in a run or
 relied on by its gate. Interactive decisions ask for the expiry, the alternative evidence and
 the follow-up.
+
+## Retrospective by cause
+
+Without `retrospective.causal` the retrospective is the 1.0.0 one: generated at `CLOSURE` (or by
+`harness retrospect`), with recommendations from run-level counts, including failures of optional
+validators that had no effect on the gate. With `causal: true`:
+
+- Each retrospective records the `trigger` (`CLOSED`, `REJECTED`, `CANCELLED`, `ON_DEMAND`) and
+  its `causes`: reason code, subject (a validator, a rule or a provider, never a person), phase,
+  effect, occurrences, attempts and evidence references.
+- The reason codes are `MANDATORY_VALIDATOR_<STATUS>` (a mandatory validator that stopped
+  `VERIFICATION`), `BLOCKING_FINDING` (a rule that failed a delivery gate),
+  `CHANGES_REQUESTED`, `REJECTED`, `EXCEPTION_APPROVED`, `EXCEPTION_GRANTED` (per excepted
+  rule), `PROVIDER_TRANSIENT_FAILURE`, `RUN_CANCELLED` and `POST_RUN_<KIND>` for outcomes
+  recorded with `harness outcome record`. Optional validators that did not pass are named in an
+  observation and are not causes.
+- Recommendations come from the causes (one per validator, rule or decision that redirected the
+  run); a rule that failed the gate and was excepted is flagged for its precision.
+- A rejected or cancelled run gets its retrospective when the decision or the cancellation is
+  recorded (stored as a record; the run's event chain is not extended).
+
+Nothing is applied automatically, as before. `harness rules health [--since DAYS]` reads every
+run of the project and shows, per rule, how often it fired, blocked a gate, was excepted (and how
+often its exceptions were relied on), fired on a ChangeSet that was later corrected, fired in a
+rejected run or in a run later linked to an outcome, with a fixed-rule signal (`often excepted
+when it blocks`, `fired in runs later linked to an outcome`, `led to corrections`), and per
+validator how many results did not pass. It needs no setting and writes nothing.
+`harness outcome record --run R --kind INCIDENT|REVERT|HOTFIX|REGRESSION|OTHER --summary ...
+[--reference ...] [--observed-at ...]` links what happened after a run to it (schema
+`outcome.schema.json`; an actor id of an agent, validator or the harness exits with 5);
+`harness outcome list` shows them.
 
 ## Notifications
 

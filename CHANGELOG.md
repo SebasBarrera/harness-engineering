@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Retrospective by cause, rule health and outcomes (#53). In the thesis evaluation the
+  retrospective attributed 19 of 53 recommendations to the wrong cause (reported there, not
+  re-measured here), counting optional validators without effect on the gate, and rejected runs
+  got none. Under `retrospective.causal` (written by `harness init`) each
+  retrospective records its trigger (`CLOSED`, `REJECTED`, `CANCELLED`, `ON_DEMAND`) and its
+  causes by reason code (mandatory validator that stopped `VERIFICATION`, rule that failed a
+  gate, requested changes, rejection, exception, transient provider failure, cancellation,
+  outcome after the run), with subjects that are validators, rules or providers and never
+  people; recommendations come from those causes, and rejected or cancelled runs get one when
+  that happens. Without the key the retrospective keeps its 1.0.0 form (the new `trigger` and
+  `causes` fields are left out). `harness rules health` shows per rule how often it fired,
+  blocked, was excepted, led to corrections or rejections and fired in runs later linked to an
+  outcome. `harness outcome record|list` links incidents, reverts, hotfixes and regressions to a
+  run (new contract `outcome.schema.json`; 31 schemas).
 - Located findings from validator output (#53). A failing pytest was one finding without a
   location; the failing test was three artifact hops away. Under `verification.outputParsers`
   (written by `harness init`) the output of a failing command validator is parsed into one
@@ -11,7 +25,6 @@
   warnings are `LOW`; at most 200 per run. Without the key only the summary finding is recorded.
   The SARIF export adds a stable `partialFingerprints` entry (`harnessFinding/v1`) and the ids of
   the finding, run and validator to every result.
-
 - Pending-decision inbox and notifications (#53). Nothing told a person that a run was waiting
   for them. `harness inbox` and `GET /api/inbox` list the runs waiting for a decision or for
   clarification answers, oldest first, with the next command; the dashboard shows them and
@@ -21,7 +34,6 @@
   listed, `exception.granted`, with identifiers, statuses and digests only; failures are retried
   with a bounded backoff and recorded as `notification` records (never the URL), outside the
   run's event chain, and never change the run. Without the setting nothing is sent or recorded.
-
 - Exceptions with expiry, scope and follow-up (#53). Under the new `review.exceptions` setting
   (written by `harness init`), `APPROVE_EXCEPTION` sets the decision's `expiresAt` (it was always
   null) from `--expires-in`/`--expires-at` or `review.exceptionDays`, and records an exception
@@ -35,7 +47,6 @@
   `GET /api/exceptions` are the ledger; the brief and the interactive decision show and ask for
   them. Without the setting `APPROVE_EXCEPTION` behaves as in 1.0.0 and the exception options are
   rejected (exit 2).
-
 - Decision brief (#53). `harness review [--run latest] [--diff]` shows, for one ChangeSet digest,
   what was asked (intent, requirements, criteria, constraints), what changed (files and line
   counts), the gate with each reason explained, the current findings with `file:line` (blocking
@@ -55,7 +66,6 @@
   (the current digest, the phase, the decisions a failed gate admits). The dashboard gains
   `REQUEST_CHANGES` and a confirmation with the digest and the files, and escapes the values it
   renders.
-
 - Onboarding (#53). `harness --version` prints the version (it was `No such option`, exit 2). On
   a terminal every command prints readable text; JSON stays the default when standard output is
   not a terminal, `--json` forces it and `--no-json` forces text (it printed a Python `repr`),
@@ -69,7 +79,6 @@
   (exit 2), the rest are `WARNING`s. Errors keep their text and exit code and gain a `hint`
   (JSON) or `Hint:` line (terminal) with the command that fixes them. The README documents a
   pipx install from the release wheel (not exercised in CI).
-
 - `INTENT` checks that acceptance criteria can be verified (#32). A task whose only criterion was
   "It works." passed `INTENT` and `SPECIFICATION` and was approved. A deterministic assessment now
   raises clarification questions with stable ids for a criterion without an observable result
