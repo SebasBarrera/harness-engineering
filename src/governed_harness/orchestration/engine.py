@@ -4,6 +4,7 @@ import contextlib
 import json
 import socket
 import subprocess
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -102,6 +103,7 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
     FeedbackBuilder,
@@ -203,11 +205,23 @@ class _ProcessLedger:
     """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
     recovery after a killed harness can terminate the ones still running."""
 
+    _lock = threading.Lock()
+    """Validators may run side by side (friction.fastLane.verification.parallel, #58): the
+    read-modify-write of the flag is serialized across threads."""
+
     def __init__(self, state: SQLiteStateStore, execution_id: str) -> None:
         self.state = state
         self.key = f"process:{execution_id}"
 
     def started(self, pid: int, argv: tuple[str, ...]) -> None:
+        with self._lock:
+            self._started(pid, argv)
+
+    def finished(self, pid: int) -> None:
+        with self._lock:
+            self._finished(pid)
+
+    def _started(self, pid: int, argv: tuple[str, ...]) -> None:
         recorded = json.loads(self.state.get_flag(self.key) or "{}")
         recorded[str(pid)] = {
             "pgid": pid,
@@ -217,7 +231,7 @@ class _ProcessLedger:
         }
         self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
-    def finished(self, pid: int) -> None:
+    def _finished(self, pid: int) -> None:
         recorded = json.loads(self.state.get_flag(self.key) or "{}")
         if recorded.pop(str(pid), None) is not None:
             self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
@@ -319,6 +333,7 @@ class RunEngine:
         self._phase_deadline: float | None = None
         self.results = AgentResults(self)
         self.ladder = VerificationLadder(self)
+        self.friction = Friction(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -952,10 +967,23 @@ class RunEngine:
             policy = "enforce"
         questions = assess_intent(task) if policy != "off" else ()
         review_refs: tuple[str, ...] = ()
+        if self.friction.active and self.friction.fast_lane is not None:
+            # friction.fastLane (#58): the lane of the run, recorded with its reasons.
+            self.friction.classify(execution, phase, task)
         if self.results.active and policy != "off":
             # Agent review of ambiguity and completeness, and the check of earlier answers
-            # (intake.ambiguityReview, intake.validateAnswers; #37).
-            review = self.results.intent.questions(execution, phase, task, questions)
+            # (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps
+            # the deterministic intake only.
+            review = self.results.intent.questions(
+                execution,
+                phase,
+                task,
+                questions,
+                agent=not (
+                    self.friction.active
+                    and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
+                ),
+            )
             review_refs = review.evidence_refs
             if review.blocked is not None:
                 return PhaseOutcome(
@@ -1178,7 +1206,10 @@ class RunEngine:
             "Versioned acceptance contract",
             supports=tuple(item.criterion_id for item in task.acceptance_criteria),
         )
-        if self.results.active:
+        if self.results.active and not (
+            self.friction.active
+            and self.friction.skips(execution, "acceptanceTests", PhaseId.SPECIFICATION)
+        ):
             # verification.acceptanceTests (#52): independent tests a person approves.
             blocked = self.results.acceptance.propose(execution, phase, task)
             if blocked is not None:
@@ -1189,7 +1220,10 @@ class RunEngine:
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
-        if self.results.active:
+        if self.results.active and not (
+            self.friction.active
+            and self.friction.skips(execution, "decomposition", PhaseId.PLANNING)
+        ):
             # planning.decomposition (#39): a large task waits for an approved plan.
             blocked = self.results.decomposition.plan(execution, phase, task)
             if blocked is not None:
@@ -1266,6 +1300,12 @@ class RunEngine:
             "Plan, capabilities, validators and risks",
             supports=(task.task_id,),
         )
+        if self.friction.active:
+            # friction.planApproval (#8 through #58): L tasks and tasks with a risk flag wait
+            # for a person to approve the plan, bound to its digest.
+            waiting = self.friction.plan_checkpoint(execution, phase, task, plan, plan_ref.uri)
+            if waiting is not None:
+                return waiting
         return PhaseOutcome(
             ResultStatus.PASSED,
             "Plan and context manifest recorded",
@@ -2048,8 +2088,15 @@ class RunEngine:
         change_set = self._refresh_changeset(execution)
         if not change_set.files:
             return PhaseOutcome(ResultStatus.FAILED, "Current ChangeSet is empty")
-        outputs = []
-        for definition in self.s.resolved.effective_validators:
+        if self.friction.active:
+            # friction (#58): risk factors, size and change type of the ChangeSet; a fast run
+            # with a risk factor or a ChangeSet larger than S leaves the fast lane here.
+            self.friction.profile(execution, change_set)
+        task = self.run_task(execution)
+
+        def prepare(definition: ValidatorDefinition) -> Callable[[], ValidatorOutput]:
+            # The context is built here (records are read on this thread); the returned call
+            # only runs the validator, so independent validators may run side by side.
             actor = Actor(
                 actor_type=ActorType.TOOL,
                 actor_id=f"validator.{definition.validator_id}",
@@ -2058,33 +2105,67 @@ class RunEngine:
             grants = grants_from_rules(
                 execution.execution_id, actor, self.s.resolved.effective_capabilities
             )
-            output = self.validators.create(definition.validator_id).execute(
-                ValidationContext(
-                    execution_id=execution.execution_id,
-                    workspace=self.s.paths.workspace,
-                    task=self.run_task(execution),
-                    change_set=change_set,
-                    definition=self._bounded_definition(definition),
-                    grants=grants,
-                    artifact_store=self.s.artifacts,
-                    process_runner=self._runner(execution),
-                    provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-                    cancellation=CancellationToken(
-                        lambda: self.is_cancelled(execution.execution_id)
-                    ),
-                    max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                    missing_command_status=self._unavailable_status("missingTestCommand"),
-                    missing_script_status=self._unavailable_status("missingTestScript"),
-                    parse_output=self.s.resolved.project.output_parsers_enabled,
+            validator = self.validators.create(definition.validator_id)
+            context = ValidationContext(
+                execution_id=execution.execution_id,
+                workspace=self.s.paths.workspace,
+                task=task,
+                change_set=change_set,
+                definition=self._bounded_definition(definition),
+                grants=grants,
+                artifact_store=self.s.artifacts,
+                process_runner=self._runner(execution),
+                provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+                cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+                max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                missing_command_status=self._unavailable_status("missingTestCommand"),
+                missing_script_status=self._unavailable_status("missingTestScript"),
+                parse_output=self.s.resolved.project.output_parsers_enabled,
+            )
+            return lambda: validator.execute(context)
+
+        outputs: list[Any] = []
+        if self.friction.active:
+            # fastLane.verification (#58): affected tests first, side by side, reused by digest.
+            outputs.extend(
+                self.friction.run_validators(
+                    execution,
+                    change_set,
+                    list(self.s.resolved.effective_validators),
+                    prepare,
+                    lambda output: self._save_validator_output(execution, output),
                 )
             )
-            self._save_validator_output(execution, output)
-            outputs.append(output)
+        else:
+            for definition in self.s.resolved.effective_validators:
+                output = prepare(definition)()
+                self._save_validator_output(execution, output)
+                outputs.append(output)
+        if outputs and outputs[-1].result.validator_id == AFFECTED_TESTS_ID and (
+            outputs[-1].result.status is not ResultStatus.PASSED
+        ):
+            return PhaseOutcome(
+                outputs[-1].result.status,
+                "The affected tests did not pass; the full suite runs on the next attempt",
+                outputs[-1].result.evidence_refs,
+            )
         coverage = self._coverage_minimum()
         if coverage is not None:
             outputs.append(self._verify_coverage(execution, change_set, coverage))
         policy = self.s.resolved.project.requirement_traceability
-        if policy != "off":
+        exempt = (
+            self.friction.tests_exempt(execution, change_set, "requirement traceability")
+            if self.friction.active and policy != "off"
+            else None
+        )
+        if exempt is not None:
+            # friction.changeTypes (#58): a documentation or configuration change.
+            skipped = self.friction.not_applicable(
+                execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
+            )
+            self._save_validator_output(execution, skipped)
+            outputs.append(skipped)
+        elif policy != "off":
             outputs.append(
                 self._verify_requirement_traceability(execution, phase, change_set, policy)
             )
@@ -2196,8 +2277,11 @@ class RunEngine:
             )
         )
         self._save_validator_output(execution, output)
-        if self.results.active:
-            # review.agentReview (#38): a second reviewer after the deterministic checks.
+        if self.results.active and (
+            not self.friction.active or self.friction.agent_review_wanted(execution, change_set)
+        ):
+            # review.agentReview (#38): a second reviewer after the deterministic checks; in
+            # the fast lane of #58 only on a signal.
             review = self.results.agent_review.run(execution, phase, change_set)
             if review.blocking and self.results.review_correction_available(execution):
                 return PhaseOutcome(
@@ -2281,6 +2365,17 @@ class RunEngine:
                 )
             if current_decision.decision is DecisionKind.REJECT:
                 return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+        elif self.friction.active:
+            # friction.preAuthorization (#58): the approval a person gave in advance, applied
+            # only when its condition holds; otherwise the person is asked as usual.
+            applied = self.friction.apply_pre_authorization(execution, gate, change_set)
+            if applied is not None:
+                return PhaseOutcome(
+                    ResultStatus.PASSED,
+                    f"Pre-authorised approval {applied.pre_authorization_id} by "
+                    f"{applied.actor.actor_id} applied: gate passed, no risk factor, size S",
+                    (f"record://decision/{applied.decision_id}",),
+                )
         return PhaseOutcome(
             ResultStatus.BLOCKED,
             f"Human decision required for gate {gate.gate_evaluation_id} and digest {change_set.digest}",

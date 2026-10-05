@@ -178,7 +178,10 @@ class VerificationChecks:
                 outputs.append(tdd)
         if config is None:
             return outputs
-        if config.test_quality is not None:
+        friction = engine.friction
+        if config.test_quality is not None and not (
+            friction.active and friction.tests_exempt(execution, change_set, "test quality")
+        ):
             outputs.append(self._test_quality(execution, change_set, task, diff, files))
         if config.invariants:
             outputs.extend(self._invariants(execution, change_set, task))

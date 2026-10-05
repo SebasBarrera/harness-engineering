@@ -338,6 +338,10 @@ class Engineering:
             return None
         if self.strategy(execution.project_id).strategy != "tdd":
             return None
+        friction = self.results.engine.friction
+        if friction.active and friction.tests_exempt(execution, change_set, "TDD evidence"):
+            # friction.changeTypes (#58): a documentation or configuration change.
+            return None
         results = self.results
         started = datetime.now(UTC)
         tests = [item.path for item in diff if not item.is_deleted and is_test_path(item.path)]

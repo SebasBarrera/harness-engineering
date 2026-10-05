@@ -244,6 +244,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "maxHours": 72,
             },
             "changeTypes": True,
+            "planApproval": "risk",
             "targets": {size: dict(values) for size, values in DEFAULT_FRICTION_TARGETS.items()},
         },
     }

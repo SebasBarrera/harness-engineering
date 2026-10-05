@@ -29,18 +29,26 @@ HUMAN_INTERACTION_EVENTS: dict[str, str] = {
     "contract.confirmed": "contract",
     "evidence.attached": "evidence",
     "verification.deferred.closed": "evidence",
+    "decision.preauthorized": "preauthorization",
+    "plan.approval.decided": "plan",
 }
-"""Events a person causes on a run, by the kind of interruption they count as (#55)."""
+"""Events a person causes on a run, by the kind of interruption they count as (#55; the
+pre-authorised approval and the plan approval since #58)."""
+
+_SAME_INTERACTION = ("withAnswers", "withPreAuthorization")
+"""Payload markers of an event recorded in the same act as another counted one."""
 
 
 def human_interactions(events: list[StoredEvent]) -> dict[str, int]:
     """The human interactions of a run by kind: events of the types above recorded with a
-    human actor. A contract confirmed in the answers to a clarification (``withAnswers``) is part
-    of that one interaction and is not counted again."""
+    human actor. A contract confirmed in the answers to a clarification (``withAnswers``) or with
+    a pre-authorised approval (``withPreAuthorization``) is part of that one interaction and is
+    not counted again; a decision the harness records from a pre-authorisation has the harness
+    as its actor and is not counted either."""
     counts: dict[str, int] = {}
     for event in events:
         kind = HUMAN_INTERACTION_EVENTS.get(event.event_type)
-        if event.payload.get("withAnswers") is True:
+        if any(event.payload.get(marker) is True for marker in _SAME_INTERACTION):
             continue
         if kind is not None and event.actor.get("actorType") == "HUMAN":
             counts[kind] = counts.get(kind, 0) + 1

@@ -160,6 +160,9 @@ DEFAULT_FRICTION_TARGETS: dict[str, dict[str, float]] = {
 """Targets ``harness init`` writes: starting points to calibrate, not measured optima."""
 
 
+PlanApprovalMode = Literal["risk", "always", "off"]
+
+
 class FrictionConfig(_Section):
     """Low friction for small changes (#58, items 1, 3, 5, 6 and 7)."""
 
@@ -172,6 +175,16 @@ class FrictionConfig(_Section):
     require new tests or requirement traceability."""
     targets: dict[SizeName, FrictionTarget] | None = None
     """Friction targets per task size, reported by ``harness metrics`` and the brief."""
+    plan_approval: PlanApprovalMode | None = Field(default=None, alias="planApproval")
+    """Since #58 (closes #8): the plan-approval checkpoint of PLANNING. ``risk``: a task the
+    router sizes ``L`` or that carries a risk flag waits for a person to approve its plan, bound
+    to the plan digest, before IMPLEMENTATION; other tasks skip it and the reason is recorded.
+    ``always``: every task waits. ``off``: no checkpoint (1.0.0)."""
+
+    @field_validator("plan_approval", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
 
 
 _PRICE_KEY = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,199}$")
@@ -231,6 +244,7 @@ __all__ = [
     "MetricsConfig",
     "ModelPrice",
     "NarrativeConfig",
+    "PlanApprovalMode",
     "PreAuthorizationConfig",
     "SizeName",
 ]
