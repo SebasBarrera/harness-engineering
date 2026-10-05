@@ -8,6 +8,7 @@ from governed_harness.domain.enums import MetricQuality, ResultStatus
 from governed_harness.domain.models import (
     AgentInvocation,
     ChangeSet,
+    Finding,
     HumanDecision,
     PhaseExecution,
     ResourceUsage,
@@ -88,8 +89,18 @@ class MetricsProjector:
                     ).total_seconds()
                     * 1000
                 )
-        correction_cycles = sum(
-            1 for event in events if event.event_type == "correction.authorized"
+        corrections = [event for event in events if event.event_type == "correction.authorized"]
+        correction_cycles = len(corrections)
+        verification_cycles = sum(
+            1 for event in corrections if event.payload.get("trigger") == "VERIFICATION_FAILED"
+        )
+        transient_retries = sum(
+            1 for event in events if event.event_type == "agent.invocation.retried"
+        )
+        unsupported_claims = sum(
+            1
+            for item in self.state.list("finding", Finding, execution_id=execution_id)
+            if item.rule_id == "agent.unsupported-claim"
         )
         implementation_attempts = sum(
             1
@@ -184,8 +195,33 @@ class MetricsProjector:
                 correction_cycles,
                 "count",
                 MetricQuality.OBSERVED,
-                "Count of human-authorized transitions from DECISION back to IMPLEMENTATION.",
+                "Count of authorized transitions back to IMPLEMENTATION: REQUEST_CHANGES "
+                "decisions and automatic corrections after a failed VERIFICATION.",
                 "event store",
+            ),
+            "correction.verification_cycles": MetricValue(
+                "correction.verification_cycles",
+                verification_cycles,
+                "count",
+                MetricQuality.OBSERVED,
+                "Automatic corrections after a failed VERIFICATION (runtime.verificationCorrections).",
+                "event store",
+            ),
+            "agent.transient_retries": MetricValue(
+                "agent.transient_retries",
+                transient_retries,
+                "count",
+                MetricQuality.OBSERVED,
+                "Command-provider calls repeated after a transient failure (runtime.providerRetries).",
+                "event store",
+            ),
+            "agent.unsupported_claims": MetricValue(
+                "agent.unsupported_claims",
+                unsupported_claims,
+                "count",
+                MetricQuality.DERIVED,
+                "Findings agent.unsupported-claim: the agent reported success and verification failed.",
+                "finding records",
             ),
             "review.cycles": MetricValue(
                 "review.cycles",
