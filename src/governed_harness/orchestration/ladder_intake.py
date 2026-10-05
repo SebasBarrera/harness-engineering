@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents.routing import classify_size
-from governed_harness.domain.enums import ActorType, FindingSeverity, PhaseId, ResultStatus
+from governed_harness.domain.enums import FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import (
     ClarificationQuestion,
     ClarificationRecord,
@@ -31,24 +31,14 @@ from governed_harness.domain.models import (
 )
 from governed_harness.intake import task_digest
 from governed_harness.ladder.contract import ContractSummary, derive_contract
+from governed_harness.telemetry.metrics import HUMAN_INTERACTION_EVENTS, human_interactions
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.ladder import VerificationLadder
 
 LOCATE_MALFORMED_RULE = "locate.malformed"
 MAX_LOCATE_QUESTIONS = 10
-HUMAN_EVENTS: dict[str, str] = {
-    "human.decision.recorded": "decision",
-    "intent.clarified": "clarification",
-    "planning.decomposition.decided": "plan",
-    "workspace.quarantine.requested": "quarantine",
-    "acceptance.tests.decided": "acceptance",
-    "budget.raised": "budget",
-    "verification.preflight.decided": "preflight",
-    "contract.confirmed": "contract",
-    "evidence.attached": "evidence",
-    "verification.deferred.closed": "evidence",
-}
+HUMAN_EVENTS = HUMAN_INTERACTION_EVENTS
 """Events a person causes, by the kind of interruption they count as."""
 
 
@@ -248,12 +238,7 @@ class LadderIntake:
         if config is None:
             return None
         events = self.ladder.s.events.list(execution.execution_id)
-        by_kind: dict[str, int] = {}
-        for event in events:
-            kind = HUMAN_EVENTS.get(event.event_type)
-            if kind is None or event.actor.get("actorType") != ActorType.HUMAN.value:
-                continue
-            by_kind[kind] = by_kind.get(kind, 0) + 1
+        by_kind = human_interactions(events)
         count = sum(by_kind.values())
         stops = [
             {

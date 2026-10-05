@@ -298,3 +298,25 @@ def test_locate_is_skipped_for_small_tasks(python_workspace: Path, tmp_path: Pat
     assert "locate.skipped" in [
         item.event_type for item in events(python_workspace, execution.execution_id)
     ]
+
+
+def test_a_change_outside_the_contract_scope_stops_the_run(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(
+        python_workspace,
+        {"interruptions": {"target": 2, "stopConditions": ["scope-contradiction"]}},
+    )
+    value = {**CLEAR, "taskId": "task_scoped", "contract": {"scopePaths": ["tests/**"]}}
+    application = create(python_workspace, tmp_path, value)
+    execution = application.start_run(python_workspace, "task_scoped")
+    assert execution.current_phase is PhaseId.VERIFICATION
+    assert execution.status is ResultStatus.BLOCKED
+    rules = {
+        item.rule_id for item in application.list_findings(python_workspace, execution.execution_id)
+    }
+    assert "contract.scope-contradiction" in rules
+    stops = application.review(python_workspace, execution.execution_id)["interruptions"]["stops"]
+    assert [item["condition"] for item in stops] == ["scope-contradiction"]
+    metrics = application.status(python_workspace, execution.execution_id)["metrics"]
+    assert metrics["human.interactions"]["value"] == 0

@@ -23,6 +23,7 @@ agent-results settings: a project without any of them runs exactly the earlier c
 
 from __future__ import annotations
 
+import fnmatch
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import PurePosixPath
@@ -90,6 +91,8 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
 
 CERTIFICATION_ID = "harness.certification"
+CONTRACT_ID = "harness.contract"
+SCOPE_RULE = "contract.scope-contradiction"
 PREFLIGHT_DECISION_FLAG = "preflightdecision"
 LEVEL_NOT_REACHED_RULE = "certification.level-not-reached"
 PROBE_FAILED_RULE = "probe.assertion-failed"
@@ -486,6 +489,9 @@ class VerificationLadder:
     ) -> list[ValidatorOutput]:
         task = self.engine.run_task(execution)
         added: list[ValidatorOutput] = []
+        scope = self._scope_check(execution, change_set, task)
+        if scope is not None:
+            added.append(scope)
         probe_outputs, evaluations = self._verify_probes(execution, change_set, task)
         added.extend(probe_outputs)
         mutation = self.mutation.run(execution, phase, change_set, [*outputs, *added])
@@ -498,6 +504,77 @@ class VerificationLadder:
                 )
             )
         return added
+
+    def _scope_check(
+        self, execution: Execution, change_set: ChangeSet, task: Task
+    ) -> ValidatorOutput | None:
+        """A ChangeSet path outside the contract's ``scopePaths`` contradicts the confirmed
+        scope. Under the ``scope-contradiction`` stop condition (``intake.interruptions``) the
+        validation is ``BLOCKED``: the run stops for a person instead of a correction."""
+        contract = task.contract
+        if contract is None or not contract.scope_paths:
+            return None
+        outside = sorted(
+            item.path
+            for item in change_set.files
+            if not any(fnmatch.fnmatchcase(item.path, pattern) for pattern in contract.scope_paths)
+        )
+        results = self.engine.results
+        intake = self.project.intake
+        stops = intake.interruptions.conditions if intake and intake.interruptions else ()
+        findings: list[Finding] = []
+        if outside:
+            findings.append(
+                results.record_finding(
+                    execution,
+                    validator_id=CONTRACT_ID,
+                    rule_id=SCOPE_RULE,
+                    category="operational-contract",
+                    severity=FindingSeverity.HIGH,
+                    message=(
+                        f"{len(outside)} changed path(s) outside the contract's scope "
+                        f"({', '.join(contract.scope_paths)}): {', '.join(outside[:10])}"
+                    ),
+                    path=outside[0],
+                    recommendation="Revert the out-of-scope change or revise the contract.",
+                )
+            )
+            if "scope-contradiction" in stops:
+                self.s.events.append(
+                    execution.execution_id,
+                    "stop.condition",
+                    {
+                        "condition": "scope-contradiction",
+                        "detail": f"changed outside the contract's scope: {', '.join(outside[:10])}",
+                        "changeSetDigest": change_set.digest,
+                    },
+                )
+        status = (
+            ResultStatus.PASSED
+            if not outside
+            else ResultStatus.BLOCKED
+            if "scope-contradiction" in stops
+            else ResultStatus.FAILED
+        )
+        ref = results.record_json(
+            execution,
+            PhaseId.VERIFICATION,
+            {"scopePaths": list(contract.scope_paths), "outside": outside},
+            kind="contract-scope",
+            summary=f"Contract scope: {len(outside)} path(s) outside",
+        )
+        result = results.record_validation(
+            execution,
+            validator_id=CONTRACT_ID,
+            digest=change_set.digest,
+            status=status,
+            kind=ValidationKind.SUCCESS if not outside else ValidationKind.POLICY_VIOLATION,
+            mandatory=True,
+            summary=f"{len(outside)} changed path(s) outside the contract's scope",
+            findings=tuple(findings),
+            evidence_refs=(ref,),
+        )
+        return ValidatorOutput(result, tuple(findings))
 
     def _verify_probes(
         self, execution: Execution, change_set: ChangeSet, task: Task
