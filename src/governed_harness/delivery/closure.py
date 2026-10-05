@@ -112,7 +112,13 @@ def branch_name(config: DeliveryConfig, execution_id: str, task_id: str) -> str:
     return config.branch_template.replace("{runId}", execution_id).replace("{taskId}", task_id)
 
 
-def _mode(path: Path) -> str:
+def _mode(git: Git, head: str, relative: str, path: Path) -> str:
+    """The mode the file has at ``HEAD`` (a ChangeSet does not record modes), or, for a new
+    file, executable when the workspace file is."""
+    listed = git.text("ls-tree", head, "--", relative)
+    mode = listed.split(" ", 1)[0] if listed else ""
+    if mode in {"100644", "100755"}:
+        return mode
     return "100755" if os.name != "nt" and os.access(path, os.X_OK) else "100644"
 
 
@@ -198,7 +204,7 @@ def create_closure_commit(
                 "update-index",
                 "--add",
                 "--cacheinfo",
-                f"{_mode(path)},{blob},{item.path}",
+                f"{_mode(git, head, item.path, path)},{blob},{item.path}",
                 env=index,
             )
         tree = git.text("write-tree", env=index)

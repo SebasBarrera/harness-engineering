@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 
 from governed_harness.application import HarnessApplication
@@ -123,6 +124,7 @@ def test_manifest_and_text_baselines_bind_the_same_digest(
     assert legacy.change_set_digest is not None
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the digest cache is not used on Windows")
 def test_the_cache_is_sealed(python_workspace: Path) -> None:
     resolved = ConfigurationResolver().resolve(python_workspace)
     services = EngineServices.open(resolved)

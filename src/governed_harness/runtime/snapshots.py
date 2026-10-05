@@ -19,7 +19,8 @@ also held ``.env``. The settings, each optional:
   file with its size, modification time, change time and inode; a file whose four values did
   not change is not hashed again. The change time cannot be set by a process (``utime`` updates
   it), so restoring a file's modification time does not hide an edit. Entries younger than two
-  seconds are not cached.
+  seconds are not cached. Windows reports the creation time instead of the change time, so the
+  cache is not used there.
 
 Without any of them a snapshot is taken, stored and diffed exactly as in 1.0.0."""
 
@@ -224,9 +225,11 @@ class ScaledSnapshotter(WorkspaceSnapshotter):
                 yield relative
 
     def snapshot(self, *, read_text: bool = False) -> WorkspaceSnapshot:
+        # Windows reports the creation time as st_ctime, not the change time: a restored
+        # modification time would hide an edit, so every file is hashed there.
         cache = (
             SnapshotCache(self.cache_path, self.seal)
-            if self.settings.cache and self.cache_path
+            if self.settings.cache and self.cache_path and os.name != "nt"
             else None
         )
         fresh: dict[str, list[Any]] = {}
