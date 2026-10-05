@@ -138,6 +138,30 @@ class CapabilityName(StrEnum):
     APPROVAL_REQUEST = "approval.request"
 
 
+class VerificationLevel(StrEnum):
+    """Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of
+    evidence shows that an acceptance criterion holds. A higher rung is stronger evidence of
+    the behaviour a person asked for; a rung is reached only by evidence recorded for the
+    criterion, never by omission."""
+
+    L0 = "L0"
+    """Static: the mandatory validators and the harness's deterministic checks passed."""
+    L1 = "L1"
+    """Unit: a passing test of the repository names the criterion."""
+    L2 = "L2"
+    """Integration with the repository's own doubles (fakes, in-memory services)."""
+    L3 = "L3"
+    """Executable behaviour: a declared probe ran the program and its assertions held."""
+    L4 = "L4"
+    """External environment: CI, staging or a device lab, through attached evidence."""
+    L5 = "L5"
+    """Human: a person checked it and ticked it in DECISION."""
+
+    @property
+    def rank(self) -> int:
+        return int(self.value[1:])
+
+
 class MetricQuality(StrEnum):
     OBSERVED = "OBSERVED"
     REPORTED = "REPORTED"

@@ -13,6 +13,15 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
+from governed_harness.configuration.ladder import (
+    DEFAULT_DEFERRED_EXPIRY_DAYS,
+    DEFAULT_INSTRUCTION_FILES,
+    DEFAULT_INTERRUPTION_TARGET,
+    DEFAULT_ISOLATION_BRANCH,
+    DEFAULT_MUTATION_HUNKS,
+    DEFAULT_MUTATION_SECONDS,
+    STOP_CONDITIONS,
+)
 from governed_harness.configuration.models import (
     DEFAULT_DECISION_EXPIRY_HOURS,
     DEFAULT_EXCEPTION_DAYS,
@@ -45,6 +54,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "snapshot": "git",
             "baseline": "manifest",
             "snapshotCache": True,
+            # Runs stay in place unless run start --isolate worktree (or mode: worktree): the
+            # README quickstart and the documented flows inspect the workspace itself.
+            "isolation": {"mode": "none", "branch": DEFAULT_ISOLATION_BRANCH, "fetch": True},
         },
         "profiles": ["auto"],
         "workflow": "default_development",
@@ -71,12 +83,18 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "extendedRedaction": True,
             "gateContract": True,
             "reproduceFirst": True,
+            "stateDir": "auto",
         },
         "retention": {"artifactDays": 30, "eventDays": 365, "orphanArtifacts": True},
         "intake": {
             "criteriaPolicy": "enforce",
             "ambiguityReview": "agent",
             "validateAnswers": True,
+            "operationalContract": "batch",
+            "interruptions": {
+                "target": DEFAULT_INTERRUPTION_TARGET,
+                "stopConditions": list(STOP_CONDITIONS),
+            },
         },
         "verification": {
             "requirementTraceability": "enforce",
@@ -103,12 +121,25 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "secrets": "context",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
             "acceptanceTests": {"mode": "agent"},
+            "ladder": {
+                "mode": "enforce",
+                "defaultLevel": "L1",
+                "deferredExpiryDays": DEFAULT_DEFERRED_EXPIRY_DAYS,
+                "preflight": True,
+                "capabilityDetection": True,
+            },
+            "mutation": {
+                "mode": "warn",
+                "maxHunks": DEFAULT_MUTATION_HUNKS,
+                "maxSeconds": DEFAULT_MUTATION_SECONDS,
+            },
         },
         "review": {
             "exceptions": True,
             "exceptionDays": DEFAULT_EXCEPTION_DAYS,
             "agentReview": "enforce",
             "structuredChanges": True,
+            "manualChecklist": True,
         },
         "retrospective": {"causal": True},
         "planning": {
@@ -121,6 +152,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "manifest": "auto",
             "maxFiles": DEFAULT_CONTEXT_MAX_FILES,
             "maxBytes": DEFAULT_CONTEXT_MAX_BYTES,
+            "locate": {"mode": "agent"},
         },
         # Wide on purpose: limits only at the extremes (#42).
         "budget": {
@@ -151,9 +183,21 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "stopTheLine": "restore",
             "phasePermissions": True,
         },
-        "toolchain": {"profileDetection": "all", "interpreter": "auto"},
+        "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
-        "delivery": {"closureCommit": "branch"},
+        # Nothing leaves the machine unless the task's contract (or a person) authorises it.
+        "delivery": {
+            "closureCommit": "branch",
+            "stage": True,
+            "push": False,
+            "pullRequest": {"create": False, "draft": True},
+            "comment": "notClean",
+        },
+        "environment": {"dirtyTree": "warn", "baseline": "report"},
+        "instructions": {
+            "files": list(DEFAULT_INSTRUCTION_FILES),
+            "precedence": ["harness", *DEFAULT_INSTRUCTION_FILES],
+        },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

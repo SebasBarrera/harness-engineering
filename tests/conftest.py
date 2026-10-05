@@ -30,6 +30,13 @@ def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mo
     monkeypatch.setenv("HARNESS_ANCHOR_DIR", str(tmp_path_factory.mktemp("anchors")))
 
 
+@pytest.fixture(autouse=True)
+def _state_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    # runtime.stateDir: auto (written by init, #55) keeps the run registry under the user's data
+    # directory; tests keep it in a temporary one.
+    monkeypatch.setenv("HARNESS_STATE_DIR", str(tmp_path_factory.mktemp("state")))
+
+
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
     "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
     "verification": (
@@ -52,17 +59,28 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
     "governance": ("stopTheLine", "phasePermissions"),
 }
 AGENT_RESULTS_SECTIONS = ("planning", "context", "budget", "memory", "agentRouting")
+LADDER_KEYS: dict[str, tuple[str, ...]] = {
+    "workspace": ("isolation",),
+    "runtime": ("stateDir",),
+    "intake": ("operationalContract", "interruptions"),
+    "verification": ("ladder", "probes", "mutation"),
+    "review": ("manualChecklist",),
+    "toolchain": ("extendedProfiles",),
+    "delivery": ("stage", "push", "pullRequest", "comment"),
+}
+LADDER_SECTIONS = ("environment", "instructions")
 
 
 def without_agent_results(root: Path) -> None:
-    """Remove the agent-results settings (#37-#44, #52) that ``harness init`` writes, so a
-    fixture project behaves as before them; tests of those settings turn on what they need."""
+    """Remove the agent-results settings (#37-#44, #52) and the verification-ladder settings
+    (#55) that ``harness init`` writes, so a fixture project behaves as before them; tests of
+    those settings turn on what they need."""
     path = root / ".harness" / "project.yaml"
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    for section, keys in AGENT_RESULTS_KEYS.items():
+    for section, keys in (*AGENT_RESULTS_KEYS.items(), *LADDER_KEYS.items()):
         for key in keys:
             config.get(section, {}).pop(key, None)
-    for section in AGENT_RESULTS_SECTIONS:
+    for section in (*AGENT_RESULTS_SECTIONS, *LADDER_SECTIONS):
         config.pop(section, None)
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 

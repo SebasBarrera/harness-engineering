@@ -39,6 +39,7 @@ from governed_harness.domain.models import (
 from governed_harness.evidence import LocalArtifactStore
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.runtime.snapshots import SnapshotSettings, SnapshotStore
+from governed_harness.runtime.state_location import resolve_state_location
 from governed_harness.validators import CommandValidator, ValidationContext
 from governed_harness.validators.review import RULES
 
@@ -197,9 +198,13 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     if isinstance(baseline_ref, str):
         # Read-only: the artifact store and the snapshot listing without the snapshot cache,
         # so the check runs inside the agent sandbox, which keeps .harness read-only.
+        # The registry may live outside the workspace (runtime.stateDir, #55); it is only read.
+        location = resolve_state_location(
+            workspace, resolved.project.project_id, resolved.project.runtime.state_dir, create=False
+        )
         snapshots = SnapshotStore(
             workspace,
-            LocalArtifactStore(workspace / ".harness" / "artifacts"),
+            LocalArtifactStore(location.artifacts),
             replace(SnapshotSettings.from_config(resolved.project.workspace), cache=False),
         )
         stored = snapshots.load(baseline_ref)

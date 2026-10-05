@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import itertools
+import re
 from datetime import UTC, datetime
 from pathlib import PurePosixPath
 from typing import Any, Literal
@@ -26,6 +28,7 @@ from .enums import (
     PhaseId,
     ResultStatus,
     ValidationKind,
+    VerificationLevel,
 )
 
 
@@ -86,11 +89,258 @@ class Requirement(StrictModel):
     source: str = "human"
 
 
+def _omit_unset(model: BaseModel, data: dict[str, Any]) -> dict[str, Any]:
+    """Drop the fields of ``model`` that are ``None`` or an empty tuple or mapping, under both
+    their name and their alias, so a record without them keeps its stored form and digest."""
+    for name, field in type(model).model_fields.items():
+        value = getattr(model, name)
+        if value is None or (isinstance(value, (tuple, dict)) and not value):
+            data.pop(name, None)
+            if field.alias:
+                data.pop(field.alias, None)
+            data.pop(_to_camel(name), None)
+    return data
+
+
+# ----- since 1.1 (#55): the verification ladder of a criterion, probes, the checklist ---------
+_PROBE_ID = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
+_ITEM_ID = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+_ENV_NAME = r"^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+PROBE_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+"""A ``{name}`` in a probe's command or working directory, filled from the variant."""
+
+
+class CriterionVerification(StrictModel):
+    """How an acceptance criterion must be verified: the rung of the ladder it requires and,
+    for the rungs that need one, how that rung is reached.
+
+    * ``probe``: the id of a probe (task or project) whose assertions show the behaviour (L3,
+      or L2/L4 when the probe declares that level);
+    * ``tests``: names (or parts of names) of the tests that verify the criterion (L1/L2);
+    * ``deferred``: where the criterion is verified after the run (a CI job, staging, a device
+      lab); it stays pending, bound to the ChangeSet digest, until evidence is attached;
+    * ``manual``: what a person checks; ticked in DECISION (L5)."""
+
+    level: VerificationLevel
+    probe: str | None = Field(default=None, pattern=_PROBE_ID)
+    tests: tuple[str, ...] = ()
+    deferred: str | None = Field(default=None, min_length=1, max_length=1000)
+    manual: str | None = Field(default=None, min_length=1, max_length=2000)
+
+    @model_validator(mode="after")
+    def _rung_has_a_path(self) -> CriterionVerification:
+        if self.level is VerificationLevel.L5 and self.manual is None:
+            raise ValueError("a criterion that requires L5 needs 'manual': what a person checks")
+        if any(not item.strip() for item in self.tests):
+            raise ValueError("verification tests must not be blank")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_unset(self, handler(self))
+
+
+class ProbeAssertion(StrictModel):
+    """A generic assertion on the output of a probe.
+
+    * ``exitCode``: the exit code ``equals`` a number;
+    * ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),
+      ``equals`` a value or ``matches`` a regular expression;
+    * ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in
+      every variant (``variants`` narrows the comparison);
+    * ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``
+      appears before ``after`` (in the list at ``path``, or in the text);
+    * ``text``: the output ``matches`` a regular expression or ``contains`` a text."""
+
+    kind: Literal["exitCode", "jsonPath", "differs", "order", "text"]
+    path: str | None = None
+    equals: Any = None
+    present: bool | None = None
+    matches: str | None = None
+    contains: str | None = None
+    order: Literal["ascending", "descending"] | None = None
+    before: str | None = None
+    after: str | None = None
+    variants: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _complete(self) -> ProbeAssertion:
+        if self.matches is not None:
+            try:
+                re.compile(self.matches)
+            except re.error as error:
+                raise ValueError(f"invalid regular expression {self.matches!r}: {error}") from error
+        if self.path is not None:
+            from governed_harness.ladder.jsonpath import parse_path
+
+            parse_path(self.path)
+        kind = self.kind
+        if kind == "exitCode" and not isinstance(self.equals, int):
+            raise ValueError("an exitCode assertion needs 'equals' with an integer")
+        if kind == "jsonPath":
+            if self.path is None:
+                raise ValueError("a jsonPath assertion needs 'path'")
+            given = [self.present is not None, self.equals is not None, self.matches is not None]
+            if sum(given) != 1:
+                raise ValueError("a jsonPath assertion needs exactly one of present, equals, matches")
+        if kind == "order" and not (
+            (self.path is not None and self.order is not None)
+            or (self.before is not None and self.after is not None)
+        ):
+            raise ValueError("an order assertion needs path and order, or before and after")
+        if kind == "text" and (self.matches is None) == (self.contains is None):
+            raise ValueError("a text assertion needs exactly one of matches, contains")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_unset(self, handler(self))
+
+
+class ProbeVariant(StrictModel):
+    """One combination of the variant matrix: the values of the command's placeholders and
+    environment variables set for this run of the probe."""
+
+    name: str = Field(min_length=1, max_length=200)
+    values: dict[str, str] = Field(default_factory=dict)
+    env: dict[str, str] = Field(default_factory=dict)
+
+    @field_validator("env")
+    @classmethod
+    def _env_names(cls, value: dict[str, str]) -> dict[str, str]:
+        for name in value:
+            if not re.match(_ENV_NAME, name):
+                raise ValueError(f"env key is not an environment variable name: {name!r}")
+        return value
+
+
+class ProbeDefinition(StrictModel):
+    """A command whose observable output shows a behaviour (a CLI, a script, a local server,
+    a simulator test), with assertions on that output, run once per variant of its matrix:
+    on the baseline (preflight) and after the change (VERIFICATION). The command runs without
+    a shell; ``{name}`` placeholders are filled from the variant. A probe that cannot run is
+    ``BLOCKED``, never ``PASSED``."""
+
+    probe_id: str = Field(alias="id", pattern=_PROBE_ID)
+    command: tuple[str, ...] = Field(min_length=1)
+    cwd: str = "."
+    pass_env: tuple[str, ...] = ()
+    timeout_seconds: int = Field(default=60, ge=1, le=3600)
+    output: Literal["json", "text"] = "text"
+    level: VerificationLevel = VerificationLevel.L3
+    criteria: tuple[str, ...] = ()
+    matrix: dict[str, tuple[str, ...]] = Field(default_factory=dict)
+    variants: tuple[ProbeVariant, ...] = ()
+    assertions: tuple[ProbeAssertion, ...] = Field(min_length=1)
+
+    @field_validator("cwd")
+    @classmethod
+    def _relative_cwd(cls, value: str) -> str:
+        path = PurePosixPath(value.replace("\\", "/"))
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"a probe cwd must be relative to the workspace: {value!r}")
+        return value
+
+    @field_validator("pass_env")
+    @classmethod
+    def _pass_env_names(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        for name in value:
+            if not re.match(_ENV_NAME, name):
+                raise ValueError(f"passEnv entry is not an environment variable name: {name!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _variants_fill_placeholders(self) -> ProbeDefinition:
+        if self.level not in {VerificationLevel.L2, VerificationLevel.L3, VerificationLevel.L4}:
+            raise ValueError("a probe verifies L2, L3 or L4")
+        if self.matrix and self.variants:
+            raise ValueError("declare either a matrix or variants, not both")
+        if any(not values for values in self.matrix.values()):
+            raise ValueError("every matrix entry needs at least one value")
+        needed = {
+            name for item in (*self.command, self.cwd) for name in PROBE_PLACEHOLDER.findall(item)
+        }
+        for variant in self.expanded_variants():
+            missing = sorted(needed - set(variant.values))
+            if missing:
+                raise ValueError(
+                    f"variant {variant.name!r} does not set placeholder(s) {', '.join(missing)}"
+                )
+        names = [item.name for item in self.expanded_variants()]
+        if len(set(names)) != len(names):
+            raise ValueError("variant names must be unique")
+        if any(item.kind == "differs" for item in self.assertions) and len(names) < 2:
+            raise ValueError("a differs assertion needs at least two variants")
+        return self
+
+    def expanded_variants(self) -> tuple[ProbeVariant, ...]:
+        """The variants in a fixed order: the declared ones, else the cartesian product of the
+        matrix (keys sorted, values in their order), else one variant named ``default``."""
+        if self.variants:
+            return self.variants
+        if not self.matrix:
+            return (ProbeVariant(name="default"),)
+        keys = sorted(self.matrix)
+        return tuple(
+            ProbeVariant(
+                name=",".join(f"{key}={value}" for key, value in zip(keys, combination, strict=True)),
+                values=dict(zip(keys, combination, strict=True)),
+            )
+            for combination in itertools.product(*(self.matrix[key] for key in keys))
+        )
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_unset(self, handler(self))
+
+
+class ChecklistItem(StrictModel):
+    """Something only a person can verify (a layout, a sound, a device behaviour), ticked in
+    DECISION with ``harness gate decide --check ID``."""
+
+    item_id: str = Field(alias="id", pattern=_ITEM_ID)
+    text: str = Field(min_length=1, max_length=2000)
+
+
+class OperationalContract(StrictModel):
+    """The operational contract of a task (#55): what the person and the harness agreed on
+    before work starts. Every field is optional in the task file; the harness fills the rest
+    from the project configuration and records the resulting summary, bound to the task
+    digest, at INTENT."""
+
+    objective: str | None = Field(default=None, max_length=4000)
+    examples: tuple[str, ...] = ()
+    scope: tuple[str, ...] = ()
+    scope_paths: tuple[str, ...] = ()
+    out_of_scope: tuple[str, ...] = ()
+    definition_of_done: tuple[str, ...] = ()
+    verification_level: VerificationLevel | None = None
+    branch: str | None = Field(default=None, max_length=200)
+    create_pull_request: bool | None = None
+    push: bool | None = None
+    comment: bool | None = None
+    coverage_threshold: float | None = Field(default=None, ge=0, le=100)
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_unset(self, handler(self))
+
+
 class AcceptanceCriterion(StrictModel):
     criterion_id: str
     text: str = Field(min_length=1, max_length=8000)
     verification_hint: str | None = Field(default=None, max_length=4000)
     priority: Literal["MUST", "SHOULD", "COULD"] = "MUST"
+    verification: CriterionVerification | None = None
+    """Since 1.1 (#55): the rung of the verification ladder the criterion requires. Left out
+    of the serialized criterion when absent, so tasks written before it keep their digest."""
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_verification(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.verification is None:
+            data.pop("verification", None)
+        return data
 
 
 class FilePatch(StrictModel):
@@ -151,6 +401,29 @@ class Task(StrictModel):
     implementation: ImplementationInstruction = Field(default_factory=ImplementationInstruction)
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
+    probes: tuple[ProbeDefinition, ...] = ()
+    """Since 1.1 (#55): behaviour probes of this task (added to the project's)."""
+    checklist: tuple[ChecklistItem, ...] = ()
+    """Since 1.1 (#55): items only a person can verify, ticked in DECISION."""
+    contract: OperationalContract | None = None
+    """Since 1.1 (#55): the operational contract the task declares; the rest comes from the
+    project configuration."""
+
+    @field_validator("probes")
+    @classmethod
+    def _unique_probes(cls, value: tuple[ProbeDefinition, ...]) -> tuple[ProbeDefinition, ...]:
+        ids = [item.probe_id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("probe ids must be unique within a task")
+        return value
+
+    @field_validator("checklist")
+    @classmethod
+    def _unique_items(cls, value: tuple[ChecklistItem, ...]) -> tuple[ChecklistItem, ...]:
+        ids = [item.item_id for item in value]
+        if len(set(ids)) != len(ids):
+            raise ValueError("checklist item ids must be unique within a task")
+        return value
 
     @field_validator("acceptance_criteria")
     @classmethod
@@ -175,6 +448,11 @@ class Task(StrictModel):
         if not self.criteria_pending:
             data.pop("criteriaPending", None)
             data.pop("criteria_pending", None)
+        # Since 1.1 (#55): absent probes, checklist and contract keep the stored form and the
+        # digest of tasks written before them.
+        for name in ("probes", "checklist", "contract"):
+            if not getattr(self, name):
+                data.pop(name, None)
         return data
 
 
@@ -368,7 +646,9 @@ class AgentInvocation(StrictModel):
     usage_ref: str | None = None
     output_ref: str | None = None
     error: HarnessErrorRecord | None = None
-    call_kind: Literal["implement", "clarify", "review", "plan", "acceptance"] | None = None
+    call_kind: Literal["implement", "clarify", "review", "plan", "acceptance", "locate"] | None = (
+        None
+    )
     """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
     so invocations recorded without the agent-results settings keep their stored form."""
     effort: str | None = None
@@ -544,6 +824,9 @@ class HumanDecision(StrictModel):
     change_requests: tuple[ChangeRequestItem, ...] = ()
     """Blocking items of a structured REQUEST_CHANGES (``review.structuredChanges``, #52);
     left out when empty."""
+    checked_items: tuple[str, ...] = ()
+    """Manual checklist items the person ticked with this decision (``review.manualChecklist``,
+    #55); left out when empty."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -558,6 +841,7 @@ class HumanDecision(StrictModel):
         for name, alias in (
             ("acknowledged_risks", "acknowledgedRisks"),
             ("change_requests", "changeRequests"),
+            ("checked_items", "checkedItems"),
         ):
             if not getattr(self, name):
                 data.pop(alias, None)
@@ -886,3 +1170,101 @@ class EvidenceBundleManifest(StrictModel):
     core_version: str
     created_at: datetime = Field(default_factory=utc_now)
     entries: tuple[BundleEntry, ...]
+
+
+# ----- since 1.1 (#55): certification, deferred verification and human attachments ---------
+CertificationStatus = Literal["CERTIFIED", "PARTIAL", "NOT_CERTIFIED"]
+"""Status of a run: every criterion reached its rung, some did (or are pending), none did."""
+CriterionStatus = Literal["CERTIFIED", "PENDING", "NOT_CERTIFIED", "WAIVED"]
+"""``PENDING``: the rung is reached only by deferred evidence or a manual check not recorded
+yet; ``WAIVED``: a person decided in preflight to continue without it (never certified)."""
+
+
+class LevelEvidence(StrictModel):
+    """One piece of recorded evidence that a criterion reached a rung."""
+
+    level: VerificationLevel
+    source: str
+    detail: str
+    refs: tuple[str, ...] = ()
+
+
+class CriterionCertification(StrictModel):
+    criterion_id: str
+    required: VerificationLevel
+    declared: bool
+    """Whether the criterion declares its rung (``verification.level``); a criterion without a
+    declaration requires ``verification.ladder.defaultLevel`` and its gap never blocks."""
+    achieved: VerificationLevel | None = None
+    status: CriterionStatus
+    reason: str
+    evidence: tuple[LevelEvidence, ...] = ()
+    pending: tuple[str, ...] = ()
+
+
+class CertificationRecord(StrictModel):
+    """The certification of a run's ChangeSet: for each acceptance criterion the rung it
+    requires, the rung its recorded evidence reaches and why (``verification.ladder``)."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    certification_id: str
+    execution_id: str
+    change_set_digest: str
+    status: CertificationStatus
+    trigger: Literal["VERIFICATION", "DECISION", "EVIDENCE"]
+    criteria: tuple[CriterionCertification, ...] = ()
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+DeferredStatus = Literal["PENDING", "PASSED", "FAILED", "EXPIRED"]
+
+
+class DeferredVerification(StrictModel):
+    """A criterion that only CI, staging or a device lab can verify: pending after the run,
+    bound to the ChangeSet digest (and to the closure commit once there is one), until
+    ``harness evidence attach`` closes it with a JUnit, SARIF or CI status report. A pending
+    item expires; an expired one cannot be closed and the criterion is not certified."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    deferred_id: str
+    item_id: str
+    project_id: str
+    execution_id: str
+    task_id: str
+    criterion_id: str
+    level: VerificationLevel
+    where: str
+    change_set_digest: str
+    commit: str | None = None
+    status: DeferredStatus = "PENDING"
+    created_at: datetime = Field(default_factory=utc_now)
+    expires_at: datetime
+    closed_at: datetime | None = None
+    evidence_kind: Literal["junit", "sarif", "ci-status"] | None = None
+    evidence_ref: str | None = None
+    evidence_digest: str | None = None
+    summary: str | None = None
+    closed_by: Actor | None = None
+
+
+class HumanAttachment(StrictModel):
+    """Evidence a person attached (a screenshot, a video, a log): stored as an artifact and
+    bound to its digest, to the task revision (intake context) or to a run's ChangeSet and,
+    optionally, to a checklist item."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    attachment_id: str
+    project_id: str
+    task_id: str
+    task_digest: str | None = None
+    execution_id: str | None = None
+    change_set_digest: str | None = None
+    item_id: str | None = None
+    artifact_ref: str
+    digest: str
+    media_type: str
+    size_bytes: int = Field(ge=0)
+    file_name: str
+    note: str | None = Field(default=None, max_length=2000)
+    actor: Actor
+    attached_at: datetime = Field(default_factory=utc_now)

@@ -137,6 +137,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
+from governed_harness.runtime.state_location import resolve_state_location
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -226,6 +227,9 @@ class EnginePaths:
     harness_dir: Path
     database: Path
     artifact_dir: Path
+    state_root: Path | None = None
+    """The run registry outside the workspace (``runtime.stateDir`` or an isolated run's
+    origin, #55); ``None`` when the state lives in ``.harness/`` as in 1.0.0."""
 
     @classmethod
     def from_workspace(cls, workspace: Path) -> EnginePaths:
@@ -233,6 +237,24 @@ class EnginePaths:
         harness_dir = root / ".harness"
         harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         return cls(root, harness_dir, harness_dir / "state.db", harness_dir / "artifacts")
+
+    @classmethod
+    def for_project(cls, resolved: ResolvedConfiguration) -> EnginePaths:
+        """The paths of a resolved project: ``.harness/`` for the workspace's own files and the
+        state location ``runtime.stateDir`` (or an isolation marker) names for the registry."""
+        paths = cls.from_workspace(resolved.workspace_root)
+        location = resolve_state_location(
+            paths.workspace, resolved.project.project_id, resolved.project.runtime.state_dir
+        )
+        if not location.external:
+            return paths
+        return cls(
+            paths.workspace,
+            paths.harness_dir,
+            location.database,
+            location.artifacts,
+            location.root,
+        )
 
 
 @dataclass
@@ -245,7 +267,7 @@ class EngineServices:
 
     @classmethod
     def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
-        paths = EnginePaths.from_workspace(resolved.workspace_root)
+        paths = EnginePaths.for_project(resolved)
         return cls(
             resolved=resolved,
             paths=paths,
@@ -1689,10 +1711,13 @@ class RunEngine:
         return bool(self.s.resolved.project.governance_settings.protect_excluded_paths)
 
     def _protected_paths(self) -> tuple[Path, ...]:
-        """Workspace paths the agent sandbox keeps read-only: the harness state and Git."""
+        """Paths the agent sandbox keeps read-only: the harness state and Git of the workspace
+        (``governance.protectExcludedPaths``) and the run registry when it lives outside the
+        workspace (``runtime.stateDir``, #55)."""
+        external = (self.s.paths.state_root,) if self.s.paths.state_root is not None else ()
         if not self._protects_excluded_paths():
-            return ()
-        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git")
+            return external
+        return (self.s.paths.harness_dir, self.s.paths.workspace / ".git", *external)
 
     def _check_excluded_paths(
         self,
