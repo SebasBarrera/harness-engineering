@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import click
 import typer
 
 from governed_harness import __version__
@@ -759,11 +758,15 @@ def _interactive_decision(
         )
         raise typer.Exit(code=5)
     if decision is None:
-        choice = typer.prompt(
-            "Decision",
-            type=click.Choice([item.value for item in DecisionKind], case_sensitive=False),
-        )
-        decision = DecisionKind(str(choice).upper())
+        # Validated here rather than with click.Choice: click is not a declared dependency,
+        # and recent Typer versions no longer install it.
+        allowed = [item.value for item in DecisionKind]
+        while decision is None:
+            choice = str(typer.prompt(f"Decision ({', '.join(allowed)})")).strip().upper()
+            if choice in allowed:
+                decision = DecisionKind(choice)
+            else:
+                typer.echo(f"Choose one of: {', '.join(allowed)}", err=True)
     while not (rationale or "").strip():
         rationale = typer.prompt("Rationale (what you checked and why)")
     if change_set_digest is not None and change_set_digest != current:
