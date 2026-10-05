@@ -91,4 +91,5 @@ class NormativeStateMachine:
             ResultStatus.INCONCLUSIVE,
             ResultStatus.TIMED_OUT,
             ResultStatus.ERROR,
+            ResultStatus.INTERRUPTED,
         }

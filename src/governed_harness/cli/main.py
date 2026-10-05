@@ -97,6 +97,8 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
         raise typer.Exit(code=6)
     if status is ResultStatus.ERROR:
         raise typer.Exit(code=1)
+    if status is ResultStatus.INTERRUPTED:
+        raise typer.Exit(code=6)
 
 
 @app.command()

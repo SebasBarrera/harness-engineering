@@ -16,9 +16,11 @@ hierarchy in `src/governed_harness/domain/errors.py` and from the run status map
 (`agent.*`, `validator.*`, `harness.*`), or a wrong digest confirmation under
 `governance.confirmDecisionDigest`, an acceptance contract that changed after `SPECIFICATION`
 under `governance.pinTaskRevision`, and `task create` with the id of a task that has an open run
-under the same setting. Also approving a memory record that is already approved or needs no approval, deciding a recommendation twice, and `task clarify` on a task with a run past `INTENT` or with an actor id of an agent, validator or the harness. | later-change, review-exception, memory, clarification and traceability flows |
+under the same setting, and a workspace whose lease another harness process holds
+(`governance.workspaceLease`). Also approving a memory record that is already approved or needs no approval, deciding a recommendation twice, and `task clarify` on a task with a run past `INTENT` or with an actor id of an agent, validator or the harness. | later-change, review-exception, memory, clarification and traceability flows |
 | `6` | blocked | `harness verify` found a check that failed, or `harness trace` under `governance.verifyRecords` refused a run that does not verify. The run stopped because a validation, policy, blocking, timeout or inconclusive condition held (`BLOCKED`, `FAILED`, `INCONCLUSIVE` or `TIMED_OUT` outside `DECISION`), including `INTENT` blocked by open clarification questions under `intake.criteriaPolicy: enforce`, and by a task without acceptance criteria (rule `C0`) under any policy. | broken-baseline and clarification flows (`run start`) |
 | `130` | cancelled | The run status is `CANCELLED` (`harness run cancel`, or cancellation during execution). | code |
+| `143` | terminated | Under `governance.workspaceLease`, the command received `SIGTERM`: the agent's process group was terminated and the phase and the run were recorded as `INTERRUPTED`; `run continue` recovers the run. A run command that returns an `INTERRUPTED` run exits with 6. | `tests/integration/test_workspace_lease.py` |
 
 "Verified with" refers to `scripts/demo_flows.py`, which checks every exit code in CI (workflow
 `docs-smoke`). `v0.8.0` shipped without documentation for codes 3 and 5 (issue #11).

@@ -58,6 +58,7 @@ from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
 from governed_harness.runtime import GitAdapter
+from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
@@ -122,6 +123,7 @@ class HarnessApplication:
             "chainAnchor": settings.chain_anchor or "off",
             "pinTaskRevision": bool(settings.pin_task_revision),
             "protectExcludedPaths": bool(settings.protect_excluded_paths),
+            "workspaceLease": bool(settings.workspace_lease),
         }
 
     @staticmethod
@@ -196,11 +198,12 @@ class HarnessApplication:
         clarification = load_clarification_file(answers_file)
         with self._services(path) as services:
             decider, display_name = self._decider(services, actor_id)
-            record, task = RunEngine(services).clarify(
-                task_id=task_id,
-                clarification=clarification,
-                actor=Actor(actor_type=actor_type, actor_id=decider, display_name=display_name),
-            )
+            with self._leased(services, "task clarify"):
+                record, task = RunEngine(services).clarify(
+                    task_id=task_id,
+                    clarification=clarification,
+                    actor=Actor(actor_type=actor_type, actor_id=decider, display_name=display_name),
+                )
             return {
                 "clarification": record.model_dump(mode="json", by_alias=True),
                 "task": task.model_dump(mode="json", by_alias=True),
@@ -245,14 +248,18 @@ class HarnessApplication:
             }
 
     def start_run(self, path: Path, task_id: str, provider: str | None = None) -> Execution:
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "run start") as lease:
             engine = RunEngine(services)
             task = engine.get_task(task_id)
             execution = engine.create_execution(task, provider=provider)
+            if lease is not None:
+                lease.bind(execution.execution_id)
             return engine.continue_execution(execution.execution_id)
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "run continue") as lease:
+            if lease is not None:
+                lease.bind(execution_id)
             return RunEngine(services).continue_execution(execution_id)
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
@@ -274,7 +281,9 @@ class HarnessApplication:
         """Record a human decision on the gate of a run. Without ``actor_id`` the decider is
         the Git user under ``governance.deciderIdentity: git`` and ``default_actor`` otherwise;
         an actor id of an agent, a validator or the harness is refused (exit code 5)."""
-        with self._services(path) as services:
+        with self._services(path) as services, self._leased(services, "gate decide") as lease:
+            if lease is not None:
+                lease.bind(execution_id)
             engine = RunEngine(services)
             decider, display_name = self._decider(services, actor_id, default_actor)
             record = engine.decide(
@@ -779,6 +788,23 @@ class HarnessApplication:
             else "FAILED"
         )
         return {"status": status, "version": __version__, "checks": checks}
+
+    @staticmethod
+    @contextmanager
+    def _leased(services: EngineServices, command: str) -> Iterator[WorkspaceLease | None]:
+        """Hold the workspace lease while a command executes phases or records a decision
+        (``governance.workspaceLease``); a second process gets exit code 5. ``SIGTERM`` then
+        stops the command like Ctrl-C, so the runner terminates the agent's process group and
+        the phase is recorded as interrupted."""
+        if not services.resolved.project.governance_settings.workspace_lease:
+            yield None
+            return
+        lease = WorkspaceLease(services.paths.harness_dir, command).acquire()
+        try:
+            with interruptible():
+                yield lease
+        finally:
+            lease.release()
 
     @contextmanager
     def _services(self, path: Path) -> Iterator[EngineServices]:

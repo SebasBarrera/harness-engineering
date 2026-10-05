@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import socket
 import subprocess
 import time
 from collections.abc import Callable
@@ -19,6 +20,7 @@ from governed_harness.agents import (
     SimulatedAgentProvider,
 )
 from governed_harness.capabilities import grants_from_rules
+from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
 from governed_harness.domain.actors import (
     NON_HUMAN_ACTOR_PREFIXES as NON_HUMAN_ACTOR_PREFIXES,  # re-exported for callers
@@ -101,6 +103,7 @@ from governed_harness.runtime import (
     WorkspaceSnapshotter,
 )
 from governed_harness.runtime.guard import IGNORED_PATTERNS, ExcludedPathGuard
+from governed_harness.runtime.lease import terminate_process_group
 from governed_harness.runtime.sandbox import (
     SandboxHost,
     SandboxPlan,
@@ -152,6 +155,30 @@ def acceptance_contract_digest(task: Task) -> str:
             "constraints": list(task.constraints),
         }
     )
+
+
+class _ProcessLedger:
+    """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
+    recovery after a killed harness can terminate the ones still running."""
+
+    def __init__(self, state: SQLiteStateStore, execution_id: str) -> None:
+        self.state = state
+        self.key = f"process:{execution_id}"
+
+    def started(self, pid: int, argv: tuple[str, ...]) -> None:
+        recorded = json.loads(self.state.get_flag(self.key) or "{}")
+        recorded[str(pid)] = {
+            "pgid": pid,
+            "host": socket.gethostname(),
+            "argv0": argv[0] if argv else "",
+            "startedAt": utc_now().isoformat(),
+        }
+        self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
+
+    def finished(self, pid: int) -> None:
+        recorded = json.loads(self.state.get_flag(self.key) or "{}")
+        if recorded.pop(str(pid), None) is not None:
+            self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
 @dataclass(frozen=True)
@@ -325,6 +352,10 @@ class RunEngine:
             return execution
         if self.is_cancelled(execution_id):
             return self._cancel_execution(execution)
+        if self._leases_workspace():
+            blocked = self.recover_interrupted(execution_id)
+            if blocked is not None:
+                return blocked
         while True:
             execution = self.get_execution(execution_id)
             if execution.current_phase is PhaseId.DECISION:
@@ -645,6 +676,16 @@ class RunEngine:
                 outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
             else:
                 outcome = handler(running, phase)
+        except (KeyboardInterrupt, SystemExit) as interruption:
+            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
+            # record the phase as interrupted so that a later run continue recovers it.
+            if self._leases_workspace():
+                self._mark_interrupted(
+                    execution.execution_id,
+                    phase,
+                    f"The harness was interrupted ({type(interruption).__name__})",
+                )
+            raise
         except Exception as error:
             outcome = PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
             self.s.events.append(
@@ -973,6 +1014,18 @@ class RunEngine:
         )
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
+        if self._leases_workspace():
+            # The workspace as this attempt found it: an interrupted attempt is undone to it
+            # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
+            snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
+            ref = self.s.artifacts.put_json(
+                self._snapshot_to_dict(snapshot),
+                metadata={"kind": "implementation-start", "executionId": execution.execution_id},
+            )
+            self.s.state.set_flag(
+                f"implstart:{execution.execution_id}",
+                json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
+            )
         task = self.run_task(execution)
         plan_id = self.s.state.get_flag(f"plan:{execution.execution_id}")
         if not plan_id:
@@ -1029,7 +1082,7 @@ class RunEngine:
             execution.execution_id, actor, self.s.resolved.effective_capabilities
         )
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
-        runner = SafeProcessRunner(self.s.paths.workspace)
+        runner = self._runner(execution)
         context_uri = self.s.state.get_flag(f"context:{execution.execution_id}")
         memory_context: dict[str, Any] | None = None
         if context_uri:
@@ -1114,6 +1167,177 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    # ----- interruption and recovery (governance.workspaceLease) ----------------------
+    def _leases_workspace(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.workspace_lease)
+
+    def _runner(self, execution: Execution) -> SafeProcessRunner:
+        if not self._leases_workspace():
+            return SafeProcessRunner(self.s.paths.workspace)
+        return SafeProcessRunner(
+            self.s.paths.workspace,
+            observer=_ProcessLedger(self.s.state, execution.execution_id),
+            terminate_on_exit=True,
+        )
+
+    def _mark_interrupted(
+        self, execution_id: str, phase: PhaseExecution, reason: str
+    ) -> PhaseExecution:
+        interrupted = phase.model_copy(
+            update={
+                "status": ResultStatus.INTERRUPTED,
+                "finished_at": utc_now(),
+                "summary": reason,
+            }
+        )
+        latest = self.get_execution(execution_id)
+        self.s.state.put(
+            "phase",
+            interrupted.phase_execution_id,
+            interrupted,
+            execution_id=execution_id,
+            project_id=latest.project_id,
+        )
+        self.s.events.append(
+            execution_id,
+            "phase.completed",
+            {
+                "phaseId": phase.phase_id,
+                "attempt": phase.attempt,
+                "status": ResultStatus.INTERRUPTED,
+                "summary": reason,
+                "evidenceRefs": [],
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.INTERRUPTED,
+                    "terminal_reason": reason,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        return interrupted
+
+    def recover_interrupted(self, execution_id: str) -> Execution | None:
+        """Recover a run a harness left behind before its phases run again (under the
+        workspace lease, no other harness process is executing them):
+
+        * a phase still ``RUNNING`` is marked ``INTERRUPTED``;
+        * the process groups the killed harness started and that still run are terminated;
+        * the workspace is restored to the state an interrupted IMPLEMENTATION attempt found,
+          so the change is not implemented twice on top of itself.
+
+        Returns the run when it cannot be recovered safely (it is then ``BLOCKED``), ``None``
+        when the phases may run."""
+        orphans = [
+            item
+            for item in self.s.state.list("phase", PhaseExecution, execution_id=execution_id)
+            if item.status is ResultStatus.RUNNING
+        ]
+        terminated = self._terminate_orphans(execution_id)
+        for phase in orphans:
+            self._mark_interrupted(
+                execution_id, phase, "The harness stopped while the phase was running"
+            )
+        interrupted = [
+            item
+            for item in self.s.state.list("phase", PhaseExecution, execution_id=execution_id)
+            if item.status is ResultStatus.INTERRUPTED
+            and not self.s.state.get_flag(f"recovered:{item.phase_execution_id}")
+        ]
+        if not interrupted and not terminated:
+            return None
+        restored: list[str] = []
+        unrestorable: list[str] = []
+        for phase in interrupted:
+            if phase.phase_id is PhaseId.IMPLEMENTATION:
+                done, failed = self._restore_implementation_start(execution_id, phase)
+                restored.extend(done)
+                unrestorable.extend(failed)
+            self.s.state.set_flag(f"recovered:{phase.phase_execution_id}", "1")
+        self.s.events.append(
+            execution_id,
+            "run.recovered",
+            {
+                "interruptedPhases": [
+                    {"phaseExecutionId": item.phase_execution_id, "phaseId": item.phase_id}
+                    for item in interrupted
+                ],
+                "terminatedProcessGroups": terminated,
+                "restoredPaths": restored,
+                "unrestorablePaths": unrestorable,
+            },
+        )
+        latest = self.get_execution(execution_id)
+        if unrestorable:
+            blocked = latest.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": (
+                        "An interrupted IMPLEMENTATION left files the harness cannot restore: "
+                        + ", ".join(unrestorable[:10])
+                    ),
+                    "updated_at": utc_now(),
+                }
+            )
+            self._save_execution(blocked)
+            return blocked
+        if latest.status in {ResultStatus.INTERRUPTED, ResultStatus.RUNNING}:
+            self._save_execution(
+                latest.model_copy(
+                    update={
+                        "status": ResultStatus.PENDING,
+                        "terminal_reason": None,
+                        "updated_at": utc_now(),
+                    }
+                )
+            )
+        return None
+
+    def _terminate_orphans(self, execution_id: str) -> list[int]:
+        key = f"process:{execution_id}"
+        recorded = json.loads(self.s.state.get_flag(key) or "{}")
+        host = socket.gethostname()
+        terminated = [
+            int(entry["pgid"])
+            for entry in recorded.values()
+            if entry.get("host") == host and terminate_process_group(int(entry["pgid"]))
+        ]
+        if recorded:
+            self.s.state.set_flag(key, "{}")
+        return terminated
+
+    def _restore_implementation_start(
+        self, execution_id: str, phase: PhaseExecution
+    ) -> tuple[list[str], list[str]]:
+        raw = self.s.state.get_flag(f"implstart:{execution_id}")
+        if not raw:
+            return [], []
+        start = json.loads(raw)
+        if start.get("phaseExecutionId") != phase.phase_execution_id:
+            return [], []
+        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(start["snapshotRef"])))
+        snapshotter = WorkspaceSnapshotter(self.s.paths.workspace)
+        diff = snapshotter.diff(before, snapshotter.snapshot())
+        restored: list[str] = []
+        unrestorable: list[str] = []
+        for change in diff.changes:
+            target = contained_path(self.s.paths.workspace, Path(change.path))
+            previous = before.files.get(change.path)
+            if previous is None:
+                target.unlink(missing_ok=True)
+                restored.append(change.path)
+            elif previous.text is not None:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(previous.text.encode("utf-8"))
+                restored.append(change.path)
+            else:
+                unrestorable.append(change.path)
+        return restored, unrestorable
 
     # ----- excluded paths (governance.protectExcludedPaths) ---------------------------
     def _protects_excluded_paths(self) -> bool:
@@ -1356,7 +1580,7 @@ class RunEngine:
                     definition=definition,
                     grants=grants,
                     artifact_store=self.s.artifacts,
-                    process_runner=SafeProcessRunner(self.s.paths.workspace),
+                    process_runner=self._runner(execution),
                     provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                     cancellation=CancellationToken(
                         lambda: self.is_cancelled(execution.execution_id)
@@ -1415,7 +1639,7 @@ class RunEngine:
                     execution.execution_id, actor, self.s.resolved.effective_capabilities
                 ),
                 artifact_store=self.s.artifacts,
-                process_runner=SafeProcessRunner(self.s.paths.workspace),
+                process_runner=self._runner(execution),
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
@@ -1453,7 +1677,7 @@ class RunEngine:
                 definition=definition,
                 grants=grants,
                 artifact_store=self.s.artifacts,
-                process_runner=SafeProcessRunner(self.s.paths.workspace),
+                process_runner=self._runner(execution),
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,

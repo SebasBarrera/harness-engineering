@@ -152,6 +152,20 @@
   profiles' write grants on `.harness/**` are dropped from the resolved capabilities. The
   harness's own state, Git's index, locks and objects are not watched. Without the setting the
   1.0.0 behaviour, sandbox profile and configuration digest are kept.
+- One harness process per workspace and a safe recovery after a crash (#47). `SIGTERM` during
+  `IMPLEMENTATION` left the phase `RUNNING` while the agent kept writing, and `run continue`
+  implemented the change again on top of it; two concurrent `run start` on one workspace
+  interfered and both failed. Under the new `governance.workspaceLease` (written by
+  `harness init`) `run start`, `run continue`, `gate decide` and `task clarify` hold a lease,
+  `.harness/lease.json` (pid, host, run, heartbeat every 10 s); another process exits with 5 and
+  names the holder, and a lease whose process is gone (or whose heartbeat is older than 60 s) is
+  taken over. While it is held, `SIGTERM` terminates the agent's process group, records the phase
+  and the run as `INTERRUPTED` (new status value in the schemas) and exits with 143. The runner
+  records the process groups it starts; `run continue` on a run a killed harness left marks a
+  `RUNNING` phase `INTERRUPTED`, terminates the recorded groups that still run, restores the files
+  an interrupted `IMPLEMENTATION` attempt changed to the snapshot taken when it started (a
+  `run.recovered` event lists them) and runs the phase again. Without the setting the 1.0.0
+  behaviour and configuration digest are kept.
 
 ## 1.0.0 - 2026-10-01
 

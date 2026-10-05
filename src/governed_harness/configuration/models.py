@@ -299,7 +299,11 @@ class GovernanceConfig(ConfigModel):
       environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted
       around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;
       the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants
-      on ``.harness/**`` and ``.git/**`` are dropped."""
+      on ``.harness/**`` and ``.git/**`` are dropped.
+    * ``workspaceLease``: one harness process at a time executes phases in a workspace
+      (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded
+      as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness
+      left and restores the workspace an interrupted IMPLEMENTATION attempt found."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -308,6 +312,7 @@ class GovernanceConfig(ConfigModel):
     chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
     pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
     protect_excluded_paths: bool | None = Field(default=None, alias="protectExcludedPaths")
+    workspace_lease: bool | None = Field(default=None, alias="workspaceLease")
 
     @field_validator("trusted_hosts")
     @classmethod

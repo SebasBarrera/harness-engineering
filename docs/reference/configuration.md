@@ -66,6 +66,7 @@ governance:
   chainAnchor: file
   pinTaskRevision: true
   protectExcludedPaths: true
+  workspaceLease: true
 ```
 
 ## Fields
@@ -461,6 +462,19 @@ The harness's own files are not watched: `.harness/state.db*`, `.harness/artifac
 and are not watched either. A build the agent runs on purpose (`dist`, `build`) is reported too:
 inspect it and decide with an exception. A write that restores size, modification time and the
 first 8 KiB of a file is not detected.
+
+### One harness at a time, and recovery after a crash
+
+Two `run start` on one workspace overwrote each other's files and both runs failed; a `SIGTERM`
+during `IMPLEMENTATION` left the phase `RUNNING` while the agent kept writing, and `run continue`
+implemented the change again on top of it.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `workspaceLease` | `false` | `true` | `run start`, `run continue`, `gate decide` and `task clarify` hold `.harness/lease.json` (token, pid, host, command, run, heartbeat every 10 s) while they run. Another process that finds it exits with 5 and names the holder; a lease whose process no longer exists on this host, or whose heartbeat is more than 60 s old, is taken over. `run cancel` and the read-only commands take no lease. While the lease is held, `SIGTERM` stops the command like Ctrl-C: the agent's or validator's process group is terminated, the phase and the run are recorded as `INTERRUPTED` and the command exits with 143. The runner records each process group it starts (flag `process:<run>`). `run continue` on a run that a killed harness left first recovers it: a phase still `RUNNING` becomes `INTERRUPTED`, the recorded process groups that still run on this host are terminated, and the files an interrupted `IMPLEMENTATION` attempt changed are restored to the snapshot taken when that attempt started (deleted when they did not exist), all recorded in a `run.recovered` event; then the phase runs again as a new attempt. A changed binary file cannot be restored from the snapshot: the run is then `BLOCKED` with the paths. |
+
+Restoring undoes every change to the workspace since the interrupted attempt started, including
+one a person made meanwhile.
 
 ## Technology profiles
 

@@ -63,6 +63,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "chainAnchor": "file",
             "pinTaskRevision": True,
             "protectExcludedPaths": True,
+            "workspaceLease": True,
         },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
