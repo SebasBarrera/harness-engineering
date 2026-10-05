@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791202636514,
+  "lastUpdate": 1791207654913,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2683,6 +2683,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.564,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "dee2b9bddadf3ee3147c95bfba3debf225389fe2",
+          "message": "Merge branch 'feat/wave4-integration-scale' into develop\n\nWave 4 connects the harness to delivery and makes it scale: a closure commit\nwith trailers bound to the approved ChangeSet, harness verify-approval for CI,\nportable evidence bundles (export/verify --bundle) and pr publish for the\ndecision brief and SARIF; project-defined validators and profiles with\ninterpreter discovery (venv, uv, poetry); native adapters for Claude Code,\nCodex, Gemini CLI and Aider with usage and cost, provider environment and\nsecrets with redaction; Git-based snapshots that respect .gitignore, manifest\nbaselines and a digest cache (10,001 files: 16.5 s -> 4.3 s, 701 MB -> 94 MB\nRSS, no ignored secrets stored), orphan-artifact retention in harness gc; and\nprovenance per agent call with a structured self-report. Behaviour changes sit\nbehind keys harness init writes; a project.yaml without them keeps the 1.0.0\nbehaviour and digest.\n\nCloses #54\n\nVerification on the branch head 37df9f382f67: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317463879\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317463897\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317463994\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317463996\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317464045\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37317464052\nFiles of the v0.8.0 cut in the tree: matched: 85/232  mismatched: 123  missing: 24",
+          "timestamp": "2026-10-05T08:40:15-05:00",
+          "tree_id": "008f2f2ea69dbe77fef3257ce75500ff88da395f",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/dee2b9bddadf3ee3147c95bfba3debf225389fe2"
+        },
+        "date": 1791207654132,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000671,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001011,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.005949,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.032729,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.155214,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.641847,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 8.141775,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 7.575,
             "unit": "%"
           }
         ]
