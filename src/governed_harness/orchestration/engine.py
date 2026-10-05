@@ -4,10 +4,14 @@ import contextlib
 import json
 import socket
 import subprocess
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import wait as wait_for_futures
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from functools import cached_property, partial
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -102,6 +106,7 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
     FeedbackBuilder,
@@ -112,6 +117,7 @@ from governed_harness.orchestration.feedback import (
 )
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
+from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
 from governed_harness.retrospective.causes import CauseAnalysis
@@ -161,6 +167,16 @@ FAILED_ATTEMPT_STATUSES = frozenset(
     }
 )
 """Phase results that use up one of the workflow's ``maxAttempts``."""
+
+PHASE_ORDER_REASON = (
+    "phases run one at a time in the order of the workflow graph: a run has one current phase "
+    "and one workspace"
+)
+SUBTASK_ORDER_REASON = (
+    "the sub-tasks of a decomposition share the run's one workspace and each one's "
+    "IMPLEMENTATION writes it; a sub-task starts after every earlier one passed its gate"
+)
+"""The limits of ``parallelizable`` recorded in ``workflow.schedule`` (#3)."""
 DEFAULT_VALIDATOR_TIMEOUT_SECONDS = 900
 
 WORKSPACE_GUARD_ID = "harness.workspace-guard"
@@ -202,24 +218,31 @@ class _ProcessLedger:
     """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
     recovery after a killed harness can terminate the ones still running."""
 
+    _lock = threading.Lock()
+    """Validators may run side by side (governance.enforceWorkflow, #3, and
+    friction.fastLane.verification.parallel, #58): the read-modify-write of the flag is
+    serialized across threads."""
+
     def __init__(self, state: SQLiteStateStore, execution_id: str) -> None:
         self.state = state
         self.key = f"process:{execution_id}"
 
     def started(self, pid: int, argv: tuple[str, ...]) -> None:
-        recorded = json.loads(self.state.get_flag(self.key) or "{}")
-        recorded[str(pid)] = {
-            "pgid": pid,
-            "host": socket.gethostname(),
-            "argv0": argv[0] if argv else "",
-            "startedAt": utc_now().isoformat(),
-        }
-        self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
+        with self._lock:
+            recorded = json.loads(self.state.get_flag(self.key) or "{}")
+            recorded[str(pid)] = {
+                "pgid": pid,
+                "host": socket.gethostname(),
+                "argv0": argv[0] if argv else "",
+                "startedAt": utc_now().isoformat(),
+            }
+            self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
     def finished(self, pid: int) -> None:
-        recorded = json.loads(self.state.get_flag(self.key) or "{}")
-        if recorded.pop(str(pid), None) is not None:
-            self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
+        with self._lock:
+            recorded = json.loads(self.state.get_flag(self.key) or "{}")
+            if recorded.pop(str(pid), None) is not None:
+                self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
 @dataclass(frozen=True)
@@ -297,6 +320,9 @@ class PhaseOutcome:
 
 
 class RunEngine:
+    _exit_gate_unmet: str | None = None
+    """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
+
     def __init__(self, services: EngineServices, sandbox_host: SandboxHost | None = None) -> None:
         self.s = services
         self.state_machine = NormativeStateMachine()
@@ -319,9 +345,11 @@ class RunEngine:
         self.results = AgentResults(self)
         # Imported here: the ladder modules type against the engine, so a module-level import
         # would close an import cycle.
+        from governed_harness.orchestration.friction import Friction
         from governed_harness.orchestration.ladder import VerificationLadder
 
         self.ladder = VerificationLadder(self)
+        self.friction = Friction(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -451,6 +479,8 @@ class RunEngine:
             blocked = self.recover_interrupted(execution_id)
             if blocked is not None:
                 return blocked
+        if self._enforces_workflow:
+            self._record_workflow_schedule(execution_id)
         while True:
             execution = self.get_execution(execution_id)
             if execution.current_phase is PhaseId.DECISION:
@@ -475,6 +505,10 @@ class RunEngine:
                 outcome = self._run_phase(execution, handler)
                 execution = self.get_execution(execution_id)
                 if outcome.status is not ResultStatus.PASSED:
+                    if self._exit_gate_unmet is not None:
+                        # The phase's own work passed but its exit gate did not (#3): no
+                        # correction cycle starts on a record the phase failed to leave.
+                        return execution
                     if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(
                         execution, outcome
                     ):
@@ -806,6 +840,12 @@ class RunEngine:
             if phase.phase_id is phase_id
         ]
         attempt = 1 + len(previous)
+        self._exit_gate_unmet = None
+        if self._enforces_workflow:
+            # dependsOn and the order of the sub-tasks decide whether the phase may start (#3).
+            waiting = self._phase_may_start(execution, phase_id)
+            if waiting is not None:
+                return waiting
         definition = self._phase_definition(phase_id)
         if definition is not None:
             failed = sum(1 for item in previous if item.status in FAILED_ATTEMPT_STATUSES)
@@ -864,6 +904,9 @@ class RunEngine:
             )
         if definition is not None:
             outcome = self._apply_phase_settings(definition, phase, outcome)
+        exit_checks: list[ExitGateCheck] = []
+        if self._enforces_workflow and outcome.status is ResultStatus.PASSED:
+            outcome, exit_checks = self._check_exit_gates(execution, phase, outcome)
         completed = phase.model_copy(
             update={
                 "status": outcome.status,
@@ -901,6 +944,11 @@ class RunEngine:
             completed_payload["exitGateMet"] = outcome.status is ResultStatus.PASSED
             completed_payload["timeoutSeconds"] = definition.timeout_seconds
             completed_payload["maxAttempts"] = definition.max_attempts
+        if self._enforces_workflow:
+            # Evaluated from the run's records after the phase passed (#3).
+            completed_payload["exitGate"] = self.workflow_graph.phase(phase_id).exit_gate
+            completed_payload["exitGateMet"] = outcome.status is ResultStatus.PASSED
+            completed_payload["exitConditions"] = [item.as_dict() for item in exit_checks]
         self.s.events.append(
             execution.execution_id,
             "phase.completed",
@@ -918,7 +966,7 @@ class RunEngine:
                 updated = latest.model_copy(
                     update={
                         "status": ResultStatus.PENDING,
-                        "current_phase": transition.target,
+                        "current_phase": self._next_phase(phase_id, transition.target),
                         "updated_at": utc_now(),
                     }
                 )
@@ -955,10 +1003,23 @@ class RunEngine:
             policy = "enforce"
         questions = assess_intent(task) if policy != "off" else ()
         review_refs: tuple[str, ...] = ()
+        if self.friction.active and self.friction.fast_lane is not None:
+            # friction.fastLane (#58): the lane of the run, recorded with its reasons.
+            self.friction.classify(execution, phase, task)
         if self.results.active and policy != "off":
             # Agent review of ambiguity and completeness, and the check of earlier answers
-            # (intake.ambiguityReview, intake.validateAnswers; #37).
-            review = self.results.intent.questions(execution, phase, task, questions)
+            # (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps
+            # the deterministic intake only.
+            review = self.results.intent.questions(
+                execution,
+                phase,
+                task,
+                questions,
+                agent=not (
+                    self.friction.active
+                    and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
+                ),
+            )
             review_refs = review.evidence_refs
             if review.blocked is not None:
                 return PhaseOutcome(
@@ -1181,7 +1242,10 @@ class RunEngine:
             "Versioned acceptance contract",
             supports=tuple(item.criterion_id for item in task.acceptance_criteria),
         )
-        if self.results.active:
+        if self.results.active and not (
+            self.friction.active
+            and self.friction.skips(execution, "acceptanceTests", PhaseId.SPECIFICATION)
+        ):
             # verification.acceptanceTests (#52): independent tests a person approves.
             blocked = self.results.acceptance.propose(execution, phase, task)
             if blocked is not None:
@@ -1192,7 +1256,10 @@ class RunEngine:
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
-        if self.results.active:
+        if self.results.active and not (
+            self.friction.active
+            and self.friction.skips(execution, "decomposition", PhaseId.PLANNING)
+        ):
             # planning.decomposition (#39): a large task waits for an approved plan.
             blocked = self.results.decomposition.plan(execution, phase, task)
             if blocked is not None:
@@ -1269,6 +1336,12 @@ class RunEngine:
             "Plan, capabilities, validators and risks",
             supports=(task.task_id,),
         )
+        if self.friction.active:
+            # friction.planApproval (#8 through #58): L tasks and tasks with a risk flag wait
+            # for a person to approve the plan, bound to its digest.
+            waiting = self.friction.plan_checkpoint(execution, phase, task, plan, plan_ref.uri)
+            if waiting is not None:
+                return waiting
         return PhaseOutcome(
             ResultStatus.PASSED,
             "Plan and context manifest recorded",
@@ -1554,6 +1627,281 @@ class RunEngine:
                 outcome.artifact_refs,
             )
         return outcome
+
+    # ----- workflow enforcement (governance.enforceWorkflow, #3) --------------------------
+    @property
+    def _enforces_workflow(self) -> bool:
+        return bool(self.s.resolved.project.governance_settings.enforce_workflow)
+
+    @cached_property
+    def workflow_graph(self) -> WorkflowGraph:
+        """The phase graph of the configured workflow."""
+        return WorkflowGraph(self.s.resolved.workflow)
+
+    @cached_property
+    def exit_gates(self) -> ExitGateEvaluator:
+        return ExitGateEvaluator(self)
+
+    def _next_phase(self, phase_id: PhaseId, fixed: PhaseId) -> PhaseId:
+        """The phase after a passed one: the workflow graph's under
+        ``governance.enforceWorkflow`` (the resolver checked that it keeps the fixed order),
+        otherwise the state machine's."""
+        if not self._enforces_workflow:
+            return fixed
+        return self.workflow_graph.next_phase(phase_id) or fixed
+
+    def _passed_phases(self, execution_id: str) -> set[PhaseId]:
+        """Phases whose latest attempt passed (or, for a phase that is not required, was not
+        applicable)."""
+        latest: dict[PhaseId, PhaseExecution] = {}
+        for item in self.s.state.list("phase", PhaseExecution, execution_id=execution_id):
+            current = latest.get(item.phase_id)
+            if current is None or item.attempt > current.attempt:
+                latest[item.phase_id] = item
+        graph = self.workflow_graph
+        return {
+            phase_id
+            for phase_id, item in latest.items()
+            if item.status is ResultStatus.PASSED
+            or (
+                item.status is ResultStatus.NOT_APPLICABLE
+                and phase_id in graph.order()
+                and not graph.phase(phase_id).required
+            )
+        }
+
+    def _phase_may_start(self, execution: Execution, phase_id: PhaseId) -> PhaseOutcome | None:
+        """``None`` when every ``dependsOn`` phase of ``phase_id`` passed (and, for
+        IMPLEMENTATION of a decomposed run, every earlier sub-task passed its gate); otherwise
+        the run is ``BLOCKED`` without starting an attempt."""
+        unmet = self.workflow_graph.unmet_dependencies(
+            phase_id, self._passed_phases(execution.execution_id)
+        )
+        if unmet:
+            names = ", ".join(item.value for item in unmet)
+            return self._not_started(
+                execution,
+                f"{phase_id} cannot start: dependsOn {names} has no passed attempt",
+                "phase.dependencies.unmet",
+                {
+                    "phaseId": phase_id,
+                    "dependsOn": [
+                        item.value for item in self.workflow_graph.dependencies(phase_id)
+                    ],
+                    "unmet": [item.value for item in unmet],
+                },
+            )
+        if phase_id is PhaseId.IMPLEMENTATION and self.results.active:
+            return self._subtask_may_start(execution)
+        return None
+
+    def _subtask_may_start(self, execution: Execution) -> PhaseOutcome | None:
+        """The sub-tasks of a decomposition run one after another: they share the run's one
+        workspace and each one's IMPLEMENTATION writes it. A sub-task starts only after every
+        earlier one passed its gate (``subtask.completed``)."""
+        decomposition = self.results.decomposition
+        subtasks = decomposition.approved(execution)
+        if not subtasks:
+            return None
+        events = self.s.events.list(execution.execution_id)
+        if not any(event.event_type == "workflow.subtasks.scheduled" for event in events):
+            self.s.events.append(
+                execution.execution_id,
+                "workflow.subtasks.scheduled",
+                {"count": len(subtasks), "mode": "sequential", "reason": SUBTASK_ORDER_REASON},
+            )
+        current = min(decomposition.index(execution), len(subtasks))
+        passed = {
+            event.payload.get("index")
+            for event in events
+            if event.event_type == "subtask.completed"
+            and event.payload.get("gateStatus") == ResultStatus.PASSED.value
+        }
+        missing = [number for number in range(1, current + 1) if number not in passed]
+        if not missing:
+            return None
+        return self._not_started(
+            execution,
+            f"sub-task {current + 1} cannot start: sub-task(s) "
+            f"{', '.join(str(item) for item in missing)} did not pass their gate",
+            "phase.dependencies.unmet",
+            {
+                "phaseId": PhaseId.IMPLEMENTATION,
+                "subtask": current + 1,
+                "unmetSubtasks": missing,
+            },
+        )
+
+    def _not_started(
+        self, execution: Execution, reason: str, event_type: str, payload: dict[str, Any]
+    ) -> PhaseOutcome:
+        self.s.events.append(execution.execution_id, event_type, payload)
+        latest = self.get_execution(execution.execution_id)
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": reason,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        return PhaseOutcome(ResultStatus.BLOCKED, reason)
+
+    def _check_exit_gates(
+        self, execution: Execution, phase: PhaseExecution, outcome: PhaseOutcome
+    ) -> tuple[PhaseOutcome, list[ExitGateCheck]]:
+        """Evaluate the exit gate of a passed attempt and the condition of the transition it
+        takes; the first unmet one turns the attempt into ``BLOCKED``."""
+        checks: list[ExitGateCheck] = []
+        exit_gate = self.workflow_graph.phase(phase.phase_id).exit_gate
+        for condition in self.workflow_graph.exit_conditions(phase.phase_id):
+            check = self.exit_gates.evaluate(condition, execution.execution_id, phase)
+            checks.append(check)
+            if check.met:
+                continue
+            reason = (
+                f"{phase.phase_id} did not meet its exit gate {exit_gate} "
+                f"({check.condition}): {check.reason}"
+            )
+            self._exit_gate_unmet = reason
+            self.s.events.append(
+                execution.execution_id,
+                "phase.exit_gate.unmet",
+                {
+                    "phaseId": phase.phase_id,
+                    "attempt": phase.attempt,
+                    "exitGate": exit_gate,
+                    "condition": check.condition,
+                    "reason": check.reason,
+                },
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return (
+                PhaseOutcome(
+                    ResultStatus.BLOCKED, reason, outcome.evidence_refs, outcome.artifact_refs
+                ),
+                checks,
+            )
+        return outcome, checks
+
+    def _parallel_validators(self) -> bool:
+        """Whether VERIFICATION may run its parallel-safe validators at once: the workflow is
+        enforced, VERIFICATION is parallelizable and read-only, and ``runtime.maxParallel``
+        allows more than one."""
+        return (
+            self._enforces_workflow
+            and self.workflow_graph.runs_parallel_work(PhaseId.VERIFICATION)
+            and self.s.resolved.project.runtime.max_parallel > 1
+        )
+
+    def _record_workflow_schedule(self, execution_id: str) -> None:
+        """Record once per run what the workflow lets run at once and what stays ordered."""
+        if any(
+            event.event_type == "workflow.schedule" for event in self.s.events.list(execution_id)
+        ):
+            return
+        graph = self.workflow_graph
+        parallel = self._parallel_validators()
+        batches = validator_batches(self.s.resolved.effective_validators, parallel=parallel)
+        self.s.events.append(
+            execution_id,
+            "workflow.schedule",
+            {
+                "order": [item.value for item in graph.order()],
+                "dependsOn": {
+                    item.value: [dependency.value for dependency in graph.dependencies(item)]
+                    for item in graph.order()
+                },
+                "phases": "sequential",
+                "independentPhaseGroups": [
+                    [item.value for item in group] for group in graph.parallel_groups()
+                ],
+                "validatorBatches": [[item.validator_id for item in batch] for batch in batches],
+                "maxParallel": self.s.resolved.project.runtime.max_parallel if parallel else 1,
+                "subtasks": "sequential",
+                "limits": [PHASE_ORDER_REASON, SUBTASK_ORDER_REASON],
+            },
+        )
+
+    def _validation_context(
+        self, execution: Execution, change_set: ChangeSet, definition: ValidatorDefinition
+    ) -> ValidationContext:
+        actor = Actor(
+            actor_type=ActorType.TOOL,
+            actor_id=f"validator.{definition.validator_id}",
+            version="1",
+        )
+        return ValidationContext(
+            execution_id=execution.execution_id,
+            workspace=self.s.paths.workspace,
+            task=self.run_task(execution),
+            change_set=change_set,
+            definition=self._bounded_definition(definition),
+            grants=grants_from_rules(
+                execution.execution_id, actor, self.s.resolved.effective_capabilities
+            ),
+            artifact_store=self.s.artifacts,
+            process_runner=self._runner(execution),
+            provenance=self._provenance(execution).model_copy(update={"actor": actor}),
+            cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
+            max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+            missing_command_status=self._unavailable_status("missingTestCommand"),
+            missing_script_status=self._unavailable_status("missingTestScript"),
+            parse_output=self.s.resolved.project.output_parsers_enabled,
+        )
+
+    def _run_profile_validators(
+        self, execution: Execution, change_set: ChangeSet
+    ) -> list[ValidatorOutput]:
+        """Run the effective validators of VERIFICATION and record their results in the
+        declared order. Without ``governance.enforceWorkflow`` (or with one validator per
+        batch) they run one at a time as in 1.0.0; under it, consecutive validators declared
+        ``parallelSafe`` run at once, up to ``runtime.maxParallel`` (#3)."""
+        outputs: list[ValidatorOutput] = []
+        batches = validator_batches(
+            self.s.resolved.effective_validators, parallel=self._parallel_validators()
+        )
+        for batch in batches:
+            if len(batch) == 1:
+                context = self._validation_context(execution, change_set, batch[0])
+                results = [self.validators.create(batch[0].validator_id).execute(context)]
+            else:
+                results = self._execute_at_once(execution, change_set, batch)
+            for output in results:
+                self._save_validator_output(execution, output)
+                outputs.append(output)
+        return outputs
+
+    def _execute_at_once(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        batch: tuple[ValidatorDefinition, ...],
+    ) -> list[ValidatorOutput]:
+        """Execute a batch of parallel-safe validators at once; the results come back in the
+        declared order whatever order they finish in, and the first error (in that order) is
+        raised only after every validator of the batch finished."""
+        workers = min(self.s.resolved.project.runtime.max_parallel, len(batch))
+        self.s.events.append(
+            execution.execution_id,
+            "verification.validators.parallel",
+            {"validators": [item.validator_id for item in batch], "maxParallel": workers},
+        )
+        contexts = [self._validation_context(execution, change_set, item) for item in batch]
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="harness-validator")
+        try:
+            futures = [
+                executor.submit(self.validators.create(item.validator_id).execute, context)
+                for item, context in zip(batch, contexts, strict=True)
+            ]
+            wait_for_futures(futures)
+        except BaseException:
+            # Ctrl-C or SIGTERM under the workspace lease: do not wait for the validators.
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+        executor.shutdown(wait=True)
+        return [future.result() for future in futures]
 
     def _remaining_budget(self) -> float | None:
         deadline = self._phase_deadline
@@ -2051,43 +2399,54 @@ class RunEngine:
         change_set = self._refresh_changeset(execution)
         if not change_set.files:
             return PhaseOutcome(ResultStatus.FAILED, "Current ChangeSet is empty")
-        outputs = []
-        for definition in self.s.resolved.effective_validators:
-            actor = Actor(
-                actor_type=ActorType.TOOL,
-                actor_id=f"validator.{definition.validator_id}",
-                version="1",
+        if self.friction.active:
+            # friction (#58): risk factors, size and change type of the ChangeSet; a fast run
+            # with a risk factor or a ChangeSet larger than S leaves the fast lane here.
+            self.friction.profile(execution, change_set)
+        outputs: list[Any]
+        if self.friction.active and self.friction.fast_verification_applies(execution):
+            # fastLane.verification (#58): affected tests first, side by side, reused by digest.
+            outputs = self.friction.run_validators(
+                execution,
+                change_set,
+                list(self.s.resolved.effective_validators),
+                lambda definition: partial(
+                    self.validators.create(definition.validator_id).execute,
+                    self._validation_context(execution, change_set, definition),
+                ),
+                lambda output: self._save_validator_output(execution, output),
             )
-            grants = grants_from_rules(
-                execution.execution_id, actor, self.s.resolved.effective_capabilities
-            )
-            output = self.validators.create(definition.validator_id).execute(
-                ValidationContext(
-                    execution_id=execution.execution_id,
-                    workspace=self.s.paths.workspace,
-                    task=self.run_task(execution),
-                    change_set=change_set,
-                    definition=self._bounded_definition(definition),
-                    grants=grants,
-                    artifact_store=self.s.artifacts,
-                    process_runner=self._runner(execution),
-                    provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-                    cancellation=CancellationToken(
-                        lambda: self.is_cancelled(execution.execution_id)
-                    ),
-                    max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                    missing_command_status=self._unavailable_status("missingTestCommand"),
-                    missing_script_status=self._unavailable_status("missingTestScript"),
-                    parse_output=self.s.resolved.project.output_parsers_enabled,
+            from governed_harness.orchestration.friction import AFFECTED_TESTS_ID
+
+            if (
+                outputs
+                and outputs[-1].result.validator_id == AFFECTED_TESTS_ID
+                and outputs[-1].result.status is not ResultStatus.PASSED
+            ):
+                return PhaseOutcome(
+                    outputs[-1].result.status,
+                    "The affected tests did not pass; the full suite runs on the next attempt",
+                    outputs[-1].result.evidence_refs,
                 )
-            )
-            self._save_validator_output(execution, output)
-            outputs.append(output)
+        else:
+            outputs = list(self._run_profile_validators(execution, change_set))
         coverage = self._coverage_minimum()
         if coverage is not None:
             outputs.append(self._verify_coverage(execution, change_set, coverage))
         policy = self.s.resolved.project.requirement_traceability
-        if policy != "off":
+        exempt = (
+            self.friction.tests_exempt(execution, change_set, "requirement traceability")
+            if self.friction.active and policy != "off"
+            else None
+        )
+        if exempt is not None:
+            # friction.changeTypes (#58): a documentation or configuration change.
+            skipped = self.friction.not_applicable(
+                execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
+            )
+            self._save_validator_output(execution, skipped)
+            outputs.append(skipped)
+        elif policy != "off":
             outputs.append(
                 self._verify_requirement_traceability(execution, phase, change_set, policy)
             )
@@ -2199,8 +2558,11 @@ class RunEngine:
             )
         )
         self._save_validator_output(execution, output)
-        if self.results.active:
-            # review.agentReview (#38): a second reviewer after the deterministic checks.
+        if self.results.active and (
+            not self.friction.active or self.friction.agent_review_wanted(execution, change_set)
+        ):
+            # review.agentReview (#38): a second reviewer after the deterministic checks; in
+            # the fast lane of #58 only on a signal.
             review = self.results.agent_review.run(execution, phase, change_set)
             if review.blocking and self.results.review_correction_available(execution):
                 return PhaseOutcome(
@@ -2284,6 +2646,17 @@ class RunEngine:
                 )
             if current_decision.decision is DecisionKind.REJECT:
                 return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+        elif self.friction.active:
+            # friction.preAuthorization (#58): the approval a person gave in advance, applied
+            # only when its condition holds; otherwise the person is asked as usual.
+            applied = self.friction.apply_pre_authorization(execution, gate, change_set)
+            if applied is not None:
+                return PhaseOutcome(
+                    ResultStatus.PASSED,
+                    f"Pre-authorised approval {applied.pre_authorization_id} by "
+                    f"{applied.actor.actor_id} applied: gate passed, no risk factor, size S",
+                    (f"record://decision/{applied.decision_id}",),
+                )
         return PhaseOutcome(
             ResultStatus.BLOCKED,
             f"Human decision required for gate {gate.gate_evaluation_id} and digest {change_set.digest}",

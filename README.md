@@ -19,7 +19,8 @@ English · [Español](README.es.md) · [Documentation site](https://sebasbarrera
 
 > [!WARNING]
 > Research beta. **This is not a sandbox**: the commands the harness runs keep the permissions of
-> your OS user, and the local dashboard has no authentication. Read
+> your OS user, and the local dashboard authenticates with a local token only when `project.yaml`
+> has the `api` section that `harness init` writes. Read
 > [This is not a sandbox](#this-is-not-a-sandbox) before using it on code you do not trust.
 
 ## Contents
@@ -271,7 +272,8 @@ validators, policies, agent providers and runtime limits. Four policies are **lo
 weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessBlocks` (always
 `true`) and `retrospectiveAutoApply` (always `false`). `findingBlockSeverities` (default `HIGH`,
 `CRITICAL`) and `allowEmptyChangeSet` are configurable. `runtime.allowNetwork`,
-`runtime.maxParallel`, `retention` and `workspace.units` are **declarative: nothing enforces them**.
+`retention` and `workspace.units` are **declarative: nothing enforces them**; so is
+`runtime.maxParallel` unless `governance.enforceWorkflow` is on.
 `intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
 ("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
@@ -287,7 +289,12 @@ closed with `harness evidence attach`, and a checklist ticked in the decision; t
 certifies the ChangeSet from recorded evidence only (see
 [docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Under
 `runtime.stateDir: auto` (written by `init`) the state database and artifacts live under the
-user's data directory, not in `.harness/`.
+user's data directory, not in `.harness/`. A small, risk-free task takes a **fast lane**, and
+`harness do "TEXT" --pre-approve` runs it in one command with an approval given in advance that
+applies only if the gate passes, there is no risk factor and the task is size `S`
+([docs/guides/low-friction.md](docs/guides/low-friction.md)); `harness metrics` reports tokens,
+cost, delivery, time, quality and friction locally, as one self-contained HTML file among other
+formats, without calling a model ([docs/guides/local-metrics.md](docs/guides/local-metrics.md)).
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles
@@ -323,8 +330,12 @@ GitLab, Bitbucket, Azure DevOps or Gitea ([forges and CI templates](docs/guides/
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requires the `api` extra) serves the
 dashboard at `/` and nine routes: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective`, and
-`POST /api/runs/{id}/decision`. **No authentication, no roles, no multi-user support: keep it on
-loopback.** Reference: [docs/reference/api.md](docs/reference/api.md).
+`POST /api/runs/{id}/decision` (1.1 adds more routes, listed in the reference). Since 1.1 (#18) the `api` section that `harness init` writes requires a
+bearer token on every route, with the roles `viewer`, `reviewer` and `admin` and users declared by
+the name of their token's variable; the token of the person who starts the server is printed once
+on standard error unless `HARNESS_API_TOKEN` provides it. **A `project.yaml` without the section
+has no authentication, no roles and no multi-user support, as in 1.0.0. Either way, keep it on
+loopback.** Reference: [docs/reference/api.md](docs/reference/api.md#authentication-and-roles).
 
 ## This is not a sandbox
 
@@ -379,8 +390,8 @@ Open behavioral defects (milestone
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) pre-existing and introduced errors are not distinguished;
 - [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) there is no plan-approval checkpoint.
 
-Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), no
-authentication or multi-user support in the dashboard, no distributed execution, no external
+Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), only
+local token authentication in the dashboard (none without the `api` section), no distributed execution, no external
 signature of evidence, no native provider integrations, token and cost metrics only when a provider
 reports them.
 

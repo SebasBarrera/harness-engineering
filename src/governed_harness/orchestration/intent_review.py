@@ -123,8 +123,11 @@ class IntentReview:
         phase: PhaseExecution,
         task: Task,
         deterministic: tuple[ClarificationQuestion, ...],
+        *,
+        agent: bool = True,
     ) -> ReviewOutcome:
-        """The questions the agent-results settings add after the deterministic ones."""
+        """The questions the agent-results settings add after the deterministic ones.
+        ``agent`` false (the fast lane of #58) leaves out the agent's ambiguity review."""
         refs: list[str] = []
         added: list[ClarificationQuestion] = []
         start = len(deterministic) + 1
@@ -138,7 +141,7 @@ class IntentReview:
         setup = self.results.project_setup.questions(execution, phase, task, start)
         added.extend(setup)
         start += len(setup)
-        if self.enabled:
+        if self.enabled and agent:
             outcome = self._agent_questions(execution, phase, task, deterministic, answers, start)
             refs.extend(outcome.evidence_refs)
             if outcome.blocked is not None:

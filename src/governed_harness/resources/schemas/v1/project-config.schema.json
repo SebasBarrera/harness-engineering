@@ -296,6 +296,116 @@
       "title": "AgentRoutingConfig",
       "type": "object"
     },
+    "ApiConfig": {
+      "additionalProperties": false,
+      "description": "``harness api serve`` authentication (#18). ``auth: token`` (the default when the\nsection is present) requires ``Authorization: Bearer TOKEN`` on every route; ``off`` keeps\nthe 1.0.0 behaviour. ``tokenEnv`` names the variable holding the token of the person who\nstarts the server (generated and shown once when it is not set), ``tokenUser`` the actor\nid recorded on that person's decisions and ``tokenRole`` their role. ``users`` declares\nfurther people, each with an id, a role and the variable of their token.",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "enum": [
+                "token",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auth"
+        },
+        "tokenEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenenv"
+        },
+        "tokenRole": {
+          "anyOf": [
+            {
+              "enum": [
+                "viewer",
+                "reviewer",
+                "admin"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenrole"
+        },
+        "tokenUser": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenuser"
+        },
+        "users": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ApiUser"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Users"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "ApiUser": {
+      "additionalProperties": false,
+      "description": "A person who may use the API: the actor id recorded on their decisions, their role and\nthe NAME of the environment variable that holds their token (never the token itself).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "viewer",
+            "reviewer",
+            "admin"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "tokenEnv": {
+          "title": "Tokenenv",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "tokenEnv"
+      ],
+      "title": "ApiUser",
+      "type": "object"
+    },
     "ArchitectureConfig": {
       "additionalProperties": false,
       "description": "Engineering limits checked on the Python files of the ChangeSet (#40).",
@@ -992,6 +1102,108 @@
       "title": "FamilyTable",
       "type": "object"
     },
+    "FastLaneConfig": {
+      "additionalProperties": false,
+      "description": "Risk-proportional governance (#58, item 1). ``mode: auto`` classifies each task at\nINTENT: size ``S`` by the router (#44) and no risk flag takes the fast lane, everything\nelse the full flow; the lane and why are recorded. ``skip`` lists what the fast lane leaves\nout. A run leaves the fast lane (``lane.escalated``) when its ChangeSet shows a risk factor\nor outgrows ``S``; the human decision and the mandatory validators are never skipped.",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "skip": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "ambiguityReview",
+                  "decomposition",
+                  "agentReview",
+                  "preflight",
+                  "mutation",
+                  "acceptanceTests"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skip"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastVerificationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "FastLaneConfig",
+      "type": "object"
+    },
+    "FastVerificationConfig": {
+      "additionalProperties": false,
+      "description": "Faster VERIFICATION in the fast lane (#58, item 5). Nothing here skips a mandatory\nvalidator before the decision: the affected tests run first and stop a failing attempt\nearly, the full suite still runs before the gate, independent validators run side by side,\nand a validator result is reused only for the same validator, ChangeSet, baseline and\nconfiguration.",
+      "properties": {
+        "affectedTestsFirst": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affectedtestsfirst"
+        },
+        "cache": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "parallel": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel"
+        }
+      },
+      "title": "FastVerificationConfig",
+      "type": "object"
+    },
     "FindingSeverity": {
       "enum": [
         "INFO",
@@ -1168,6 +1380,123 @@
       "title": "ForgeConfig",
       "type": "object"
     },
+    "FrictionConfig": {
+      "additionalProperties": false,
+      "description": "Low friction for small changes (#58, items 1, 3, 5, 6 and 7).",
+      "properties": {
+        "changeTypes": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changetypes"
+        },
+        "fastLane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastLaneConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "planApproval": {
+          "anyOf": [
+            {
+              "enum": [
+                "risk",
+                "always",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planapproval"
+        },
+        "preAuthorization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreAuthorizationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FrictionTarget"
+              },
+              "propertyNames": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Targets"
+        }
+      },
+      "title": "FrictionConfig",
+      "type": "object"
+    },
+    "FrictionTarget": {
+      "additionalProperties": false,
+      "description": "The friction a task of one size should cost: human interactions and wall-clock\nminutes from the first event of its first run to the end of its last.",
+      "properties": {
+        "interactions": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interactions"
+        },
+        "minutes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 525600,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutes"
+        }
+      },
+      "title": "FrictionTarget",
+      "type": "object"
+    },
     "GitHooksConfig": {
       "additionalProperties": false,
       "description": "Git hooks the repository relies on: each must be present and executable (under\n``core.hooksPath`` when set). ``install`` is the command the project declares to install\nthem; the harness names it, and runs it only when a person asks (``harness doctor\n--install-hooks``). Hooks are never bypassed.",
@@ -1208,7 +1537,7 @@
     },
     "GovernanceConfig": {
       "additionalProperties": false,
-      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.",
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.",
       "properties": {
         "applyNetworkPolicy": {
           "anyOf": [
@@ -1304,6 +1633,18 @@
           ],
           "default": null,
           "title": "Decisionexpiryhours"
+        },
+        "enforceWorkflow": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enforceworkflow"
         },
         "phasePermissions": {
           "anyOf": [
@@ -1936,6 +2277,75 @@
       "title": "MemoryConfig",
       "type": "object"
     },
+    "MetricsConfig": {
+      "additionalProperties": false,
+      "description": "``harness metrics`` settings: the price table (by model id, or ``provider/model``) and\nthe narrative command.",
+      "properties": {
+        "narrative": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NarrativeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prices": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/ModelPrice"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prices"
+        }
+      },
+      "title": "MetricsConfig",
+      "type": "object"
+    },
+    "ModelPrice": {
+      "additionalProperties": false,
+      "description": "Prices in US dollars per million tokens. Used only to estimate the cost of calls whose\nprovider reported tokens without a cost; the estimate is labelled as such and never stored\non a run or counted against the budget.",
+      "properties": {
+        "cache": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "input": {
+          "minimum": 0,
+          "title": "Input",
+          "type": "number"
+        },
+        "output": {
+          "minimum": 0,
+          "title": "Output",
+          "type": "number"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "ModelPrice",
+      "type": "object"
+    },
     "MutationConfig": {
       "additionalProperties": false,
       "description": "Discriminating evidence and light mutation (#55, item 5): new tests are classified by\nrunning them on the baseline (fail before and pass after: discriminating; pass before and\nafter: weak; fail after: broken), and each changed hunk of the code is reverted in a scratch\ncopy, one at a time, to see that some test fails. ``enforce`` makes a change no test\nexercises ``HIGH``, ``warn`` ``LOW``.",
@@ -1987,6 +2397,39 @@
         }
       },
       "title": "MutationConfig",
+      "type": "object"
+    },
+    "NarrativeConfig": {
+      "additionalProperties": false,
+      "description": "The optional narrative summary of a period (#58, item 12): one call, on demand only\n(``harness metrics --narrative``), to a command that reads the prompt and the metrics on\nstandard input and prints the summary.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeoutseconds"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "NarrativeConfig",
       "type": "object"
     },
     "NotificationsConfig": {
@@ -2097,6 +2540,58 @@
         }
       },
       "title": "PlanningConfig",
+      "type": "object"
+    },
+    "PreAuthorizationConfig": {
+      "additionalProperties": false,
+      "description": "Pre-authorised approval (#58, item 3). ``mode: allow`` lets a person, when they confirm\nthe operational contract (``harness task confirm --pre-approve`` or ``harness do\n--pre-approve``), approve in advance under a condition with an expiry. The approval is a\nhuman decision recorded in advance, bound to the contract digest and the condition (gate\npassed, no risk factor, size ``S``); when the condition does not hold at DECISION, the\nperson is asked as usual.",
+      "properties": {
+        "defaultHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaulthours"
+        },
+        "maxHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhours"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "PreAuthorizationConfig",
       "type": "object"
     },
     "PrinciplesConfig": {
@@ -2771,12 +3266,11 @@
         },
         "maxParallel": {
           "default": 2,
-          "description": "Declarative: phases and validators run one at a time.",
+          "description": "Under governance.enforceWorkflow, the most validators declared parallelSafe that a parallelizable VERIFICATION runs at once; otherwise phases and validators run one at a time.",
           "maximum": 32,
           "minimum": 1,
           "title": "Maxparallel",
-          "type": "integer",
-          "x-declarative": true
+          "type": "integer"
         },
         "providerFeedback": {
           "anyOf": [
@@ -3372,7 +3866,7 @@
     },
     "ValidatorDefinition": {
       "additionalProperties": false,
-      "description": "A validator of a profile or, since 1.1, of the project (``toolchain.validators``).\n\nThe keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
+      "description": "A validator of a profile or, since 1.1, of the project (``toolchain.validators``).\n\nThe keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,\n``parallelSafe``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
       "properties": {
         "command": {
           "anyOf": [
@@ -3408,6 +3902,18 @@
           "default": true,
           "title": "Mandatory",
           "type": "boolean"
+        },
+        "parallelSafe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallelsafe"
         },
         "parser": {
           "anyOf": [
@@ -3992,6 +4498,17 @@
       ],
       "default": null
     },
+    "api": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApiConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "architecture": {
       "anyOf": [
         {
@@ -4055,6 +4572,17 @@
       ],
       "default": null
     },
+    "friction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FrictionConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "governance": {
       "anyOf": [
         {
@@ -4092,6 +4620,17 @@
       "anyOf": [
         {
           "$ref": "#/$defs/MemoryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricsConfig"
         },
         {
           "type": "null"
