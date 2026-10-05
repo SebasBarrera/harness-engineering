@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791219521239,
+  "lastUpdate": 1791240563562,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2811,6 +2811,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 5.011,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7151fd17852bdd08968d44e85cad224fb79793db",
+          "message": "Merge pull request #61 from SebasBarrera/dependabot/github_actions/develop/actions-minor-and-patch-fed3a76f45\n\nci: bump the actions-minor-and-patch group with 2 updates",
+          "timestamp": "2026-10-05T17:48:41-05:00",
+          "tree_id": "6ab4d3b6d4b3cca4865e4a91cf4d90bf7e4e6530",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/7151fd17852bdd08968d44e85cad224fb79793db"
+        },
+        "date": 1791240562734,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001192,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001803,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011189,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.058397,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.207614,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 12.312518,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 12.672231,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 2.981,
             "unit": "%"
           }
         ]
