@@ -165,17 +165,17 @@ def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
         }
     others: list[dict[str, Any]] = []
     for provider_id, provider in project.agent_providers.items():
-        found = _executable(provider.command[0], resolved.workspace_root)
+        found = _executable(provider.effective_command[0], resolved.workspace_root)
         entry: dict[str, Any] = {
             "provider": provider_id,
-            "command": provider.command[0],
+            "command": provider.effective_command[0],
             "status": "PASSED" if found else "FAILED" if provider_id == default else "WARNING",
         }
         if found:
             entry["path"] = found
         else:
             entry["hint"] = (
-                f"Install the agent CLI or adapter {provider.command[0]!r} or put it on PATH; "
+                f"Install the agent CLI or adapter {provider.effective_command[0]!r} or put it on PATH; "
                 f"runs with provider {provider_id!r} fail in IMPLEMENTATION without it."
             )
         if provider_id == default:

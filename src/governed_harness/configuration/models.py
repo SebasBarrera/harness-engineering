@@ -27,9 +27,42 @@ class WorkspaceUnitConfig(ConfigModel):
     profile: str | None = None
 
 
+SnapshotMode = Literal["walk", "git"]
+BaselineMode = Literal["text", "manifest"]
+
+
 class WorkspaceConfig(ConfigModel):
+    """The workspace root and, since 1.1, how the workspace is read for large repositories.
+
+    * ``snapshot: git`` lists the files through Git (tracked plus untracked files that
+      ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are
+      neither hashed nor stored; ``walk`` (or absent) walks every file as in 1.0.0.
+    * ``baseline: manifest`` stores the baseline as a manifest of digests; the text of a file
+      is stored only when it enters the ChangeSet (taken from Git or from a per-file blob kept
+      for untracked files), instead of the text of every file.
+    * ``snapshotCache: true`` reuses the digest of a file whose size and modification time did
+      not change since the last snapshot of the run.
+
+    Absent keys keep the 1.0.0 behaviour and are left out of the serialized configuration."""
+
     root: str = ".."
     units: tuple[WorkspaceUnitConfig, ...] = ()
+    snapshot: SnapshotMode | None = None
+    baseline: BaselineMode | None = None
+    snapshot_cache: bool | None = Field(default=None, alias="snapshotCache")
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, alias in (
+            ("snapshot", "snapshot"),
+            ("baseline", "baseline"),
+            ("snapshot_cache", "snapshotCache"),
+        ):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
 
 
 class CapabilityRule(ConfigModel):
@@ -68,6 +101,7 @@ _OPTIONAL_RUNTIME_FIELDS = {
     "provider_retries": "providerRetries",
     "provider_retry_delay_seconds": "providerRetryDelaySeconds",
     "provider_transient_patterns": "providerTransientPatterns",
+    "extended_redaction": "extendedRedaction",
 }
 """Optional runtime keys left out of the serialized configuration while they are unset."""
 
@@ -163,6 +197,10 @@ class RuntimeConfig(ConfigModel):
     provider_transient_patterns: tuple[str, ...] | None = Field(
         default=None, alias="providerTransientPatterns"
     )
+    extended_redaction: bool | None = Field(default=None, alias="extendedRedaction")
+    """Since 1.1: also redact model-API keys (``sk-ant-``, ``sk-``, ``AIza``), Slack tokens,
+    JSON Web Tokens and credentials in URLs from every stored artifact and from the agent's
+    summary. Absent or false keeps the 1.0.0 rules."""
 
     @field_validator("provider_transient_patterns")
     @classmethod
@@ -219,17 +257,106 @@ class RuntimeConfig(ConfigModel):
         return data
 
 
+AgentProviderKind = Literal["command", "claude-code", "codex", "gemini-cli", "aider"]
+"""``command`` speaks the harness JSON protocol; the others are built-in adapters (since 1.1)
+that run the agent CLI in its non-interactive mode and read its own output."""
+
+NATIVE_PROVIDER_KINDS: tuple[str, ...] = ("claude-code", "codex", "gemini-cli", "aider")
+
+NATIVE_DEFAULT_COMMANDS: dict[str, tuple[str, ...]] = {
+    "claude-code": ("claude",),
+    "codex": ("codex",),
+    "gemini-cli": ("gemini",),
+    "aider": ("aider",),
+}
+"""The executable a built-in adapter runs when the provider sets no ``command``."""
+
+_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+
+
+class ProviderEnvReference(ConfigModel):
+    """A provider environment variable whose value is read from the harness's environment
+    when the provider starts: the value never appears in ``project.yaml`` or the snapshot."""
+
+    from_env: str = Field(alias="fromEnv")
+
+    @field_validator("from_env")
+    @classmethod
+    def _is_env_name(cls, value: str) -> str:
+        if not _ENV_NAME.match(value):
+            raise ValueError(f"fromEnv is not an environment variable name: {value!r}")
+        return value
+
+
 class AgentProviderConfiguration(ConfigModel):
-    kind: Literal["command"] = "command"
-    command: tuple[str, ...]
+    """An agent provider.
+
+    Since 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra
+    command-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's
+    environment passed as they are) and ``env`` (variables set for the provider, as a literal
+    value or ``{fromEnv: NAME}``). Values that come from the environment are redacted from
+    every artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized
+    configuration."""
+
+    kind: AgentProviderKind = "command"
+    command: tuple[str, ...] | None = None
     model: str | None = None
+    args: tuple[str, ...] | None = None
+    pass_env: tuple[str, ...] | None = Field(default=None, alias="passEnv")
+    env: dict[str, str | ProviderEnvReference] | None = None
 
     @field_validator("command")
     @classmethod
-    def command_must_not_be_empty(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if not value:
+    def command_must_not_be_empty(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        if value is not None and not value:
             raise ValueError("agent provider command must not be empty")
         return value
+
+    @field_validator("pass_env")
+    @classmethod
+    def _pass_env_names(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for name in value or ():
+            if not _ENV_NAME.match(name):
+                raise ValueError(f"passEnv entry is not an environment variable name: {name!r}")
+        return value
+
+    @field_validator("env")
+    @classmethod
+    def _env_names(
+        cls, value: dict[str, str | ProviderEnvReference] | None
+    ) -> dict[str, str | ProviderEnvReference] | None:
+        for name in value or {}:
+            if not _ENV_NAME.match(name):
+                raise ValueError(f"env key is not an environment variable name: {name!r}")
+        return value
+
+    @model_validator(mode="after")
+    def _command_for_command_kind(self) -> AgentProviderConfiguration:
+        if self.kind == "command" and self.command is None:
+            raise ValueError("a provider of kind command needs a command")
+        if self.kind == "command" and self.args is not None:
+            raise ValueError("args applies to the built-in adapters; put it in command")
+        return self
+
+    @property
+    def native(self) -> bool:
+        return self.kind in NATIVE_PROVIDER_KINDS
+
+    @property
+    def effective_command(self) -> tuple[str, ...]:
+        """``command``, or the default executable of a built-in adapter."""
+        return self.command or NATIVE_DEFAULT_COMMANDS.get(self.kind, ())
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, field in type(self).model_fields.items():
+            if name in {"model", "kind"}:
+                continue
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(field.alias or name, None)
+        return data
 
 
 CriteriaPolicy = Literal["enforce", "warn", "off"]
@@ -380,6 +507,21 @@ class ProjectConfiguration(ConfigModel):
     review: ReviewConfig | None = None
     notifications: NotificationsConfig | None = None
     retrospective: RetrospectiveConfig | None = None
+    toolchain: ToolchainConfig | None = None
+    provenance: ProvenanceConfig | None = None
+    delivery: DeliveryConfig | None = None
+
+    @property
+    def toolchain_settings(self) -> ToolchainConfig:
+        return self.toolchain or ToolchainConfig()
+
+    @property
+    def provenance_settings(self) -> ProvenanceConfig:
+        return self.provenance or ProvenanceConfig()
+
+    @property
+    def delivery_settings(self) -> DeliveryConfig:
+        return self.delivery or DeliveryConfig()
 
     @property
     def output_parsers_enabled(self) -> bool:
@@ -435,7 +577,14 @@ class ProjectConfiguration(ConfigModel):
             data.pop("intake", None)
         if self.verification is None:
             data.pop("verification", None)
-        for section in ("review", "notifications", "retrospective"):
+        for section in (
+            "review",
+            "notifications",
+            "retrospective",
+            "toolchain",
+            "provenance",
+            "delivery",
+        ):
             if getattr(self, section) is None:
                 data.pop(section, None)
         return data
@@ -446,13 +595,57 @@ class DetectorMarker(ConfigModel):
     weight: float = Field(gt=0, le=1)
 
 
+OutputParser = Literal["auto", "sarif", "junit", "ruff", "mypy", "eslint", "tsc", "pytest", "none"]
+IssueLevel = Literal["error", "warning", "note"]
+
+
 class ValidatorDefinition(ConfigModel):
+    """A validator of a profile or, since 1.1, of the project (``toolchain.validators``).
+
+    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``) are
+    left out of the serialized definition while they are absent, so a resolved configuration
+    without them keeps its digest."""
+
     validator_id: str = Field(alias="id")
     command: tuple[str, ...] | None = None
     mandatory: bool = True
     when_available: bool = Field(default=False, alias="whenAvailable")
     script: str | None = None
     timeout_seconds: int | None = Field(default=None, alias="timeoutSeconds", ge=1)
+    parser: OutputParser | None = None
+    """Parse a failing run's output into located findings with this parser (``auto``: every
+    known format, as ``verification.outputParsers``; ``none``: never). Absent: follow
+    ``verification.outputParsers``."""
+    severity: dict[IssueLevel, FindingSeverity] | None = None
+    """Severity of a parsed issue by its level (default: error as the failure finding, warning
+    LOW, note INFO)."""
+    failure_severity: FindingSeverity | None = Field(default=None, alias="failureSeverity")
+    """Severity of the finding of a failing run (default HIGH when mandatory, MEDIUM
+    otherwise)."""
+    pass_env: tuple[str, ...] | None = Field(default=None, alias="passEnv")
+    """Variables of the harness's environment the command receives as they are."""
+
+    @field_validator("pass_env")
+    @classmethod
+    def _pass_env_names(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for name in value or ():
+            if not _ENV_NAME.match(name):
+                raise ValueError(f"passEnv entry is not an environment variable name: {name!r}")
+        return value
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        for name, alias in (
+            ("parser", "parser"),
+            ("severity", "severity"),
+            ("failure_severity", "failureSeverity"),
+            ("pass_env", "passEnv"),
+        ):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+                data.pop(alias, None)
+        return data
 
 
 class TechnologyProfileDefinition(ConfigModel):
@@ -525,3 +718,175 @@ class ResolvedConfiguration(ConfigModel):
     effective_validators: tuple[ValidatorDefinition, ...]
     effective_policies: dict[str, Any]
     source_files: tuple[str, ...]
+
+
+# ----- 1.1 sections of wave 4 (integration and scale) ----------------------------------------
+ProfileDetection = Literal["best", "all"]
+InterpreterMode = Literal["system", "auto"]
+
+
+def _omit_none(model: BaseModel, data: dict[str, Any]) -> dict[str, Any]:
+    for name, field in type(model).model_fields.items():
+        if getattr(model, name) is None:
+            data.pop(name, None)
+            data.pop(field.alias or name, None)
+    return data
+
+
+class ToolchainConfig(ConfigModel):
+    """Project-defined profiles, validators and interpreter (since 1.1).
+
+    * ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology
+      profiles in the format of the built-in ones, relative to the workspace root. ``profiles``
+      may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.
+    * ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``
+      (several profiles per repository); ``best`` (or absent) selects the best one.
+    * ``interpreter: auto`` runs the validators whose command starts with ``python`` with the
+      project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync
+      python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``
+      (or absent) keeps ``python`` from ``PATH``.
+    * ``validators``: validators of the project. An entry with the id of a selected validator
+      replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other
+      entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,
+      ``failureSeverity`` and ``passEnv``.
+
+    Absent keys keep the 1.0.0 behaviour and are left out of the serialized configuration."""
+
+    profile_paths: tuple[str, ...] | None = Field(default=None, alias="profilePaths")
+    profile_detection: ProfileDetection | None = Field(default=None, alias="profileDetection")
+    interpreter: InterpreterMode | None = None
+    validators: tuple[ValidatorDefinition, ...] | None = None
+
+    @field_validator("profile_paths")
+    @classmethod
+    def _relative_paths(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
+        for item in value or ():
+            if not item.strip() or Path(item).is_absolute() or ".." in Path(item).parts:
+                raise ValueError(f"profile path must be relative to the workspace: {item!r}")
+        return value
+
+    @field_validator("validators")
+    @classmethod
+    def _validators_have_commands(
+        cls, value: tuple[ValidatorDefinition, ...] | None
+    ) -> tuple[ValidatorDefinition, ...] | None:
+        seen: set[str] = set()
+        for item in value or ():
+            if not item.command:
+                raise ValueError(f"project validator {item.validator_id!r} needs a command")
+            if item.validator_id in seen:
+                raise ValueError(f"project validator {item.validator_id!r} is declared twice")
+            seen.add(item.validator_id)
+        return value
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_none(self, handler(self))
+
+
+class ProvenanceConfig(ConfigModel):
+    """Provenance per component (since 1.1).
+
+    * ``agentSnapshots``: after each agent invocation the harness records a manifest of the
+      digests of the files in the ChangeSet scope. A later difference that no invocation
+      produced is attributed, per file, as an out-of-band edit, and the provenance of every
+      ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as
+      evidence.
+    * ``selfReport``: the request asks the agent for a structured self-report (assumptions,
+      alternatives discarded, low-confidence areas, unrequested changes); the answer is stored
+      as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.
+
+    Absent keys keep the 1.0.0 behaviour and are left out of the serialized configuration."""
+
+    agent_snapshots: bool | None = Field(default=None, alias="agentSnapshots")
+    self_report: bool | None = Field(default=None, alias="selfReport")
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_none(self, handler(self))
+
+
+ClosureCommitMode = Literal["off", "branch", "head"]
+PublisherTransport = Literal["gh", "api"]
+
+DEFAULT_CLOSURE_BRANCH = "harness/{runId}"
+"""Branch a ``closureCommit: branch`` commit is written to."""
+
+_BRANCH_FORBIDDEN = re.compile(r"(\.\.|[\s~^:?*\[\\]|@\{|//|^/|/$|\.lock$|^-)")
+
+
+class PublisherConfig(ConfigModel):
+    """Where ``harness pr publish`` posts the decision brief and the SARIF report."""
+
+    kind: Literal["github"] = "github"
+    transport: PublisherTransport = "gh"
+    repository: str | None = None
+    token_env: str = Field(default="GITHUB_TOKEN", alias="tokenEnv")
+    api_url: str = Field(default="https://api.github.com", alias="apiUrl")
+    sarif: bool = True
+
+    @field_validator("repository")
+    @classmethod
+    def _owner_name(cls, value: str | None) -> str | None:
+        if value is not None and not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", value):
+            raise ValueError(f"repository must be owner/name: {value!r}")
+        return value
+
+    @field_validator("token_env")
+    @classmethod
+    def _token_env_name(cls, value: str) -> str:
+        if not _ENV_NAME.match(value):
+            raise ValueError(f"tokenEnv is not an environment variable name: {value!r}")
+        return value
+
+    @field_validator("api_url")
+    @classmethod
+    def _https(cls, value: str) -> str:
+        if not value.startswith(("https://", "http://127.0.0.1", "http://localhost")):
+            raise ValueError("apiUrl must use https (or point to localhost)")
+        return value.rstrip("/")
+
+
+class DeliveryConfig(ConfigModel):
+    """What CLOSURE delivers to version control (since 1.1).
+
+    * ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch
+      (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the
+      working tree, the index or the current branch; ``head`` commits it on the current branch
+      (only the ChangeSet paths). The commit carries the trailers ``Harness-Run``,
+      ``Harness-ChangeSet`` and ``Harness-Decision`` (and ``Harness-Exception`` for an
+      ``APPROVE_EXCEPTION``), and is created only if its diff recomputes to the approved
+      ChangeSet digest. ``off`` (or absent): the harness never commits, as in 1.0.0.
+    * ``publisher``: defaults of ``harness pr publish``."""
+
+    closure_commit: ClosureCommitMode | None = Field(default=None, alias="closureCommit")
+    branch: str | None = None
+    publisher: PublisherConfig | None = None
+
+    @field_validator("branch")
+    @classmethod
+    def _branch_template(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        sample = value.replace("{runId}", "run_x").replace("{taskId}", "task_x")
+        if not sample.strip() or _BRANCH_FORBIDDEN.search(sample) or "{" in sample:
+            raise ValueError(
+                f"branch must be a valid branch name; only {{runId}} and {{taskId}} are "
+                f"replaced: {value!r}"
+            )
+        return value
+
+    @property
+    def mode(self) -> ClosureCommitMode:
+        return self.closure_commit or "off"
+
+    @property
+    def branch_template(self) -> str:
+        return self.branch or DEFAULT_CLOSURE_BRANCH
+
+    @model_serializer(mode="wrap")
+    def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        return _omit_none(self, handler(self))
+
+
+ProjectConfiguration.model_rebuild()

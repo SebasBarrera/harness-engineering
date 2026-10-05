@@ -17,6 +17,12 @@ from governed_harness.agents import (
     SimulatedAgentContext,
     SimulatedAgentProvider,
 )
+from governed_harness.agents.environment import (
+    ProviderEnvironment,
+    provider_environment,
+    secret_values,
+)
+from governed_harness.agents.native import native_provider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
 from governed_harness.domain.enums import (
@@ -65,7 +71,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.events import SQLiteEventStore
-from governed_harness.evidence import LocalArtifactStore, sha256_json
+from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
@@ -84,6 +90,7 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
@@ -156,7 +163,13 @@ class EngineServices:
             paths=paths,
             state=SQLiteStateStore(paths.database),
             events=SQLiteEventStore(paths.database),
-            artifacts=LocalArtifactStore(paths.artifact_dir),
+            artifacts=LocalArtifactStore(
+                paths.artifact_dir,
+                SecretRedactor(
+                    literals=secret_values(resolved.project),
+                    extended=bool(resolved.project.runtime.extended_redaction),
+                ),
+            ),
         )
 
     def close(self) -> None:
@@ -180,6 +193,7 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
+        self.provenance = ProvenanceRecorder(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -960,13 +974,33 @@ class RunEngine:
                         f"Agent sandbox unavailable: {error}; the provider was not started",
                     )
                 sandbox_refs = (self._record_sandbox_evidence(execution, phase, sandbox),)
-            provider = CommandAgentProvider(
-                CommandAgentConfiguration(
-                    provider_id=provider_id,
-                    argv_prefix=provider_config.command,
-                    model=provider_config.model,
-                    sandbox_prefix=sandbox.prefix if sandbox else (),
+            environment = None
+            if provider_config.pass_env is not None or provider_config.env is not None:
+                environment = provider_environment(provider_config)
+                if environment.missing:
+                    return PhaseOutcome(
+                        ResultStatus.BLOCKED,
+                        f"Provider {provider_id!r} needs environment variable(s) "
+                        f"{', '.join(environment.missing)} (env fromEnv); the provider was not "
+                        "started",
+                    )
+                sandbox_refs = (
+                    *sandbox_refs,
+                    self._record_provider_environment(execution, phase, provider_id, environment),
                 )
+            configuration = CommandAgentConfiguration(
+                provider_id=provider_id,
+                argv_prefix=provider_config.effective_command,
+                model=provider_config.model,
+                sandbox_prefix=sandbox.prefix if sandbox else (),
+                environment=environment,
+                self_report=bool(self.s.resolved.project.provenance_settings.self_report),
+                extra_args=provider_config.args or (),
+            )
+            provider = (
+                native_provider(provider_config.kind, configuration)
+                if provider_config.native
+                else CommandAgentProvider(configuration)
             )
             actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
         grants = grants_from_rules(
@@ -997,8 +1031,10 @@ class RunEngine:
         )
         retries = 0
         while True:
+            self.provenance.before_invocation(execution)
             result = provider.implement(task, plan, context)
             self._save_agent_result(execution, phase, result)
+            self.provenance.after_invocation(execution, result)
             cause = (
                 self._transient_cause(result)
                 if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
@@ -1033,12 +1069,14 @@ class RunEngine:
         if result.status is not ResultStatus.PASSED:
             if sandbox is not None:
                 self._record_denied_writes(execution, result.tool_invocations)
+            self.provenance.record_self_report(execution, phase, result, None)
             return PhaseOutcome(
                 result.status,
                 result.summary,
                 ((result.output_ref,) if result.output_ref else ()) + sandbox_refs,
             )
         change_set = self._refresh_changeset(execution)
+        self.provenance.record_self_report(execution, phase, result, change_set)
         if not change_set.files and not bool(
             self.s.resolved.effective_policies.get("allowEmptyChangeSet", False)
         ):
@@ -1077,6 +1115,34 @@ class RunEngine:
                 "allowedPaths": [item.path for item in sandbox.allowed_paths],
                 "evidenceRef": evidence.artifact_ref,
             },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return evidence.artifact_ref
+
+    def _record_provider_environment(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider_id: str,
+        environment: ProviderEnvironment,
+    ) -> str:
+        """The names (never the values) of the variables the provider receives."""
+        record = {"provider": provider_id, **environment.evidence()}
+        ref = self.s.artifacts.put_json(
+            record, metadata={"kind": "provider-environment", "executionId": execution.execution_id}
+        )
+        evidence = self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.CONFIGURATION,
+            ref,
+            f"Provider environment: {len(environment.passed)} passed, "
+            f"{len(environment.values)} set",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.environment.applied",
+            record,
             phase_execution_id=phase.phase_execution_id,
         )
         return evidence.artifact_ref
@@ -1309,6 +1375,7 @@ class RunEngine:
             else None
         )
         gate = self._current_or_evaluate_gate(execution, change_set)
+        self.provenance.attribute(execution, change_set, PhaseId.DECISION)
         execution = self.get_execution(execution.execution_id)
         if current_decision:
             if current_decision.change_set_digest != change_set.digest:
@@ -1785,6 +1852,14 @@ class RunEngine:
                 digest=sha256_json({path: state.digest for path, state in after_files.items()}),
             )
         return WorkspaceSnapshotter(self.s.paths.workspace).diff(before, after)
+
+    def baseline_digests(self, execution: Execution) -> dict[str, str]:
+        """Path -> digest of the run's baseline snapshot."""
+        baseline_uri = self.s.state.get_flag(f"baseline:{execution.execution_id}")
+        if not baseline_uri:
+            raise NotFoundError("baseline snapshot is missing")
+        value = json.loads(self.s.artifacts.get(baseline_uri))
+        return {path: str(item["digest"]) for path, item in value["files"].items()}
 
     def _refresh_changeset(self, execution: Execution) -> ChangeSet:
         diff = self._compute_owned_diff(execution)

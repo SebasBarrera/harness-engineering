@@ -699,3 +699,104 @@ class OutcomeRecord(StrictModel):
     recorded_at: datetime = Field(default_factory=utc_now)
     actor: Actor
     provenance: Provenance
+
+
+# ----- wave 4 (since 1.1): provenance per component, agent self-report, evidence bundle -------
+class SelfReportItem(StrictModel):
+    path: str | None = Field(default=None, max_length=1000)
+    description: str = Field(min_length=1, max_length=1000)
+
+
+class SelfReportContrast(StrictModel):
+    """The self-report compared with the ChangeSet recorded after the same invocation."""
+
+    change_set_digest: str | None = None
+    declared_paths_not_in_change_set: tuple[str, ...] = ()
+    unrequested_changes_in_change_set: tuple[str, ...] = ()
+
+
+class AgentSelfReport(StrictModel):
+    """What an agent says about its own work (``provenance.selfReport``): assumptions,
+    alternatives it discarded, areas where it is not confident and changes nobody asked for.
+
+    It is data of quality ``REPORTED``: the harness stores and shows it, contrasts it with the
+    ChangeSet, and never treats it as a verification."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    report_id: str
+    execution_id: str
+    invocation_id: str
+    provider: str
+    quality: MetricQuality = MetricQuality.REPORTED
+    assumptions: tuple[str, ...] = ()
+    alternatives_discarded: tuple[str, ...] = ()
+    low_confidence_areas: tuple[SelfReportItem, ...] = ()
+    unrequested_changes: tuple[SelfReportItem, ...] = ()
+    problems: tuple[str, ...] = ()
+    """What could not be read from the agent's answer (the rest is kept)."""
+    contrast: SelfReportContrast | None = None
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+ProvenanceSource = Literal["AGENT", "OUT_OF_BAND"]
+
+
+class FileProvenance(StrictModel):
+    path: str
+    status: Literal["ADDED", "MODIFIED", "DELETED", "RENAMED", "UNTRACKED"]
+    digest: str | None = None
+    source: ProvenanceSource
+    invocation_id: str | None = None
+    """The agent invocation after which the file had its current content (``AGENT``)."""
+
+
+class OutOfBandEdit(StrictModel):
+    """A ChangeSet file that changed after the last agent invocation without one."""
+
+    path: str
+    status: Literal["ADDED", "MODIFIED", "DELETED"]
+    agent_digest: str | None = None
+    current_digest: str | None = None
+    after_invocation_id: str | None = None
+    detected_in: PhaseId
+
+
+class ComponentProvenance(StrictModel):
+    """Who produced each file of a ChangeSet (``provenance.agentSnapshots``)."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    provenance_id: str
+    execution_id: str
+    change_set_digest: str
+    detected_in: PhaseId
+    files: tuple[FileProvenance, ...] = ()
+    out_of_band_edits: tuple[OutOfBandEdit, ...] = ()
+    agent_snapshot_refs: tuple[str, ...] = ()
+    created_at: datetime = Field(default_factory=utc_now)
+
+
+class BundleEntry(StrictModel):
+    path: str
+    digest: str
+    size_bytes: int = Field(ge=0)
+
+
+class EvidenceBundleManifest(StrictModel):
+    """``manifest.json`` of a portable evidence bundle (``harness export --bundle``): what the
+    archive holds and the digest of every entry. ``harness verify --bundle`` checks it without
+    the workspace."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    bundle_format: Literal["governed-harness-bundle/1"] = "governed-harness-bundle/1"
+    execution_id: str
+    project_id: str
+    task_id: str
+    status: ResultStatus
+    current_phase: PhaseId
+    change_set_digest: str | None = None
+    decision_id: str | None = None
+    event_count: int = Field(ge=0)
+    event_chain_head: str | None = None
+    core_version: str
+    created_at: datetime = Field(default_factory=utc_now)
+    entries: tuple[BundleEntry, ...]
