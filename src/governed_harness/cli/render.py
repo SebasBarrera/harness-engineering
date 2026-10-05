@@ -448,6 +448,53 @@ def _inbox(items: Sequence[Mapping[str, Any]]) -> list[str]:
     return table(rows, ["WAITS FOR", "RUN", "TASK", "STATE", "WAITING", "NEXT"])
 
 
+def _health(value: Mapping[str, Any]) -> list[str]:
+    lines = [
+        f"{value['runs']} run(s), {value['correctedRuns']} with corrections; outcomes: "
+        + ", ".join(f"{key.lower()} {count}" for key, count in value["outcomes"].items()),
+        "",
+    ]
+    rows = [
+        [
+            str(item["ruleId"]),
+            str(item["fired"]),
+            str(item["runs"]),
+            str(item["blockedGates"]),
+            str(item["excepted"]),
+            str(item["correctedRuns"]),
+            str(item["rejectedRuns"]),
+            str(item["runsWithLaterOutcomes"]),
+            item["signal"] or "-",
+        ]
+        for item in value["rules"]
+    ]
+    lines.extend(
+        table(
+            rows,
+            [
+                "RULE",
+                "FIRED",
+                "RUNS",
+                "BLOCKED",
+                "EXCEPTED",
+                "CORRECTED",
+                "REJECTED",
+                "OUTCOMES",
+                "SIGNAL",
+            ],
+        )
+        if rows
+        else ["No findings recorded."]
+    )
+    lines.extend(["", "Validators:"])
+    lines.extend(
+        f"  {item['validatorId']} ({'mandatory' if item['mandatory'] else 'optional'}): "
+        f"{item['notPassed']} of {item['results']} result(s) not passed in {item['runs']} run(s)"
+        for item in value["validators"]
+    )
+    return lines
+
+
 Renderer = Callable[[Any], list[str]]
 
 RENDERERS: dict[str, Renderer] = {
@@ -462,6 +509,7 @@ RENDERERS: dict[str, Renderer] = {
     "review": _review,
     "exceptions": _exceptions,
     "inbox": _inbox,
+    "health": _health,
 }
 
 

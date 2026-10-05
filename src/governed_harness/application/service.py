@@ -18,6 +18,7 @@ from governed_harness.domain.enums import (
     DecisionKind,
     MemoryLevel,
     RecommendationDecision,
+    ResultStatus,
 )
 from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
 from governed_harness.domain.ids import new_id
@@ -30,9 +31,11 @@ from governed_harness.domain.models import (
     GateEvaluation,
     HumanDecision,
     MemoryRecord,
+    OutcomeRecord,
     PhaseExecution,
     Provenance,
     Retrospective,
+    RetrospectiveTrigger,
     Task,
     ValidationResult,
     utc_now,
@@ -53,6 +56,7 @@ from .exceptions import (
     parse_scope,
     record_exception,
 )
+from .health import list_outcomes, record_outcome, rule_health
 from .hints import default_hint
 from .notifications import inbox, notify, notify_transition
 from .onboarding import (
@@ -295,13 +299,61 @@ class HarnessApplication:
             execution_id = self._run_id(services, execution_id)
             return self._after(services, RunEngine(services).cancel(execution_id, actor_id))
 
-    @staticmethod
-    def _after(services: EngineServices, execution: Execution) -> Execution:
+    @classmethod
+    def _after(cls, services: EngineServices, execution: Execution) -> Execution:
         """Side effects of reaching a state a person cares about: the webhooks of
-        ``notifications``. They never change the run; a delivery failure is recorded, not
-        raised."""
+        ``notifications`` (a delivery failure is recorded, not raised) and, under
+        ``retrospective.causal``, the retrospective of a rejected or cancelled run. They never
+        change the run."""
+        if services.resolved.project.causal_retrospective:
+            trigger: RetrospectiveTrigger | None = None
+            if execution.status is ResultStatus.CANCELLED:
+                trigger = "CANCELLED"
+            elif execution.status is ResultStatus.FAILED and execution.human_decision_id:
+                decision = services.state.get(
+                    "decision", execution.human_decision_id, HumanDecision
+                )
+                trigger = "REJECTED" if decision.decision is DecisionKind.REJECT else None
+            existing = services.state.list(
+                "retrospective", Retrospective, execution_id=execution.execution_id
+            )
+            if trigger and not existing:
+                cls._generate_retrospective(services, execution.execution_id, trigger)
         notify_transition(services, execution)
         return execution
+
+    def rule_health(self, path: Path, *, since_days: int | None = None) -> dict[str, Any]:
+        """How each rule and validator behaved across the runs of the project."""
+        with self._services(path) as services:
+            return rule_health(services, since_days)
+
+    def record_outcome(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        kind: str,
+        summary: str,
+        actor_id: str,
+        reference: str | None = None,
+        observed_at: str | None = None,
+    ) -> OutcomeRecord:
+        """Link an incident, revert, hotfix or regression to a run (a person only)."""
+        with self._services(path) as services:
+            return record_outcome(
+                services,
+                execution_id=self._run_id(services, execution_id),
+                kind=kind,
+                summary=summary,
+                reference=reference,
+                observed_at=observed_at,
+                actor_id=actor_id,
+            )
+
+    def list_outcomes(self, path: Path, execution_id: str | None = None) -> list[OutcomeRecord]:
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id) if execution_id else None
+            return list_outcomes(services, run_id)
 
     def inbox(self, path: Path) -> list[dict[str, Any]]:
         """Runs of the project waiting for a person (decision or clarification answers)."""
@@ -496,28 +548,40 @@ class HarnessApplication:
             records = services.state.list("retrospective", Retrospective, execution_id=execution_id)
             if records:
                 return records[-1]
-            execution = services.state.get("execution", execution_id, Execution)
-            events = services.events.list(execution_id)
-            metrics = MetricsProjector(services.state).project(execution_id, events)
-            trace_ref = services.artifacts.put(
-                services.events.export_jsonl(execution_id),
-                media_type="application/x-ndjson",
-                metadata={"kind": "retrospective-input"},
-            )
-            retro = RunEngine(services).retrospective_engine.generate(
-                execution_id=execution_id,
-                metrics=metrics,
-                evidence_refs=(trace_ref.uri,),
-                provenance=RunEngine(services)._provenance(execution),
-            )
-            services.state.put(
-                "retrospective",
-                retro.retrospective_id,
-                retro,
-                execution_id=execution_id,
-                project_id=execution.project_id,
-            )
-            return retro
+            return self._generate_retrospective(services, execution_id, "ON_DEMAND")
+
+    @staticmethod
+    def _generate_retrospective(
+        services: EngineServices, execution_id: str, trigger: RetrospectiveTrigger
+    ) -> Retrospective:
+        """A retrospective outside CLOSURE: on demand, or (``retrospective.causal``) when a run
+        is rejected or cancelled. Stored as a record; the run's event chain is not extended."""
+        engine = RunEngine(services)
+        execution = services.state.get("execution", execution_id, Execution)
+        events = services.events.list(execution_id)
+        metrics = MetricsProjector(services.state).project(execution_id, events)
+        trace_ref = services.artifacts.put(
+            services.events.export_jsonl(execution_id),
+            media_type="application/x-ndjson",
+            metadata={"kind": "retrospective-input"},
+        )
+        analysis = engine.cause_analysis(execution)
+        retro = engine.retrospective_engine.generate(
+            execution_id=execution_id,
+            metrics=metrics,
+            evidence_refs=(trace_ref.uri,),
+            provenance=engine._provenance(execution),
+            analysis=analysis,
+            trigger=trigger if analysis is not None else None,
+        )
+        services.state.put(
+            "retrospective",
+            retro.retrospective_id,
+            retro,
+            execution_id=execution_id,
+            project_id=execution.project_id,
+        )
+        return retro
 
     def add_memory(
         self,

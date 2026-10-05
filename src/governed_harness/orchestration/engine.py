@@ -87,6 +87,8 @@ from governed_harness.orchestration.feedback import (
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
+from governed_harness.retrospective.causes import CauseAnalysis
+from governed_harness.retrospective.causes import analyze as analyze_causes
 from governed_harness.runtime import (
     CancellationToken,
     GitAdapter,
@@ -1379,6 +1381,8 @@ class RunEngine:
             metrics=metrics,
             evidence_refs=(trace_ref.uri, metrics_ref.uri),
             provenance=self._provenance(execution),
+            analysis=self.cause_analysis(execution),
+            trigger="CLOSED" if self.s.resolved.project.causal_retrospective else None,
         )
         self.s.state.put(
             "retrospective",
@@ -1923,6 +1927,21 @@ class RunEngine:
             gate.model_dump(mode="json"),
         )
         return gate
+
+    def cause_analysis(self, execution: Execution) -> CauseAnalysis | None:
+        """The causes of a run's stops and corrections under ``retrospective.causal``; ``None``
+        (the 1.0.0 retrospective) without the key."""
+        if not self.s.resolved.project.causal_retrospective:
+            return None
+        names = self.s.resolved.effective_policies.get(
+            "findingBlockSeverities", ["HIGH", "CRITICAL"]
+        )
+        return analyze_causes(
+            self.s.state,
+            self.s.events.list(execution.execution_id),
+            execution,
+            {FindingSeverity(str(name)) for name in names},
+        )
 
     def _project_exceptions(self, execution: Execution) -> list[ExceptionRecord]:
         """Exceptions recorded in the project, considered only under ``review.exceptions``:

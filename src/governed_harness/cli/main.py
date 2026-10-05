@@ -38,6 +38,8 @@ benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
 artifact_app = typer.Typer(help="Artifact store commands")
 exceptions_app = typer.Typer(help="Exception ledger commands")
+rules_app = typer.Typer(help="Rule and validator health across runs")
+outcome_app = typer.Typer(help="Outcomes after a run (incidents, reverts, hotfixes)")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -51,6 +53,8 @@ app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 app.add_typer(artifact_app, name="artifact")
 app.add_typer(exceptions_app, name="exceptions")
+app.add_typer(rules_app, name="rules")
+app.add_typer(outcome_app, name="outcome")
 
 
 JSON_OPTION: Any = typer.Option(
@@ -830,6 +834,79 @@ def inbox(
     DECISION (gate status, digest, blocking findings) or answers to clarification questions in
     INTENT, each with the next command."""
     _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+
+
+@rules_app.command("health")
+def rules_health(
+    since: int | None = typer.Option(
+        None, "--since", min=1, help="Only runs created in the last N days"
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show how each rule and validator behaved across the runs of the project: how often it
+    fired, blocked a gate, was excepted, fired on a ChangeSet that was later corrected, fired in
+    a rejected run or in a run later linked to an outcome. Read-only; nothing is changed and no
+    figure is per person."""
+    _emit(
+        _call(lambda: HarnessApplication().rule_health(path, since_days=since)),
+        json_output,
+        kind="health",
+    )
+
+
+@outcome_app.command("record")
+def outcome_record(
+    run: str = RUN_OPTION,
+    kind: str = typer.Option(..., "--kind", help="INCIDENT, REVERT, HOTFIX, REGRESSION or OTHER"),
+    summary: str = typer.Option(..., "--summary", help="What happened"),
+    reference: str | None = typer.Option(
+        None, "--reference", help="Link or identifier of the incident, revert or fix"
+    ),
+    observed_at: str | None = typer.Option(
+        None, "--observed-at", help="ISO 8601 instant it happened (default: now)"
+    ),
+    actor: str = typer.Option(
+        "human.local",
+        "--actor",
+        help="Identifier of the person acting (recorded, not authenticated)",
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Link something that happened after a run (an incident, a revert, a hotfix, a regression)
+    to it. The outcome feeds `harness rules health` and the causal retrospective; nothing is
+    applied. An actor id of an agent, validator or the harness exits with 5."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().record_outcome(
+                path,
+                execution_id=run,
+                kind=kind,
+                summary=summary,
+                reference=reference,
+                observed_at=observed_at,
+                actor_id=actor,
+            )
+        ),
+        json_output,
+    )
+
+
+@outcome_app.command("list")
+def outcome_list(
+    run: str | None = typer.Option(None, "--run", help="Only the outcomes of this run"),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the outcomes linked to the runs of the project, oldest first."""
+    _emit(_call(lambda: HarnessApplication().list_outcomes(path, run)), json_output)
 
 
 @exceptions_app.command("list")

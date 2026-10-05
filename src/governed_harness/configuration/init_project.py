@@ -56,6 +56,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "intake": {"criteriaPolicy": "enforce"},
         "verification": {"requirementTraceability": "enforce", "outputParsers": True},
         "review": {"exceptions": True, "exceptionDays": DEFAULT_EXCEPTION_DAYS},
+        "retrospective": {"causal": True},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path
