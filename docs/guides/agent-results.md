@@ -203,9 +203,12 @@ relevant to a later task reach its request and their use is recorded (`lesson.ap
 ## Routing (#44)
 
 `agentRouting.mode: tiered` chooses the model and effort of each call with a pure function: the
-call kind's rung for `clarify`, `plan`, `review`; for `implement` the rung of the task size (`S`,
+call kind's rung for `clarify`, `plan`, `review`, `acceptance` and `architecture` (`locate` uses
+its own rung or the bottom of the ladder); for `implement` the rung of the task size (`S`,
 `M`, `L` by requirements, owned files and their lines, `thresholds`; a risk flag raises `S` to
-`M`; a decomposed task is `L`). A failed verification or blocking review findings move the next
+`M`; a decomposed task is `L`). Since #59 a table without the entry of a call kind uses the
+implement rung of the task size for it, with the rule `fallback:implement:KIND:SIZE`, a
+`warning` in the decision and an `agent.routing.fallback` event, instead of failing the call. A failed verification or blocking review findings move the next
 call one rung up the ladder (effort before model), at most `maxEscalations`; transient failures
 retry at the same rung. `families` maps a provider id to `claude-code` or `codex` (otherwise the
 command name decides); `tables` override the starting tables. Every decision is evidence

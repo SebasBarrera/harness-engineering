@@ -854,6 +854,14 @@ class AgentResults:
             {**record, "evidenceRef": ref},
             phase_execution_id=phase.phase_execution_id,
         )
+        if decision.warning is not None:
+            # #59: a call kind without its own routing entry runs on the implement rung.
+            self.s.events.append(
+                execution.execution_id,
+                "agent.routing.fallback",
+                {"callKind": kind, "warning": decision.warning, "evidenceRef": ref},
+                phase_execution_id=phase.phase_execution_id,
+            )
         if decision.model is None and decision.effort is None:
             return None
         value: dict[str, Any] = {

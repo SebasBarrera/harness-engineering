@@ -359,6 +359,11 @@ class FamilyTable(_Section):
     locate: Rung | None = None
     """Since #55: the rung of the read-only ``locate`` call; without it the cheapest rung of
     the ladder (its first entry) is used."""
+    acceptance: Rung | None = None
+    """Since #59: the rung of the ``acceptance`` call; without it the implement rung of the
+    task's size is used, with a warning."""
+    architecture: Rung | None = None
+    """Since #59: the rung of the ``architecture`` call; without it the ``plan`` rung."""
     ladder: tuple[Rung, ...] | None = None
 
 
@@ -393,6 +398,8 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
         "clarify": {"model": "claude-sonnet-5-5", "effort": "medium"},
         "plan": {"model": "claude-opus-5-5", "effort": "high"},
         "review": {"model": "claude-opus-5-5", "effort": "high"},
+        "acceptance": {"model": "claude-sonnet-5-5", "effort": "high"},
+        "architecture": {"model": "claude-opus-5-5", "effort": "high"},
         "ladder": [
             {"model": "claude-sonnet-5-5", "effort": "medium"},
             {"model": "claude-sonnet-5-5", "effort": "high"},
@@ -409,6 +416,8 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
         "clarify": {"model": "gpt-6.1-sol", "effort": "medium"},
         "plan": {"model": "gpt-6.1-sol", "effort": "high"},
         "review": {"model": "gpt-6.1-sol", "effort": "high"},
+        "acceptance": {"model": "gpt-6.1-sol", "effort": "medium"},
+        "architecture": {"model": "gpt-6.1-sol", "effort": "high"},
         "ladder": [
             {"model": "gpt-6-luna", "effort": "high"},
             {"model": "gpt-6.1-sol", "effort": "medium"},

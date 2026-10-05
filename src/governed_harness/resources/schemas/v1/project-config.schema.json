@@ -907,6 +907,28 @@
       "additionalProperties": false,
       "description": "The rung of each call kind and size for one provider family, and its escalation\nladder (effort before model).",
       "properties": {
+        "acceptance": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "architecture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "clarify": {
           "anyOf": [
             {

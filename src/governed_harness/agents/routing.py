@@ -93,9 +93,11 @@ class RoutingDecision:
     escalations: int
     policy_digest: str
     flags: tuple[str, ...]
+    warning: str | None = None
+    """Since #59: why the decision fell back (a call kind without its own routing entry)."""
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value: dict[str, Any] = {
             "callKind": self.call_kind,
             "mode": self.mode,
             "family": self.family,
@@ -108,6 +110,9 @@ class RoutingDecision:
             "policyDigest": self.policy_digest,
             "flags": list(self.flags),
         }
+        if self.warning is not None:
+            value["warning"] = self.warning
+        return value
 
 
 def _bounds(thresholds: SizeThresholds | None, name: str) -> tuple[int, int]:
@@ -211,18 +216,29 @@ def _table(policy: AgentRoutingConfig, family: ProviderFamily) -> FamilyTable | 
     return FamilyTable.model_validate(default) if default is not None else None
 
 
-def _kind_rung(table: FamilyTable, call_kind: CallKind, size: SizeClass) -> Rung | None:
+def _kind_rung(
+    table: FamilyTable, call_kind: CallKind, size: SizeClass
+) -> tuple[Rung | None, str | None]:
+    """The rung of a call kind and, when the kind has no entry of its own and the implement
+    rung of the size stands in for it (#59), the warning that says so."""
+    implement = table.implement.get(size) if table.implement else None
     if call_kind == "implement":
-        return table.implement.get(size) if table.implement else None
+        return implement, None
+    rung: Rung | None
     if call_kind == "locate":
         # The cheapest adequate rung (#55): the family's own locate rung, else the bottom of
         # its escalation ladder.
-        return table.locate or (table.ladder[0] if table.ladder else None)
-    if call_kind == "architecture":
-        # One survey or advice per project (#56): the planning rung.
-        return table.plan
-    rung: Rung | None = getattr(table, call_kind)
-    return rung
+        rung = table.locate or (table.ladder[0] if table.ladder else None)
+    elif call_kind == "architecture":
+        # One survey or advice per project (#56): its own rung, else the planning rung.
+        rung = table.architecture or table.plan
+    else:
+        rung = getattr(table, call_kind, None)
+    if rung is not None or implement is None:
+        return rung, None
+    return implement, (
+        f"no routing entry for the {call_kind} call: the implement rung of size {size} is used"
+    )
 
 
 def _ladder_index(ladder: tuple[Rung, ...], rung: Rung, *, by_model: bool) -> int | None:
@@ -256,6 +272,8 @@ def select(
     mode = policy.mode if policy is not None and policy.mode is not None else "fixed"
     digest = _policy_digest(policy, family)
 
+    warning: str | None = None
+
     def decision(
         rule: str,
         model: str | None,
@@ -275,6 +293,7 @@ def select(
             escalations=escalations,
             policy_digest=digest,
             flags=flags_for(family, model, effort),
+            warning=warning,
         )
 
     if override is not None and (override.model or override.effort):
@@ -284,9 +303,16 @@ def select(
     table = _table(policy, family)
     if table is None:
         return decision("fixed", None, None)
-    base = _kind_rung(table, call_kind, size)
+    base, warning = _kind_rung(table, call_kind, size)
     if base is None:
         return decision("fixed", None, None)
+    if warning is not None:
+        return decision(
+            f"fallback:implement:{call_kind}:{size}",
+            base.model,
+            base.effort,
+            _ladder_index(table.ladder, base, by_model=False) if table.ladder else None,
+        )
 
     ladder = table.ladder or ()
     steps = min(history.escalations, _max_escalations(policy))

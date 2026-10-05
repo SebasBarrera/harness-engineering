@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Every call kind has a routing entry (#59). With `agentRouting.mode: tiered` and a Claude Code
+  or Codex provider an `acceptance` call failed, because the routing tables had no `acceptance`
+  entry. The default tables now route every call kind of provider protocol 1.1 (`acceptance` and
+  `architecture` have their own rungs), and a table without the entry of a call kind uses the
+  implement rung of the task size for it, with a warning in the decision
+  (`fallback:implement:KIND:SIZE`) and an `agent.routing.fallback` event.
 - Verification ladder, certification and delivery hygiene, wave 5 (#55). Every key is optional:
   a `project.yaml` without it keeps the earlier behaviour and configuration digest, a task without
   the new fields keeps its digest, and `harness init` writes them (`harness config validate`
