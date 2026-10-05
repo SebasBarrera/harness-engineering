@@ -92,6 +92,7 @@ class AgentCallOutcome:
 
 class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
+        from governed_harness.orchestration.acceptance import AcceptanceTests
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
         from governed_harness.orchestration.decomposition import Decomposition
@@ -112,6 +113,7 @@ class AgentResults:
         self.agent_review = AgentReview(self)
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
+        self.acceptance = AcceptanceTests(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(
@@ -180,6 +182,7 @@ class AgentResults:
                         "secrets",
                         "sarif",
                         "risk_factors",
+                        "acceptance_tests",
                     )
                 ),
                 review is not None
@@ -553,6 +556,9 @@ class AgentResults:
             return self.project.review.reviewer if self.project.review else None
         if kind == "plan":
             return self.project.planning.planner if self.project.planning else None
+        if kind == "acceptance":
+            config = self.acceptance.config
+            return config.author if config else None
         return None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
@@ -841,6 +847,9 @@ class AgentResults:
             extra["gate"] = self.gate.contract(execution)
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
+        frozen = self.acceptance.request_extra(execution)
+        if frozen is not None:
+            extra["acceptanceTests"] = frozen
         if not extra:
             return None
         workspace = str(self.s.paths.workspace)

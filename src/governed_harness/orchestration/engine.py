@@ -1048,6 +1048,11 @@ class RunEngine:
             "Versioned acceptance contract",
             supports=tuple(item.criterion_id for item in task.acceptance_criteria),
         )
+        if self.results.active:
+            # verification.acceptanceTests (#52): independent tests a person approves.
+            blocked = self.results.acceptance.propose(execution, phase, task)
+            if blocked is not None:
+                return blocked
         return PhaseOutcome(
             ResultStatus.PASSED, "Acceptance contract frozen", (evidence.artifact_ref,)
         )

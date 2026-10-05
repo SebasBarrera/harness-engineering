@@ -127,6 +127,9 @@ class VerificationChecks:
         reproduced = self.results.corrections.validation(execution, change_set)
         if reproduced is not None:
             outputs.append(reproduced)
+        acceptance = self.results.acceptance.validation(execution, change_set)
+        if acceptance is not None:
+            outputs.append(acceptance)
         requests = self.results.change_requests(execution)
         if requests:
             outputs.append(self._change_requests(execution, change_set, requests, diff))

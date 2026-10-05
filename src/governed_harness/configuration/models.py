@@ -15,6 +15,7 @@ from pydantic import (
 )
 
 from governed_harness.configuration.agent_results import (
+    AcceptanceTestsConfig,
     AgentCallConfig,
     AgentRoutingConfig,
     AmbiguityReview,
@@ -365,6 +366,7 @@ class VerificationConfig(ConfigModel):
     (tests, environment assignments, values the task declares) and detects evasion."""
     sarif: tuple[SarifInput, ...] | None = None
     risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
+    acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")
 
     @field_validator("interface", "constraints", "ratchet", "weakened_controls", mode="before")
     @classmethod

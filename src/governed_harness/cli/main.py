@@ -41,6 +41,7 @@ exceptions_app = typer.Typer(help="Exception ledger commands")
 rules_app = typer.Typer(help="Rule and validator health across runs")
 outcome_app = typer.Typer(help="Outcomes after a run (incidents, reverts, hotfixes)")
 plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-tasks")
+acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
 budget_app = typer.Typer(help="Governed budget of agent calls")
 routing_app = typer.Typer(help="Model and effort routing of agent calls")
 app.add_typer(config_app, name="config")
@@ -59,6 +60,7 @@ app.add_typer(exceptions_app, name="exceptions")
 app.add_typer(rules_app, name="rules")
 app.add_typer(outcome_app, name="outcome")
 app.add_typer(plan_app, name="plan")
+app.add_typer(acceptance_app, name="acceptance")
 app.add_typer(budget_app, name="budget")
 app.add_typer(routing_app, name="routing")
 
@@ -523,6 +525,55 @@ def budget_raise(
         ),
         kind="budget",
     )
+
+
+@acceptance_app.command("show")
+def acceptance_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the acceptance tests proposed for a run (`verification.acceptanceTests`), their
+    digest, their status and, once approved, the frozen files and their digests."""
+    _emit(_call(lambda: HarnessApplication().acceptance(path, run)), kind="acceptance")
+
+
+@acceptance_app.command("decide")
+def acceptance_decide(
+    run: str = RUN_OPTION,
+    decision: DecisionKind = typer.Option(
+        ..., "--decision", case_sensitive=False, help="APPROVE or REJECT"
+    ),
+    digest: str = typer.Option(..., "--digest", help="Digest shown by acceptance show"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Approve or reject the proposed acceptance tests, bound to their digest. APPROVE writes
+    and freezes them, runs them once on the workspace before the change and resumes the run;
+    every later VERIFICATION checks that they are unchanged and pass. A stale digest or a
+    non-human actor exits 5."""
+    result = _call(
+        lambda: _acting().decide_acceptance(
+            path,
+            execution_id=run,
+            decision=decision,
+            digest=digest,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result, kind="acceptance")
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
 @app.command("check")

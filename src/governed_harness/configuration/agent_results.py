@@ -38,7 +38,7 @@ class _Section(BaseModel):
 
 
 Policy = Literal["enforce", "warn", "off"]
-CallKind = Literal["implement", "clarify", "review", "plan"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance"]
 
 
 class AgentCallConfig(_Section):
@@ -122,6 +122,42 @@ class InvariantCheck(_Section):
         if not value:
             raise ValueError("an invariant needs a command")
         return value
+
+
+AcceptanceMode = Literal["agent", "off"]
+DEFAULT_ACCEPTANCE_DIRECTORY = "tests/acceptance"
+
+
+class AcceptanceTestsConfig(_Section):
+    """Independent, frozen acceptance tests (#52, N4): written from the criteria by a separate
+    call (``author``), approved by a person, checked to fail before the change and to pass,
+    unchanged, after it."""
+
+    mode: AcceptanceMode | None = None
+    author: AgentCallConfig | None = None
+    directory: str | None = None
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @field_validator("directory")
+    @classmethod
+    def _relative(cls, value: str | None) -> str | None:
+        if value is not None and (
+            value.startswith("/") or ".." in value.replace("\\", "/").split("/")
+        ):
+            raise ValueError(f"the acceptance directory must be relative: {value!r}")
+        return value
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "agent"
+
+    @property
+    def path(self) -> str:
+        return (self.directory or DEFAULT_ACCEPTANCE_DIRECTORY).rstrip("/")
 
 
 RiskAction = Literal["block", "acknowledge", "inform", "off"]

@@ -72,7 +72,9 @@ from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
 from .agent_results import (
+    acceptance_state,
     budget_state,
+    decide_acceptance,
     decide_plan,
     parse_change_requests,
     plan_state,
@@ -417,6 +419,38 @@ class HarnessApplication:
                 limit=limit,
                 actor_id=decider,
                 rationale=rationale,
+            )
+
+    def acceptance(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """The acceptance tests proposed or frozen for a run (#52)."""
+        with self._services(path) as services:
+            return acceptance_state(services, self._run_id(services, execution_id))
+
+    def decide_acceptance(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        digest: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject the proposed acceptance tests (digest-bound, a person)."""
+        with self._services(path) as services, self._leased(services, "acceptance decide") as lease:
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_acceptance(
+                services,
+                execution_id,
+                decision=decision,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                continue_after=continue_after,
             )
 
     def plan(self, path: Path, execution_id: str) -> dict[str, Any]:

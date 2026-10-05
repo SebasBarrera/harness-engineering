@@ -368,7 +368,7 @@ class AgentInvocation(StrictModel):
     usage_ref: str | None = None
     output_ref: str | None = None
     error: HarnessErrorRecord | None = None
-    call_kind: Literal["implement", "clarify", "review", "plan"] | None = None
+    call_kind: Literal["implement", "clarify", "review", "plan", "acceptance"] | None = None
     """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
     so invocations recorded without the agent-results settings keep their stored form."""
     effort: str | None = None

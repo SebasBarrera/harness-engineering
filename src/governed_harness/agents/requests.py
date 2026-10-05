@@ -6,9 +6,11 @@ rules cannot give:
 
 * ``clarify`` (INTENT): ambiguity and completeness questions about the task;
 * ``review`` (INDEPENDENT_REVIEW): findings of a second reviewer on the ChangeSet;
-* ``plan`` (PLANNING): ordered sub-tasks that partition the task's requirements.
+* ``plan`` (PLANNING): ordered sub-tasks that partition the task's requirements;
+* ``acceptance`` (SPECIFICATION): acceptance tests written from the criteria by a separate
+  call, returned as files that the harness writes and freezes once a person approves them.
 
-These three are read-only by contract: the request says so (``readOnly: true``) and the harness
+These kinds are read-only by contract: the request says so (``readOnly: true``) and the harness
 compares the workspace before and after the call; a provider that changed it gets a HIGH
 finding, its changes are undone and its answer is discarded. The agent proposes; only a person
 answers clarification questions and approves a plan.
@@ -20,10 +22,10 @@ from __future__ import annotations
 
 from typing import Any, Final, Literal
 
-CallKind = Literal["implement", "clarify", "review", "plan"]
+CallKind = Literal["implement", "clarify", "review", "plan", "acceptance"]
 
-CALL_KINDS: Final[tuple[CallKind, ...]] = ("implement", "clarify", "review", "plan")
-READ_ONLY_KINDS: Final[frozenset[str]] = frozenset({"clarify", "review", "plan"})
+CALL_KINDS: Final[tuple[CallKind, ...]] = ("implement", "clarify", "review", "plan", "acceptance")
+READ_ONLY_KINDS: Final[frozenset[str]] = frozenset({"clarify", "review", "plan", "acceptance"})
 REQUEST_SCHEMA_VERSION = "1.1"
 """Version of a request that carries ``kind`` and ``instructions``; an implement request sent
 without any agent-results key keeps the 1.0 form (and its prompt digest)."""
@@ -121,6 +123,22 @@ INSTRUCTIONS: Final[dict[CallKind, str]] = {
             '"criteria": ["<id>"], "constraints": ["<text>"]}}]}}',
         )
     ),
+    "acceptance": (
+        "Write acceptance tests for the task below from its acceptance criteria and "
+        "requirements only, before any implementation exists, for the workspace at "
+        "{workspace}. Use pytest; put every file under {directory}/ with a name that starts "
+        "with test_; name each test after the criterion or requirement id it checks. Test the "
+        "observable behaviour the criteria describe, including at least one end-to-end flow; "
+        "do not test implementation details. The tests must fail on the current workspace and "
+        "pass once the task is implemented. Return the files instead of writing them: the "
+        "harness writes them after a person approves them, and then freezes them. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"tests": [{{"path": "{directory}/test_<name>.py", "content": "<file>"}}]}}',
+        )
+    ),
 }
 
 
@@ -130,6 +148,7 @@ def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str
         "workspace": workspace,
         "categories": ", ".join(CLARIFY_CATEGORIES),
         "maxSubtasks": 12,
+        "directory": "tests/acceptance",
     }
     fields.update(values)
     return INSTRUCTIONS[kind].format(**fields)
@@ -142,4 +161,5 @@ def phase_of(kind: CallKind) -> str:
         "clarify": "INTENT",
         "review": "INDEPENDENT_REVIEW",
         "plan": "PLANNING",
+        "acceptance": "SPECIFICATION",
     }[kind]

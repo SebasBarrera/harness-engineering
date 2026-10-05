@@ -145,6 +145,49 @@ def raise_budget(
     return budget_state(services, execution_id)
 
 
+def acceptance_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
+    """The acceptance tests proposed or frozen for a run (``verification.acceptanceTests``)."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    engine = RunEngine(services)
+    state = engine.results.acceptance.state(engine.get_execution(execution_id))
+    if state is None:
+        raise NotFoundError(f"run {execution_id} has no acceptance tests")
+    return {"executionId": execution_id, **state}
+
+
+def decide_acceptance(
+    services: EngineServices,
+    execution_id: str,
+    *,
+    decision: DecisionKind,
+    digest: str,
+    actor_id: str,
+    rationale: str,
+    continue_after: bool,
+) -> dict[str, Any]:
+    """Approve (write and freeze) or reject the proposed acceptance tests (a person only)."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    require_human_actor(actor_id, "decide acceptance tests")
+    engine = RunEngine(services)
+    state = engine.results.acceptance.decide(
+        engine.get_execution(execution_id),
+        decision=decision,
+        digest=digest,
+        actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+        rationale=rationale,
+    )
+    result: dict[str, Any] = {"executionId": execution_id, "acceptanceTests": state}
+    if continue_after:
+        result["execution"] = engine.continue_execution(execution_id).model_dump(
+            mode="json", by_alias=True
+        )
+    else:
+        engine.anchor_chain(execution_id)
+    return result
+
+
 def plan_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
     """The decomposition of a run (``planning.decomposition``) and the progress of its
     sub-tasks."""

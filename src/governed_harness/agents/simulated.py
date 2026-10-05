@@ -188,6 +188,8 @@ class SimulatedAgentProvider:
             result = {"questions": []}
         elif kind == "review":
             result = {"findings": []}
+        elif kind == "acceptance":
+            result = {"tests": []}
         elif kind == "plan":
             task = request.get("task") or {}
             requirement_ids = [
