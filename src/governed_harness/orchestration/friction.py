@@ -200,6 +200,20 @@ class Friction:
         reasons: list[str] = []
         if sized["size"] != "S":
             reasons.append(f"size {sized['size']} ({sized['rule']})")
+        declared = [
+            item.criterion_id
+            for item in task.acceptance_criteria
+            if item.verification is not None
+            and (
+                item.verification.probe
+                or item.verification.deferred
+                or item.verification.manual
+                or item.verification.level.value > "L1"
+            )
+        ]
+        if task.probes or task.checklist or declared:
+            # A person who asked for stronger evidence asked for the full flow.
+            reasons.append("the task declares verification beyond L1 (probes, deferred or manual)")
         lane = "full" if reasons else "fast"
         record: dict[str, Any] = {
             "lane": lane,

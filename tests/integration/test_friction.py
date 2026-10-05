@@ -201,6 +201,26 @@ def test_large_task_takes_the_full_lane(python_workspace: Path, tmp_path: Path) 
     assert not of_type(chain, "lane.step.skipped")
 
 
+def test_a_task_asking_for_stronger_evidence_takes_the_full_lane(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace, friction={"fastLane": {"mode": "auto"}})
+    _application, run = start(
+        python_workspace,
+        tmp_path,
+        patch_task(
+            "task_checked",
+            [replace("src/sample/pricing.py", GOOD)],
+            checklist=[{"id": "look", "text": "The receipt shows the discount line"}],
+        ),
+    )
+    lane = of_type(events(python_workspace, run.execution_id), "lane.classified")[0].payload
+    assert lane["lane"] == "full"
+    assert lane["reasons"] == [
+        "the task declares verification beyond L1 (probes, deferred or manual)"
+    ]
+
+
 def test_a_risk_factor_takes_the_run_out_of_the_fast_lane(
     python_workspace: Path, tmp_path: Path
 ) -> None:
