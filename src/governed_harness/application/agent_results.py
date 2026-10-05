@@ -7,6 +7,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.actors import require_human_actor
 from governed_harness.domain.enums import ActorType, DecisionKind, PhaseId, ResultStatus
 from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
@@ -274,6 +275,60 @@ def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -
         "executionId": execution_id,
         "quarantined": record is not None,
         "record": record,
+    }
+
+
+def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
+    """Effective agent-results settings for ``config validate``; ``off`` (or false) where a
+    key is absent, which is the 1.0.0 behaviour."""
+    intake = project.intake
+    verification = project.verification
+    review = project.review
+    runtime = project.runtime
+    governance = project.governance_settings
+
+    def off(value: Any) -> Any:
+        return value if value is not None else "off"
+
+    return {
+        "ambiguityReview": off(intake.ambiguity_review if intake else None),
+        "validateAnswers": bool(intake and intake.validate_answers),
+        "agentReview": off(review.agent_review if review else None),
+        "structuredChanges": bool(review and review.structured_changes),
+        "gateContract": bool(runtime.gate_contract),
+        "reproduceFirst": bool(runtime.reproduce_first),
+        "stopTheLine": off(governance.stop_the_line),
+        "phasePermissions": bool(governance.phase_permissions),
+        "checks": {
+            name: (
+                value.model_dump(mode="json", by_alias=True)
+                if hasattr(value, "model_dump")
+                else [item.model_dump(mode="json", by_alias=True) for item in value]
+                if isinstance(value, tuple)
+                else value
+            )
+            for name, value in (
+                (field.alias or key, getattr(verification, key))
+                for key, field in type(verification).model_fields.items()
+                if key not in {"requirement_traceability", "output_parsers"}
+            )
+            if value is not None
+        }
+        if verification is not None
+        else {},
+        "planning": project.planning.model_dump(mode="json", by_alias=True)
+        if project.planning
+        else {"decomposition": "off"},
+        "context": project.context.model_dump(mode="json", by_alias=True)
+        if project.context
+        else {"manifest": "off"},
+        "budget": project.budget.model_dump(mode="json", by_alias=True) if project.budget else None,
+        "memory": project.memory.model_dump(mode="json", by_alias=True)
+        if project.memory
+        else {"learnFromFindings": "off"},
+        "agentRouting": project.agent_routing.model_dump(mode="json", by_alias=True)
+        if project.agent_routing
+        else {"mode": "fixed"},
     }
 
 

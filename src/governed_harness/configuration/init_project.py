@@ -5,6 +5,14 @@ from pathlib import Path
 
 import yaml
 
+from governed_harness.configuration.agent_results import (
+    DEFAULT_COARSE_MODELS,
+    DEFAULT_CONTEXT_MAX_BYTES,
+    DEFAULT_CONTEXT_MAX_FILES,
+    DEFAULT_DECOMPOSITION_THRESHOLD,
+    DEFAULT_RISK_ACTIONS,
+    DEFAULT_SIZE_THRESHOLDS,
+)
 from governed_harness.configuration.models import (
     DEFAULT_DECISION_EXPIRY_HOURS,
     DEFAULT_EXCEPTION_DAYS,
@@ -54,12 +62,72 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "unsupportedClaimSeverity": "MEDIUM",
             "providerRetries": 3,
             "providerRetryDelaySeconds": 60,
+            "gateContract": True,
+            "reproduceFirst": True,
         },
         "retention": {"artifactDays": 30, "eventDays": 365},
-        "intake": {"criteriaPolicy": "enforce"},
-        "verification": {"requirementTraceability": "enforce", "outputParsers": True},
-        "review": {"exceptions": True, "exceptionDays": DEFAULT_EXCEPTION_DAYS},
+        "intake": {
+            "criteriaPolicy": "enforce",
+            "ambiguityReview": "agent",
+            "validateAnswers": True,
+        },
+        "verification": {
+            "requirementTraceability": "enforce",
+            "outputParsers": True,
+            "interface": "enforce",
+            "architecture": {
+                "maxModuleLines": 800,
+                "maxFunctionLines": 80,
+                "maxComplexity": 15,
+                "severity": "MEDIUM",
+            },
+            "securityPatterns": True,
+            "constraints": "enforce",
+            "ratchet": "enforce",
+            "differential": True,
+            "weakenedControls": "enforce",
+            "testQuality": {
+                "assertions": True,
+                "interfaceTests": True,
+                "diffCoverage": 80,
+                "flakyReruns": 1,
+                "severity": "MEDIUM",
+            },
+            "secrets": "context",
+            "riskFactors": dict(DEFAULT_RISK_ACTIONS),
+            "acceptanceTests": {"mode": "agent"},
+        },
+        "review": {
+            "exceptions": True,
+            "exceptionDays": DEFAULT_EXCEPTION_DAYS,
+            "agentReview": "enforce",
+            "structuredChanges": True,
+        },
         "retrospective": {"causal": True},
+        "planning": {
+            "decomposition": "agent",
+            "threshold": DEFAULT_DECOMPOSITION_THRESHOLD,
+            "granularity": "adaptive",
+            "coarseModels": list(DEFAULT_COARSE_MODELS),
+        },
+        "context": {
+            "manifest": "auto",
+            "maxFiles": DEFAULT_CONTEXT_MAX_FILES,
+            "maxBytes": DEFAULT_CONTEXT_MAX_BYTES,
+        },
+        # Wide on purpose: limits only at the extremes (#42).
+        "budget": {
+            "perCall": {"costUsd": 25, "wallSeconds": 7200},
+            "perTask": {"costUsd": 200},
+            "perRun": {"costUsd": 100, "tokens": 500_000_000, "wallSeconds": 43_200},
+            "warnAt": 0.8,
+        },
+        "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
+        "agentRouting": {
+            "mode": "tiered",
+            "thresholds": {key: list(value) for key, value in DEFAULT_SIZE_THRESHOLDS.items()},
+            "maxEscalations": 2,
+        },
         "governance": {
             "deciderIdentity": "git",
             "confirmDecisionDigest": True,
@@ -73,6 +141,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "decisionExpiryHours": DEFAULT_DECISION_EXPIRY_HOURS,
             "applyProfilePolicies": True,
             "applyNetworkPolicy": True,
+            "stopTheLine": "restore",
+            "phasePermissions": True,
         },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

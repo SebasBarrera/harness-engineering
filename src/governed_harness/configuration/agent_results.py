@@ -195,9 +195,7 @@ DEFAULT_DECOMPOSITION_THRESHOLD = 12
 DEFAULT_COARSE_MODELS: tuple[str, ...] = (
     "claude-sonnet-5-5",
     "claude-opus-5-5",
-    "claude-fable-5-1",
     "gpt-6.1-sol",
-    "gpt-6-astra",
 )
 """Models ``harness init`` lets start with a coarse (undecomposed) task under
 ``planning.granularity: adaptive``; a starting point from the evaluation, not a statement about

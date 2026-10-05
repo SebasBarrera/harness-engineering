@@ -73,6 +73,7 @@ from governed_harness.telemetry import MetricsProjector
 
 from .agent_results import (
     acceptance_state,
+    agent_results_summary,
     budget_state,
     decide_acceptance,
     decide_plan,
@@ -197,6 +198,7 @@ class HarnessApplication:
             },
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
             "governance": self._governance(resolved.project.governance_settings),
+            "agentResults": agent_results_summary(resolved.project),
             "declarative": declarative,
             "warnings": warnings,
         }
