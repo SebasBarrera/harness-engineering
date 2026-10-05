@@ -540,7 +540,7 @@ class ClarificationRecord(StrictModel):
     task_id: str
     request_id: str
     actor: Actor
-    answers: tuple[ClarificationAnswer, ...] = Field(min_length=1)
+    answers: tuple[ClarificationAnswer, ...] = ()
     replaced_criteria: tuple[str, ...] = ()
     added_criteria: tuple[str, ...] = ()
     added_requirements: tuple[str, ...] = ()
@@ -549,6 +549,22 @@ class ClarificationRecord(StrictModel):
     previous_task_ref: str
     task_ref: str
     recorded_at: datetime = Field(default_factory=utc_now)
+    contract_answers: dict[str, Any] = Field(default_factory=dict)
+    """Answers to the operational-contract section (since #55); left out when empty."""
+
+    @model_validator(mode="after")
+    def _answers_something(self) -> ClarificationRecord:
+        if not self.answers and not self.contract_answers:
+            raise ValueError("a clarification record needs an answer")
+        return self
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_contract(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if not self.contract_answers:
+            data.pop("contractAnswers", None)
+            data.pop("contract_answers", None)
+        return data
 
 
 class PlanStep(StrictModel):

@@ -138,7 +138,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
-from governed_harness.runtime.state_location import resolve_state_location
+from governed_harness.runtime.state_location import isolation_marker, resolve_state_location
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -749,6 +749,7 @@ class RunEngine:
             task_digest=task_digest(revision.task),
             previous_task_ref=previous_ref.uri,
             task_ref=revised_ref.uri,
+            contract_answers=dict(clarification.contract or {}),
         )
         self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
         if self._pins_task():
@@ -2358,7 +2359,10 @@ class RunEngine:
                 return self.ladder.delivery.deliver(execution, phase, decision, skipped, change_set)
             return None
         task = self.run_task(execution)
-        if self.ladder.active and task.contract is not None and task.contract.branch:
+        if isolation_marker(self.s.paths.workspace) is not None:
+            # An isolated run (#55) commits on its own worktree's branch.
+            delivery = delivery.model_copy(update={"closure_commit": "head"})
+        elif self.ladder.active and task.contract is not None and task.contract.branch:
             # The branch the operational contract names (#55).
             delivery = delivery.model_copy(update={"branch": task.contract.branch})
         try:

@@ -39,6 +39,14 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices, RunEngine
 
 ISOLATION_FLAG = "isolation"
+GENERATED_DIRECTORIES = frozenset(
+    {".harness", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage"}
+)
+"""What a run leaves untracked in its worktree (the harness's directory, tool caches)."""
+
+
+def _generated(path: str) -> bool:
+    return any(part in GENERATED_DIRECTORIES for part in Path(path.rstrip("/")).parts)
 
 
 def isolation_record(services: EngineServices, execution_id: str) -> dict[str, Any] | None:
@@ -236,14 +244,20 @@ def cleanup_worktree(services: EngineServices, execution: Execution) -> dict[str
     changes = [
         line
         for line in status.stdout.decode("utf-8", "replace").splitlines()
-        if line[3:].strip() and not line[3:].startswith(".harness")
+        if line[3:].strip() and not _generated(line[3:].strip().strip('"'))
     ]
     if changes:
         raise PolicyViolationError(
             f"the worktree {directory} has {len(changes)} uncommitted change(s); the harness "
             "does not delete them"
         )
-    shutil.rmtree(directory / ".harness")
+    for line in status.stdout.decode("utf-8", "replace").splitlines():
+        # What the harness and the validators wrote there: its own directory and caches.
+        target = directory / line[3:].strip().strip('"').rstrip("/")
+        if line.startswith("??") and _generated(line[3:].strip()) and target.is_dir():
+            shutil.rmtree(target)
+    if (directory / ".harness").is_dir():
+        shutil.rmtree(directory / ".harness")
     git.run("worktree", "remove", str(directory))
     updated = {**record, "status": "REMOVED", "removedAt": utc_now().isoformat()}
     services.state.set_flag(
