@@ -1042,8 +1042,8 @@ def gate_decide(
         None,
         "--change-request",
         help="REQUEST_CHANGES under review.structuredChanges: a blocking item as "
-        "'description::condition' where the condition is test:<pytest node id>, "
-        "absent:<regex> or text (repeatable)",
+        "'description::condition' where the condition is test:NODE_ID (a pytest node id), "
+        "absent:REGEX or text (repeatable)",
     ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"

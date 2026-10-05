@@ -488,7 +488,7 @@ harness gate decide [OPTIONS]
 | `--follow-up` | str | no |  | APPROVE_EXCEPTION: issue or task that will remove the exception |
 | `--interactive`, `-i` | flag | no | false | Show the decision brief and confirm the ChangeSet digest even when every option is given |
 | `--acknowledge-risk` | str | no |  | APPROVE or APPROVE_EXCEPTION under verification.riskFactors: a risk factor of the ChangeSet the decider acknowledges (repeatable; required for every factor whose action is acknowledge) |
-| `--change-request` | str | no |  | REQUEST_CHANGES under review.structuredChanges: a blocking item as 'description::condition' where the condition is test:<pytest node id>, absent:<regex> or text (repeatable) |
+| `--change-request` | str | no |  | REQUEST_CHANGES under review.structuredChanges: a blocking item as 'description::condition' where the condition is test:NODE_ID (a pytest node id), absent:REGEX or text (repeatable) |
 | `--path` | path | no |  | Project directory |
 
 ## harness evidence list
