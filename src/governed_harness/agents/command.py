@@ -67,6 +67,10 @@ class CommandAgentProvider:
         # a request without memory is identical to the one sent before memory was wired in.
         if context.memory_context and context.memory_context.get("records"):
             request["context"] = context.memory_context
+        # Feedback exists only on a correction attempt with runtime.providerFeedback enabled, so
+        # every other request keeps its previous form and prompt digest.
+        if context.feedback:
+            request["feedback"] = context.feedback
         request_bytes = json.dumps(request, sort_keys=True).encode("utf-8")
         prompt_digest = sha256_json(request)
         result = context.process_runner.run(

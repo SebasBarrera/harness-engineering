@@ -483,6 +483,72 @@ class HumanDecision(StrictModel):
     expires_at: datetime | None = None
 
 
+FEEDBACK_STREAM_CHARS = 4000
+"""Characters kept from the end of each failing validator stream in provider feedback."""
+FEEDBACK_TOTAL_CHARS = 16000
+"""Characters of validator output (all streams together) one feedback block may carry."""
+FEEDBACK_MAX_FINDINGS = 20
+FEEDBACK_TEXT_CHARS = 1000
+"""Characters kept from a finding message, a validator summary or a claim summary."""
+FEEDBACK_RATIONALE_CHARS = 4000
+
+
+class FeedbackGate(StrictModel):
+    """The outcome the feedback is about: the VERIFICATION result (``gate_id`` ``verification``)
+    or the delivery gate a person decided on (``delivery_candidate``)."""
+
+    gate_id: Literal["verification", "delivery_candidate"]
+    gate_evaluation_id: str | None = None
+    status: ResultStatus
+    reason_codes: tuple[str, ...]
+
+
+class FeedbackFinding(StrictModel):
+    rule_id: str
+    severity: FindingSeverity
+    validator_id: str
+    location: FindingLocation | None = None
+    message: str = Field(max_length=FEEDBACK_TEXT_CHARS)
+
+
+class FeedbackValidator(StrictModel):
+    """A mandatory validator that did not pass, with the end of its redacted output."""
+
+    validator_id: str
+    status: ResultStatus
+    summary: str = Field(max_length=FEEDBACK_TEXT_CHARS)
+    exit_code: int | None = None
+    stdout: str = Field(default="", max_length=FEEDBACK_STREAM_CHARS)
+    stderr: str = Field(default="", max_length=FEEDBACK_STREAM_CHARS)
+    stdout_truncated: bool = False
+    stderr_truncated: bool = False
+
+
+class FeedbackDecision(StrictModel):
+    decision: DecisionKind
+    rationale: str = Field(max_length=FEEDBACK_RATIONALE_CHARS)
+    actor_id: str
+
+
+class ProviderFeedback(StrictModel):
+    """Why the previous attempt was not accepted, sent to a command provider as ``feedback``.
+
+    It is built when a failed VERIFICATION returns the run to IMPLEMENTATION
+    (``VERIFICATION_FAILED``) or a person requests changes (``CHANGES_REQUESTED``), only when
+    ``runtime.providerFeedback`` is true. Validator output is bounded: the last
+    ``FEEDBACK_STREAM_CHARS`` characters of each stream and ``FEEDBACK_TOTAL_CHARS`` in all."""
+
+    schema_version: Literal["1.0"] = "1.0"
+    attempt: int = Field(ge=2)
+    trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"]
+    change_set_digest: str
+    gate: FeedbackGate
+    findings: tuple[FeedbackFinding, ...] = Field(default=(), max_length=FEEDBACK_MAX_FINDINGS)
+    omitted_findings: int = Field(default=0, ge=0)
+    validators: tuple[FeedbackValidator, ...] = ()
+    decision: FeedbackDecision | None = None
+
+
 class ResourceUsage(StrictModel):
     usage_id: str
     execution_id: str
