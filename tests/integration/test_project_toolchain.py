@@ -182,7 +182,7 @@ def test_project_profile_is_loaded_detected_and_run(python_workspace: Path) -> N
 
 def test_best_detection_stays_the_default(python_workspace: Path) -> None:
     (python_workspace / "package.json").write_text("{}", encoding="utf-8")
-    update_config(python_workspace, profiles=["auto"])
+    update_config(python_workspace, profiles=["auto"], toolchain={})
     assert [item.profile_id for item in resolve(python_workspace).profiles] == ["python_default"]
     update_config(python_workspace, toolchain={"profileDetection": "all"})
     assert [item.profile_id for item in resolve(python_workspace).profiles] == [
@@ -242,6 +242,10 @@ def test_interpreter_auto_uses_uv_with_a_lock_file(
 
 
 def test_without_toolchain_the_configuration_digest_is_unchanged(python_workspace: Path) -> None:
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config.pop("toolchain")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     before = resolve(python_workspace).model_dump(mode="json", by_alias=True)
     update_config(python_workspace, toolchain={})
     after = resolve(python_workspace).model_dump(mode="json", by_alias=True)

@@ -71,24 +71,22 @@ class ConfigurationResolver:
             for profile_id in dict.fromkeys(requested)
         )
         workflow = load_builtin_workflow(project.workflow)
-        capabilities = self._resolve_capabilities(project.capabilities.grants, profiles)
-        if project.governance_settings.protect_excluded_paths:
-            capabilities = self._without_protected_writes(capabilities)
         validators = self._resolve_validators(project.validators, profiles)
+        grants = project.capabilities.grants
         if toolchain.validators or toolchain.interpreter == "auto":
             validators, extra_scopes = self._project_toolchain(
                 validators, toolchain, workspace_root
             )
-            capabilities = self._resolve_capabilities(
-                (
-                    *project.capabilities.grants,
-                    *(
-                        CapabilityRule(capability="process.execute", scope=(scope,))
-                        for scope in extra_scopes
-                    ),
+            grants = (
+                *grants,
+                *(
+                    CapabilityRule(capability="process.execute", scope=(scope,))
+                    for scope in extra_scopes
                 ),
-                profiles,
             )
+        capabilities = self._resolve_capabilities(grants, profiles)
+        if project.governance_settings.protect_excluded_paths:
+            capabilities = self._without_protected_writes(capabilities)
         policies = self._resolve_policies(project.policies, profiles)
         if project.governance_settings.apply_profile_policies:
             validate_profile_policies(policies)

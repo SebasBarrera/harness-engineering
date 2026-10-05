@@ -75,6 +75,7 @@ def test_project_schema_accepts_the_loop_settings_and_their_absence(
         "unsupportedClaimSeverity": "MEDIUM",
         "providerRetries": 3,
         "providerRetryDelaySeconds": 60,
+        "extendedRedaction": True,
     }
     _validate("project-config.schema.json", value)
     _validate(

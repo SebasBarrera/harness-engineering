@@ -34,6 +34,9 @@ IGNORED_PATTERNS: tuple[str, ...] = (
     ".harness/artifacts/*",
     ".harness/lease.json",
     ".harness/lease.json.*",
+    # The digest cache of workspace.snapshotCache: the harness rewrites it around every agent
+    # invocation, and a copy that does not match its seal in the state database is ignored.
+    ".harness/cache/*",
     # Git rewrites its index on a read (git status) and keeps transient locks; objects only
     # matter once a ref points to them, and refs are watched. The chain-anchor notes are the
     # harness's own (governance.chainAnchor: git-note).
@@ -74,9 +77,19 @@ def _file_fingerprint(path: Path) -> str:
 
 
 class ExcludedPathGuard:
-    def __init__(self, root: Path, guarded: Iterable[str] = GUARDED_DIRECTORIES) -> None:
+    def __init__(
+        self,
+        root: Path,
+        guarded: Iterable[str] = GUARDED_DIRECTORIES,
+        *,
+        include_ignored: bool = False,
+    ) -> None:
         self.root = root.resolve(strict=True)
         self.guarded = frozenset(guarded)
+        self.include_ignored = include_ignored
+        """``workspace.snapshot: git`` (since 1.1): files ``.gitignore`` excludes leave the
+        ChangeSet, so the guard also fingerprints the ignored files outside the directories it
+        already watches and outside the caches every test run rewrites."""
 
     def fingerprint(self) -> dict[str, str]:
         """Fingerprints of every file below a guarded directory (at any depth) and of every
@@ -95,6 +108,13 @@ class ExcludedPathGuard:
             for name in filenames:
                 path = current / name
                 if inside or path.is_symlink():
+                    self._add(prints, path)
+        if self.include_ignored:
+            from governed_harness.runtime.snapshots import ignored_outside_excludes
+
+            for relative in ignored_outside_excludes(self.root):
+                path = self.root / relative
+                if relative not in prints and not self._inside_guarded(path.parent):
                     self._add(prints, path)
         return dict(sorted(prints.items()))
 

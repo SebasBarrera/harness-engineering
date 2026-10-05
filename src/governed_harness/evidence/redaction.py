@@ -95,16 +95,17 @@ class SecretRedactor:
 
     def _configured(self, data: bytes) -> tuple[bytes, list[str]]:
         applied: list[str] = []
-        if self.extended:
-            for rule_id, pattern, replacement in EXTENDED_RULES:
-                data, count = pattern.subn(replacement, data)
-                if count:
-                    applied.append(rule_id)
+        # The configured values first: they are exact, the extended rules are patterns.
         for literal in self.literals:
             if literal in data:
                 data = data.replace(literal, b"<REDACTED_ENV>")
                 if "provider_environment" not in applied:
                     applied.append("provider_environment")
+        if self.extended:
+            for rule_id, pattern, replacement in EXTENDED_RULES:
+                data, count = pattern.subn(replacement, data)
+                if count:
+                    applied.append(rule_id)
         return data, applied
 
 

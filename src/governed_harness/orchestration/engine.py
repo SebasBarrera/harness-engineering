@@ -119,7 +119,6 @@ from governed_harness.runtime import (
     SafeProcessRunner,
     WorkspaceDiff,
     WorkspaceSnapshot,
-    WorkspaceSnapshotter,
 )
 from governed_harness.runtime.guard import IGNORED_PATTERNS, ExcludedPathGuard
 from governed_harness.runtime.lease import terminate_process_group
@@ -129,6 +128,11 @@ from governed_harness.runtime.sandbox import (
     SandboxUnavailable,
     build_sandbox,
     denied_writes,
+)
+from governed_harness.runtime.snapshots import (
+    SNAPSHOT_CACHE_SEAL,
+    SnapshotSettings,
+    SnapshotStore,
 )
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
@@ -275,6 +279,16 @@ class RunEngine:
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
         self.provenance = ProvenanceRecorder(self)
+        self.snapshots = SnapshotStore(
+            services.paths.workspace,
+            services.artifacts,
+            SnapshotSettings.from_config(services.resolved.project.workspace),
+            services.paths.harness_dir,
+            seal=(
+                lambda: services.state.get_flag(SNAPSHOT_CACHE_SEAL),
+                lambda digest: services.state.set_flag(SNAPSHOT_CACHE_SEAL, digest),
+            ),
+        )
         self._phase_deadline: float | None = None
 
     @property
@@ -959,9 +973,9 @@ class RunEngine:
                 ResultStatus.BLOCKED, "Configured profile was not detected in workspace"
             )
         git = GitAdapter(self.s.paths.workspace).state()
-        snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-        snapshot_ref = self.s.artifacts.put_json(
-            self._snapshot_to_dict(snapshot),
+        snapshot = self.snapshots.take(for_storage=True)
+        snapshot_ref = self.snapshots.store(
+            snapshot,
             metadata={"kind": "workspace-baseline", "executionId": execution.execution_id},
         )
         self.s.state.set_flag(f"baseline:{execution.execution_id}", snapshot_ref.uri)
@@ -1093,9 +1107,9 @@ class RunEngine:
         if self._leases_workspace():
             # The workspace as this attempt found it: an interrupted attempt is undone to it
             # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
-            snapshot = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
-            ref = self.s.artifacts.put_json(
-                self._snapshot_to_dict(snapshot),
+            snapshot = self.snapshots.take(for_storage=True)
+            ref = self.snapshots.store(
+                snapshot,
                 metadata={"kind": "implementation-start", "executionId": execution.execution_id},
             )
             self.s.state.set_flag(
@@ -1202,7 +1216,12 @@ class RunEngine:
             feedback=self._pending_feedback(execution, phase),
         )
         guard = (
-            ExcludedPathGuard(self.s.paths.workspace) if self._protects_excluded_paths() else None
+            ExcludedPathGuard(
+                self.s.paths.workspace,
+                include_ignored=self.snapshots.settings.git_listing,
+            )
+            if self._protects_excluded_paths()
+            else None
         )
         guard_before = guard.fingerprint() if guard else None
         retries = 0
@@ -1545,20 +1564,21 @@ class RunEngine:
         start = json.loads(raw)
         if start.get("phaseExecutionId") != phase.phase_execution_id:
             return [], []
-        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(start["snapshotRef"])))
-        snapshotter = WorkspaceSnapshotter(self.s.paths.workspace)
-        diff = snapshotter.diff(before, snapshotter.snapshot())
+        stored = self.snapshots.load(start["snapshotRef"])
+        before = stored.snapshot
+        diff = self.snapshots.diff(stored, self.snapshots.take())
         restored: list[str] = []
         unrestorable: list[str] = []
         for change in diff.changes:
             target = contained_path(self.s.paths.workspace, Path(change.path))
             previous = before.files.get(change.path)
+            content = self.snapshots.content(stored, change.path) if previous else None
             if previous is None:
                 target.unlink(missing_ok=True)
                 restored.append(change.path)
-            elif previous.text is not None:
+            elif content is not None:
                 target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(previous.text.encode("utf-8"))
+                target.write_bytes(content)
                 restored.append(change.path)
             else:
                 unrestorable.append(change.path)
@@ -2504,8 +2524,9 @@ class RunEngine:
         baseline_uri = self.s.state.get_flag(f"baseline:{execution.execution_id}")
         if not baseline_uri:
             raise NotFoundError("baseline snapshot is missing")
-        before = self._snapshot_from_dict(json.loads(self.s.artifacts.get(baseline_uri)))
-        after = WorkspaceSnapshotter(self.s.paths.workspace).snapshot()
+        stored = self.snapshots.load(baseline_uri)
+        before = stored.snapshot
+        after = self.snapshots.take()
         task = self.run_task(execution)
         owned_paths: set[str] | None = None
         if task.implementation.mode == "patch":
@@ -2527,7 +2548,8 @@ class RunEngine:
                 files=after_files,
                 digest=sha256_json({path: state.digest for path, state in after_files.items()}),
             )
-        return WorkspaceSnapshotter(self.s.paths.workspace).diff(before, after)
+        stored.snapshot = before
+        return self.snapshots.diff(stored, after)
 
     def baseline_digests(self, execution: Execution) -> dict[str, str]:
         """Path -> digest of the run's baseline snapshot."""

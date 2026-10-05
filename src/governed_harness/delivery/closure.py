@@ -14,9 +14,14 @@ CLOSURE the harness writes the approved ChangeSet as one commit whose parent is 
 5. ``branch`` creates the branch (``harness/{runId}`` by default); ``head`` moves the current
    branch to the commit and refreshes the index entries of the ChangeSet paths.
 
-A workspace that is not a Git repository, or has no commit, gets no commit (the closure records
-why). Any other failure stops CLOSURE: the run stays open with the reason, and ``run continue``
-tries again (a branch already holding this run's commit is reused)."""
+A workspace that is not a Git repository, has no commit, or whose ``HEAD`` does not hold the
+baseline of a ChangeSet file (the run started on uncommitted changes, for example after an
+earlier run whose change is not committed yet) gets no commit: the closure records why
+(``delivery.commit.skipped``), because a commit on ``HEAD`` would carry more than what was
+approved. Any other failure (the workspace no longer holds the approved content, a branch of the
+same name that is not this run's, Git refusing an operation) stops CLOSURE: the run stays open
+with the reason, and ``run continue`` tries again (a branch already holding this run's commit is
+reused)."""
 
 from __future__ import annotations
 
@@ -168,10 +173,17 @@ def create_closure_commit(
             f"the workspace no longer holds the approved content of {', '.join(sorted(stale_work))}"
         )
     if stale_base:
-        raise ClosureCommitError(
+        # A commit on HEAD would also carry changes nobody approved in this run; the approval
+        # stays valid, so CLOSURE records why there is no commit instead of creating one.
+        return ClosureCommit(
+            mode,
+            "SKIPPED",
             f"HEAD ({head[:12]}) does not hold the baseline of {', '.join(sorted(stale_base))} "
-            "(uncommitted changes when the run started, or HEAD moved); commit the baseline or "
-            "set delivery.closureCommit to off"
+            "(uncommitted changes when the run started, or HEAD moved): a commit on HEAD would "
+            "carry more than the approved ChangeSet",
+            parent=head,
+            branch=branch,
+            trailers=trailers,
         )
     with tempfile.TemporaryDirectory(prefix="harness-index-") as directory:
         index = {"GIT_INDEX_FILE": str(Path(directory) / "index")}

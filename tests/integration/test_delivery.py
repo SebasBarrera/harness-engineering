@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from governed_harness.application import HarnessApplication
-from governed_harness.configuration.models import PublisherConfig
+from governed_harness.configuration.models import DeliveryConfig, PublisherConfig
 from governed_harness.delivery.publisher import GitHubPublisher, marker, transport_for
 from governed_harness.domain.enums import DecisionKind
 from governed_harness.domain.errors import ConfigurationError
@@ -141,19 +141,64 @@ def test_a_later_commit_breaks_the_approval(python_workspace: Path) -> None:
     assert any("no valid, unexpired" in item for item in report["reasons"])
 
 
-def test_closure_blocks_on_a_dirty_baseline(python_workspace: Path) -> None:
+def test_closure_skips_the_commit_on_a_dirty_baseline(python_workspace: Path) -> None:
     configure(python_workspace, closureCommit="branch")
     pricing = python_workspace / "src" / "sample" / "pricing.py"
     pricing.write_text(pricing.read_text(encoding="utf-8") + "# local edit\n", encoding="utf-8")
     application, run, digest = run_to_decision(python_workspace)
     execution = approve(application, python_workspace, run, digest)
-    assert execution.status.value == "BLOCKED"
-    assert execution.current_phase.value == "CLOSURE"
-    assert (
-        "does not hold the baseline of src/sample/pricing.py"
-        in (application.status(python_workspace, run)["phases"][-1]["summary"])
-    )
+    assert execution.status.value == "PASSED"
+    skipped = [
+        item
+        for item in _events(application, python_workspace, run)
+        if item.event_type == "delivery.commit.skipped"
+    ]
+    assert "does not hold the baseline of src/sample/pricing.py" in skipped[0].payload["reason"]
     assert git(python_workspace, "branch", "--list", f"harness/{run}") == ""
+
+
+def test_closure_blocks_when_the_approved_content_changed(python_workspace: Path) -> None:
+    configure(python_workspace, closureCommit="branch")
+    application, run, digest = run_to_decision(python_workspace)
+    with application._services(python_workspace) as services:
+        from governed_harness.delivery.closure import create_closure_commit
+        from governed_harness.delivery.vcs import VcsError
+        from governed_harness.domain.models import ChangeSet, Execution, Task
+
+        execution = services.state.get("execution", run, Execution)
+        change_set = [
+            item
+            for item in services.state.list("change_set", ChangeSet, execution_id=run)
+            if item.digest == digest
+        ][-1]
+        task = services.state.get("task", execution.task_id, Task)
+    (python_workspace / "tests" / "test_pricing.py").write_text("# changed\n", encoding="utf-8")
+    decision = approve_record(run, digest)
+    with pytest.raises(VcsError, match="no longer holds the approved content"):
+        create_closure_commit(
+            python_workspace,
+            DeliveryConfig(closureCommit="branch"),
+            execution_id=run,
+            task=task,
+            change_set=change_set,
+            decision=decision,
+        )
+
+
+def approve_record(run: str, digest: str) -> Any:
+    from governed_harness.domain.models import Actor, HumanDecision
+
+    return HumanDecision(
+        decision_id="decision_x",
+        execution_id=run,
+        gate_evaluation_id="gate_x",
+        actor=Actor(actor_type="HUMAN", actor_id="human.reviewer"),
+        decision=DecisionKind.APPROVE,
+        rationale="ok",
+        change_set_digest=digest,
+        configuration_digest="sha256:x",
+        policy_digest="sha256:x",
+    )
 
 
 def test_closure_commit_without_a_git_identity(python_workspace: Path) -> None:
@@ -169,6 +214,10 @@ def test_closure_commit_without_a_git_identity(python_workspace: Path) -> None:
 
 
 def test_no_delivery_key_never_commits(python_workspace: Path) -> None:
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config.pop("delivery")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     head = git(python_workspace, "rev-parse", "HEAD")
     application, run, digest = run_to_decision(python_workspace)
     approve(application, python_workspace, run, digest)

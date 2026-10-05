@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import difflib
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -64,6 +64,13 @@ class FileState:
     digest: str
     size_bytes: int
     text: str | None
+    text_loaded: bool = True
+    """False when ``text`` was not read (a manifest snapshot): the diff asks its text resolver
+    for the text of a changed file only."""
+
+
+TextResolver = Callable[[str, FileState], str | None]
+"""(side, state) -> the text of a file whose text was not loaded; side is before or after."""
 
 
 @dataclass(frozen=True)
@@ -124,7 +131,13 @@ class WorkspaceSnapshotter:
         digest = sha256_json({path: state.digest for path, state in sorted(states.items())})
         return WorkspaceSnapshot(files=states, digest=digest)
 
-    def diff(self, before: WorkspaceSnapshot, after: WorkspaceSnapshot) -> WorkspaceDiff:
+    def diff(
+        self,
+        before: WorkspaceSnapshot,
+        after: WorkspaceSnapshot,
+        *,
+        resolve_text: TextResolver | None = None,
+    ) -> WorkspaceDiff:
         paths = sorted(set(before.files) | set(after.files))
         changes: list[WorkspaceChange] = []
         diff_chunks: list[str] = []
@@ -141,8 +154,8 @@ class WorkspaceSnapshotter:
                 status = "MODIFIED"
             additions = deletions = 0
             # A missing side diffs as empty text; a present binary side (text None) is not diffed.
-            old_text = "" if old is None else old.text
-            new_text = "" if new is None else new.text
+            old_text = "" if old is None else self._text("before", old, resolve_text)
+            new_text = "" if new is None else self._text("after", new, resolve_text)
             if old_text is not None and new_text is not None:
                 chunk = unified_file_diff(
                     path, old_text, new_text, added=old is None, deleted=new is None
@@ -174,6 +187,26 @@ class WorkspaceSnapshotter:
             }
         )
         return WorkspaceDiff(tuple(changes), unified, digest)
+
+    def _text(self, side: str, state: FileState, resolve: TextResolver | None) -> str | None:
+        if state.text_loaded:
+            return state.text
+        if resolve is not None:
+            return resolve(side, state)
+        if side == "after":
+            path = self.root / state.path
+            try:
+                data = path.read_bytes()
+            except OSError:
+                return None
+            # A file that changed again since the snapshot is diffed as binary rather than with
+            # a text that does not match its recorded digest.
+            return (
+                decode_text(data, self.max_text_bytes)
+                if sha256_bytes(data) == state.digest
+                else None
+            )
+        return None
 
     def _read_text(self, path: Path, size: int) -> str | None:
         if size > self.max_text_bytes:
