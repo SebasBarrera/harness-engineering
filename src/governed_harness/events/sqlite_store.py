@@ -53,6 +53,27 @@ class EventChainError(ValueError):
     pass
 
 
+@dataclass(frozen=True)
+class ChainCheck:
+    """The result of walking the event chain of one run."""
+
+    valid: bool
+    event_count: int
+    head_digest: str | None
+    """Digest of the last event that verified (the head of the chain when ``valid``)."""
+    head_sequence: int | None
+    error: str | None = None
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "valid": self.valid,
+            "eventCount": self.event_count,
+            "headSequence": self.head_sequence,
+            "headDigest": self.head_digest,
+            "error": self.error,
+        }
+
+
 class SQLiteEventStore:
     def __init__(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -187,6 +208,13 @@ class SQLiteEventStore:
             params = (limit,)
         return [self._from_row(row) for row in self.connection.execute(query, params).fetchall()]
 
+    def execution_ids(self) -> builtins.list[str]:
+        """Every run that has events, in the order of its first event."""
+        rows = self.connection.execute(
+            "SELECT execution_id FROM events GROUP BY execution_id ORDER BY MIN(global_sequence)"
+        ).fetchall()
+        return [str(row["execution_id"]) for row in rows]
+
     def count(self, execution_id: str | None = None) -> int:
         if execution_id is None:
             row = self.connection.execute("SELECT COUNT(*) AS count FROM events").fetchone()
@@ -197,22 +225,41 @@ class SQLiteEventStore:
         return int(row["count"])
 
     def verify_chain(self, execution_id: str) -> bool:
+        """``True`` when the chain of the run is intact; raises :class:`EventChainError` at the
+        first broken link. :meth:`check_chain` reports the same check without raising."""
+        check = self.check_chain(execution_id)
+        if not check.valid:
+            raise EventChainError(check.error or "event chain is invalid")
+        return True
+
+    def check_chain(self, execution_id: str) -> ChainCheck:
+        """Walk the chain of a run: sequence without gaps, each event linked to the digest of the
+        one before it and each digest recomputed from its envelope. A malformed row (a payload
+        that is not JSON) is a broken link, not an exception."""
         previous: str | None = None
         expected_sequence = 1
-        for event in self.list(execution_id):
+        try:
+            events = self.list(execution_id)
+        except (ValueError, TypeError) as unreadable:
+            return ChainCheck(False, 0, None, None, f"unreadable event: {unreadable}")
+        for event in events:
+            error: str | None = None
             if event.sequence != expected_sequence:
-                raise EventChainError(
-                    f"event sequence gap: expected {expected_sequence}, got {event.sequence}"
+                error = f"event sequence gap: expected {expected_sequence}, got {event.sequence}"
+            elif event.previous_digest != previous:
+                error = f"previous digest mismatch at event {event.event_id}"
+            else:
+                envelope = event.as_dict()
+                envelope.pop("eventDigest")
+                if sha256_json(envelope) != event.event_digest:
+                    error = f"event digest mismatch at event {event.event_id}"
+            if error is not None:
+                return ChainCheck(
+                    False, len(events), previous, expected_sequence - 1 or None, error
                 )
-            if event.previous_digest != previous:
-                raise EventChainError(f"previous digest mismatch at event {event.event_id}")
-            envelope = event.as_dict()
-            envelope.pop("eventDigest")
-            if sha256_json(envelope) != event.event_digest:
-                raise EventChainError(f"event digest mismatch at event {event.event_id}")
             previous = event.event_digest
             expected_sequence += 1
-        return True
+        return ChainCheck(True, len(events), previous, (expected_sequence - 1) or None, None)
 
     def export_jsonl(self, execution_id: str) -> bytes:
         return (

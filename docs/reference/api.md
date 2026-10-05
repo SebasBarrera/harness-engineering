@@ -19,7 +19,7 @@ harness api serve --path . --host 127.0.0.1 --port 8765
 | `GET` | `/api/health` | The `doctor` result for the project (`status`, checks) | — |
 | `GET` | `/api/runs` | Runs of the project, newest first | 400 |
 | `GET` | `/api/runs/{run}` | Status projection: execution, phases, validation summary, findings summary, gate, human decision, event count, event-chain check, metrics | 404 |
-| `GET` | `/api/runs/{run}/trace?format=json\|markdown\|jsonl\|sarif` | The trace in the requested format (`application/json`, `text/markdown`, `application/x-ndjson`, `application/sarif+json`); default `json` | 404 |
+| `GET` | `/api/runs/{run}/trace?format=json\|markdown\|jsonl\|sarif` | The trace in the requested format (`application/json`, `text/markdown`, `application/x-ndjson`, `application/sarif+json`); default `json` | 404, 409 (run does not verify under `governance.verifyRecords`) |
 | `GET` | `/api/runs/{run}/evidence` | Evidence records with artifact references | 404 |
 | `GET` | `/api/runs/{run}/findings` | Structured findings | 404 |
 | `GET` | `/api/runs/{run}/retrospective` | Non-mutating retrospective | 404 |

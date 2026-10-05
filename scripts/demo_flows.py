@@ -1073,6 +1073,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         workdir = args.workdir
         workdir.mkdir(parents=True, exist_ok=True)
     transcript = Transcript(args.harness)
+    # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
+    # directory; the demonstration keeps them next to its projects.
+    os.environ.setdefault("HARNESS_ANCHOR_DIR", str(workdir.resolve() / "anchors"))
     try:
         for name in names:
             target = workdir.resolve() / name

@@ -29,7 +29,12 @@ from governed_harness.domain.enums import (
     MemoryLevel,
     RecommendationDecision,
 )
-from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
+from governed_harness.domain.errors import (
+    ConfigurationError,
+    IntegrityError,
+    NotFoundError,
+    PolicyViolationError,
+)
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
@@ -49,6 +54,7 @@ from governed_harness.domain.models import (
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine
+from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
 from governed_harness.runtime import GitAdapter
@@ -112,6 +118,8 @@ class HarnessApplication:
             "deciderIdentity": settings.decider_identity or "default",
             "confirmDecisionDigest": bool(settings.confirm_decision_digest),
             "trustedHosts": list(settings.trusted_hosts) if settings.trusted_hosts else None,
+            "verifyRecords": bool(settings.verify_records),
+            "chainAnchor": settings.chain_anchor or "off",
         }
 
     @staticmethod
@@ -321,6 +329,16 @@ class HarnessApplication:
             )
             events = services.events.list(execution_id)
             metrics = MetricsProjector(services.state).project(execution_id, events)
+            # A broken chain is reported, not raised: status is how a person finds out.
+            chain = services.events.check_chain(execution_id)
+            integrity: dict[str, Any] = {}
+            if not chain.valid:
+                integrity["eventChainError"] = chain.error
+            if services.resolved.project.governance_settings.verify_records:
+                verification = RunVerifier(services).verify(execution_id)
+                integrity["recordsValid"] = verification.valid
+                if not verification.valid:
+                    integrity["verificationSummary"] = verification.summary()
             return {
                 "execution": execution.model_dump(mode="json", by_alias=True),
                 "phases": [item.model_dump(mode="json", by_alias=True) for item in phases],
@@ -337,8 +355,23 @@ class HarnessApplication:
                 if decision
                 else None,
                 "eventCount": len(events),
-                "eventChainValid": services.events.verify_chain(execution_id),
+                "eventChainValid": chain.valid,
+                **integrity,
                 "metrics": {key: value.as_dict() for key, value in metrics.items()},
+            }
+
+    def verify(self, path: Path, execution_id: str | None = None) -> dict[str, Any]:
+        """Verify one run, or every run of the workspace when ``execution_id`` is ``None``:
+        the event chain, the anchor of its head, the records against the events and the
+        artifacts against their digests. Never raises on a failed check; ``valid`` is false."""
+        with self._services(path) as services:
+            verifier = RunVerifier(services)
+            ids = [execution_id] if execution_id else verifier.execution_ids()
+            runs = [verifier.verify(item).as_dict() for item in ids]
+            return {
+                "valid": all(item["valid"] for item in runs),
+                "runCount": len(runs),
+                "runs": runs,
             }
 
     def list_runs(self, path: Path) -> list[Execution]:
@@ -351,7 +384,16 @@ class HarnessApplication:
             )
 
     def trace(self, path: Path, execution_id: str, format: str = "markdown") -> bytes:
+        """Export the trace of a run. Under ``governance.verifyRecords`` the run is verified
+        first and a run that does not verify is not exported (exit code 6)."""
         with self._services(path) as services:
+            if services.resolved.project.governance_settings.verify_records:
+                verification = RunVerifier(services).verify(execution_id)
+                if not verification.valid:
+                    raise IntegrityError(
+                        f"run {execution_id} does not verify ({verification.summary()}); "
+                        "inspect it with harness verify --run"
+                    )
             execution = services.state.get("execution", execution_id, Execution)
             task = services.state.get("task", execution.task_id, Task)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)

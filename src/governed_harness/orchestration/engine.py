@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import contextlib
 import json
+import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -66,7 +68,7 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
-from governed_harness.events import SQLiteEventStore
+from governed_harness.events import AnchorStore, SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.intake import (
@@ -267,6 +269,27 @@ class RunEngine:
         return execution
 
     def continue_execution(self, execution_id: str) -> Execution:
+        try:
+            return self._continue_execution(execution_id)
+        finally:
+            self.anchor_chain(execution_id)
+
+    def anchor_chain(self, execution_id: str) -> None:
+        """Copy the head of the run's event chain to the place ``governance.chainAnchor``
+        names, so that ``harness verify`` detects a chain whose last events were deleted. A
+        chain that does not verify is never anchored, and a failed write never stops a run:
+        ``harness verify`` reports the anchor as absent."""
+        mode = self.s.resolved.project.governance_settings.chain_anchor
+        if not mode or mode == "off":
+            return
+        check = self.s.events.check_chain(execution_id)
+        if not check.valid or check.head_sequence is None or check.head_digest is None:
+            return
+        store = AnchorStore(mode, self.s.paths.workspace, self.s.resolved.project.project_id)
+        with contextlib.suppress(OSError, subprocess.SubprocessError):
+            store.record(execution_id, check.head_sequence, check.head_digest)
+
+    def _continue_execution(self, execution_id: str) -> Execution:
         execution = self.get_execution(execution_id)
         if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
             return execution
@@ -313,7 +336,10 @@ class RunEngine:
         self.s.state.set_flag(f"cancel:{execution_id}", "1")
         actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
         self.s.events.append(execution_id, "run.cancellation.requested", {}, actor=actor)
-        return self._cancel_execution(execution)
+        try:
+            return self._cancel_execution(execution)
+        finally:
+            self.anchor_chain(execution_id)
 
     def decide(
         self,
@@ -435,6 +461,7 @@ class RunEngine:
                 update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
             )
         self._save_execution(updated)
+        self.anchor_chain(execution_id)
         return record
 
     def clarify(
@@ -536,6 +563,7 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
+        self.anchor_chain(execution.execution_id)
         return record, revision.task
 
     # ----- phases -----------------------------------------------------------------

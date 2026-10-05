@@ -338,7 +338,9 @@ def trace(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
-    """Export the trace of a run as Markdown, JSON, JSONL or SARIF."""
+    """Export the trace of a run as Markdown, JSON, JSONL or SARIF. Under
+    `governance.verifyRecords: true` the run is verified first (as `harness verify`) and a run
+    that does not verify is not exported (exit code 6)."""
     data = _call(lambda: HarnessApplication().trace(path, run, format))
     if output:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -346,6 +348,26 @@ def trace(
         typer.echo(str(output))
     else:
         typer.echo(data.decode("utf-8", "replace"), nl=False)
+
+
+@app.command()
+def verify(
+    run: str | None = typer.Option(
+        None, "--run", help="Run (execution) identifier; without it, every run of the workspace"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Verify the record of a run (or of every run): the event chain, the head of the chain
+    against its anchor outside .harness (`governance.chainAnchor`), every record that has an
+    event against that event, the execution's pointers and every referenced artifact against its
+    digest. Prints a report and never repairs anything. Exit code 0 when everything verifies, 6
+    when any check fails, 3 for an unknown run."""
+    report = _call(lambda: HarnessApplication().verify(path, run))
+    _emit(report)
+    if not report["valid"]:
+        raise typer.Exit(code=6)
 
 
 @evidence_app.command("list")

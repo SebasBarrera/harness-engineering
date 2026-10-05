@@ -267,6 +267,7 @@ class VerificationConfig(ConfigModel):
 
 
 DeciderIdentity = Literal["git", "default"]
+ChainAnchorMode = Literal["file", "git-note", "off"]
 
 DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
 """Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
@@ -285,11 +286,18 @@ class GovernanceConfig(ConfigModel):
     * ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and
       asks for the first characters of the ChangeSet digest before recording it.
     * ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these
-      names (DNS-rebinding protection); absent, every host is accepted."""
+      names (DNS-rebinding protection); absent, every host is accepted.
+    * ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records
+      against events, artifact digests, anchor) and refuses to export a run that fails, and
+      ``status`` adds the result of the record check.
+    * ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event
+      chain outside ``.harness`` so that ``harness verify`` detects a truncated chain."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
     trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
+    verify_records: bool | None = Field(default=None, alias="verifyRecords")
+    chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
 
     @field_validator("trusted_hosts")
     @classmethod

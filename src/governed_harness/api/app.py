@@ -13,7 +13,7 @@ from governed_harness.application import HarnessApplication
 from governed_harness.configuration import ConfigurationResolver
 from governed_harness.domain.actors import DEFAULT_API_ACTOR
 from governed_harness.domain.enums import DecisionKind
-from governed_harness.domain.errors import HarnessError, NonHumanActorError
+from governed_harness.domain.errors import HarnessError, IntegrityError, NonHumanActorError
 
 
 class DecisionRequest(BaseModel):
@@ -77,6 +77,8 @@ def create_app(workspace: Path) -> FastAPI:
     ) -> Response:
         try:
             data = application.trace(root, execution_id, format)
+        except IntegrityError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
         media = {

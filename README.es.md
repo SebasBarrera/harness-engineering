@@ -179,7 +179,9 @@ salida real de cada paso:
 4. `harness task create --file task.yaml` y luego `harness run start --task <id>` → código **4**.
 5. `harness status --run <id>`, `harness findings list`, `harness evidence list`.
 6. `harness gate decide … --change-set-digest <digest vigente>` → código **0**.
-7. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (las recomendaciones
+7. `harness verify --run <id>` verifica la cadena de eventos, los registros y los artefactos del
+   run (código 0 o 6).
+8. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (las recomendaciones
    nunca se aplican solas; `harness recommendation decide` registra si una persona acepta, edita o
    rechaza cada una). El harness nunca hace commit: revisa `git diff` y haz el commit tú.
 

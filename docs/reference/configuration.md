@@ -62,6 +62,8 @@ governance:
   - 127.0.0.1
   - localhost
   - ::1
+  verifyRecords: true
+  chainAnchor: file
 ```
 
 ## Fields
@@ -399,6 +401,36 @@ process that types another one.
 | `deciderIdentity` | `default` | `git` | `git`: when a human act has no `--actor` (API: no `actor_id`), the actor is the Git user of the workspace, recorded as `actorId` (the e-mail address in lower case, characters outside `[a-z0-9_.-]` replaced by `-`) and `displayName` (`Name <email>`); without `user.email` and `user.name` the command exits with 2. `default`: `human.local` (CLI) and `human.web` (API). |
 | `confirmDecisionDigest` | `false` | `true` | On a terminal, `gate decide` prints the run, the gate result, the ChangeSet digest and its files on standard error and asks for the first 12 hexadecimal characters of the digest; a wrong answer exits with 5 and records nothing. Without a terminal (scripts, CI) nothing is asked. |
 | `trustedHosts` | every host | `127.0.0.1`, `localhost`, `::1` | The local API answers only requests whose `Host` header is one of these names (400 otherwise), which stops DNS rebinding from a web page. |
+
+### The record
+
+The events of a run are the audit authority; the `records` table that `status`, the API and the
+gate read is a projection of them. `harness verify --run <id>` (or every run without `--run`)
+checks, without repairing anything:
+
+- the event chain: no sequence gap, each event linked to the digest of the one before it, each
+  digest recomputed from its envelope;
+- the anchor of the chain head (below), when one is configured: `matched`, `absent`, `truncated`
+  (the chain no longer contains the anchored event) or `rewritten` (it contains another one);
+- every record that has an event of its own (decisions, gates, ChangeSets, validations,
+  findings, evidence, tool and agent invocations, clarification requests and records), rebuilt
+  from the event and compared with the stored record (`differs`, `missing`, `no-event`), the run's
+  pointers (task, configuration digests, decision, gate, ChangeSet digest) and the phase results;
+- every artifact the run's artifact and evidence records reference: present and with the digest
+  of its URI (`missing`, `content-differs`, `digest-differs`).
+
+It prints a JSON report and exits with 0 when everything verifies and 6 otherwise. `harness
+status` no longer aborts on a broken chain in any project: it reports `eventChainValid: false` and
+the reason in `eventChainError` (before, an edited event made it exit with 1).
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `verifyRecords` | `false` | `true` | `harness trace` (every format, and the API trace route) verifies the run first and refuses to export a run that does not verify (exit 6, API 409); `status` adds `recordsValid` and, when false, `verificationSummary`. |
+| `chainAnchor` | `off` | `file` | After every command that appends events to a run (`run start`, `run continue`, `gate decide`, `run cancel`, `task clarify`), the sequence and digest of the chain head are copied outside `.harness`. `file`: a JSON file per workspace under `$HARNESS_ANCHOR_DIR`, else `$XDG_DATA_HOME/governed-harness/anchors`, else `~/Library/Application Support/governed-harness/anchors` (macOS), `%LOCALAPPDATA%\governed-harness\anchors` (Windows) or `~/.local/share/governed-harness/anchors`. `git-note`: a Git note under `refs/notes/governed-harness` of the workspace repository, attached to a blob named after the run. `off`: no anchor. A chain that does not verify is never anchored, and a failed write does not stop the run (verify then reports `absent`). |
+
+Neither anchor is tamper-proof: a process with your permissions can rewrite the anchor as well as
+`state.db`. It turns a silent truncation into an edit of two places, and a deleted anchor shows up
+as `absent`.
 
 ## Technology profiles
 

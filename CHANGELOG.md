@@ -113,6 +113,23 @@
   `trustedHosts` (`127.0.0.1`, `localhost`, `::1`), which makes the local API answer 400 to any
   other `Host` header. A `project.yaml` without the section keeps the 1.0.0 behaviour and its
   configuration snapshot digest. The `--actor` options default to none in the CLI reference.
+- `harness verify` and a record that is checked against its events (#49). Editing an event payload
+  made `harness status` exit with 1 (`EventChainError`) instead of reporting the broken chain;
+  deleting the last events and rewriting the decider in the `records` projection made `status`
+  show the forged decider with `eventChainValid: true`; `trace` exported without checking
+  anything. `status` now reports `eventChainValid: false` and the reason in `eventChainError` (a
+  defect fix, applied to every project). The new `harness verify [--run <id>]` walks the event
+  chain, rebuilds every record that has an event of its own (decisions, gates, ChangeSets,
+  validations, findings, evidence, tool and agent invocations, clarifications) and compares it
+  with the stored projection, checks the run's pointers and phase results and every referenced
+  artifact against its digest, and prints a JSON report (exit 0, or 6 when a check fails); it
+  repairs nothing. Two new `governance` keys, written by `harness init`: `verifyRecords: true`
+  makes `trace` (and the API trace route) verify first and refuse a run that does not verify
+  (exit 6, API 409) and adds `recordsValid` to `status`; `chainAnchor: file | git-note | off`
+  copies the head of each run's chain, after every command that appends events, to a file under
+  the user's data directory (`$HARNESS_ANCHOR_DIR` overrides it) or to a Git note under
+  `refs/notes/governed-harness`, so `verify` reports a truncated (`truncated`) or replaced
+  (`rewritten`) chain. Without the keys, `trace` exports as in 1.0.0 and nothing is anchored.
 
 ## 1.0.0 - 2026-10-01
 

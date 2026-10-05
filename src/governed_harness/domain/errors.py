@@ -34,3 +34,10 @@ class CancelledError(HarnessError):
 class NonHumanActorError(PolicyViolationError):
     """A human act (a decision, an approval, an answer) named an agent, validator or harness
     actor; exit code 5."""
+
+
+class IntegrityError(HarnessError):
+    """The record of a run did not verify (event chain, records, artifacts or anchor) and the
+    command refuses to use it; exit code 6."""
+
+    exit_code = 6
