@@ -321,7 +321,11 @@ decisiones vinculadas al digest y un registro de eventos encadenado. **No** aís
 lanza: un comando autorizado conserva los permisos de sistema de archivos, red, CPU y memoria de tu
 usuario. `allowNetwork` no se aplica. La cadena de eventos hace detectable una alteración, no la
 impide. Ejecuta repositorios, agentes o extensiones en los que no confías solo dentro de un
-contenedor o una máquina virtual. Ver [SECURITY.md](SECURITY.md).
+contenedor o una máquina virtual. Ver [SECURITY.md](SECURITY.md). La única excepción es el
+confinamiento de escritura de los proveedores de agente: con `runtime.agentSandbox: enforce`, que
+escribe `harness init`, una CLI de agente no puede escribir fuera del espacio de trabajo y de sus
+rutas declaradas (`sandbox-exec` en macOS, `bwrap` en Linux), y un equipo sin ninguno de los dos
+bloquea `IMPLEMENTATION` en lugar de ejecutarla sin confinar.
 
 ## Métricas y monitoreo
 

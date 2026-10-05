@@ -313,7 +313,10 @@ output bounds, secret redaction before persistence, digest-bound decisions and a
 log. It does **not** isolate the processes it launches: an authorized command keeps the file-system,
 network, CPU and memory permissions of your OS user. `allowNetwork` is not enforced. The event chain
 makes tampering detectable, not impossible. Run untrusted repositories, agents or plugins only inside
-a container or VM. See [SECURITY.md](SECURITY.md).
+a container or VM. See [SECURITY.md](SECURITY.md). The one exception is write confinement of agent
+providers: with `runtime.agentSandbox: enforce`, written by `harness init`, an agent CLI cannot
+write outside the workspace and its declared paths (macOS `sandbox-exec`, Linux `bwrap`), and a host
+without either blocks `IMPLEMENTATION` instead of running it unconfined.
 
 ## Metrics and monitoring
 
