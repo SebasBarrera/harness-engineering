@@ -29,7 +29,8 @@
             "C3",
             "T1",
             "A1",
-            "A2"
+            "A2",
+            "P1"
           ],
           "title": "Ruleid",
           "type": "string"

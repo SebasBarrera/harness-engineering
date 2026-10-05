@@ -369,6 +369,130 @@
       "title": "ArchitectureConfig",
       "type": "object"
     },
+    "ArchitectureSettings": {
+      "additionalProperties": false,
+      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "allow": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allow"
+        },
+        "enforce": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enforce"
+        },
+        "layers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LayerConfig"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layers"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "refresh": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "manual"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "enum": [
+                "ddd",
+                "hexagonal",
+                "clean",
+                "layered",
+                "modular-monolith",
+                "microservices",
+                "mvvm",
+                "mvi",
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style"
+        }
+      },
+      "title": "ArchitectureSettings",
+      "type": "object"
+    },
     "BudgetConfig": {
       "additionalProperties": false,
       "description": "Limits per agent call, per task (all its runs) and per run (#42).",
@@ -607,6 +731,17 @@
           "default": null,
           "title": "Closurecommit"
         },
+        "forge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "publisher": {
           "anyOf": [
             {
@@ -731,6 +866,149 @@
         "to"
       ],
       "title": "ForbiddenImport",
+      "type": "object"
+    },
+    "ForgeConfig": {
+      "additionalProperties": false,
+      "description": "Where pull or merge requests, comments, statuses and quality reports go.\n\n``kind: auto`` (or absent) detects the forge from the ``origin`` remote: github.com,\ngitlab.com or a host with ``gitlab`` in its name, bitbucket.org, dev.azure.com or\n``*.visualstudio.com``, and a host with ``gitea`` or ``forgejo`` in its name. Tokens are\nread only from the environment variable ``tokenEnv`` (default per forge) and never logged.",
+      "properties": {
+        "apiUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apiurl"
+        },
+        "baseBranch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basebranch"
+        },
+        "codeQuality": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Codequality"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "github",
+                "gitlab",
+                "bitbucket",
+                "azure-devops",
+                "gitea"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Labels"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template"
+        },
+        "tokenEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenenv"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "cli",
+                "api"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        }
+      },
+      "title": "ForgeConfig",
       "type": "object"
     },
     "GovernanceConfig": {
@@ -969,6 +1247,22 @@
           "title": "Criteriapolicy",
           "type": "string"
         },
+        "projectSetup": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projectsetup"
+        },
         "validateAnswers": {
           "anyOf": [
             {
@@ -1007,6 +1301,51 @@
         "command"
       ],
       "title": "InvariantCheck",
+      "type": "object"
+    },
+    "LayerConfig": {
+      "additionalProperties": false,
+      "description": "A layer: the files that belong to it (``paths``, globs relative to the workspace) and/or\nthe module prefixes (``modules``, dotted: ``shop.domain``) imports name it by.",
+      "properties": {
+        "modules": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modules"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "paths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paths"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "LayerConfig",
       "type": "object"
     },
     "MemoryConfig": {
@@ -1181,6 +1520,106 @@
         }
       },
       "title": "PlanningConfig",
+      "type": "object"
+    },
+    "PrinciplesConfig": {
+      "additionalProperties": false,
+      "description": "Engineering principles checked by deterministic proxies in VERIFICATION, with a\nchecklist for the rest inside the existing review call (no extra agent call).\n\n``mode: enforce`` makes the proxies a mandatory check whose HIGH findings block; ``warn``\nrecords them as LOW. ``duplicationWindow`` (lines), ``maxInheritanceDepth``,\n``unusedPublic`` (YAGNI), ``boyScout`` (changes in files outside the task scope) and\n``checklist`` (the review call) may be set one by one.",
+      "properties": {
+        "boyScout": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boyscout"
+        },
+        "checklist": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checklist"
+        },
+        "duplicationWindow": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 3,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duplicationwindow"
+        },
+        "maxInheritanceDepth": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxinheritancedepth"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unusedPublic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unusedpublic"
+        }
+      },
+      "title": "PrinciplesConfig",
       "type": "object"
     },
     "ProvenanceConfig": {
@@ -1697,6 +2136,102 @@
       "title": "SizeThresholds",
       "type": "object"
     },
+    "StandardsConfig": {
+      "additionalProperties": false,
+      "description": "Language standards packs shipped with the harness.\n\n* ``packs``: ``[auto]`` (or absent) selects the packs of the detected languages; otherwise\n  pack ids (``python``, ``typescript``, ``java``, ...).\n* ``cards: auto``: the cards that apply to the files a call works on are added, compact, to\n  the implement request; the cards a tool cannot verify become the checklist of the\n  existing review call. Selected deterministically and cached by digest.\n* ``tools: detect``: each pack tool whose configuration file is in the repository becomes\n  an optional validator (parsed output, never installed by the harness).\n* ``path``: repository overrides (``<path>/<pack>/cards.yaml``) take precedence over the\n  pack: a card with the same id replaces the pack's card, ``disabled`` drops cards.",
+      "properties": {
+        "cards": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cards"
+        },
+        "disabled": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disabled"
+        },
+        "maxCards": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxcards"
+        },
+        "packs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packs"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "enum": [
+                "detect",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "title": "StandardsConfig",
+      "type": "object"
+    },
     "TestQualityConfig": {
       "additionalProperties": false,
       "description": "Test-quality checks on the ChangeSet (#52): assertion-free tests, coverage of changed\nlines, declared interface methods without tests and a second, reordered test run.",
@@ -1766,6 +2301,74 @@
         }
       },
       "title": "TestQualityConfig",
+      "type": "object"
+    },
+    "TestingConfig": {
+      "additionalProperties": false,
+      "description": "How the change is tested.\n\n* ``strategy: auto`` follows what the repository does (feature files or a BDD framework:\n  ``bdd``; tests: ``conventional``) and, when nothing is known, asks in INTENT;\n* ``tdd``: the tests the change adds must fail on the code before it (red), pass after it\n  (green) and stay green with the principles checks clean (refactor); recorded as evidence;\n* ``bdd``: the acceptance call writes the criteria as Gherkin scenarios, a person approves\n  them, the agent writes the step definitions; the scenarios are frozen.\n\n``featuresDirectory``, ``bddCommand`` and ``testCommand`` override the pack defaults.",
+      "properties": {
+        "bddCommand": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bddcommand"
+        },
+        "featuresDirectory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Featuresdirectory"
+        },
+        "strategy": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "tdd",
+                "bdd",
+                "conventional"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy"
+        },
+        "testCommand": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Testcommand"
+        }
+      },
+      "title": "TestingConfig",
       "type": "object"
     },
     "ToolchainConfig": {
@@ -1889,6 +2492,10 @@
                 "eslint",
                 "tsc",
                 "pytest",
+                "checkstyle",
+                "rubocop",
+                "cargo",
+                "msbuild",
                 "none"
               ],
               "type": "string"
@@ -2072,6 +2679,17 @@
           ],
           "default": null,
           "title": "Outputparsers"
+        },
+        "principles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrinciplesConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "ratchet": {
           "anyOf": [
@@ -2384,6 +3002,17 @@
       ],
       "default": null
     },
+    "architecture": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArchitectureSettings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "budget": {
       "anyOf": [
         {
@@ -2540,6 +3169,28 @@
     },
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig"
+    },
+    "standards": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StandardsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "testing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TestingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "toolchain": {
       "anyOf": [
