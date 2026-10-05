@@ -55,6 +55,26 @@ person deciding sees which requirement lacks a test before approving or requesti
 `warn` it is a `LOW` finding; with `off` the check does not run. See the
 [configuration reference](../reference/configuration.md#requirement-traceability).
 
+## The verification ladder
+
+Since #55 every acceptance criterion may declare the rung of the ladder it requires (`L0` static,
+`L1` unit, `L2` integration with the repository's own doubles, `L3` executable behaviour, `L4`
+external environment, `L5` human). No phase is added; each phase does a part:
+
+| Phase | What it adds |
+|---|---|
+| INTENT | The operational contract in the one clarification message, the interruption budget, and a read-only `locate` call for M and L tasks. |
+| DISCOVERY | The environment preflight: tools, variables, Git hooks, the dirty tree and the baseline's validators. |
+| PLANNING | The verification plan (required and reachable rungs per criterion, and why) and the preflight of probes and frozen acceptance tests on the baseline: `READY`, `PARTIAL` or `UNAVAILABLE`, which waits for a person. |
+| VERIFICATION | Behaviour probes, discriminating evidence and light mutation, and the certification of the ChangeSet (a declared rung not reached fails the verification). |
+| DECISION | The manual checklist, ticked by the person who decides; the gate carries the certification. |
+| CLOSURE | Deferred items bound to the closure commit; staging, push, pull request and comment as the contract authorises. |
+
+A rung is reached only by evidence recorded for the criterion, never by omission; an unavailable
+check is `BLOCKED`, never `PASSED`. See the
+[configuration reference](../reference/configuration.md#verification-ladder) and the
+[guide](../guides/verification-ladder.md).
+
 ## Correcting a failed verification
 
 A `REQUEST_CHANGES` decision has always returned the run from `DECISION` to `IMPLEMENTATION`. With

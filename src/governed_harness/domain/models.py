@@ -325,6 +325,15 @@ class OperationalContract(StrictModel):
     comment: bool | None = None
     coverage_threshold: float | None = Field(default=None, ge=0, le=100)
 
+    @field_validator("branch")
+    @classmethod
+    def _branch_name(cls, value: str | None) -> str | None:
+        if value is not None and (
+            not value.strip() or re.search(r"(\.\.|[\s~^:?*\[\\{}]|@\{|//|^/|/$|\.lock$|^-)", value)
+        ):
+            raise ValueError(f"branch must be a valid Git branch name: {value!r}")
+        return value
+
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         return _omit_unset(self, handler(self))

@@ -281,6 +281,13 @@ findings, `off` skips the check. Only `enforce` accepts a task without acceptanc
 carries an identifier (`A1. ...`, `[B12] ...` or an explicit `requirementId`) and that no test
 names: `enforce` (written by `init`) records a `HIGH` finding, so the gate is `FAILED`; `warn`
 records a `LOW` finding; `off` (a file without the key) skips the check.
+Each acceptance criterion may declare the rung of evidence it requires on the **verification
+ladder** (`L0` static to `L5` human): probes of the program's behaviour, deferred evidence from CI
+closed with `harness evidence attach`, and a checklist ticked in the decision; the harness
+certifies the ChangeSet from recorded evidence only (see
+[docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Under
+`runtime.stateDir: auto` (written by `init`) the state database and artifacts live under the
+user's data directory, not in `.harness/`.
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles
@@ -289,6 +296,7 @@ Full reference: [docs/reference/configuration.md](docs/reference/configuration.m
 |---|---|---|---|
 | Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check .`, `python -m mypy .` |
 | Node.js | `package.json` and lock files | `npm test --silent` (needs a `test` script) | `npm run lint`, `npm run typecheck` (if defined) |
+| Go, Rust, Java/Kotlin (Gradle, Maven), Swift, Android | `go.mod`, `Cargo.toml`, `build.gradle`, `pom.xml`, `Package.swift`, `AndroidManifest.xml` (under `toolchain.extendedProfiles`) | the toolchain's test command | its static check |
 
 An absent optional validator is `NOT_APPLICABLE`; an absent mandatory executable is `BLOCKED`.
 

@@ -18,6 +18,10 @@ workspace:
   snapshot: git
   baseline: manifest
   snapshotCache: true
+  isolation:
+    mode: none
+    branch: harness/{taskId}-{runId}
+    fetch: true
 profiles:
 - auto
 workflow: default_development
@@ -54,6 +58,7 @@ runtime:
   extendedRedaction: true
   gateContract: true
   reproduceFirst: true
+  stateDir: auto
 retention:
   artifactDays: 30
   eventDays: 365
@@ -62,6 +67,13 @@ intake:
   criteriaPolicy: enforce
   ambiguityReview: agent
   validateAnswers: true
+  operationalContract: batch
+  interruptions:
+    target: 2
+    stopConditions:
+    - unresolvable-ambiguity
+    - scope-contradiction
+    - destructive-collision
 verification:
   requirementTraceability: enforce
   outputParsers: true
@@ -94,11 +106,22 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+  ladder:
+    mode: enforce
+    defaultLevel: L1
+    deferredExpiryDays: 14
+    preflight: true
+    capabilityDetection: true
+  mutation:
+    mode: warn
+    maxHunks: 10
+    maxSeconds: 300
 review:
   exceptions: true
   exceptionDays: 30
   agentReview: enforce
   structuredChanges: true
+  manualChecklist: true
 retrospective:
   causal: true
 planning:
@@ -113,6 +136,8 @@ context:
   manifest: auto
   maxFiles: 40
   maxBytes: 400000
+  locate:
+    mode: agent
 budget:
   perCall:
     costUsd: 25
@@ -161,11 +186,35 @@ governance:
 toolchain:
   profileDetection: all
   interpreter: auto
+  extendedProfiles: true
 provenance:
   agentSnapshots: true
   selfReport: true
 delivery:
   closureCommit: branch
+  stage: true
+  push: false
+  pullRequest:
+    create: false
+    draft: true
+  comment: notClean
+environment:
+  dirtyTree: warn
+  baseline: report
+instructions:
+  files:
+  - AGENTS.md
+  - CLAUDE.md
+  - .cursorrules
+  - .cursor/rules
+  - .github/copilot-instructions.md
+  precedence:
+  - harness
+  - AGENTS.md
+  - CLAUDE.md
+  - .cursorrules
+  - .cursor/rules
+  - .github/copilot-instructions.md
 ```
 
 Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
@@ -220,6 +269,10 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |
+| `verification.ladder`, `verification.probes`, `verification.mutation`, `review.manualChecklist` | off when absent; `init` writes all but `probes` | The verification ladder, behaviour probes, light mutation and the manual checklist. See [verification ladder](#verification-ladder). |
+| `intake.operationalContract`, `intake.interruptions`, `context.locate` | off when absent; `init` writes `batch`, the budget and `agent` | The operational contract, the interruption budget and localisation in INTENT. See [intake contract](#operational-contract-and-interruptions). |
+| `environment`, `workspace.isolation`, `runtime.stateDir`, `toolchain.extendedProfiles` | 1.0.0 behaviour when absent; `init` writes each | Environment preflight, worktree isolation (mode `none`), the run registry outside the workspace and the extended built-in profiles. See [delivery hygiene](#delivery-hygiene). |
+| `delivery.stage`, `push`, `pullRequest`, `comment`, `instructions` | off when absent; `init` writes `stage: true`, `push: false`, no pull request, `comment: notClean` and the instruction files | Complete delivery as the operational contract authorises it, and `harness config lint`. See [complete delivery](#complete-delivery). |
 
 ## Located findings
 
@@ -825,6 +878,216 @@ branch of the same name holds another commit, or Git refuses an operation, `CLOS
 with the reason (exit 6) and `run continue` tries again. See [CI integration](../guides/ci-integration.md)
 for `harness verify-approval`, the evidence bundle and `harness pr publish`.
 
+## Verification ladder
+
+The keys of this section (since 1.1, issue #55) are optional: a `project.yaml` without them keeps
+the earlier behaviour and its configuration digest, and a task without the new fields keeps its
+task digest. `harness init` writes them; `harness config validate` shows the effective values
+under `ladder`. Guide: [verification ladder](../guides/verification-ladder.md).
+
+| Rung | Evidence that reaches it, per acceptance criterion |
+|---|---|
+| `L0` static | Every mandatory validator of the gate passed on the ChangeSet digest (VERIFICATION passed). |
+| `L1` unit | An L1 validator of the profile passed and a test of the workspace names the criterion (its id or a name listed in `verification.tests`), or a frozen acceptance test that names it passed. |
+| `L2` integration | The same for a test under an `integration` directory with an L2 validator, or an L2 probe. |
+| `L3` executable behaviour | A probe linked to the criterion ran on every variant and its assertions held. |
+| `L4` external environment | An L4 probe passed, or a deferred verification was closed with passing evidence. |
+| `L5` human | A person ticked the criterion's manual item in a decision on the digest. |
+
+Nothing is credited by omission: a check that did not run, was skipped, waived or unavailable
+adds no rung. A criterion declares what it requires in the task file:
+
+```yaml
+acceptanceCriteria:
+  - criterionId: ac_cli
+    text: The command line prints the discounted total as JSON.
+    verification: {level: L3, probe: cli}
+  - criterionId: ac_e2e
+    text: The checkout flow shows the discount end to end.
+    verification: {level: L4, deferred: CI job e2e}
+  - criterionId: ac_look
+    text: The receipt shows the discount line.
+    verification: {level: L5, manual: The receipt layout shows the discount line}
+```
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `verification.ladder.mode` | off | `enforce` | `enforce`: a criterion whose declared rung is not reached is a `HIGH` finding `certification.level-not-reached` of the mandatory validation `harness.certification`, so VERIFICATION fails (and enters the correction loop) and the gate cannot pass; a preflight `UNAVAILABLE` stops PLANNING. `warn`: the finding is `LOW` and the preflight only reports. A criterion without a declaration requires `defaultLevel`; its gap is reported and never blocks. |
+| `verification.ladder.defaultLevel` | `L1` | `L1` | The rung of a criterion that declares none, for the certification status. |
+| `verification.ladder.deferredExpiryDays` | `14` | `14` | Validity of a pending deferred verification. |
+| `verification.ladder.preflight` | off | `true` | Run the probes and the frozen acceptance tests on a scratch copy of the baseline in PLANNING. |
+| `verification.ladder.capabilityDetection` | off | `true` | Run the read-only detection commands of the profiles' capabilities. Without it a capability is planned as available and marked not checked; certification still needs the validators' results. |
+| `verification.probes` | none | none | Probes of the project; a task may declare more under `probes` (a task probe replaces a project probe with the same id). |
+| `verification.mutation` | off | `mode: warn`, `maxHunks: 10`, `maxSeconds: 300` | Discriminating evidence and light mutation; `enforce` makes `tests.change-not-exercised` and `tests.broken` `HIGH` and the validation `harness.mutation` mandatory. |
+| `review.manualChecklist` | off | `true` | The `manual` items of the criteria and the task's `checklist` are ticked in DECISION; `APPROVE` needs them all (exit 5 otherwise). |
+
+The run's **certification** is recorded at the end of VERIFICATION, again after the decision
+(with the ticked items) and after evidence is attached: `CERTIFIED` (every criterion reached its
+rung), `PARTIAL` (some did, or wait for deferred evidence or a person) or `NOT_CERTIFIED`. The gate
+carries it as a reason code (`CERTIFICATION_CERTIFIED`, `CERTIFICATION_PARTIAL` or
+`CERTIFICATION_NOT_CERTIFIED`); `harness review`, `harness verification show`, the dashboard and
+the pull request comment show it per criterion.
+
+### Probes
+
+```yaml
+probes:
+  - id: cli
+    command: [python, -m, sample.cli, "{amount}"]
+    cwd: .
+    output: json            # or text
+    timeoutSeconds: 60
+    level: L3               # L2, L3 (default) or L4
+    passEnv: [API_BASE_URL] # variables passed as they are; values are redacted
+    variants:
+      - {name: below, values: {amount: "50"}, env: {PYTHONPATH: src}}
+      - {name: above, values: {amount: "200"}, env: {PYTHONPATH: src}}
+    assertions:
+      - {kind: exitCode, equals: 0}
+      - {kind: jsonPath, path: "$.total", present: true}
+      - {kind: differs, path: "$.total"}
+      - {kind: order, path: "$.items[*].id", order: ascending}
+      - {kind: text, matches: "total"}
+```
+
+A probe runs without a shell, once per variant (`variants`, or the cartesian product of a
+`matrix` of placeholder values, or one `default` variant), with the harness's process runner: a
+project probe's executable is granted by the configuration, a task probe's must already be
+granted. Assertions: `exitCode` (`equals`), `jsonPath` (`present`, `equals` or `matches`;
+`$`, `.name`, `['name']`, `[N]`, `[*]`), `differs` (the value, or the whole text output, is not
+the same in every variant), `order` (`ascending`/`descending`, or `before` and `after`) and
+`text` (`matches` or `contains`). A probe whose command is missing, refused or too slow is
+`UNAVAILABLE` and its validation `BLOCKED`, never `PASSED`; a probe that ran and printed
+something other than JSON fails its JSON assertions. Under `enforce` a probe validation is
+mandatory.
+
+### Preflight and the decision to continue uncertified
+
+PLANNING records the verification plan (`harness verification show`): for each criterion the
+rung it requires, the rungs this environment reaches (the profiles' capabilities, the linked
+probes on the baseline) and why, and the route (`local`, `deferred`, `manual` or
+`unreachable`). The run is `READY`, `PARTIAL` (a declared rung only reachable after the run or
+by a person, or a probe that already passes on the baseline) or `UNAVAILABLE` (a probe or the
+frozen acceptance tests cannot run on the baseline, or a declared rung cannot be reached at
+all). Under `enforce`, `UNAVAILABLE` stops PLANNING (`BLOCKED`, exit 6, listed in the inbox)
+until the environment is fixed (`harness run continue`) or a person decides:
+
+```bash
+harness verification decide --run RUN --continue-uncertified --rationale "No device lab here"
+```
+
+The decision is recorded on the run; the unreachable criteria end `WAIVED` (never certified)
+and the unavailable probes are not run (`NOT_APPLICABLE`).
+
+### Deferred verification
+
+A criterion with `deferred` gets, at the end of VERIFICATION, a pending item `D-<criterion>`
+bound to the ChangeSet digest and, at CLOSURE, to the closure commit. It expires after
+`deferredExpiryDays` (the inbox warns two days before and lists expired items). Evidence closes
+it:
+
+```bash
+harness evidence attach --run RUN --item D-ac_e2e --file e2e-junit.xml
+harness evidence attach --run RUN --item D-ac_e2e --file status.json --format ci-status
+```
+
+JUnit passes with at least one test case and none failed (`--case TEXT` narrows it to matching
+test cases); SARIF passes with no `error` result; a CI status (`state` or `conclusion`, with
+`sha`) passes on `success`. Evidence about another commit, an expired item and an item already
+closed are refused (exit 5). The certification is recorded again.
+
+### Light mutation
+
+After the mandatory validators passed, the new or changed test files run on a scratch copy where
+the changed source files have their baseline content: failing there and passing on the change
+is *discriminating*, passing in both is *weak* (`tests.weak`, `LOW`), failing on the change is
+*broken*. Then each changed hunk of the source (a block separated by blank lines; blank and
+comment-only hunks are skipped) is reverted, one at a time, in a scratch copy, and the relevant
+tests run (the changed test files, else the mandatory test command); a hunk whose reversion no
+test notices is `tests.change-not-exercised` at its line. The test command comes from the
+profile's `mutationCommand` (`{paths}` is replaced by the test files): Python and Node.js have
+one; a profile without it is recorded as not run.
+
+### Manual checklist and attachments
+
+```bash
+harness gate decide --run RUN --decision APPROVE --change-set-digest DIGEST \
+  --rationale "Checked the receipt" --check ac_look --check CL-1
+harness evidence attach --run RUN --item ac_look --file receipt.png --manual
+harness evidence attach --task TASK --file bug.png --manual --note "What the customer saw"
+```
+
+Interactive decisions ask about each item. An attachment is stored as an artifact (text files
+redacted) bound to the run's ChangeSet digest and, with `--item`, to a checklist item; with
+`--task` it is intake context bound to the task revision, and the implement request lists it as
+`attachments` (file name, media type, digest, note and the path to read it from).
+
+### Profiles and their capabilities
+
+`resources/verification/capabilities.yaml` declares, for each built-in profile, what it offers
+per rung, the validators that establish it, the read-only detection (a command that must exit 0
+and may have to print a match, or a path that must exist) and the fallback. A project profile
+(`toolchain.profilePaths`) declares its own under `verification: {capabilities, mutationCommand}`.
+Detection never installs anything.
+
+| Profile | L0 | L1 | L2 | L3 detection |
+|---|---|---|---|---|
+| `python_default` | Ruff, Mypy | pytest | `tests/integration` | probes |
+| `node_default` | lint, typecheck scripts | test script | `test/integration` | probes |
+| `go_default` | `go vet` | `go test` | | probes |
+| `rust_default` | `cargo check`, `cargo clippy` | `cargo test` | | probes |
+| `jvm_gradle` | Gradle `check` without tests | Gradle `test` | | probes |
+| `jvm_maven` | `mvn compile` | `mvn test` | | probes |
+| `swift_default` | `swift build` | `swift test` | | probes and `xcrun simctl list devices available` |
+| `android_default` | `lintDebug` | `testDebugUnitTest` | | probes and `adb devices` |
+| every profile | | | | L4: probes and `docker info` |
+
+## Operational contract and interruptions
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `intake.operationalContract` | off | `batch` | INTENT records the contract summary of the task revision (objective, examples, scope, out of scope, definition of done, verification level, branch, push, pull request, comment, coverage threshold), each item from the task's `contract`, else the task, else the project, else `missing`, with a digest bound to the task digest. `batch`: when INTENT asks questions anyway, the request carries the contract in a `contract` section, answered in the same file. `enforce`: INTENT also waits until no item is missing and a person confirmed the summary. |
+| `intake.interruptions` | none | `target: 2` and the three stop conditions | The human interactions of a run (decisions, answers, plan and acceptance decisions, budget raises, preflight decisions, confirmations, attachments) are counted and reported against the target; `unresolvable-ambiguity` (questions again after a clarification), `scope-contradiction` and `destructive-collision` (an isolation collision) are recorded as `stop.condition` events. |
+| `context.locate` | off | `mode: agent` | A read-only `locate` call (provider protocol 1.1) for tasks the router classifies M or L, once per task revision (cached by its digest, reused by later runs), on the router's `locate` rung, else the bottom of the escalation ladder. Ambiguity comes back as questions (rule `A3`); the locations go to the implement request (`locations`) and rank first in the context manifest. |
+
+The answers file may carry the contract and its confirmation:
+
+```yaml
+answers:
+  Q-1: apply_discount(100, 100, 0.1) returns 90.
+contract:
+  verificationLevel: L1
+  createPullRequest: no
+  examples: |
+    apply_discount(100, 100, 0.1) -> 90
+confirmContract: true
+```
+
+`harness task confirm --task TASK --digest DIGEST` confirms the current summary on its own.
+
+## Delivery hygiene
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `environment.tools` | none | none | Each tool prints its version (`command`) matching `pattern`; otherwise DISCOVERY is `BLOCKED`. |
+| `environment.variables` | none | none | Each named variable must be set (only the name is recorded). |
+| `environment.gitHooks` | none | none | `required` hooks must be present and executable in the directory Git uses; the reason names `install`, which only `harness doctor --install-hooks` runs. Hooks are never bypassed. |
+| `environment.dirtyTree` | `allow` | `warn` | Uncommitted changes outside `.harness/`: `block` stops DISCOVERY, `warn` records a `LOW` finding. |
+| `environment.baseline` | off | `report` | The mandatory validators run on a scratch copy of the baseline in DISCOVERY: `require` stops the run when one does not pass, `report` records a `LOW` finding; the comparison with the baseline (`verification.differential`) reuses the result. |
+| `workspace.isolation` | none | `mode: none`, the branch template, `fetch: true` | `mode: worktree` (or `run start --isolate worktree`) runs the phases in a Git worktree under `directory` (default `.harness/worktrees/RUN`) on a new branch (`branch`, default `harness/{taskId}-{runId}`, or the contract's) from `base` (default the current branch), fetched from `remote` (default `origin`) first. An existing branch or directory blocks the run (exit 6, `stop.condition` `destructive-collision`); nothing is reset or deleted, and `run continue` tries again. The closure commit goes on the worktree's branch; `harness run cleanup` removes a finished run's worktree (never its branch). `init` keeps `none`: the documented flows and the README quickstart work in place. |
+| `runtime.stateDir` | the workspace's `.harness/` | `auto` | The state database and the artifact store of the project move to `auto` (`$HARNESS_STATE_DIR`, else `$XDG_DATA_HOME/governed-harness/state`, else the platform's application-data directory) or the path given, in a directory named after the project id and the repository (its Git common directory, shared by its worktrees) with a `registry.json`. The agent sandbox keeps it read-only; `harness registry` and `GET /api/registry` list the projects and their latest runs. `.harness/` keeps the configuration, the lease, caches and scratch copies. |
+| `toolchain.extendedProfiles` | off | `true` | Detect the built-in Go, Rust, JVM (Gradle, Maven), Swift and Android profiles. |
+
+## Complete delivery
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `delivery.stage` | off | `true` | When the change is not pushed, CLOSURE stages only the run's files (`git add -- PATHS`, `git rm --cached` for deleted ones; never `add -A`). |
+| `delivery.push` | off | `false` | Push the closure commit's branch to the remote with the repository's hooks (never `--no-verify`, never forced). A refusal stops CLOSURE (`BLOCKED`); `run continue` tries again. The task's `contract.push` overrides it. |
+| `delivery.pullRequest` | none | `create: false`, `draft: true` | `create`, `base`, `labels`, `template` (a file of the repository, followed by the decision brief) and `draft`, after the push, through the forge of `delivery.publisher.kind` (GitHub; the forge interface is pluggable). The contract's `createPullRequest` overrides `create`. |
+| `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
+| `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
+
 ## Technology profiles
 
 Profiles are built into the package (`src/governed_harness/resources/profiles/`). Detection is
@@ -834,6 +1097,12 @@ read-only and reports a confidence with the marker files it found.
 |---|---|---|---|
 | `python_default` | `pyproject.toml` (0.80), `requirements.txt` (0.45), `pytest.ini` (0.35) | `python.pytest`: `python -m pytest -q` | `python.ruff`: `python -m ruff check .`, `python.mypy`: `python -m mypy .` |
 | `node_default` | `package.json` (0.80), `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` (0.35 each) | `node.test`: `npm test --silent` (requires a `test` script) | `node.lint`: `npm run lint --silent`, `node.typecheck`: `npm run typecheck --silent` (only if the scripts exist) |
+| `go_default` (`extendedProfiles`) | `go.mod` (0.80), `go.sum` (0.20) | `go.test`: `go test ./...` | `go.vet`: `go vet ./...` |
+| `rust_default` (`extendedProfiles`) | `Cargo.toml` (0.80), `Cargo.lock` (0.20) | `rust.test`: `cargo test --quiet` | `rust.check`, `rust.clippy` |
+| `jvm_gradle` (`extendedProfiles`) | `build.gradle`, `build.gradle.kts` (0.70), settings files (0.20), `gradlew` (0.10) | `gradle.test`: `./gradlew test --quiet` | `gradle.check`: `./gradlew check -x test --quiet` |
+| `jvm_maven` (`extendedProfiles`) | `pom.xml` (0.80), `mvnw` (0.10) | `maven.test`: `mvn --batch-mode --quiet test` | `maven.compile` |
+| `swift_default` (`extendedProfiles`) | `Package.swift` (0.80), `Package.resolved` (0.10) | `swift.test`: `swift test` | `swift.build` |
+| `android_default` (`extendedProfiles`) | `app/src/main/AndroidManifest.xml` (0.80), `src/main/AndroidManifest.xml` (0.60), `gradlew` (0.10) | `android.unit`: `./gradlew testDebugUnitTest --quiet` | `android.lint` |
 
 An absent optional validator is recorded as `NOT_APPLICABLE`. An absent mandatory executable is
 `BLOCKED`; a mandatory `python -m <module>` whose module is missing currently runs and is reported

@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+- Verification ladder, certification and delivery hygiene, wave 5 (#55). Every key is optional:
+  a `project.yaml` without it keeps the earlier behaviour and configuration digest, a task without
+  the new fields keeps its digest, and `harness init` writes them (`harness config validate`
+  shows them under `ladder`). Guide: `docs/guides/verification-ladder.md`.
+  - Ladder and certification: criteria declare their rung (`L0`-`L5`) under `verification`
+    with `level`, `probe`, `tests`, `deferred` and `manual`; VERIFICATION certifies the ChangeSet
+    per criterion from recorded
+    evidence only (`CERTIFIED`, `PARTIAL`, `NOT_CERTIFIED`), a declared rung not reached is a
+    `HIGH` `certification.level-not-reached` finding under `enforce`, and the gate, the brief, the
+    dashboard and the pull request comment show the certification.
+  - Probes: commands with generic assertions (exit code, JSON path present, absent, equal or
+    matching, differs between variants, order, text) over a variant matrix; an unavailable probe
+    is `BLOCKED`, never `PASSED`.
+  - Preflight in PLANNING: probes and frozen acceptance tests on a scratch copy of the baseline
+    and the verification plan (required and reachable rungs, and why); `UNAVAILABLE` waits for
+    `harness verification decide --continue-uncertified` (criteria end `WAIVED`).
+  - Deferred verification bound to the digest and the closure commit, closed by
+    `harness evidence attach` with JUnit, SARIF or a CI status, with expiry and inbox entries.
+  - Discriminating evidence and light mutation (`verification.mutation`): new tests classified
+    on the baseline, each changed block reverted in a scratch copy (`tests.change-not-exercised`,
+    `tests.weak`, `tests.broken`).
+  - Profiles: verification capabilities per rung with read-only detection (simulator, emulator,
+    container engine); built-in Go, Rust, JVM (Gradle, Maven), Swift and Android profiles under
+    `toolchain.extendedProfiles`.
+  - Manual checklist ticked in `gate decide --check` (and interactively); a person's attachments
+    bound to a run or, as intake context, to a task revision.
+  - Operational contract in the one clarification message (`intake.operationalContract`),
+    `harness task confirm`, the interruption budget and its stop conditions.
+  - Read-only `locate` call kind (protocol 1.1) for M and L tasks, once per task revision, on the
+    cheapest rung; its locations feed the implement request and the context manifest.
+  - Environment preflight in DISCOVERY and `harness doctor` (tools, variables, Git hooks with
+    `--install-hooks`, dirty tree, baseline).
+  - Worktree isolation (`run start --isolate worktree`, `harness run cleanup`); collisions block
+    and nothing is reset.
+  - Run registry outside the workspace (`runtime.stateDir`), read-only for the agent sandbox,
+    listed by `harness registry` and `GET /api/registry`.
+  - Complete delivery: staging only the run's files, a push that honours the hooks, the pull
+    request (base, labels, template, draft) through a pluggable forge and a comment when the run
+    is not clean, as the contract authorises.
+  - `harness config lint`: tool versions, coverage thresholds, test statements and forbidden
+    flags across `AGENTS.md`, `CLAUDE.md`, Cursor rules and Copilot instructions, with precedence.
+  - Contracts: `task`, `clarification-request`, `clarification-record`, `human-decision`,
+    `agent-invocation` and `project-config` gain optional fields left out when absent; new
+    schemas `certification`, `deferred-verification` and `human-attachment`.
+
 - Better agent results, wave 2 (#52, closes #37, #38, #39, #40, #41, #42, #43, #44; implements
   the proposal of #7 behind a setting). The motivating figures come from the thesis evaluation
   (reported there, not re-measured here). Every setting is optional: a `project.yaml` without

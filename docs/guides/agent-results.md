@@ -14,7 +14,7 @@ configuration digest; `harness init` writes them all (see
 
 ## Request kinds (provider protocol 1.1)
 
-Besides `implement`, a command provider may receive four read-only request kinds. The request
+Besides `implement`, a command provider may receive five read-only request kinds. The request
 says `"kind"`, `"readOnly": true` and carries rendered `"instructions"`; the response is the 1.0
 object (`status`, `summary`, optional `usage`) with a `result` object:
 
@@ -24,13 +24,16 @@ object (`status`, `summary`, optional `usage`) with a `result` object:
 | `acceptance` | SPECIFICATION | `{"tests": [{"path", "content"}]}` | `verification.acceptanceTests.mode: agent` |
 | `plan` | PLANNING | `{"subtasks": [{"title", "requirements", "criteria", "constraints"}]}` | `planning.decomposition: agent` |
 | `review` | INDEPENDENT_REVIEW | `{"findings": [{"severity", "rule", "path", "line", "message", "evidence"}]}` | `review.agentReview` |
+| `locate` | INTENT | `{"locations": [{"path", "line", "evidence", "reason"}], "questions": [{"text"}]}` | `context.locate` (since #55; M and L tasks only, once per task revision) |
 
 A read-only call that changes the workspace is undone, recorded as a HIGH
 `agent.read-only-violation` finding and its answer is discarded. A `result` that does not match
 the table is a protocol error; the phase that asked is blocked. The request, the provider's
 output and the usage it reports are evidence of the run, and each kind may use its own provider,
 model and effort (`intake.clarifyAgent`, `verification.acceptanceTests.author`,
-`planning.planner`, `review.reviewer`), sent in the request as `routing`.
+`planning.planner`, `review.reviewer`, `context.locate.agent`), sent in the request as
+`routing`. Without one, `locate` takes the router's `locate` rung, else the bottom rung of the
+family's escalation ladder: the cheapest adequate model.
 
 A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
 request as a prompt (the instructions, then the request as JSON) and reads the `result` object
@@ -41,7 +44,10 @@ output formats, not against the live agents.
 
 An implement request keeps the 1.0 form unless an agent-results key adds something to it; then
 it is version `1.1` and may carry `kind`, `instructions`, `workspace`, `gate`, `permissions`,
-`routing`, `budget`, `contextFiles`, `lessons` and `acceptanceTests`, as described below.
+`routing`, `budget`, `contextFiles`, `lessons` and `acceptanceTests`, as described below. Since
+#55 it may also carry `locations` (the answer of the `locate` call) and `attachments` (a
+person's intake attachments), each only when there is something to send. See
+[verification ladder](verification-ladder.md).
 
 ## INTENT: ambiguity and completeness (#37)
 

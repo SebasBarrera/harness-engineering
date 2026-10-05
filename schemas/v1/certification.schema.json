@@ -1,0 +1,179 @@
+{
+  "$defs": {
+    "CriterionCertification": {
+      "additionalProperties": false,
+      "properties": {
+        "achieved": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "criterionId": {
+          "title": "Criterionid",
+          "type": "string"
+        },
+        "declared": {
+          "title": "Declared",
+          "type": "boolean"
+        },
+        "evidence": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/LevelEvidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "pending": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Pending",
+          "type": "array"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "required": {
+          "$ref": "#/$defs/VerificationLevel"
+        },
+        "status": {
+          "enum": [
+            "CERTIFIED",
+            "PENDING",
+            "NOT_CERTIFIED",
+            "WAIVED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "criterionId",
+        "required",
+        "declared",
+        "status",
+        "reason"
+      ],
+      "title": "CriterionCertification",
+      "type": "object"
+    },
+    "LevelEvidence": {
+      "additionalProperties": false,
+      "description": "One piece of recorded evidence that a criterion reached a rung.",
+      "properties": {
+        "detail": {
+          "title": "Detail",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/VerificationLevel"
+        },
+        "refs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Refs",
+          "type": "array"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "level",
+        "source",
+        "detail"
+      ],
+      "title": "LevelEvidence",
+      "type": "object"
+    },
+    "VerificationLevel": {
+      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "title": "VerificationLevel",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/certification.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The certification of a run's ChangeSet: for each acceptance criterion the rung it\nrequires, the rung its recorded evidence reaches and why (``verification.ladder``).",
+  "properties": {
+    "certificationId": {
+      "title": "Certificationid",
+      "type": "string"
+    },
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "criteria": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/CriterionCertification"
+      },
+      "title": "Criteria",
+      "type": "array"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "CERTIFIED",
+        "PARTIAL",
+        "NOT_CERTIFIED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "trigger": {
+      "enum": [
+        "VERIFICATION",
+        "DECISION",
+        "EVIDENCE"
+      ],
+      "title": "Trigger",
+      "type": "string"
+    }
+  },
+  "required": [
+    "certificationId",
+    "executionId",
+    "changeSetDigest",
+    "status",
+    "trigger"
+  ],
+  "title": "CertificationRecord",
+  "type": "object"
+}

@@ -159,7 +159,8 @@
             "clarify",
             "review",
             "plan",
-            "acceptance"
+            "acceptance",
+            "locate"
           ],
           "type": "string"
         },

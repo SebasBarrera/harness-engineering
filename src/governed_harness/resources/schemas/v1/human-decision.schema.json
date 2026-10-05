@@ -135,6 +135,14 @@
       "title": "Changesetdigest",
       "type": "string"
     },
+    "checkedItems": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Checkeditems",
+      "type": "array"
+    },
     "configurationDigest": {
       "title": "Configurationdigest",
       "type": "string"

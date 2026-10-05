@@ -73,6 +73,7 @@ nav:
       - Brownfield repository: guides/brownfield.md
       - External agents: guides/external-agents.md
       - Better agent results: guides/agent-results.md
+      - Verification ladder: guides/verification-ladder.md
       - Memory and retrospective decisions: guides/memory.md
       - CI integration: guides/ci-integration.md
   - Reference:

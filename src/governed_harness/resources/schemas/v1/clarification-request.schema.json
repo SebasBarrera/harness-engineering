@@ -29,7 +29,8 @@
             "C3",
             "T1",
             "A1",
-            "A2"
+            "A2",
+            "A3"
           ],
           "title": "Ruleid",
           "type": "string"
@@ -58,8 +59,21 @@
   "$id": "https://example.org/governed-harness/schemas/v1/clarification-request.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The questions INTENT asked about one revision of a task, identified by its digest.",
+  "description": "The questions INTENT asked about one revision of a task, identified by its digest.\n\nSince 1.1 (#55) the same request may carry the operational contract (``contract``): the\nsummary of what was agreed and the items nobody settled, so that a person answers\neverything in one message. A request has at least one question or a contract.",
   "properties": {
+    "contract": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contract"
+    },
     "createdAt": {
       "format": "date-time",
       "title": "Createdat",
@@ -78,10 +92,10 @@
       "type": "string"
     },
     "questions": {
+      "default": [],
       "items": {
         "$ref": "#/$defs/ClarificationQuestion"
       },
-      "minItems": 1,
       "title": "Questions",
       "type": "array"
     },
@@ -109,8 +123,7 @@
     "executionId",
     "taskId",
     "taskDigest",
-    "policy",
-    "questions"
+    "policy"
   ],
   "title": "ClarificationRequest",
   "type": "object"

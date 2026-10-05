@@ -80,7 +80,8 @@
             "C3",
             "T1",
             "A1",
-            "A2"
+            "A2",
+            "A3"
           ],
           "title": "Ruleid",
           "type": "string"
@@ -126,16 +127,21 @@
       "type": "array"
     },
     "answers": {
+      "default": [],
       "items": {
         "$ref": "#/$defs/ClarificationAnswer"
       },
-      "minItems": 1,
       "title": "Answers",
       "type": "array"
     },
     "clarificationId": {
       "title": "Clarificationid",
       "type": "string"
+    },
+    "contractAnswers": {
+      "additionalProperties": true,
+      "title": "Contractanswers",
+      "type": "object"
     },
     "executionId": {
       "title": "Executionid",
@@ -191,7 +197,6 @@
     "taskId",
     "requestId",
     "actor",
-    "answers",
     "previousTaskDigest",
     "taskDigest",
     "previousTaskRef",

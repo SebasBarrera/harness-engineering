@@ -525,8 +525,19 @@
     },
     "ContextConfig": {
       "additionalProperties": false,
-      "description": "The bounded context manifest sent to the agent (#41).",
+      "description": "The bounded context manifest sent to the agent (#41) and, since #55, the localisation\ncall that feeds it (``locate``).",
       "properties": {
+        "locate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocateConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "manifest": {
           "anyOf": [
             {
@@ -607,6 +618,23 @@
           "default": null,
           "title": "Closurecommit"
         },
+        "comment": {
+          "anyOf": [
+            {
+              "enum": [
+                "notClean",
+                "always",
+                "never"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
         "publisher": {
           "anyOf": [
             {
@@ -617,9 +645,127 @@
             }
           ],
           "default": null
+        },
+        "pullRequest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PullRequestConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "push": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Push"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
         }
       },
       "title": "DeliveryConfig",
+      "type": "object"
+    },
+    "EnvironmentConfig": {
+      "additionalProperties": false,
+      "description": "Generic environment preflight in DISCOVERY and ``harness doctor`` (#55, item 10).\n\n* ``tools``: tool versions the project requires;\n* ``variables``: environment variables that must be set (names only, never values);\n* ``gitHooks``: hooks that must be present and executable;\n* ``dirtyTree``: what DISCOVERY does with uncommitted changes (``block``, ``warn``,\n  ``allow``);\n* ``baseline``: run the mandatory validators on the baseline before the change: ``require``\n  blocks DISCOVERY when they do not pass, ``report`` records it.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "enum": [
+                "require",
+                "report",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "dirtyTree": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "warn",
+                "block"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirtytree"
+        },
+        "gitHooks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitHooksConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ToolRequirement"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        },
+        "variables": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variables"
+        }
+      },
+      "title": "EnvironmentConfig",
       "type": "object"
     },
     "FamilyTable": {
@@ -673,6 +819,17 @@
           ],
           "default": null,
           "title": "Ladder"
+        },
+        "locate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "plan": {
           "anyOf": [
@@ -731,6 +888,44 @@
         "to"
       ],
       "title": "ForbiddenImport",
+      "type": "object"
+    },
+    "GitHooksConfig": {
+      "additionalProperties": false,
+      "description": "Git hooks the repository relies on: each must be present and executable (under\n``core.hooksPath`` when set). ``install`` is the command the project declares to install\nthem; the harness names it, and runs it only when a person asks (``harness doctor\n--install-hooks``). Hooks are never bypassed.",
+      "properties": {
+        "install": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Install"
+        },
+        "required": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required"
+        }
+      },
+      "title": "GitHooksConfig",
       "type": "object"
     },
     "GovernanceConfig": {
@@ -928,6 +1123,44 @@
       "title": "GovernanceConfig",
       "type": "object"
     },
+    "InstructionsConfig": {
+      "additionalProperties": false,
+      "description": "``harness config lint`` (#55, item 14): the agent instruction files to read and their\nprecedence (``harness`` is the project configuration). The first entry wins a conflict.",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "precedence": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Precedence"
+        }
+      },
+      "title": "InstructionsConfig",
+      "type": "object"
+    },
     "IntakeConfig": {
       "additionalProperties": false,
       "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.",
@@ -969,6 +1202,34 @@
           "title": "Criteriapolicy",
           "type": "string"
         },
+        "interruptions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterruptionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operationalContract": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "batch",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operationalcontract"
+        },
         "validateAnswers": {
           "anyOf": [
             {
@@ -983,6 +1244,48 @@
         }
       },
       "title": "IntakeConfig",
+      "type": "object"
+    },
+    "InterruptionConfig": {
+      "additionalProperties": false,
+      "description": "The interruption budget of a run (#55, item 8): the number of human interactions the\nrun should need and the conditions under which the harness stops and asks a person.\nInteractions are measured and reported; going over the target is reported, never hidden.",
+      "properties": {
+        "stopConditions": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "unresolvable-ambiguity",
+                  "scope-contradiction",
+                  "destructive-collision"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stopconditions"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        }
+      },
+      "title": "InterruptionConfig",
       "type": "object"
     },
     "InvariantCheck": {
@@ -1007,6 +1310,227 @@
         "command"
       ],
       "title": "InvariantCheck",
+      "type": "object"
+    },
+    "IsolationConfig": {
+      "additionalProperties": false,
+      "description": "Worktree isolation per run (#55, item 9). ``mode: worktree`` (or ``run start --isolate\nworktree``) creates a Git worktree on a new branch from the updated base branch and runs\nthe phases there; a branch or directory that already exists stops the run (BLOCKED), and\nthe harness never resets or deletes anything it did not create.",
+      "properties": {
+        "base": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory"
+        },
+        "fetch": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fetch"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "worktree"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "remote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remote"
+        }
+      },
+      "title": "IsolationConfig",
+      "type": "object"
+    },
+    "LadderConfig": {
+      "additionalProperties": false,
+      "description": "The verification ladder and certification (#55, items 1, 2, 4 and 6).\n\n* ``mode``: ``enforce`` makes a criterion whose declared rung is not reached a ``HIGH``\n  finding (the gate fails until a person decides); ``warn`` makes it ``LOW``; ``off``\n  computes nothing.\n* ``defaultLevel``: the rung a criterion without ``verification.level`` requires for the\n  certification status. Its gap is reported and never blocks: only a declared rung does.\n* ``deferredExpiryDays``: how long a deferred verification may stay pending.\n* ``preflight``: run the probes and the frozen acceptance tests on the baseline in PLANNING\n  and classify the run READY, PARTIAL or UNAVAILABLE before anything changes.\n* ``capabilityDetection``: run the read-only detection commands of the profiles'\n  verification capabilities (a simulator, an emulator, a container engine), never an\n  installation.",
+      "properties": {
+        "capabilityDetection": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capabilitydetection"
+        },
+        "defaultLevel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deferredExpiryDays": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deferredexpirydays"
+        },
+        "detectionTimeoutSeconds": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detectiontimeoutseconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "preflight": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preflight"
+        }
+      },
+      "title": "LadderConfig",
+      "type": "object"
+    },
+    "LocateConfig": {
+      "additionalProperties": false,
+      "description": "Localisation with evidence (#55, item 11): a read-only ``locate`` call that returns\nwhere to intervene (``path:line`` with evidence) before IMPLEMENTATION. It runs only for\ntasks the router classifies M or L, once per task revision (cached by its digest), on the\ncheapest rung of the router; its answer feeds the context manifest.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "maxLocations": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxlocations"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "LocateConfig",
       "type": "object"
     },
     "MemoryConfig": {
@@ -1071,6 +1595,59 @@
         }
       },
       "title": "MemoryConfig",
+      "type": "object"
+    },
+    "MutationConfig": {
+      "additionalProperties": false,
+      "description": "Discriminating evidence and light mutation (#55, item 5): new tests are classified by\nrunning them on the baseline (fail before and pass after: discriminating; pass before and\nafter: weak; fail after: broken), and each changed hunk of the code is reverted in a scratch\ncopy, one at a time, to see that some test fails. ``enforce`` makes a change no test\nexercises ``HIGH``, ``warn`` ``LOW``.",
+      "properties": {
+        "maxHunks": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhunks"
+        },
+        "maxSeconds": {
+          "anyOf": [
+            {
+              "maximum": 7200,
+              "minimum": 10,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxseconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "MutationConfig",
       "type": "object"
     },
     "NotificationsConfig": {
@@ -1183,6 +1760,252 @@
       "title": "PlanningConfig",
       "type": "object"
     },
+    "ProbeAssertion": {
+      "additionalProperties": false,
+      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.",
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        },
+        "equals": {
+          "default": null,
+          "title": "Equals"
+        },
+        "kind": {
+          "enum": [
+            "exitCode",
+            "jsonPath",
+            "differs",
+            "order",
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "matches": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matches"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Present"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ProbeAssertion",
+      "type": "object"
+    },
+    "ProbeDefinition": {
+      "additionalProperties": false,
+      "description": "A command whose observable output shows a behaviour (a CLI, a script, a local server,\na simulator test), with assertions on that output, run once per variant of its matrix:\non the baseline (preflight) and after the change (VERIFICATION). The command runs without\na shell; ``{name}`` placeholders are filled from the variant. A probe that cannot run is\n``BLOCKED``, never ``PASSED``.",
+      "properties": {
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/ProbeAssertion"
+          },
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "criteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Criteria",
+          "type": "array"
+        },
+        "cwd": {
+          "default": ".",
+          "title": "Cwd",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/VerificationLevel",
+          "default": "L3"
+        },
+        "matrix": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "object"
+        },
+        "output": {
+          "default": "text",
+          "enum": [
+            "json",
+            "text"
+          ],
+          "title": "Output",
+          "type": "string"
+        },
+        "passEnv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Passenv",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProbeVariant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "assertions"
+      ],
+      "title": "ProbeDefinition",
+      "type": "object"
+    },
+    "ProbeVariant": {
+      "additionalProperties": false,
+      "description": "One combination of the variant matrix: the values of the command's placeholders and\nenvironment variables set for this run of the probe.",
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Values",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ProbeVariant",
+      "type": "object"
+    },
     "ProvenanceConfig": {
       "additionalProperties": false,
       "description": "Provenance per component (since 1.1).\n\n* ``agentSnapshots``: after each agent invocation the harness records a manifest of the\n  digests of the files in the ChangeSet scope. A later difference that no invocation\n  produced is attributed, per file, as an out-of-band edit, and the provenance of every\n  ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as\n  evidence.\n* ``selfReport``: the request asks the agent for a structured self-report (assumptions,\n  alternatives discarded, low-confidence areas, unrequested changes); the answer is stored\n  as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
@@ -1280,6 +2103,77 @@
       "title": "PublisherConfig",
       "type": "object"
     },
+    "PullRequestConfig": {
+      "additionalProperties": false,
+      "description": "``delivery.pullRequest``: create the pull request of an approved run's branch (#55,\nitem 13), when the operational contract authorises it.",
+      "properties": {
+        "base": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base"
+        },
+        "create": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Create"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Labels"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template"
+        }
+      },
+      "title": "PullRequestConfig",
+      "type": "object"
+    },
     "RetrospectiveConfig": {
       "additionalProperties": false,
       "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
@@ -1346,6 +2240,18 @@
           ],
           "default": null,
           "title": "Exceptions"
+        },
+        "manualChecklist": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manualchecklist"
         },
         "reviewer": {
           "anyOf": [
@@ -1553,6 +2459,18 @@
           ],
           "default": null,
           "title": "Sandboxwritepaths"
+        },
+        "stateDir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statedir"
         },
         "unsupportedClaimSeverity": {
           "anyOf": [
@@ -1768,10 +2686,60 @@
       "title": "TestQualityConfig",
       "type": "object"
     },
+    "ToolRequirement": {
+      "additionalProperties": false,
+      "description": "A tool the environment must provide: ``command`` prints its version and ``pattern`` (a\nregular expression) must match the output, for example ``3\\.12``.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        }
+      },
+      "required": [
+        "name",
+        "command"
+      ],
+      "title": "ToolRequirement",
+      "type": "object"
+    },
     "ToolchainConfig": {
       "additionalProperties": false,
       "description": "Project-defined profiles, validators and interpreter (since 1.1).\n\n* ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology\n  profiles in the format of the built-in ones, relative to the workspace root. ``profiles``\n  may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.\n* ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``\n  (several profiles per repository); ``best`` (or absent) selects the best one.\n* ``interpreter: auto`` runs the validators whose command starts with ``python`` with the\n  project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync\n  python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``\n  (or absent) keeps ``python`` from ``PATH``.\n* ``validators``: validators of the project. An entry with the id of a selected validator\n  replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other\n  entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,\n  ``failureSeverity`` and ``passEnv``.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
+        "extendedProfiles": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extendedprofiles"
+        },
         "interpreter": {
           "anyOf": [
             {
@@ -2061,6 +3029,28 @@
           "default": null,
           "title": "Invariants"
         },
+        "ladder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LadderConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mutation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MutationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "outputParsers": {
           "anyOf": [
             {
@@ -2072,6 +3062,21 @@
           ],
           "default": null,
           "title": "Outputparsers"
+        },
+        "probes": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProbeDefinition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probes"
         },
         "ratchet": {
           "anyOf": [
@@ -2196,6 +3201,19 @@
       "title": "VerificationConfig",
       "type": "object"
     },
+    "VerificationLevel": {
+      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "title": "VerificationLevel",
+      "type": "string"
+    },
     "WebhookConfig": {
       "additionalProperties": false,
       "description": "A URL that receives a JSON ``POST`` when a run waits for a decision or finishes.\n\n``urlEnv`` names an environment variable that holds the URL, so a URL that carries a token\n(Slack, Teams) stays out of ``project.yaml`` and of the configuration snapshot. The payload\ncarries identifiers, statuses and digests only: no rationale, no output, no secret.",
@@ -2277,6 +3295,17 @@
           ],
           "default": null,
           "title": "Baseline"
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IsolationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "root": {
           "default": "..",
@@ -2425,10 +3454,32 @@
       ],
       "default": null
     },
+    "environment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvironmentConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "governance": {
       "anyOf": [
         {
           "$ref": "#/$defs/GovernanceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "instructions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InstructionsConfig"
         },
         {
           "type": "null"

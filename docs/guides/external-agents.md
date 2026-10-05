@@ -217,9 +217,9 @@ finding. See [provider feedback loop](../reference/configuration.md#provider-fee
 ### Request kinds (protocol 1.1)
 
 With the agent-results settings that `harness init` writes, the provider also receives
-read-only requests of kind `clarify`, `acceptance`, `plan` and `review`, and the implement
-request may carry `gate`, `permissions`, `routing`, `budget`, `contextFiles`, `lessons` and
-`acceptanceTests`. An adapter that speaks only the 1.0 protocol treats every request as an
+read-only requests of kind `clarify`, `acceptance`, `plan`, `review` and (since #55)
+`locate`, and the implement request may carry `gate`, `permissions`, `routing`, `budget`,
+`contextFiles`, `lessons`, `acceptanceTests`, `locations` and `attachments`. An adapter that speaks only the 1.0 protocol treats every request as an
 implementation: on a read-only request it changes the workspace, the harness undoes the change
 and blocks the phase. Read `kind` (absent means `implement`), answer the read-only kinds with a
 `result` object and apply `routing.flags` to your CLI if you want the router's model and effort.
