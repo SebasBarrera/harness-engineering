@@ -184,9 +184,59 @@ def project_report(services: EngineServices) -> dict[str, Any]:
     }
 
 
+def engineering_summary(resolved: Any) -> dict[str, Any]:
+    """Effective wave 6 settings for ``harness config validate`` (absent: 1.0.0 behaviour)."""
+    project = resolved.project
+    workspace = resolved.workspace_root
+    technologies = tuple(item.technology for item in resolved.profiles)
+    standards = project.standards
+    packs: list[str] | None = None
+    if standards is not None:
+        packs = [
+            item.pack_id
+            for item in project_standards(
+                workspace,
+                packs=standards.packs,
+                overrides=standards.overrides_path,
+                disabled=standards.disabled or (),
+                technologies=technologies,
+            ).packs
+        ]
+    testing = project.testing
+    principles = project.verification.principles if project.verification else None
+    architecture = project.architecture
+    forge = project.delivery_settings.forge
+    return {
+        "projectKind": detect_project_kind(workspace).kind,
+        "standards": {
+            "cards": standards.cards if standards else "off",
+            "tools": standards.tools if standards else "off",
+            "packs": packs,
+        },
+        "principles": principles.mode if principles else "off",
+        "testing": {
+            "strategy": (
+                testing.strategy
+                if testing and testing.strategy not in {None, "auto"}
+                else detect_testing(workspace, technologies).strategy
+            )
+            if testing
+            else "off",
+        },
+        "architecture": {
+            "mode": architecture.mode if architecture else "off",
+            "style": architecture.style if architecture else None,
+            "layers": len(architecture.layers or ()) if architecture else 0,
+        },
+        "projectSetup": project.intake.project_setup if project.intake else None,
+        "forge": forge.kind if forge and forge.kind else "auto",
+    }
+
+
 __all__ = [
     "architecture_report",
     "decide_architecture",
+    "engineering_summary",
     "project_report",
     "refresh_architecture",
     "standards_report",

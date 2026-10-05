@@ -31,7 +31,7 @@ def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mo
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
     "verification": (
         "interface",
         "architecture",
@@ -46,12 +46,22 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "sarif",
         "riskFactors",
         "acceptanceTests",
+        "principles",
     ),
     "review": ("agentReview", "reviewer", "structuredChanges"),
     "runtime": ("gateContract", "reproduceFirst"),
     "governance": ("stopTheLine", "phasePermissions"),
 }
-AGENT_RESULTS_SECTIONS = ("planning", "context", "budget", "memory", "agentRouting")
+AGENT_RESULTS_SECTIONS = (
+    "planning",
+    "context",
+    "budget",
+    "memory",
+    "agentRouting",
+    "standards",
+    "testing",
+    "architecture",
+)
 
 
 def without_agent_results(root: Path) -> None:

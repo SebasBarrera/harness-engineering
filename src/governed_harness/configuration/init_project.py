@@ -13,6 +13,12 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
+from governed_harness.configuration.engineering import (
+    DEFAULT_DUPLICATION_WINDOW,
+    DEFAULT_FEATURES_DIRECTORY,
+    DEFAULT_INHERITANCE_DEPTH,
+    DEFAULT_MAX_CARDS,
+)
 from governed_harness.configuration.models import (
     DEFAULT_DECISION_EXPIRY_HOURS,
     DEFAULT_EXCEPTION_DAYS,
@@ -77,6 +83,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "criteriaPolicy": "enforce",
             "ambiguityReview": "agent",
             "validateAnswers": True,
+            "projectSetup": "ask",
         },
         "verification": {
             "requirementTraceability": "enforce",
@@ -103,6 +110,15 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "secrets": "context",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
             "acceptanceTests": {"mode": "agent"},
+            "principles": {
+                "mode": "enforce",
+                "duplicationWindow": DEFAULT_DUPLICATION_WINDOW,
+                "maxInheritanceDepth": DEFAULT_INHERITANCE_DEPTH,
+                "unusedPublic": True,
+                "boyScout": True,
+                "checklist": True,
+                "severity": "MEDIUM",
+            },
         },
         "review": {
             "exceptions": True,
@@ -154,6 +170,16 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "toolchain": {"profileDetection": "all", "interpreter": "auto"},
         "provenance": {"agentSnapshots": True, "selfReport": True},
         "delivery": {"closureCommit": "branch"},
+        # Wave 6 (#56): standards packs, testing strategy and architecture; the forge is
+        # detected from the origin remote (delivery.forge only to override it).
+        "standards": {
+            "packs": ["auto"],
+            "cards": "auto",
+            "maxCards": DEFAULT_MAX_CARDS,
+            "tools": "detect",
+        },
+        "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
+        "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

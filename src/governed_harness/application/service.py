@@ -97,6 +97,7 @@ from .clarification_loader import load_clarification_file
 from .engineering import (
     architecture_report,
     decide_architecture,
+    engineering_summary,
     project_report,
     refresh_architecture,
     standards_report,
@@ -227,6 +228,7 @@ class HarnessApplication:
             "governance": self._governance(resolved.project.governance_settings),
             "agentResults": agent_results_summary(resolved.project),
             **self._wave4_settings(resolved),
+            "engineering": engineering_summary(resolved),
             "declarative": declarative,
             "warnings": warnings,
         }
