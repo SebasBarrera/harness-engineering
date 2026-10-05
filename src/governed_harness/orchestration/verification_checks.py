@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -49,7 +49,7 @@ from governed_harness.domain.models import (
     PhaseExecution,
     Task,
 )
-from governed_harness.runtime import CancellationToken
+from governed_harness.runtime import CancellationToken, WorkspaceSnapshot
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidationContext, ValidatorOutput
 
@@ -121,6 +121,9 @@ class VerificationChecks:
         raw = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         diff = parse_unified_diff(raw)
         outputs: list[ValidatorOutput] = []
+        owned = self.results.stop_line.owned_paths_output(execution, change_set)
+        if owned is not None:
+            outputs.append(owned)
         requests = self.results.change_requests(execution)
         if requests:
             outputs.append(self._change_requests(execution, change_set, requests, diff))
@@ -128,57 +131,24 @@ class VerificationChecks:
         if config is None:
             return outputs
         task = engine.run_task(execution)
-        files = self._current_files(diff)
-        checks: list[tuple[str, Any, Callable[[], tuple[list[Issue], str]]]] = []
-        if config.interface not in {None, "off"} and declared_interfaces(task):
-            checks.append(
-                (INTERFACE_ID, config.interface, lambda: self._interface(task, config.interface))
-            )
-        if config.architecture is not None:
-            checks.append(
-                (ARCHITECTURE_ID, "enforce", lambda: self._architecture(execution, files))
-            )
-        if config.security_patterns:
-            checks.append(
-                (
-                    SECURITY_ID,
-                    "enforce",
-                    lambda: (check_security_patterns(diff, files), "security patterns"),
-                )
-            )
-        if config.constraints not in {None, "off"}:
-            checks.append(
-                (
-                    CONSTRAINTS_ID,
-                    config.constraints,
-                    lambda: self._constraints(task, files, config.constraints),
-                )
-            )
-        if config.weakened_controls not in {None, "off"}:
-            checks.append(
-                (
-                    WEAKENED_ID,
-                    config.weakened_controls,
-                    lambda: (
-                        check_weakened_controls(diff, config.weakened_controls),
-                        "weakened controls",
-                    ),
-                )
-            )
-        if config.secrets == "context":
-            checks.append(
-                (
-                    SECRETS_ID,
-                    "enforce",
-                    lambda: (scan_secrets(diff, task_text=_task_text(task)), "secrets in context"),
-                )
-            )
-        for validator_id, policy, check in checks:
-            started = datetime.now(UTC)
-            issues, label = check()
+        files = current_files(self.results.s.paths.workspace, diff)
+        for item in pure_checks(
+            config,
+            task,
+            diff,
+            files,
+            self.results.s.paths.workspace,
+            self.results.baseline_snapshot(execution),
+        ):
             outputs.append(
                 self._output(
-                    execution, change_set, validator_id, policy, issues, label, started=started
+                    execution,
+                    change_set,
+                    item.validator_id,
+                    item.policy,
+                    item.issues,
+                    item.label,
+                    started=item.started,
                 )
             )
         if config.test_quality is not None:
@@ -192,24 +162,6 @@ class VerificationChecks:
         return outputs
 
     # ----- helpers ---------------------------------------------------------------------------
-    def _current_files(self, diff: Sequence[DiffFile]) -> dict[str, str]:
-        workspace = self.results.s.paths.workspace
-        files: dict[str, str] = {}
-        for item in diff:
-            if item.is_deleted:
-                continue
-            path = workspace / item.path
-            try:
-                files[item.path] = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                continue
-        return files
-
-    def _baseline_text(self, execution: Execution, path: str) -> str | None:
-        snapshot = self.results.baseline_snapshot(execution)
-        state = snapshot.files.get(path) if snapshot else None
-        return state.text if state else None
-
     def _output(
         self,
         execution: Execution,
@@ -286,93 +238,6 @@ class VerificationChecks:
             started_at=started,
         )
         return ValidatorOutput(result, ())
-
-    # ----- interface (#40) -------------------------------------------------------------------
-    def _interface(self, task: Task, policy: str) -> tuple[list[Issue], str]:
-        workspace = self.results.s.paths.workspace
-        severity = FindingSeverity.HIGH if policy == "enforce" else FindingSeverity.LOW
-        issues: list[Issue] = []
-        for stub, module in declared_interfaces(task):
-            declared = _read(workspace, stub)
-            implementation = _read(workspace, module)
-            if declared is None or implementation is None:
-                missing = stub if declared is None else module
-                issues.append(
-                    Issue(
-                        rule_id="interface.missing",
-                        severity=severity,
-                        message=f"The declared interface file {missing} is not in the workspace",
-                        path=missing,
-                        category="interface",
-                        recommendation="Keep the declared interface and its module in place.",
-                    )
-                )
-                continue
-            issues.extend(
-                check_interface(
-                    declared,
-                    implementation,
-                    declared_path=stub,
-                    implementation_path=module,
-                    severity=severity,
-                )
-            )
-        return issues, "declared interface conformance"
-
-    # ----- architecture (#40) ----------------------------------------------------------------
-    def _architecture(
-        self, execution: Execution, files: Mapping[str, str]
-    ) -> tuple[list[Issue], str]:
-        config = self.config.architecture
-        severity = config.severity or FindingSeverity.MEDIUM
-        limits = ArchitectureLimits(
-            max_module_lines=config.max_module_lines,
-            max_function_lines=config.max_function_lines,
-            max_complexity=config.max_complexity,
-            forbidden_imports=tuple(
-                (item.source, item.target) for item in config.forbidden_imports or ()
-            ),
-        )
-        issues = check_architecture(files, limits, severity=severity)
-        kept: list[Issue] = []
-        for issue in issues:
-            # A limit the file already exceeded on the baseline (same rule, same subject) is
-            # pre-existing: reported as LOW so the agent is not blamed for it.
-            before = self._baseline_text(execution, issue.path) if issue.path else None
-            previous = (
-                check_architecture({issue.path or "": before}, limits, severity=severity)
-                if before is not None
-                else []
-            )
-            if any(
-                item.rule_id == issue.rule_id and _subject(item.message) == _subject(issue.message)
-                for item in previous
-            ):
-                kept.append(
-                    replace(
-                        issue,
-                        severity=FindingSeverity.LOW,
-                        message="Pre-existing: " + issue.message,
-                    )
-                )
-            else:
-                kept.append(issue)
-        return kept, "architecture limits"
-
-    # ----- constraints (#52) -----------------------------------------------------------------
-    def _constraints(
-        self, task: Task, files: Mapping[str, str], policy: str
-    ) -> tuple[list[Issue], str]:
-        declared = task.metadata.get("checks") or []
-        checks = constraints_from_task(
-            task.constraints, [str(item) for item in declared] if isinstance(declared, list) else []
-        )
-        if not checks:
-            return [], "task constraints (none verifiable)"
-        severity = FindingSeverity.HIGH if policy == "enforce" else FindingSeverity.LOW
-        return check_constraints(checks, files, severity=severity), (
-            f"task constraints ({', '.join(checks)})"
-        )
 
     # ----- test quality (#52) ----------------------------------------------------------------
     def _test_quality(
@@ -829,4 +694,177 @@ def _task_text(task: Task) -> str:
             *(item.text for item in task.acceptance_criteria),
             *(item.verification_hint or "" for item in task.acceptance_criteria),
         ]
+    )
+
+
+@dataclass(frozen=True)
+class CheckResult:
+    validator_id: str
+    policy: str
+    issues: list[Issue]
+    label: str
+    started: datetime
+
+
+def current_files(workspace: Path, diff: Sequence[DiffFile]) -> dict[str, str]:
+    """The current text of every file the diff adds or changes."""
+    files: dict[str, str] = {}
+    for item in diff:
+        if item.is_deleted:
+            continue
+        try:
+            files[item.path] = (workspace / item.path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+    return files
+
+
+def pure_checks(
+    config: Any,
+    task: Task,
+    diff: Sequence[DiffFile],
+    files: Mapping[str, str],
+    workspace: Path,
+    baseline: WorkspaceSnapshot | None,
+) -> list[CheckResult]:
+    """The checks that read only the diff and the files (VERIFICATION and ``harness check``):
+    interface, architecture, security patterns, constraints, weakened controls and secrets."""
+    planned: list[tuple[str, str, Callable[[], tuple[list[Issue], str]]]] = []
+    if config.interface not in {None, "off"} and declared_interfaces(task):
+        planned.append(
+            (
+                INTERFACE_ID,
+                config.interface,
+                lambda: interface_issues(workspace, task, config.interface),
+            )
+        )
+    if config.architecture is not None:
+        planned.append(
+            (
+                ARCHITECTURE_ID,
+                "enforce",
+                lambda: architecture_issues(config.architecture, files, baseline),
+            )
+        )
+    if config.security_patterns:
+        planned.append(
+            (
+                SECURITY_ID,
+                "enforce",
+                lambda: (check_security_patterns(diff, files), "security patterns"),
+            )
+        )
+    if config.constraints not in {None, "off"}:
+        planned.append(
+            (
+                CONSTRAINTS_ID,
+                config.constraints,
+                lambda: constraint_issues(task, files, config.constraints),
+            )
+        )
+    if config.weakened_controls not in {None, "off"}:
+        planned.append(
+            (
+                WEAKENED_ID,
+                config.weakened_controls,
+                lambda: (
+                    check_weakened_controls(diff, config.weakened_controls),
+                    "weakened controls",
+                ),
+            )
+        )
+    if config.secrets == "context":
+        planned.append(
+            (
+                SECRETS_ID,
+                "enforce",
+                lambda: (scan_secrets(diff, task_text=_task_text(task)), "secrets in context"),
+            )
+        )
+    results: list[CheckResult] = []
+    for validator_id, policy, check in planned:
+        started = datetime.now(UTC)
+        issues, label = check()
+        results.append(CheckResult(validator_id, policy, issues, label, started))
+    return results
+
+
+def interface_issues(workspace: Path, task: Task, policy: str) -> tuple[list[Issue], str]:
+    severity = FindingSeverity.HIGH if policy == "enforce" else FindingSeverity.LOW
+    issues: list[Issue] = []
+    for stub, module in declared_interfaces(task):
+        declared = _read(workspace, stub)
+        implementation = _read(workspace, module)
+        if declared is None or implementation is None:
+            missing = stub if declared is None else module
+            issues.append(
+                Issue(
+                    rule_id="interface.missing",
+                    severity=severity,
+                    message=f"The declared interface file {missing} is not in the workspace",
+                    path=missing,
+                    category="interface",
+                    recommendation="Keep the declared interface and its module in place.",
+                )
+            )
+            continue
+        issues.extend(
+            check_interface(
+                declared,
+                implementation,
+                declared_path=stub,
+                implementation_path=module,
+                severity=severity,
+            )
+        )
+    return issues, "declared interface conformance"
+
+
+def architecture_issues(
+    config: Any, files: Mapping[str, str], baseline: WorkspaceSnapshot | None
+) -> tuple[list[Issue], str]:
+    severity = config.severity or FindingSeverity.MEDIUM
+    limits = ArchitectureLimits(
+        max_module_lines=config.max_module_lines,
+        max_function_lines=config.max_function_lines,
+        max_complexity=config.max_complexity,
+        forbidden_imports=tuple(
+            (item.source, item.target) for item in config.forbidden_imports or ()
+        ),
+    )
+    kept: list[Issue] = []
+    for issue in check_architecture(files, limits, severity=severity):
+        # A limit the file already exceeded on the baseline (same rule, same subject) is
+        # pre-existing: reported as LOW so the agent is not blamed for it.
+        state = baseline.files.get(issue.path) if baseline and issue.path else None
+        before = state.text if state else None
+        previous = (
+            check_architecture({issue.path or "": before}, limits, severity=severity)
+            if before is not None
+            else []
+        )
+        if any(
+            item.rule_id == issue.rule_id and _subject(item.message) == _subject(issue.message)
+            for item in previous
+        ):
+            kept.append(
+                replace(
+                    issue, severity=FindingSeverity.LOW, message="Pre-existing: " + issue.message
+                )
+            )
+        else:
+            kept.append(issue)
+    return kept, "architecture limits"
+
+
+def constraint_issues(task: Task, files: Mapping[str, str], policy: str) -> tuple[list[Issue], str]:
+    declared = task.metadata.get("checks") or []
+    checks = constraints_from_task(
+        task.constraints, [str(item) for item in declared] if isinstance(declared, list) else []
+    )
+    if not checks:
+        return [], "task constraints (none verifiable)"
+    severity = FindingSeverity.HIGH if policy == "enforce" else FindingSeverity.LOW
+    return check_constraints(checks, files, severity=severity), (
+        f"task constraints ({', '.join(checks)})"
     )

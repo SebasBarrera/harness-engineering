@@ -18,7 +18,7 @@ from governed_harness.agents import (
     SimulatedAgentContext,
     render_instructions,
 )
-from governed_harness.agents.requests import REQUEST_SCHEMA_VERSION, CallKind
+from governed_harness.agents.requests import READ_ONLY_KINDS, REQUEST_SCHEMA_VERSION, CallKind
 from governed_harness.agents.routing import RoutingHistory, TaskSignals, provider_family, select
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.agent_results import AgentCallConfig, BudgetConfig
@@ -93,13 +93,17 @@ class AgentCallOutcome:
 class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
         from governed_harness.orchestration.differential import Differential
+        from governed_harness.orchestration.gate_contract import GateContract
         from governed_harness.orchestration.intent_review import IntentReview
+        from governed_harness.orchestration.stop_line import StopLine
         from governed_harness.orchestration.verification_checks import VerificationChecks
 
         self.engine = engine
         self.intent = IntentReview(self)
         self.verification = VerificationChecks(self)
         self.differential = Differential(self)
+        self.stop_line = StopLine(self)
+        self.gate = GateContract(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(
@@ -790,7 +794,24 @@ class AgentResults:
         kind: CallKind,
         grants: list[CapabilityGrant],
     ) -> dict[str, Any]:
-        return {}
+        """The permissions of a call kind derived from the agent's capability grants, recorded
+        as evidence (``governance.phasePermissions``)."""
+        from governed_harness.orchestration.gate_contract import permissions
+
+        value = permissions(
+            kind,
+            grants,
+            kind in READ_ONLY_KINDS,
+            self.engine._agent_network_allowed(),
+        )
+        self.record_json(
+            execution,
+            phase.phase_id,
+            value,
+            kind="agent-permissions",
+            summary=f"Permissions of the {kind} call, derived from the capability grants",
+        )
+        return value
 
     def implementation_task(self, execution: Execution, task: Task) -> Task:
         return task
@@ -804,5 +825,28 @@ class AgentResults:
         actor: Actor,
         grants: list[CapabilityGrant],
     ) -> dict[str, Any] | None:
+        """The keys the agent-results settings add to the implement request; with any of
+        them the request also carries its kind and rendered instructions (schema 1.1)."""
         extra = self.request_common(execution, phase, "implement", task, provider_id, grants)
-        return extra or None
+        if self.gate.enabled:
+            extra["gate"] = self.gate.contract(execution)
+            self.gate.write_check_state(execution, task)
+        extra.update(self.implement_context(execution, phase, task))
+        if not extra:
+            return None
+        workspace = str(self.s.paths.workspace)
+        extra.update(
+            {
+                "schemaVersion": REQUEST_SCHEMA_VERSION,
+                "kind": "implement",
+                "workspace": workspace,
+                "instructions": render_instructions("implement", workspace=workspace),
+            }
+        )
+        return extra
+
+    def implement_context(
+        self, execution: Execution, phase: PhaseExecution, task: Task
+    ) -> dict[str, Any]:
+        """The context manifest (#41) and the active lessons (#43) of an implement call."""
+        return {}

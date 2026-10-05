@@ -62,6 +62,7 @@ from governed_harness.domain.models import (
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
+from governed_harness.orchestration.gate_contract import run_check
 from governed_harness.orchestration.retention import RetentionCollector
 from governed_harness.orchestration.verification import RunVerifier
 from governed_harness.profiles import detect_profiles
@@ -70,7 +71,7 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
-from .agent_results import parse_change_requests
+from .agent_results import parse_change_requests, quarantine_run
 from .clarification_loader import load_clarification_file
 from .exceptions import (
     ExceptionOptions,
@@ -374,6 +375,21 @@ class HarnessApplication:
             execution_id = self._run_id(services, execution_id)
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    def check(self, path: Path, execution_id: str | None = None) -> dict[str, Any]:
+        """``harness check``: the gate's validators and diff checks on the workspace, with
+        nothing recorded (it reads the configuration and the run's check state only)."""
+        return run_check(path, execution_id)
+
+    def quarantine_run(
+        self, path: Path, execution_id: str, actor_id: str | None = None
+    ) -> dict[str, Any]:
+        """Quarantine the changes of a stopped run and restore the baseline
+        (``governance.stopTheLine``); a person only."""
+        with self._services(path) as services, self._leased(services, "run quarantine"):
+            execution_id = self._run_id(services, execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return quarantine_run(services, execution_id, decider)
 
     @classmethod
     def _after(cls, services: EngineServices, execution: Execution) -> Execution:

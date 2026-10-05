@@ -413,6 +413,49 @@ def run_cancel(
     _emit(execution, kind="execution")
 
 
+@app.command("check")
+def check(
+    run: str | None = typer.Option(
+        None,
+        "--run",
+        help="Run whose task and baseline the diff checks use (default: the latest run that "
+        "wrote a check state)",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Run the validators of the gate and the enabled diff checks on the workspace, without
+    recording anything (`runtime.gateContract`). The agent can run it before it finishes; the
+    implement request carries the exact command. Exit 0 when every mandatory validator passes
+    and no enforced check reports a blocking problem, 6 otherwise."""
+    result = _call(lambda: HarnessApplication().check(path, run))
+    _emit(result, json_output, kind="check")
+    if result["status"] != "PASSED":
+        raise typer.Exit(code=6)
+
+
+@run_app.command("quarantine")
+def run_quarantine(
+    run: str = RUN_OPTION,
+    actor: str | None = typer.Option(
+        None,
+        "--actor",
+        help=ACTOR_HELP,
+        show_default=False,
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Keep the changes of a run that stopped without approval as a quarantined patch and
+    restore the workspace to its baseline (`governance.stopTheLine`). This releases a line
+    blocked by `stopTheLine: block`. A run that is closed or still open for a decision is
+    refused (exit 5)."""
+    _emit(_call(lambda: _acting().quarantine_run(path, run, actor)), kind="quarantine")
+
+
 @run_app.command("list")
 def run_list(
     path: Path = typer.Option(

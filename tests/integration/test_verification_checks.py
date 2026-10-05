@@ -82,9 +82,10 @@ def latest(application: HarnessApplication, workspace: Path, run: str) -> dict[s
         items = services.state.list("validation", ValidationResult, execution_id=run)
     result: dict[str, ValidationResult] = {}
     for item in items:
-        if item.validator_id not in result or item.finished_at >= result[
-            item.validator_id
-        ].finished_at:
+        if (
+            item.validator_id not in result
+            or item.finished_at >= result[item.validator_id].finished_at
+        ):
             result[item.validator_id] = item
     return result
 
@@ -181,9 +182,7 @@ def test_weakened_controls_and_context_secrets(python_workspace: Path, tmp_path:
     application, run = run_task(
         python_workspace,
         tmp_path,
-        task_yaml(
-            [patch("src/sample/pricing.py", GOOD), patch("tests/test_pricing.py", weakened)]
-        ),
+        task_yaml([patch("src/sample/pricing.py", GOOD), patch("tests/test_pricing.py", weakened)]),
     )
     found = rules(application, python_workspace, run)
     assert found["weakened.skip-added"].severity is FindingSeverity.HIGH

@@ -276,6 +276,9 @@ class RunEngine:
             raise ConfigurationError(
                 f"task project {task.project_id} does not match {self.s.resolved.project.project_id}"
             )
+        if self.results.active:
+            # governance.stopTheLine: block refuses a run on top of unapproved changes.
+            self.results.stop_line.check_new_run(task.project_id)
         execution_id = new_id("run")
         resolved_dict = self.s.resolved.model_dump(mode="json", by_alias=True)
         config_ref = self.s.artifacts.put_json(
@@ -353,7 +356,11 @@ class RunEngine:
 
     def continue_execution(self, execution_id: str) -> Execution:
         try:
-            return self._continue_execution(execution_id)
+            execution = self._continue_execution(execution_id)
+            if self.results.active:
+                # governance.stopTheLine: quarantine or block a run that stopped unapproved.
+                execution = self.results.stop_line.after_continue(execution)
+            return execution
         finally:
             self.anchor_chain(execution_id)
 
@@ -424,7 +431,10 @@ class RunEngine:
         actor = Actor(actor_type=ActorType.HUMAN, actor_id=actor_id)
         self.s.events.append(execution_id, "run.cancellation.requested", {}, actor=actor)
         try:
-            return self._cancel_execution(execution)
+            cancelled = self._cancel_execution(execution)
+            if self.results.active:
+                self.results.stop_line.stop(cancelled, "cancelled")
+            return cancelled
         finally:
             self.anchor_chain(execution_id)
 
@@ -581,6 +591,8 @@ class RunEngine:
                 update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
             )
         self._save_execution(updated)
+        if decision is DecisionKind.REJECT and self.results.active:
+            self.results.stop_line.stop(updated, "rejected")
         self.anchor_chain(execution_id)
         return record
 
