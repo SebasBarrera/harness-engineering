@@ -48,7 +48,7 @@
 - `VERIFICATION` reports requirements that no test names (#35). Agents claimed that every
   requirement had tests, and the suite ran without relating requirements to tests. A new step,
   `traceability.requirements`, runs after the technology validators: it identifies a requirement by
-  the token that starts its text (`A1. `, `[B12] `, `X8: `) or by a `requirementId` written in the
+  the token that starts its text (`A1.`, `[B12]` or `X8:` followed by a space) or by a `requirementId` written in the
   task file (generated ids do not count; requirements without an identifier are skipped and
   counted), and looks for a test whose file, class or function name contains the identifier as a
   token (`test_a1_...`, `TestA1`) or whose docstring, string constants or source contain it as a

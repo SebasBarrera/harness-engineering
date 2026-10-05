@@ -43,8 +43,8 @@ stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
 
 After the technology validators, `VERIFICATION` relates every identified requirement of the task to
 the tests of the workspace (validator `traceability.requirements`, no language model, nothing
-executed). A requirement is identified by the token that starts its text (`A1. `, `[B12] `,
-`X8: `) or by a `requirementId` written in the task file; requirements without one are skipped
+executed). A requirement is identified by the token that starts its text (`A1.`, `[B12]` or `X8:`
+followed by a space) or by a `requirementId` written in the task file; requirements without one are skipped
 and counted. A test names a requirement when its file, class or function name contains the
 identifier as a token (`test_a1_rounding`, `TestA1`) or when its source, docstring or string
 constants (a `parametrize` id) contain the identifier as a whole word. The mapping is recorded as
