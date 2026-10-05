@@ -88,9 +88,28 @@ verification:
 | `retention` | written by `init` | **Declarative: no retention job exists.** |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
+| `verification.outputParsers` | `false` when the key is absent; `init` writes `true` | Parse the output of a failing command validator into one finding per reported problem, with path, line and the tool's rule. See [located findings](#located-findings). |
 | `review.exceptions` | `false` when the section or the key is absent; `init` writes `true` | `APPROVE_EXCEPTION` records an exception with an expiry, a scope, optional alternative evidence and a follow-up; while it is in force later runs do not block on the findings it covers. See [exceptions](#exceptions). |
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
+
+## Located findings
+
+Without `verification.outputParsers` a failing command validator records one finding
+(`<validator>.failed`, `HIGH` when mandatory, `MEDIUM` when optional) without a location, as in
+1.0.0. With `outputParsers: true` it also records one finding per problem the tool reported,
+with rule `<validator>.<tool rule>` (for example `python.ruff.F401`, `python.mypy.return-value`,
+`python.pytest.test-failed`), the path relative to the workspace and the line. The formats are
+recognized by content: SARIF 2.1.0, ESLint JSON, Ruff JSON, JUnit XML (printed, or written to a
+file named with `--junitxml`, `--junit-xml`, `--output-file` or `-o` inside the workspace), and
+the text output of Ruff (concise and full), Mypy, TypeScript `tsc` and pytest (`FAILED`/`ERROR`
+summary lines, with the line of the test taken from the traceback). Errors keep the severity of
+the summary finding, so the gate status is the one the summary already decides; warnings are
+`LOW` and notes are not recorded. At most 200 findings are kept per validator run, and an `INFO`
+finding counts the rest. A validator that passes is not parsed. The SARIF export
+(`harness trace --format sarif`) carries a `partialFingerprints` entry `harnessFinding/v1` per
+result (rule, validator, path and message without positions, stable across attempts and runs)
+and the finding, run and validator ids in `properties`.
 
 ## Exceptions
 

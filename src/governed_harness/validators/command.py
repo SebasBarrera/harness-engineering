@@ -21,8 +21,9 @@ from governed_harness.domain.models import (
     ToolInvocation,
     ValidationResult,
 )
-from governed_harness.runtime.process_runner import CommandSpec
+from governed_harness.runtime.process_runner import CommandSpec, ProcessResult
 from governed_harness.validators.base import ValidationContext, ValidatorOutput
+from governed_harness.validators.parsers import MAX_ISSUES, parse_output, report_files
 
 # Exits with _MODULE_MISSING_EXIT_CODE when the module named in argv[1] cannot be found.
 _MODULE_MISSING_EXIT_CODE = 3
@@ -165,7 +166,7 @@ class CommandValidator:
                 introduced=None,
                 provenance=context.provenance.model_copy(update={"actor": actor}),
             )
-            findings = (finding,)
+            findings = (finding, *self._parsed_findings(context, process, finding, actor))
         result = ValidationResult(
             validation_result_id=new_id("validation"),
             execution_id=context.execution_id,
@@ -184,6 +185,73 @@ class CommandValidator:
             provenance=context.provenance.model_copy(update={"actor": actor}),
         )
         return ValidatorOutput(result, findings, (tool,))
+
+    def _parsed_findings(
+        self, context: ValidationContext, process: ProcessResult, summary: Finding, actor: Actor
+    ) -> list[Finding]:
+        """One finding per problem the tool reported, when ``verification.outputParsers`` is on.
+
+        Errors keep the severity of the summary finding (so the gate outcome is the one the
+        summary already decides) and warnings are ``LOW``; the rule is
+        ``<validator>.<tool rule>``."""
+        if not context.parse_output:
+            return []
+        reports = []
+        for path in report_files(context.definition.command or (), context.workspace):
+            try:
+                reports.append(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+        issues = parse_output(
+            process.stdout.decode("utf-8", "replace"),
+            process.stderr.decode("utf-8", "replace"),
+            context.workspace,
+            tuple(reports),
+        )
+        severities = {
+            "error": summary.severity,
+            "warning": FindingSeverity.LOW,
+            "note": FindingSeverity.INFO,
+        }
+        findings = [
+            Finding(
+                finding_id=new_id("finding"),
+                execution_id=context.execution_id,
+                validator_id=self.validator_id,
+                rule_id=f"{self.validator_id}.{issue.rule}",
+                category="validation",
+                severity=severities[issue.level],
+                message=issue.message,
+                location=FindingLocation(
+                    path=issue.path,
+                    start_line=issue.line,
+                    end_line=issue.end_line or issue.line,
+                ),
+                evidence_refs=summary.evidence_refs,
+                recommendation=f"Reported by {issue.tool or self.validator_id}; fix it at the "
+                "location shown.",
+                introduced=None,
+                provenance=context.provenance.model_copy(update={"actor": actor}),
+            )
+            for issue in issues[:MAX_ISSUES]
+        ]
+        if len(issues) > MAX_ISSUES:
+            findings.append(
+                Finding(
+                    finding_id=new_id("finding"),
+                    execution_id=context.execution_id,
+                    validator_id=self.validator_id,
+                    rule_id=f"{self.validator_id}.more-issues",
+                    category="validation",
+                    severity=FindingSeverity.INFO,
+                    message=f"{len(issues) - MAX_ISSUES} more reported problem(s) were not "
+                    "recorded as findings; see the stored output",
+                    location=FindingLocation(),
+                    evidence_refs=summary.evidence_refs,
+                    provenance=context.provenance.model_copy(update={"actor": actor}),
+                )
+            )
+        return findings
 
     def _availability(
         self, context: ValidationContext, actor: Actor

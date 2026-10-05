@@ -1171,6 +1171,7 @@ class RunEngine:
                         lambda: self.is_cancelled(execution.execution_id)
                     ),
                     max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
+                    parse_output=self.s.resolved.project.output_parsers_enabled,
                 )
             )
             self._save_validator_output(execution, output)

@@ -54,7 +54,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "retention": {"artifactDays": 30, "eventDays": 365},
         "intake": {"criteriaPolicy": "enforce"},
-        "verification": {"requirementTraceability": "enforce"},
+        "verification": {"requirementTraceability": "enforce", "outputParsers": True},
         "review": {"exceptions": True, "exceptionDays": DEFAULT_EXCEPTION_DAYS},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")

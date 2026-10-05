@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- Located findings from validator output (#53). A failing pytest was one finding without a
+  location; the failing test was three artifact hops away. Under `verification.outputParsers`
+  (written by `harness init`) the output of a failing command validator is parsed into one
+  finding per reported problem with path, line and the tool's rule: SARIF 2.1.0, ESLint and Ruff
+  JSON, JUnit XML (printed or written with `--junitxml`) and the text of Ruff, Mypy, `tsc` and
+  pytest. Errors keep the summary finding's severity, so the gate outcome does not change;
+  warnings are `LOW`; at most 200 per run. Without the key only the summary finding is recorded.
+  The SARIF export adds a stable `partialFingerprints` entry (`harnessFinding/v1`) and the ids of
+  the finding, run and validator to every result.
+
 - Pending-decision inbox and notifications (#53). Nothing told a person that a run was waiting
   for them. `harness inbox` and `GET /api/inbox` list the runs waiting for a decision or for
   clarification answers, oldest first, with the next command; the dashboard shows them and
