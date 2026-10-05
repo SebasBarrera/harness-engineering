@@ -200,3 +200,19 @@ The starting tables come from a research note of 2026-10-04 (Claude Code `--mode
 Codex `-m`/`model_reasoning_effort`); they are a starting point, and whether an account can use
 a model is not checked. `harness routing calibrate` reports the cost per approved task of the
 recorded decisions and suggests a table; nothing is applied.
+
+## Where each setting is tested
+
+| Setting | Tests |
+|---|---|
+| Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
+| `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
+| `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
+| `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
+| `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
+| `review.agentReview` | `tests/integration/test_agent_review.py` |
+| `planning` | `tests/integration/test_decomposition.py` |
+| `context`, `memory` | `tests/integration/test_context_and_lessons.py`, `tests/unit/test_context_manifest.py` |
+| `budget` | `tests/integration/test_budget.py` |
+| `agentRouting` | `tests/integration/test_agent_routing.py`, `tests/unit/test_routing.py` |
+| The defaults `harness init` writes | `tests/integration/test_agent_results_defaults.py` and the `agent-results` flow of `scripts/demo_flows.py` |
