@@ -57,7 +57,7 @@ implementation:
       operation: append
       content: |
 
-        def test_at_threshold() -> None:
+        def test_req_discount_at_threshold() -> None:
             assert apply_discount(100, 100, 0.1) == 90
 """
 
@@ -85,7 +85,7 @@ implementation:
       operation: append
       content: |
 
-        test('task overrides repository', () => {
+        test('req_precedence: task overrides repository', () => {
           assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {mode:'task'}), {mode:'task'});
         });
 """
