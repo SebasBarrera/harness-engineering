@@ -124,3 +124,45 @@ def test_init_writes_agent_skills(tmp_path: Path) -> None:
         text = (tmp_path / relative).read_text(encoding="utf-8")
         assert text.startswith("---\nname: harness\n")
         assert "You never decide a gate" in text
+
+
+def test_clarify_answers_are_recorded_as_relayed(python_workspace: Path) -> None:
+    server = McpServer(python_workspace)
+    vague = {
+        **TASK,
+        "taskId": "task_vague",
+        "acceptanceCriteria": [{"criterionId": "AC-1", "text": "It works"}],
+    }
+    call(server, "harness_task_create", {"task": vague})
+    started = call(server, "harness_run_start", {"taskId": "task_vague"})["structuredContent"]
+    assert (started["currentPhase"], started["status"]) == ("INTENT", "BLOCKED")
+    questions = call(server, "harness_task_questions", {"taskId": "task_vague"})
+    first = questions["structuredContent"]["openRequest"]["questions"][0]["questionId"]
+    answered = call(
+        server,
+        "harness_task_clarify",
+        {"taskId": "task_vague", "answers": {first: "apply_discount(100, 100, 0.1) returns 90."}},
+    )
+    record = answered["structuredContent"]["clarification"]
+    assert record["actor"]["actorType"] == "HUMAN"
+    assert record["actor"]["displayName"].endswith("(relayed by an agent session)")
+
+
+def test_read_only_reports_through_the_cli(python_workspace: Path, tmp_path: Path) -> None:
+    runner = CliRunner()
+    alone = runner.invoke(
+        app, ["--json", "standards", "show", "--path", str(tmp_path), "--lang", "go"]
+    )
+    assert alone.exit_code == 0, alone.output
+    report = json.loads(alone.output)
+    assert report["configured"] is False
+    assert report["packs"][0]["pack"] == "go" and report["packs"][0]["cards"]
+    here = ["--path", str(python_workspace)]
+    project = runner.invoke(app, ["--json", "project", "show", *here])
+    assert project.exit_code == 0, project.output
+    assert json.loads(project.output)["projectKind"]["kind"] == "existing"
+    shown = runner.invoke(app, ["--json", "architecture", "show", *here])
+    assert shown.exit_code == 0, shown.output
+    assert json.loads(shown.output)["rules"] is None
+    refreshed = runner.invoke(app, ["--json", "architecture", "refresh", *here])
+    assert refreshed.exit_code == 0 and json.loads(refreshed.output)["status"] == "NONE"
