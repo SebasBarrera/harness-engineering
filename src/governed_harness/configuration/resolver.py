@@ -20,6 +20,7 @@ from governed_harness.configuration.models import (
     TechnologyProfileDefinition,
     ToolchainConfig,
     ValidatorDefinition,
+    WorkflowDefinition,
 )
 from governed_harness.configuration.policies import validate_profile_policies
 from governed_harness.domain.errors import ConfigurationError
@@ -82,7 +83,7 @@ class ConfigurationResolver:
         )
         workflow = load_builtin_workflow(project.workflow)
         validators = self._resolve_validators(project.validators, profiles)
-        grants = project.capabilities.grants
+        grants = (*project.capabilities.grants, *(project.capabilities.extend or ()))
         if toolchain.validators or toolchain.interpreter == "auto":
             validators, extra_scopes = self._project_toolchain(
                 validators, toolchain, workspace_root
@@ -106,7 +107,16 @@ class ConfigurationResolver:
                     for scope in tool_scopes
                 ),
             )
-        capabilities = self._resolve_capabilities(grants, profiles)
+        if project.governance_settings.phase_capabilities:
+            # #4: the project narrows the profiles; the scopes derived from the validators the
+            # project selects are added after it, and each phase allows what it declares.
+            derived = grants[len(project.capabilities.grants) :]
+            capabilities = self._narrowed_capabilities(
+                project.capabilities.grants, derived, profiles
+            )
+            workflow = self._phase_workflow(workflow)
+        else:
+            capabilities = self._resolve_capabilities(grants, profiles)
         if project.governance_settings.protect_excluded_paths:
             capabilities = self._without_protected_writes(capabilities)
         policies = self._resolve_policies(project.policies, profiles)
@@ -131,6 +141,42 @@ class ConfigurationResolver:
                 *profile_files,
             ),
         )
+
+    @classmethod
+    def _narrowed_capabilities(
+        cls,
+        explicit: tuple[CapabilityRule, ...],
+        derived: tuple[CapabilityRule, ...],
+        profiles: tuple[TechnologyProfileDefinition, ...],
+    ) -> tuple[CapabilityRule, ...]:
+        from governed_harness.capabilities.phase import intersect_capabilities
+
+        profile_rules = cls._resolve_capabilities((), profiles)
+        narrowed = intersect_capabilities(profile_rules, explicit)
+        return cls._resolve_capabilities((*narrowed, *derived), ())
+
+    @staticmethod
+    def _phase_workflow(workflow: WorkflowDefinition) -> WorkflowDefinition:
+        """The workflow whose phases also allow what the harness itself runs in them
+        (``HARNESS_PHASE_CAPABILITIES``), recorded in the resolved configuration."""
+        from governed_harness.capabilities.phase import HARNESS_PHASE_CAPABILITIES
+
+        phases = tuple(
+            phase.model_copy(
+                update={
+                    "allowed_capabilities": tuple(
+                        dict.fromkeys(
+                            (
+                                *phase.allowed_capabilities,
+                                *HARNESS_PHASE_CAPABILITIES.get(phase.phase_id.value, ()),
+                            )
+                        )
+                    )
+                }
+            )
+            for phase in workflow.phases
+        )
+        return workflow.model_copy(update={"phases": phases})
 
     @staticmethod
     def _resolve_capabilities(

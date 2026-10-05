@@ -119,8 +119,21 @@ class CapabilityRule(ConfigModel):
 
 
 class CapabilitiesConfig(ConfigModel):
+    """``grants`` are the project's capabilities. Under ``governance.phaseCapabilities`` (#4)
+    they narrow the profiles' (``profile ∩ project``) and ``extend`` is the explicit way to add
+    a scope no profile grants (a device lab's command, an agent CLI); without the key both are
+    added to the profiles' scopes, as in 1.0.0."""
+
     default: Literal["deny"] = "deny"
     grants: tuple[CapabilityRule, ...] = ()
+    extend: tuple[CapabilityRule, ...] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_extend(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.extend is None:
+            data.pop("extend", None)
+        return data
 
 
 DEFAULT_TRANSIENT_PATTERNS: tuple[str, ...] = (
@@ -759,7 +772,12 @@ class GovernanceConfig(ConfigModel):
       quarantines them (``harness run quarantine``).
     * ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,
       derived from the capability grants (read-only for clarify, review and plan), recorded as
-      evidence."""
+      evidence.
+    * ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a
+      project narrows, never widens, a profile), every grant made while a phase runs keeps only
+      the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call
+      outside IMPLEMENTATION is read-only and may start only its own command, and the resolved
+      grants of each phase attempt are recorded as evidence."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -777,6 +795,7 @@ class GovernanceConfig(ConfigModel):
     apply_network_policy: bool | None = Field(default=None, alias="applyNetworkPolicy")
     stop_the_line: StopTheLine | None = Field(default=None, alias="stopTheLine")
     phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
+    phase_capabilities: bool | None = Field(default=None, alias="phaseCapabilities")
 
     @field_validator("stop_the_line", mode="before")
     @classmethod
@@ -1058,8 +1077,10 @@ class WorkflowPhaseDefinition(ConfigModel):
     allowed_capabilities: tuple[str, ...] = Field(
         default=(),
         alias="allowedCapabilities",
-        description="Declarative: capabilities are granted per run, not per phase (issue #4).",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Capabilities a grant made while the phase runs may carry, under "
+            "governance.phaseCapabilities (issue #4); without it grants are per run."
+        ),
     )
     validators: tuple[str, ...] = Field(
         default=(),

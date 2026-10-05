@@ -192,6 +192,7 @@ governance:
   applyNetworkPolicy: true
   stopTheLine: restore
   phasePermissions: true
+  phaseCapabilities: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -287,6 +288,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
+| `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
@@ -822,10 +824,38 @@ missing; `eventDays` removes the run with its events, records, flags and artifac
 `--apply` it only prints what it would remove. `gc` is a command a person runs; nothing runs it
 automatically.
 
-Still declarative: `workspace.units`, `runtime.maxParallel`, the policies
-`repositoryContentTrusted`, `destructiveActionsDefault` and `ambiguousPackageManager`, and the
-workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase `validators` and
-`invariants`.
+Still declarative: `workspace.units`, `runtime.maxParallel`, the policy
+`ambiguousPackageManager`, and the workflow's `dependsOn`, `parallelizable`, per-phase
+`validators` and `invariants`. The workflow's `allowedCapabilities` apply under
+`governance.phaseCapabilities` (below).
+
+### Capabilities per phase
+
+In 1.0.0 the grants of a run were the union of the profiles' and the project's capabilities,
+issued for the whole run whatever the phase: a project could widen a profile but never narrow it,
+and the workflow's `allowedCapabilities` had no effect (issue #4). Under
+`governance.phaseCapabilities: true`:
+
+* a capability the project lists in `capabilities.grants` keeps only the scopes both the
+  profiles and the project allow (a project scope inside a profile scope, `src/**` inside `**`);
+  a capability the project does not list keeps the profiles' scopes; a scope no profile grants
+  is added explicitly with `capabilities.extend` (without the key, `extend` is added like
+  `grants`). Scopes the harness derives from what the project selects (its toolchain validators,
+  the interpreter, the standards tools) are added after it. Two patterns that only overlap in
+  part are not kept: the intersection fails closed;
+* every grant made while a phase runs (validators, probes, agent calls) keeps only the
+  capabilities the phase allows: the workflow's `allowedCapabilities` plus what the harness
+  itself runs there (`process.execute` in SPECIFICATION for the frozen acceptance tests, in
+  PLANNING for the preflight probes, in INDEPENDENT_REVIEW for the review panel's consistency
+  checks), written into the resolved workflow of the configuration snapshot;
+* an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
+  and every reviewer of the panel) gets no `filesystem.write` and may start only its own
+  configured command (`agentProviders.ID.command`);
+* each phase attempt records the resolved grants of the validators and of the run's agent as
+  evidence and as a `capabilities.resolved` event.
+
+`harness config validate` warns that `allowedCapabilities` is declared but not applied while the
+key is off.
 
 ## Large repositories
 

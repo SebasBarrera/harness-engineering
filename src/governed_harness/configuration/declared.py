@@ -22,7 +22,6 @@ DECLARATIVE_SETTINGS: dict[str, str] = {
     "npm.",
     "workflow.phases[].dependsOn": "The phase order is fixed by the state machine.",
     "workflow.phases[].parallelizable": "Phases run one at a time.",
-    "workflow.phases[].allowedCapabilities": "Capabilities are granted per run (issue #4).",
     "workflow.phases[].validators": "The validators come from the profiles and the project.",
     "workflow.invariants": "Names of invariants the engine enforces in code.",
 }
@@ -60,6 +59,11 @@ def declared_settings_report(
                 f"policies.{key} is declarative: {DECLARATIVE_SETTINGS[f'policies.{key}']}"
             )
     governance = resolved.project.governance_settings
+    if not governance.phase_capabilities:
+        warnings.append(
+            "workflow allowedCapabilities are declared but not applied (grants are per run); "
+            "set governance.phaseCapabilities: true"
+        )
     if not governance.apply_workflow_settings:
         warnings.append(
             "workflow maxAttempts, timeoutSeconds and exitGate are declared but not applied; "

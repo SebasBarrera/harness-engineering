@@ -86,6 +86,11 @@ def test_config_validate_reports_declarative_settings(python_workspace: Path) ->
     )
     assert any("maxAttempts, timeoutSeconds and exitGate" in item for item in body["warnings"])
     assert any("missingTestCommand" in item for item in body["warnings"])
+    # #4: allowedCapabilities is applied under governance.phaseCapabilities, not declarative.
+    assert "workflow.phases[].allowedCapabilities" not in {
+        item["key"] for item in body["declarative"]
+    }
+    assert any("governance.phaseCapabilities" in item for item in body["warnings"])
 
 
 def test_schema_marks_declarative_fields() -> None:
@@ -96,6 +101,7 @@ def test_schema_marks_declarative_fields() -> None:
     phase = workflow["$defs"]["WorkflowPhaseDefinition"]["properties"]
     assert phase["parallelizable"]["x-declarative"] is True
     assert "x-declarative" not in phase["maxAttempts"]
+    assert "x-declarative" not in phase["allowedCapabilities"]
 
 
 def test_invalid_profile_policy_is_a_configuration_error(python_workspace: Path) -> None:

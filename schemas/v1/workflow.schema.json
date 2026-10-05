@@ -21,13 +21,12 @@
       "properties": {
         "allowedCapabilities": {
           "default": [],
-          "description": "Declarative: capabilities are granted per run, not per phase (issue #4).",
+          "description": "Capabilities a grant made while the phase runs may carry, under governance.phaseCapabilities (issue #4); without it grants are per run.",
           "items": {
             "type": "string"
           },
           "title": "Allowedcapabilities",
-          "type": "array",
-          "x-declarative": true
+          "type": "array"
         },
         "dependsOn": {
           "default": [],

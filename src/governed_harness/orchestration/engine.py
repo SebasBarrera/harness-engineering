@@ -29,6 +29,7 @@ from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
+from governed_harness.capabilities.phase import PhasePolicy, phase_scope
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
     ResolvedConfiguration,
@@ -840,7 +841,8 @@ class RunEngine:
             if self.is_cancelled(execution.execution_id):
                 outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
             else:
-                outcome = handler(running, phase)
+                with phase_scope(self._phase_policy(running, phase)):
+                    outcome = handler(running, phase)
         except (KeyboardInterrupt, SystemExit) as interruption:
             # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
             # record the phase as interrupted so that a later run continue recovers it.
@@ -1498,6 +1500,49 @@ class RunEngine:
         )
         actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider_id}", version="1")
         return provider, actor, sandbox, sandbox_refs
+
+    # ----- capabilities per phase (#4) ----------------------------------------------------
+    def _phase_policy(self, execution: Execution, phase: PhaseExecution) -> PhasePolicy | None:
+        """Under ``governance.phaseCapabilities``: what grants made while this phase runs may
+        carry, recorded as evidence of the phase attempt."""
+        resolved = self.s.resolved
+        if not resolved.project.governance_settings.phase_capabilities:
+            return None
+        definition = next(
+            (item for item in resolved.workflow.phases if item.phase_id is phase.phase_id), None
+        )
+        launch = {
+            f"agent.{provider_id}": (" ".join(config.effective_command),)
+            for provider_id, config in resolved.project.agent_providers.items()
+            if config.effective_command
+        }
+        policy = PhasePolicy(
+            phase=phase.phase_id.value,
+            allowed=frozenset(definition.allowed_capabilities if definition else ()),
+            launch=launch,
+        )
+        provider = self.s.state.get_flag(f"provider:{execution.execution_id}")
+        description = policy.describe(
+            resolved.effective_capabilities, f"agent.{provider}" if provider else None
+        )
+        ref = self.s.artifacts.put_json(
+            description,
+            metadata={"kind": "phase-capabilities", "executionId": execution.execution_id},
+        )
+        self._record_evidence(
+            execution,
+            phase.phase_id,
+            EvidenceKind.OTHER,
+            ref,
+            f"Capabilities of {phase.phase_id.value}: {', '.join(sorted(policy.allowed)) or 'none'}",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "capabilities.resolved",
+            {**description, "evidenceRef": ref.uri},
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return policy
 
     # ----- declared settings (#51) -------------------------------------------------------
     def _phase_definition(self, phase_id: PhaseId) -> WorkflowPhaseDefinition | None:

@@ -116,6 +116,12 @@ class ProviderInvoker:
             self.record_request(call) if self.record_request is not None else None for call in calls
         ]
         built = [self._provider(call.provider) for call in calls]
+        # The grants are made here, on the calling thread, where the policy of the running
+        # phase applies (governance.phaseCapabilities, #4); the workers only use them.
+        grants = [
+            self.grants_for(target.actor) if isinstance(target, BuiltProvider) else []
+            for target in built
+        ]
         snapshot = WorkspaceSnapshotter(self.workspace).snapshot() if self.guard_workspace else None
 
         def run(index: int) -> AgentCallResult | str:
@@ -126,7 +132,7 @@ class ProviderInvoker:
             context = SimulatedAgentContext(
                 execution_id=self.execution_id,
                 workspace=self.workspace,
-                grants=self.grants_for(target.actor),
+                grants=grants[index],
                 artifact_store=self.artifacts,
                 process_runner=self.runner,
                 patch_applier=PatchApplier(self.workspace),

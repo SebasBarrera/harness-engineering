@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Capabilities per phase (#4). The grants of a run were the union of the profiles' and the
+  project's capabilities for the whole run, so a project could not narrow a profile and the
+  workflow's `allowedCapabilities` had no effect. Under the new `governance.phaseCapabilities`
+  (written by `harness init`; absent keeps the earlier behaviour and configuration digest) the
+  project narrows the profiles (`capabilities.extend` adds a scope explicitly), every grant made
+  while a phase runs keeps only what the phase allows, an agent call outside IMPLEMENTATION is
+  read-only and may start only its own command, and each phase attempt records its resolved
+  grants (`capabilities.resolved`). `allowedCapabilities` is no longer marked declarative.
 - Every call kind has a routing entry (#59). With `agentRouting.mode: tiered` and a Claude Code
   or Codex provider an `acceptance` call failed, because the routing tables had no `acceptance`
   entry. The default tables now route every call kind of provider protocol 1.1 (`acceptance` and

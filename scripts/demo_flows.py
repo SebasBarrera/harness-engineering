@@ -294,7 +294,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
     ),
     "review": ("agentReview", "reviewer", "structuredChanges", "panel"),
     "runtime": ("gateContract", "reproduceFirst"),
-    "governance": ("stopTheLine", "phasePermissions"),
+    "governance": ("stopTheLine", "phasePermissions", "phaseCapabilities"),
 }
 
 
@@ -1472,11 +1472,13 @@ def flow_ladder(t: Transcript, root: Path) -> None:
     )
 
     # The device lab's command is granted to the probes, but this machine does not have it.
+    # Under governance.phaseCapabilities (#4) project grants narrow the profiles; a scope no
+    # profile grants is added with capabilities.extend.
     config = root / ".harness" / "project.yaml"
     config.write_text(
         config.read_text().replace(
             "  grants: []",
-            "  grants:\n  - capability: process.execute\n    scope: [device-lab]",
+            "  grants: []\n  extend:\n  - capability: process.execute\n    scope: [device-lab]",
         )
     )
     (root / "device.yaml").write_text(DEVICE_TASK)
