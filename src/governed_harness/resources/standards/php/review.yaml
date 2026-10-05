@@ -19,4 +19,8 @@ signals:
   - \bnew PDO\(
   - \bGuzzle
   - \bshell_exec\(
+  structure:
+  - ^\s*(?:use|namespace)\s
+  - ^\s*(?:public|protected)\s+(?:static\s+)?function\s
+  - ^\s*(?:class|interface|trait)\s+\w
 pipeline: []

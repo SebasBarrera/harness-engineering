@@ -19,5 +19,9 @@ signals:
   - \bURLSession\b
   - \bURLRequest\b
   - \bProcess\(\)
+  structure:
+  - ^\s*import\s
+  - ^\s*(?:public|open)\s
+  - ^\s*(?:protocol|class|struct|enum|extension)\s+\w
 pipeline:
 - fastlane/**

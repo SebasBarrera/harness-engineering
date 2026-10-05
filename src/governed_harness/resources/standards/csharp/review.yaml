@@ -21,5 +21,9 @@ signals:
   - \bSqlConnection\b
   - \bProcess\.Start\(
   - \bWebRequest\b
+  structure:
+  - ^\s*using\s
+  - ^\s*(?:public|protected|internal)\s
+  - ^\s*namespace\s
 pipeline:
 - '*.ps1'

@@ -417,14 +417,8 @@ def _request(
         "reviewer": {
             "id": reviewer.reviewer_id,
             "domain": reviewer.domain,
-            "title": reviewer.spec.title,
         },
-        "outputContract": {
-            "maxFindings": limit,
-            "verdicts": ["PASS", "PASS_WARN", "FAIL"],
-            "severities": ["error", "suggestion"],
-            "sides": ["new", "old"],
-        },
+        "outputContract": {"maxFindings": limit},
         "slice": {
             "files": [item.path for item in files],
             "changedLines": sum(item.changed_lines for item in files),
@@ -678,7 +672,7 @@ def _second_opinion(
         ),
         "workspace": str(inputs.workspace),
         "reviewer": {"id": SECOND_OPINION_ID, "domain": "review", "title": "Second opinion"},
-        "outputContract": {"maxFindings": limit, "verdicts": ["PASS", "PASS_WARN", "FAIL"]},
+        "outputContract": {"maxFindings": limit},
         "slice": {"files": touched, "diff": render(selected)[:MAX_SLICE_CHARS]},
         "reportableLocations": locations.as_ranges(),
         "findings": [item.as_dict() for item in blocking],

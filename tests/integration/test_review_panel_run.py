@@ -130,9 +130,9 @@ def test_panel_reviews_by_domain_and_records_its_report(
     )
     reviews = requests(log, "review")
     reviewers = sorted(item["reviewer"]["id"] for item in reviews)
-    # A source and a test changed: quality, architecture and tests review; nothing activates the
-    # concurrency, resilience or pipeline reviewers.
-    assert reviewers == ["architecture", "quality", "tests"]
+    # A body line and a test changed: quality and tests review; no declaration, import,
+    # concurrency primitive, external call or pipeline file activates the others.
+    assert reviewers == ["quality", "tests"]
     for request in reviews:
         assert request["readOnly"] is True
         assert request["isolation"]["tools"] == ["Read", "Grep", "Glob"]

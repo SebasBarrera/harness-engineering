@@ -22,6 +22,10 @@ signals:
   - \bXMLHttpRequest\b
   - \bchild_process\b
   - \bnet\.connect\(
+  structure:
+  - ^\s*(?:import|export)\b
+  - ^\s*(?:export\s+)?(?:default\s+)?(?:class|interface|type|function)\s+\w
+  - \brequire\(
 pipeline:
 - .npmrc
 - .nvmrc

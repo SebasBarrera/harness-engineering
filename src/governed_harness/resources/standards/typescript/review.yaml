@@ -17,4 +17,7 @@ signals:
   - \bhttps?\.request\(
   - \bXMLHttpRequest\b
   - \bchild_process\b
+  structure:
+  - ^\s*(?:import|export)\b
+  - ^\s*(?:export\s+)?(?:default\s+)?(?:class|interface|type|function)\s+\w
 pipeline: []

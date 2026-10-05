@@ -24,5 +24,8 @@ signals:
   - \bRetrofit\b
   - \bHttpURLConnection\b
   - \bKtor\b
+  structure:
+  - ^\s*import\s
+  - ^\s*(?:(?:public|internal|open|abstract|data|sealed)\s+)*(?:class|interface|object|fun)\s+\w
 pipeline:
 - gradlew

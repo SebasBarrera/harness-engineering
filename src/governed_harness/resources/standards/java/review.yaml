@@ -25,6 +25,10 @@ signals:
   - \bDriverManager\b
   - \bProcessBuilder\b
   - \bSocket\(
+  structure:
+  - ^\s*import\s
+  - ^\s*(?:public|protected)\s
+  - ^\s*(?:class|interface|enum|record)\s+\w
 pipeline:
 - mvnw
 - gradlew

@@ -30,6 +30,10 @@ signals:
   - \bboto3\b
   - \.execute\(
   - \bconnect\(
+  structure:
+  - ^\s*(?:from\s+\S+\s+)?import\s
+  - ^\s*(?:async\s+)?def\s+[A-Za-z]
+  - ^\s*class\s+\w
 pipeline:
 - noxfile.py
 - tox.ini

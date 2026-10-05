@@ -552,12 +552,12 @@ def test_caches_skip_repeated_calls_and_share_answers_across_modes(tmp_path: Pat
     invoker = FakeInvoker()
     first = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache))
     calls = len(invoker.calls)
-    assert first.verdict == "PASS" and first.cache == "miss" and calls == 2
+    assert first.verdict == "PASS" and first.cache == "miss" and calls == 1
     again = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache))
     assert again.cache == "hit" and len(invoker.calls) == calls
     assert again.digest == first.digest
     hook = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache, mode="hook"))
-    assert hook.cache == "miss" and hook.reviewer_cache_hits == 2
+    assert hook.cache == "miss" and hook.reviewer_cache_hits == 1
     assert len(invoker.calls) == calls  # every reviewer answer reused
 
 

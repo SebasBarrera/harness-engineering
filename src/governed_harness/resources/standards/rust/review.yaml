@@ -22,5 +22,9 @@ signals:
   - '\bTcpStream::'
   - \bCommand::new\(
   - '\bsqlx::'
+  structure:
+  - ^\s*(?:pub\s+)?use\s
+  - ^\s*pub\s
+  - ^\s*(?:mod|trait|impl)\b
 pipeline:
 - build.rs

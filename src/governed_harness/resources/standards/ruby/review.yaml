@@ -20,5 +20,9 @@ signals:
   - \bHTTParty\b
   - '`[^`]+`'
   - \bOpen3\.
+  structure:
+  - ^\s*require(?:_relative)?\s
+  - ^\s*(?:class|module)\s+[A-Z]
+  - ^\s*def\s+(?!_)\w
 pipeline:
 - Rakefile

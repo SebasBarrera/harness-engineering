@@ -118,7 +118,8 @@ def test_manual_review_records_evidence_verified_without_models(workspace: Path)
     assert report["head"] == head
     assert report["evidenceRef"] == f"refs/harness/review/pass/{head}"
     ran = {item["id"] for item in report["reviewers"] if item["status"] != "SKIPPED"}
-    assert ran == {"architecture", "quality"}  # no test, script or concurrency change
+    # A body line changed: no test, script, concurrency or structure (declaration) change.
+    assert ran == {"quality"}
     verified = application.review_verify(workspace, head)
     assert verified["valid"], verified["problems"]
     # A report edited after the fact no longer verifies.

@@ -11,4 +11,8 @@ signals:
   external-calls:
   - \bHttpClient\b
   - \.subscribe\(
+  structure:
+  - ^\s*(?:import|export)\b
+  - ^\s*(?:export\s+)?(?:default\s+)?(?:class|interface|type|function)\s+\w
+  - '@(?:Component|Injectable|NgModule)\('
 pipeline: []

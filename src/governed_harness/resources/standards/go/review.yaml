@@ -22,6 +22,11 @@ signals:
   - \bsql\.Open\(
   - \bexec\.Command\(
   - \bnet\.Dial\(
+  structure:
+  - ^\s*import\b
+  - ^\s*\"[\w./-]+\"\s*$
+  - ^\s*func\s+(?:\([^)]*\)\s*)?[A-Z]
+  - ^\s*type\s+[A-Z]
 pipeline:
 - .goreleaser.yml
 - .goreleaser.yaml

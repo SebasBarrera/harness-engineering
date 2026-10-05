@@ -21,6 +21,10 @@ tasks one after the other:
   architecture, project setup), the agent-results defaults kept;
 * ``after``: ``harness init`` as written, wave 6 included.
 
+With ``--compare review`` (#57) the two configurations are instead the single second reviewer
+of #38 (``review.panel`` removed) and the review panel (``harness init`` as written), so the
+tokens of a review are compared on the same tasks; the breakdown counts each reviewer.
+
 The JSON report goes to standard output (or ``--output``); ``--markdown`` prints a table.
 Exit code 0 when every run reached DECISION (exit 4) as expected.
 """
@@ -60,6 +64,9 @@ results = {
         else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
     ),
 }
+if kind == "review" and "outputContract" in request:
+    # A reviewer of the review panel (#57): its output contract, no finding.
+    results["review"] = {"verdict": "PASS", "findings": [], "summary": "No finding."}
 if kind == "implement":
     for patch in request["task"]["implementation"]["patches"]:
         path = Path(patch["path"])
@@ -79,6 +86,7 @@ log = Path(LOG)
 with log.open("a", encoding="utf-8") as handle:
     handle.write(json.dumps({
         "kind": kind,
+        "reviewer": (request.get("reviewer") or {}).get("id"),
         "inputChars": len(text),
         "inputTokens": answer["usage"]["inputTokens"],
         "standardsCards": len((request.get("standards") or {}).get("cards") or []),
@@ -122,6 +130,7 @@ WAVE6 = {
     "verification": ("principles",),
 }
 WAVE6_SECTIONS = ("standards", "testing", "architecture")
+WAVE7 = {"review": ("panel",), "governance": ("phaseCapabilities", "applyRepositoryPolicies")}
 
 
 def harness(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -135,9 +144,20 @@ def harness(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def configure(root: Path, log: Path, *, wave6: bool) -> None:
+def configure(
+    root: Path, log: Path, *, wave6: bool, panel: bool = False, wave7: bool = False
+) -> None:
     path = root / ".harness" / "project.yaml"
     config = yaml.safe_load(path.read_text())
+    if not wave7:
+        # The wave 6 comparison keeps the single reviewer of #38 and the 1.1 grants and
+        # policies in both configurations.
+        for section, keys in WAVE7.items():
+            for key in keys:
+                config.get(section, {}).pop(key, None)
+    elif not panel:
+        # The review comparison differs only in review.panel.
+        config["review"].pop("panel", None)
     if not wave6:
         for section, keys in WAVE6.items():
             for key in keys:
@@ -151,7 +171,9 @@ def configure(root: Path, log: Path, *, wave6: bool) -> None:
     path.write_text(yaml.safe_dump(config, sort_keys=False))
 
 
-def measure(workdir: Path, name: str, *, wave6: bool) -> dict[str, Any]:
+def measure(
+    workdir: Path, name: str, *, wave6: bool, panel: bool = False, wave7: bool = False
+) -> dict[str, Any]:
     root = workdir / name
     demo_flows.python_project(root)
     (root / ".gitignore").write_text(".harness/\n__pycache__/\n.pytest_cache/\nagent.py\n")
@@ -159,7 +181,7 @@ def measure(workdir: Path, name: str, *, wave6: bool) -> dict[str, Any]:
     log.unlink(missing_ok=True)
     if harness(root, "init", "--path", ".").returncode != 0:
         raise SystemExit(f"{name}: harness init failed")
-    configure(root, log, wave6=wave6)
+    configure(root, log, wave6=wave6, panel=panel, wave7=wave7)
     runs: list[dict[str, Any]] = []
     for task_id, subtotal, expected, test in TASKS:
         (root / f"{task_id}.yaml").write_text(
@@ -177,7 +199,8 @@ def measure(workdir: Path, name: str, *, wave6: bool) -> dict[str, Any]:
         )
         by_kind: dict[str, dict[str, int]] = {}
         for call in calls:
-            entry = by_kind.setdefault(call["kind"], {"calls": 0, "inputTokens": 0})
+            label = call["kind"] + (f":{call['reviewer']}" if call.get("reviewer") else "")
+            entry = by_kind.setdefault(label, {"calls": 0, "inputTokens": 0})
             entry["calls"] += 1
             entry["inputTokens"] += call["inputTokens"]
         runs.append(
@@ -213,7 +236,7 @@ def measure(workdir: Path, name: str, *, wave6: bool) -> dict[str, Any]:
             "--rationale",
             "Measurement run",
         )
-    return {"configuration": name, "wave6": wave6, "runs": runs}
+    return {"configuration": name, "wave6": wave6, "panel": panel, "runs": runs}
 
 
 def markdown(report: dict[str, Any]) -> str:
@@ -241,6 +264,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workdir", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--markdown", action="store_true")
+    parser.add_argument("--compare", choices=["wave6", "review"], default="wave6")
     args = parser.parse_args(argv)
     temp = None
     if args.workdir is None:
@@ -256,10 +280,16 @@ def main(argv: list[str] | None = None) -> int:
     state = tempfile.mkdtemp(prefix="harness-state-")
     os.environ.setdefault("HARNESS_STATE_DIR", state)
     try:
-        measurements = [
-            measure(workdir, "before", wave6=False),
-            measure(workdir, "after", wave6=True),
-        ]
+        if args.compare == "review":
+            measurements = [
+                measure(workdir, "before", wave6=True, panel=False, wave7=True),
+                measure(workdir, "after", wave6=True, panel=True, wave7=True),
+            ]
+        else:
+            measurements = [
+                measure(workdir, "before", wave6=False),
+                measure(workdir, "after", wave6=True),
+            ]
     finally:
         shutil.rmtree(anchors, ignore_errors=True)
         shutil.rmtree(state, ignore_errors=True)
@@ -277,6 +307,19 @@ def main(argv: list[str] | None = None) -> int:
     report["deltaPerRun"] = [
         after - before for before, after in zip(totals["before"], totals["after"], strict=True)
     ]
+    report["compare"] = args.compare
+    review_tokens = {
+        item["configuration"]: [
+            sum(
+                value["inputTokens"]
+                for kind, value in run["byKind"].items()
+                if kind.split(":", 1)[0] == "review"
+            )
+            for run in item["runs"]
+        ]
+        for item in measurements
+    }
+    report["reviewInputTokensPerRun"] = review_tokens
     text = json.dumps(report, indent=2)
     if args.output:
         args.output.write_text(text + "\n", encoding="utf-8")

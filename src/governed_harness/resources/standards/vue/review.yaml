@@ -12,4 +12,8 @@ signals:
   external-calls:
   - \bfetch\(
   - \baxios\b
+  structure:
+  - ^\s*(?:import|export)\b
+  - ^\s*(?:export\s+)?(?:default\s+)?(?:class|interface|type|function)\s+\w
+  - \bdefine(?:Props|Emits|Component)\(
 pipeline: []

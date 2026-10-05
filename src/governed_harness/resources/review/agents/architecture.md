@@ -7,7 +7,7 @@ timeoutSeconds: 900
 maxBudget: 50000
 modes: [run, hook, manual, staged]
 diffSlice: sources
-activation: changed
+activation: signal:structure
 tools: [Read, Grep, Glob]
 ---
 # Architecture reviewer

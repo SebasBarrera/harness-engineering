@@ -11,4 +11,7 @@ signals:
   external-calls:
   - \bfetch\(
   - \buseQuery\(
+  structure:
+  - ^\s*(?:import|export)\b
+  - ^\s*(?:export\s+)?(?:default\s+)?(?:class|interface|type|function)\s+\w
 pipeline: []
