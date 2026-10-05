@@ -7,6 +7,7 @@ import yaml
 
 from governed_harness.configuration.models import (
     DEFAULT_DECISION_EXPIRY_HOURS,
+    DEFAULT_EXCEPTION_DAYS,
     DEFAULT_SANDBOX_WRITE_PATHS,
     DEFAULT_TRUSTED_HOSTS,
 )
@@ -56,7 +57,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "retention": {"artifactDays": 30, "eventDays": 365},
         "intake": {"criteriaPolicy": "enforce"},
-        "verification": {"requirementTraceability": "enforce"},
+        "verification": {"requirementTraceability": "enforce", "outputParsers": True},
+        "review": {"exceptions": True, "exceptionDays": DEFAULT_EXCEPTION_DAYS},
+        "retrospective": {"causal": True},
         "governance": {
             "deciderIdentity": "git",
             "confirmDecisionDigest": True,

@@ -104,11 +104,12 @@ def _set_verification(workspace: Path, verification: dict[str, str] | None) -> N
 
 def test_init_writes_the_enforce_requirement_traceability(python_workspace: Path) -> None:
     value = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
-    assert value["verification"] == {"requirementTraceability": "enforce"}
+    assert value["verification"] == {"requirementTraceability": "enforce", "outputParsers": True}
     resolved = ConfigurationResolver().resolve(python_workspace)
     assert resolved.project.requirement_traceability == "enforce"
     assert HarnessApplication().validate_config(python_workspace)["verification"] == {
-        "requirementTraceability": "enforce"
+        "requirementTraceability": "enforce",
+        "outputParsers": True,
     }
 
 

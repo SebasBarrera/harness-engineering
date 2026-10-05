@@ -41,6 +41,9 @@ class ValidationContext:
     # missing package script. None keeps BLOCKED.
     missing_command_status: ResultStatus | None = None
     missing_script_status: ResultStatus | None = None
+    # verification.outputParsers: parse the output of a failing command validator into one
+    # located finding per reported problem (validators.parsers).
+    parse_output: bool = False
 
 
 @dataclass(frozen=True)

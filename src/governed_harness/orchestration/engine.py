@@ -7,7 +7,7 @@ import subprocess
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -59,6 +59,7 @@ from governed_harness.domain.models import (
     ClarificationRequest,
     ConfigurationSnapshot,
     Evidence,
+    ExceptionRecord,
     Execution,
     FeedbackDecision,
     FeedbackGate,
@@ -79,6 +80,7 @@ from governed_harness.domain.models import (
 from governed_harness.events import AnchorStore, SQLiteEventStore
 from governed_harness.evidence import LocalArtifactStore, sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
+from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
     ClarificationInput,
     assess_intent,
@@ -98,6 +100,8 @@ from governed_harness.orchestration.feedback import (
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
+from governed_harness.retrospective.causes import CauseAnalysis
+from governed_harness.retrospective.causes import analyze as analyze_causes
 from governed_harness.runtime import (
     CancellationToken,
     GitAdapter,
@@ -431,6 +435,7 @@ class RunEngine:
         rationale: str,
         actor_display_name: str | None = None,
         identity_source: IdentitySource | None = None,
+        expires_at: datetime | None = None,
     ) -> HumanDecision:
         require_human_actor(actor_id, f"decide {decision.value} on a gate")
         execution = self.get_execution(execution_id)
@@ -476,7 +481,12 @@ class RunEngine:
             acceptance_contract_digest=contract_digest,
             identity_source=identity_source,
             decided_at=decided_at,
-            expires_at=decided_at + timedelta(hours=expiry) if expiry else None,
+            # One expiry, HumanDecision.expires_at: the exception's when one is recorded
+            # (review.exceptions, which the exception ledger reuses), otherwise the decision's
+            # validity (governance.decisionExpiryHours).
+            expires_at=expires_at
+            if expires_at is not None
+            else (decided_at + timedelta(hours=expiry) if expiry else None),
         )
         self.s.state.put(
             "decision",
@@ -1283,20 +1293,13 @@ class RunEngine:
     def _profile_policies_apply(self) -> bool:
         return bool(self.s.resolved.project.governance_settings.apply_profile_policies)
 
-    def _unavailable_statuses(self) -> dict[str, ResultStatus | None]:
-        """``missingTestCommand`` and ``missingTestScript`` as the status of an unavailable
-        mandatory validator (``governance.applyProfilePolicies``)."""
+    def _unavailable_status(self, key: str) -> ResultStatus | None:
+        """``missingTestCommand`` or ``missingTestScript`` as the status of an unavailable
+        mandatory validator (``governance.applyProfilePolicies``); ``None`` keeps BLOCKED."""
         if not self._profile_policies_apply():
-            return {}
-        policies = self.s.resolved.effective_policies
-        values: dict[str, ResultStatus | None] = {}
-        for key, field_name in (
-            ("missingTestCommand", "missing_command_status"),
-            ("missingTestScript", "missing_script_status"),
-        ):
-            value = policies.get(key)
-            values[field_name] = ResultStatus(str(value)) if value is not None else None
-        return values
+            return None
+        value = self.s.resolved.effective_policies.get(key)
+        return ResultStatus(str(value)) if value is not None else None
 
     def _coverage_minimum(self) -> float | None:
         if not self._profile_policies_apply():
@@ -1327,7 +1330,8 @@ class RunEngine:
                 provenance=self._provenance(execution).model_copy(update={"actor": actor}),
                 cancellation=CancellationToken(lambda: self.is_cancelled(execution.execution_id)),
                 max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                **self._unavailable_statuses(),
+                missing_command_status=self._unavailable_status("missingTestCommand"),
+                missing_script_status=self._unavailable_status("missingTestScript"),
             ),
             data_file=data_dir / f"{execution.execution_id}.coverage",
         )
@@ -1759,7 +1763,9 @@ class RunEngine:
                         lambda: self.is_cancelled(execution.execution_id)
                     ),
                     max_output_bytes=self.s.resolved.project.runtime.max_output_bytes,
-                    **self._unavailable_statuses(),
+                    missing_command_status=self._unavailable_status("missingTestCommand"),
+                    missing_script_status=self._unavailable_status("missingTestScript"),
+                    parse_output=self.s.resolved.project.output_parsers_enabled,
                 )
             )
             self._save_validator_output(execution, output)
@@ -1916,13 +1922,20 @@ class RunEngine:
                     )
             if (
                 current_decision.expires_at is not None
-                and utc_now() >= current_decision.expires_at
+                and current_decision.expires_at <= utc_now()
                 and current_decision.decision is not DecisionKind.REJECT
             ):
+                # The expiry of an exception (review.exceptions) or of any decision
+                # (governance.decisionExpiryHours): a new decision is required.
+                kind = (
+                    "Exception"
+                    if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
+                    else "Human decision"
+                )
                 return PhaseOutcome(
                     ResultStatus.BLOCKED,
-                    f"Human decision {current_decision.decision_id} expired at "
-                    f"{current_decision.expires_at.isoformat()}; record a new decision",
+                    f"{kind} {current_decision.decision_id} expired at "
+                    f"{current_decision.expires_at.isoformat()}; a new decision is required",
                 )
             if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
                 return PhaseOutcome(
@@ -1979,6 +1992,8 @@ class RunEngine:
             metrics=metrics,
             evidence_refs=(trace_ref.uri, metrics_ref.uri),
             provenance=self._provenance(execution),
+            analysis=self.cause_analysis(execution),
+            trigger="CLOSED" if self.s.resolved.project.causal_retrospective else None,
         )
         self.s.state.put(
             "retrospective",
@@ -2455,9 +2470,13 @@ class RunEngine:
     def _current_or_evaluate_gate(
         self, execution: Execution, change_set: ChangeSet
     ) -> GateEvaluation:
+        now = utc_now()
+        exceptions = self._project_exceptions(execution)
         if execution.gate_evaluation_id:
             gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
-            if gate.change_set_digest == change_set.digest:
+            relied_on = set(exception_ids(gate.reason_codes))
+            in_force = {item.exception_id for item in exceptions if item.active_at(now)}
+            if gate.change_set_digest == change_set.digest and relied_on <= in_force:
                 return gate
         self._workspace_guard_validation(execution, change_set.digest)
         validations = self._latest_validations(execution.execution_id, change_set.digest)
@@ -2466,6 +2485,8 @@ class RunEngine:
             for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
             if any(item.finding_id in validation.finding_ids for validation in validations)
         ]
+        applied = apply_exceptions(findings, exceptions, now)
+        findings = applied.kept
         severity_names = self.s.resolved.effective_policies.get(
             "findingBlockSeverities", ["HIGH", "CRITICAL"]
         )
@@ -2490,6 +2511,17 @@ class RunEngine:
                 provenance=self._provenance(execution),
             ),
         )
+        if applied.used:
+            gate = gate.model_copy(
+                update={
+                    "reason_codes": (*gate.reason_codes, *applied.reason_codes),
+                    "input_refs": (
+                        *gate.input_refs,
+                        *(f"record://finding/{item.finding_id}" for item in applied.excepted),
+                        *(f"record://exception/{item.exception_id}" for item in applied.used),
+                    ),
+                }
+            )
         self.s.state.put(
             "gate",
             gate.gate_evaluation_id,
@@ -2507,6 +2539,28 @@ class RunEngine:
             gate.model_dump(mode="json"),
         )
         return gate
+
+    def cause_analysis(self, execution: Execution) -> CauseAnalysis | None:
+        """The causes of a run's stops and corrections under ``retrospective.causal``; ``None``
+        (the 1.0.0 retrospective) without the key."""
+        if not self.s.resolved.project.causal_retrospective:
+            return None
+        names = self.s.resolved.effective_policies.get(
+            "findingBlockSeverities", ["HIGH", "CRITICAL"]
+        )
+        return analyze_causes(
+            self.s.state,
+            self.s.events.list(execution.execution_id),
+            execution,
+            {FindingSeverity(str(name)) for name in names},
+        )
+
+    def _project_exceptions(self, execution: Execution) -> list[ExceptionRecord]:
+        """Exceptions recorded in the project, considered only under ``review.exceptions``:
+        without the key the gate evaluates every finding, as in 1.0.0."""
+        if not self.s.resolved.project.exceptions_enabled:
+            return []
+        return self.s.state.list("exception", ExceptionRecord, project_id=execution.project_id)
 
     def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]:
         # Only the latest attempt of each validator for the current digest counts: a failure

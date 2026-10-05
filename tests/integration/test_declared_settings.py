@@ -113,6 +113,9 @@ def test_invalid_profile_policy_is_a_configuration_error(python_workspace: Path)
 def test_decision_expires(
     python_workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # An exception under review.exceptions carries its own expiry; this test is about the
+    # expiry of any decision (governance.decisionExpiryHours).
+    _update_config(python_workspace, {"review.exceptions": False})
     pending = _pending(python_workspace, tmp_path)
     record, execution = HarnessApplication().decide_gate(
         python_workspace,

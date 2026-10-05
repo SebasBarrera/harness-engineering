@@ -190,57 +190,45 @@ def test_decider_without_the_setting_keeps_human_local(
     assert "identitySource" not in decision
 
 
-def test_interactive_decision_requires_the_digest(
-    python_workspace: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_interactive_decision_requires_the_digest(python_workspace: Path, tmp_path: Path) -> None:
+    """One interactive confirmation: wave 3's (--interactive, or omitted options on a
+    terminal), which governance.confirmDecisionDigest also asks for on a terminal when every
+    option is given."""
     run, digest = _pending_run(python_workspace, tmp_path)
-    monkeypatch.setattr(cli, "_interactive", lambda: True)
-    wrong = CliRunner().invoke(
-        cli.app,
-        [
-            "gate",
-            "decide",
-            "--run",
-            run,
-            "--decision",
-            "APPROVE_EXCEPTION",
-            "--change-set-digest",
-            digest,
-            "--rationale",
-            "reviewed",
-            "--path",
-            str(python_workspace),
-        ],
-        input="000000000000\n",
-    )
+    args = [
+        "gate",
+        "decide",
+        "--run",
+        run,
+        "--decision",
+        "REJECT",
+        "--change-set-digest",
+        digest,
+        "--rationale",
+        "reviewed",
+        "--actor",
+        "human.reviewer",
+        "--interactive",
+        "--path",
+        str(python_workspace),
+    ]
+    wrong = CliRunner().invoke(cli.app, args, input="000000000000\n")
     assert wrong.exit_code == 5
     assert "not confirmed" in wrong.stderr
-    assert "src/sample/pricing.py" in wrong.stderr
+    assert "src/sample/pricing.py" in wrong.stdout  # the decision brief
     assert HarnessApplication().status(python_workspace, run)["humanDecision"] is None
-    prefix = digest.removeprefix("sha256:")[: cli.CONFIRM_PREFIX_CHARS]
-    right = CliRunner().invoke(
-        cli.app,
-        [
-            "gate",
-            "decide",
-            "--run",
-            run,
-            "--decision",
-            "APPROVE_EXCEPTION",
-            "--change-set-digest",
-            digest,
-            "--rationale",
-            "reviewed",
-            "--path",
-            str(python_workspace),
-        ],
-        input=f"{prefix}\n",
-    )
-    assert right.exit_code == 0, right.stderr
-    # The test runner echoes the typed input on standard output before the JSON.
-    output = right.stdout[right.stdout.index("{") :]
+    prefix = digest.removeprefix("sha256:")[: cli.DIGEST_CONFIRM_CHARS]
+    right = CliRunner().invoke(cli.app, args, input=f"{prefix}\n")
+    assert right.exit_code == 6, right.stderr  # REJECT ends the run
+    output = right.stdout[right.stdout.index("\n{\n") + 1 :]
     decision = HumanDecision.model_validate(json.loads(output)["decision"])
     assert decision.change_set_digest == digest
+
+
+def test_digest_confirmation_follows_the_setting(python_workspace: Path) -> None:
+    assert cli._digest_confirmation_configured(python_workspace) is True
+    _drop_governance(python_workspace)
+    assert cli._digest_confirmation_configured(python_workspace) is False
 
 
 def test_absent_governance_section_is_not_serialized() -> None:

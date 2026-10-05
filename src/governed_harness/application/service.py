@@ -19,6 +19,7 @@ from governed_harness.configuration import (
 )
 from governed_harness.configuration.declared import declared_settings_report
 from governed_harness.configuration.loader import find_project_config, load_yaml
+from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.actors import (
     DEFAULT_CLI_ACTOR,
     IdentitySource,
@@ -31,6 +32,7 @@ from governed_harness.domain.enums import (
     DecisionKind,
     MemoryLevel,
     RecommendationDecision,
+    ResultStatus,
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
@@ -48,11 +50,14 @@ from governed_harness.domain.models import (
     GateEvaluation,
     HumanDecision,
     MemoryRecord,
+    OutcomeRecord,
     PhaseExecution,
     Provenance,
     Retrospective,
+    RetrospectiveTrigger,
     Task,
     ValidationResult,
+    utc_now,
 )
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
@@ -66,6 +71,28 @@ from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
+from .exceptions import (
+    ExceptionOptions,
+    brief_exceptions,
+    list_exceptions,
+    parse_expiry,
+    parse_scope,
+    record_exception,
+)
+from .health import list_outcomes, record_outcome, rule_health
+from .hints import default_hint
+from .notifications import inbox, notify, notify_transition
+from .onboarding import (
+    EXAMPLE_TASK_NAME,
+    ensure_gitignore,
+    git_identity,
+    provider_checks,
+    repository_checks,
+    sandbox_check,
+    validator_checks,
+    write_example_task,
+)
+from .review import build_brief
 from .task_loader import load_task_file
 
 
@@ -75,9 +102,42 @@ class HarnessApplication:
         """Warnings for the person (the CLI prints them on standard error)."""
         self.last_identity_source: IdentitySource = "default"
 
-    def init(self, path: Path, *, force: bool = False) -> dict[str, Any]:
+    def init(
+        self,
+        path: Path,
+        *,
+        force: bool = False,
+        gitignore: bool = False,
+        example_task: bool = False,
+    ) -> dict[str, Any]:
+        """Write .harness/project.yaml. The CLI also asks for the .gitignore entry and the
+        example task (``gitignore``/``example_task``); the Python API leaves the workspace
+        untouched beyond .harness/ unless asked."""
         config = initialize_project(path, force=force)
-        return {"status": "PASSED", "configuration": str(config)}
+        workspace = config.parent.parent
+        detections = [item for item in detect_profiles(workspace) if item.confidence > 0]
+        result: dict[str, Any] = {
+            "status": "PASSED",
+            "configuration": str(config),
+            "profiles": [
+                {"profileId": item.profile_id, "confidence": item.confidence} for item in detections
+            ],
+        }
+        if gitignore:
+            result["gitignore"] = ensure_gitignore(workspace)
+        example: Path | None = None
+        if example_task:
+            example = write_example_task(
+                config.parent, [item.technology for item in detections], force=force
+            )
+            result["exampleTask"] = str(example) if example else None
+        task_file = f".harness/{EXAMPLE_TASK_NAME}" if example or example_task else "task.yaml"
+        result["next"] = [
+            "harness doctor --path .",
+            f"harness task create --file {task_file}   (after editing it)",
+            "harness run start --task <taskId>",
+        ]
+        return result
 
     def inspect(self, path: Path) -> dict[str, Any]:
         workspace = path.resolve(strict=True)
@@ -117,7 +177,8 @@ class HarnessApplication:
             ],
             "policies": resolved.effective_policies,
             "intake": {"criteriaPolicy": resolved.project.criteria_policy},
-            "verification": {"requirementTraceability": resolved.project.requirement_traceability},
+            "verification": self._verification(resolved.project),
+            "review": self._review(resolved.project),
             "agentSandbox": {
                 "mode": resolved.project.runtime.effective_agent_sandbox,
                 "writePaths": list(resolved.project.runtime.sandbox_write_paths or ()),
@@ -144,6 +205,30 @@ class HarnessApplication:
             "decisionExpiryHours": settings.decision_expiry_hours,
             "applyProfilePolicies": bool(settings.apply_profile_policies),
             "applyNetworkPolicy": bool(settings.apply_network_policy),
+        }
+
+    @staticmethod
+    def _verification(project: ProjectConfiguration) -> dict[str, Any]:
+        value: dict[str, Any] = {"requirementTraceability": project.requirement_traceability}
+        if project.output_parsers_enabled:
+            value["outputParsers"] = True
+        return value
+
+    @staticmethod
+    def _review(project: ProjectConfiguration) -> dict[str, Any]:
+        """Effective review settings; the URLs of webhooks are never printed."""
+        return {
+            "exceptions": project.exceptions_enabled,
+            "exceptionDays": project.exception_days if project.exceptions_enabled else None,
+            "causalRetrospective": project.causal_retrospective,
+            "webhooks": [
+                {
+                    "target": f"env:{item.url_env}" if item.url_env else "url",
+                    "events": list(item.events),
+                    "retries": item.retries,
+                }
+                for item in project.webhooks
+            ],
         }
 
     @staticmethod
@@ -274,17 +359,82 @@ class HarnessApplication:
             execution = engine.create_execution(task, provider=provider)
             if lease is not None:
                 lease.bind(execution.execution_id)
-            return engine.continue_execution(execution.execution_id)
+            return self._after(services, engine.continue_execution(execution.execution_id))
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
         with self._services(path) as services, self._leased(services, "run continue") as lease:
+            execution_id = self._run_id(services, execution_id)
             if lease is not None:
                 lease.bind(execution_id)
-            return RunEngine(services).continue_execution(execution_id)
+            return self._after(services, RunEngine(services).continue_execution(execution_id))
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
         with self._services(path) as services:
-            return RunEngine(services).cancel(execution_id, self._decider(services, actor_id)[0])
+            execution_id = self._run_id(services, execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    @classmethod
+    def _after(cls, services: EngineServices, execution: Execution) -> Execution:
+        """Side effects of reaching a state a person cares about: the webhooks of
+        ``notifications`` (a delivery failure is recorded, not raised) and, under
+        ``retrospective.causal``, the retrospective of a rejected or cancelled run. They never
+        change the run."""
+        if services.resolved.project.causal_retrospective:
+            trigger: RetrospectiveTrigger | None = None
+            if execution.status is ResultStatus.CANCELLED:
+                trigger = "CANCELLED"
+            elif execution.status is ResultStatus.FAILED and execution.human_decision_id:
+                decision = services.state.get(
+                    "decision", execution.human_decision_id, HumanDecision
+                )
+                trigger = "REJECTED" if decision.decision is DecisionKind.REJECT else None
+            existing = services.state.list(
+                "retrospective", Retrospective, execution_id=execution.execution_id
+            )
+            if trigger and not existing:
+                cls._generate_retrospective(services, execution.execution_id, trigger)
+        notify_transition(services, execution)
+        return execution
+
+    def rule_health(self, path: Path, *, since_days: int | None = None) -> dict[str, Any]:
+        """How each rule and validator behaved across the runs of the project."""
+        with self._services(path) as services:
+            return rule_health(services, since_days)
+
+    def record_outcome(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        kind: str,
+        summary: str,
+        actor_id: str | None = None,
+        reference: str | None = None,
+        observed_at: str | None = None,
+    ) -> OutcomeRecord:
+        """Link an incident, revert, hotfix or regression to a run (a person only)."""
+        with self._services(path) as services:
+            actor_id = self._decider(services, actor_id)[0]
+            return record_outcome(
+                services,
+                execution_id=self._run_id(services, execution_id),
+                kind=kind,
+                summary=summary,
+                reference=reference,
+                observed_at=observed_at,
+                actor_id=actor_id,
+            )
+
+    def list_outcomes(self, path: Path, execution_id: str | None = None) -> list[OutcomeRecord]:
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id) if execution_id else None
+            return list_outcomes(services, run_id)
+
+    def inbox(self, path: Path) -> list[dict[str, Any]]:
+        """Runs of the project waiting for a person (decision or clarification answers)."""
+        with self._services(path) as services:
+            return inbox(services)
 
     def decide_gate(
         self,
@@ -297,15 +447,44 @@ class HarnessApplication:
         rationale: str,
         continue_after: bool = True,
         default_actor: str = DEFAULT_CLI_ACTOR,
+        exception: ExceptionOptions | None = None,
     ) -> tuple[HumanDecision, Execution]:
-        """Record a human decision on the gate of a run. Without ``actor_id`` the decider is
-        the Git user under ``governance.deciderIdentity: git`` and ``default_actor`` otherwise;
-        an actor id of an agent, a validator or the harness is refused (exit code 5)."""
+        """Record a human decision. Under ``review.exceptions`` an ``APPROVE_EXCEPTION`` also
+        records an exception with an expiry (``expires_in``/``expires_at``, else
+        ``review.exceptionDays``), a scope (``rule[:path]`` entries, else the blocking findings
+        of the gate), alternative evidence and a follow-up (``exception``).
+
+        Without ``actor_id`` the decider is the Git user under ``governance.deciderIdentity:
+        git`` (``default_actor`` with a notice when Git has no identity) and ``default_actor``
+        otherwise; an actor id of an agent, a validator or the harness is refused (exit 5)."""
+        options = exception or ExceptionOptions()
         with self._services(path) as services, self._leased(services, "gate decide") as lease:
+            execution_id = self._run_id(services, execution_id)
             if lease is not None:
                 lease.bind(execution_id)
             engine = RunEngine(services)
             decider, display_name = self._decider(services, actor_id, default_actor)
+            project = services.resolved.project
+            records_exception = (
+                decision is DecisionKind.APPROVE_EXCEPTION and project.exceptions_enabled
+            )
+            if options.given and not records_exception:
+                raise ConfigurationError(
+                    "exception options (--expires-in, --expires-at, --scope, "
+                    "--alternative-evidence, --follow-up) need APPROVE_EXCEPTION and "
+                    "review.exceptions: true in project.yaml"
+                )
+            expiry = (
+                parse_expiry(
+                    expires_in=options.expires_in,
+                    expires_at=options.expires_at,
+                    default_days=project.exception_days,
+                    now=utc_now(),
+                )
+                if records_exception
+                else None
+            )
+            scopes = parse_scope(options.scope)
             record = engine.decide(
                 execution_id=execution_id,
                 decision=decision,
@@ -316,14 +495,30 @@ class HarnessApplication:
                 identity_source=self.last_identity_source
                 if services.resolved.project.governance_settings.git_decider
                 else None,
+                expires_at=expiry,
             )
+            if records_exception:
+                granted = record_exception(
+                    services,
+                    decision=record,
+                    scope=scopes,
+                    alternative_evidence=options.alternative_evidence,
+                    follow_up=options.follow_up,
+                )
+                notify(
+                    services,
+                    engine.get_execution(execution_id),
+                    "exception.granted",
+                    exceptionId=granted.exception_id,
+                    expiresAt=granted.expires_at.isoformat(),
+                )
             execution = (
                 engine.continue_execution(execution_id)
                 if continue_after
                 and decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}
                 else engine.get_execution(execution_id)
             )
-            return record, execution
+            return record, self._after(services, execution)
 
     def decision_summary(self, path: Path, execution_id: str) -> dict[str, Any]:
         """What a person is about to decide on: the phase, the gate result and the ChangeSet the
@@ -359,6 +554,7 @@ class HarnessApplication:
 
     def status(self, path: Path, execution_id: str) -> dict[str, Any]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             execution = services.state.get("execution", execution_id, Execution)
             phases = services.state.list("phase", PhaseExecution, execution_id=execution_id)
             validations = services.state.list(
@@ -435,6 +631,7 @@ class HarnessApplication:
         """Export the trace of a run. Under ``governance.verifyRecords`` the run is verified
         first and a run that does not verify is not exported (exit code 6)."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             if services.resolved.project.governance_settings.verify_records:
                 verification = RunVerifier(services).verify(execution_id)
                 if not verification.valid:
@@ -499,41 +696,56 @@ class HarnessApplication:
 
     def list_evidence(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             evidence = services.state.list_dicts("evidence", execution_id=execution_id)
             artifacts = services.state.list_dicts("artifact", execution_id=execution_id)
             return [{"evidence": evidence, "artifacts": artifacts}]
 
     def list_findings(self, path: Path, execution_id: str) -> list[Finding]:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             return services.state.list("finding", Finding, execution_id=execution_id)
 
     def retrospect(self, path: Path, execution_id: str) -> Retrospective:
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             records = services.state.list("retrospective", Retrospective, execution_id=execution_id)
             if records:
                 return records[-1]
-            execution = services.state.get("execution", execution_id, Execution)
-            events = services.events.list(execution_id)
-            metrics = MetricsProjector(services.state).project(execution_id, events)
-            trace_ref = services.artifacts.put(
-                services.events.export_jsonl(execution_id),
-                media_type="application/x-ndjson",
-                metadata={"kind": "retrospective-input"},
-            )
-            retro = RunEngine(services).retrospective_engine.generate(
-                execution_id=execution_id,
-                metrics=metrics,
-                evidence_refs=(trace_ref.uri,),
-                provenance=RunEngine(services)._provenance(execution),
-            )
-            services.state.put(
-                "retrospective",
-                retro.retrospective_id,
-                retro,
-                execution_id=execution_id,
-                project_id=execution.project_id,
-            )
-            return retro
+            return self._generate_retrospective(services, execution_id, "ON_DEMAND")
+
+    @staticmethod
+    def _generate_retrospective(
+        services: EngineServices, execution_id: str, trigger: RetrospectiveTrigger
+    ) -> Retrospective:
+        """A retrospective outside CLOSURE: on demand, or (``retrospective.causal``) when a run
+        is rejected or cancelled. Stored as a record; the run's event chain is not extended."""
+        engine = RunEngine(services)
+        execution = services.state.get("execution", execution_id, Execution)
+        events = services.events.list(execution_id)
+        metrics = MetricsProjector(services.state).project(execution_id, events)
+        trace_ref = services.artifacts.put(
+            services.events.export_jsonl(execution_id),
+            media_type="application/x-ndjson",
+            metadata={"kind": "retrospective-input"},
+        )
+        analysis = engine.cause_analysis(execution)
+        retro = engine.retrospective_engine.generate(
+            execution_id=execution_id,
+            metrics=metrics,
+            evidence_refs=(trace_ref.uri,),
+            provenance=engine._provenance(execution),
+            analysis=analysis,
+            trigger=trigger if analysis is not None else None,
+        )
+        services.state.put(
+            "retrospective",
+            retro.retrospective_id,
+            retro,
+            execution_id=execution_id,
+            project_id=execution.project_id,
+        )
+        return retro
 
     def add_memory(
         self,
@@ -625,6 +837,7 @@ class HarnessApplication:
         """Return the context manifest recorded for a run: the memory it applied and the
         candidates it left out, as they were when the run was planned."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             services.state.get("execution", execution_id, Execution)
             reference = services.state.get_flag(f"context:{execution_id}")
             if not reference:
@@ -697,6 +910,7 @@ class HarnessApplication:
     def list_recommendations(self, path: Path, execution_id: str) -> list[dict[str, Any]]:
         """List the recommendations of a run with the decision recorded for each, if any."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             retrospective = self._retrospective(services, execution_id)
             decided = {
                 item.key: item
@@ -735,6 +949,7 @@ class HarnessApplication:
         never enters a context. Nothing else changes: rules, gates and configuration are only
         modified by a person through a versioned change."""
         with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
             actor_id, display_name = self._decider(services, actor_id)
             require_human_actor(actor_id, "decide on a recommendation")
             retrospective = self._retrospective(services, execution_id)
@@ -800,6 +1015,9 @@ class HarnessApplication:
             "node": {"status": "PASSED" if shutil.which("node") else "NOT_APPLICABLE"},
             "npm": {"status": "PASSED" if shutil.which("npm") else "NOT_APPLICABLE"},
         }
+        if checks["git"]["status"] == "FAILED":
+            checks["git"]["hint"] = "Install Git: the harness records baselines from Git."
+        checks["gitIdentity"] = git_identity(path if path and path.is_dir() else None)
         if path is not None:
             try:
                 resolved = ConfigurationResolver().resolve(path)
@@ -813,8 +1031,19 @@ class HarnessApplication:
                     "status": "PASSED" if os.access(harness_dir, os.W_OK) else "FAILED",
                     "path": str(harness_dir),
                 }
+                if checks["filesystem"]["status"] == "FAILED":
+                    checks["filesystem"]["hint"] = f"Make {harness_dir} writable by this user."
+                checks.update(repository_checks(resolved.workspace_root))
+                checks.update(provider_checks(resolved))
+                checks["agentSandbox"] = sandbox_check(resolved)
+                checks["validators"] = validator_checks(resolved)
             except Exception as error:
-                checks["configuration"] = {"status": "FAILED", "message": str(error)}
+                checks["configuration"] = {
+                    "status": "FAILED",
+                    "message": str(error),
+                    "hint": default_hint(error)
+                    or "Fix .harness/project.yaml; `harness config validate` shows the error.",
+                }
         status = (
             "PASSED"
             if all(item["status"] not in {"FAILED", "ERROR"} for item in checks.values())
@@ -838,6 +1067,104 @@ class HarnessApplication:
                 yield lease
         finally:
             lease.release()
+
+    def resolve_run(self, path: Path, reference: str) -> str:
+        """The run id a reference names: an exact id, ``latest`` or a unique prefix."""
+        with self._services(path) as services:
+            return self._run_id(services, reference)
+
+    def review(
+        self, path: Path, execution_id: str, *, include_diff: bool = False
+    ) -> dict[str, Any]:
+        """The decision brief of a run (see ``application.review``)."""
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id)
+            execution = services.state.get("execution", run_id, Execution)
+            return build_brief(
+                services,
+                run_id,
+                include_diff=include_diff,
+                exceptions=brief_exceptions(services, execution),
+            )
+
+    def list_exceptions(
+        self, path: Path, *, status: str = "all", expiring_within: int | None = None
+    ) -> list[dict[str, Any]]:
+        """The exceptions of the project with their status (ACTIVE or EXPIRED), days left and
+        the runs whose gate relied on them."""
+        if status.lower() not in {"all", "active", "expired"}:
+            raise ConfigurationError(f"unknown exception status: {status}")
+        with self._services(path) as services:
+            return list_exceptions(services, status=status.lower(), expiring_within=expiring_within)
+
+    def show_artifact(self, path: Path, reference: str) -> tuple[dict[str, Any], bytes]:
+        """An artifact's descriptor and its content, read with digest verification. The
+        reference is ``artifact://sha256/<hex>``, ``sha256:<hex>`` or a unique hex prefix of at
+        least 6 characters."""
+        with self._services(path) as services:
+            uri = self._artifact_uri(services, reference.strip())
+            descriptor = services.artifacts.describe(uri)
+            data = services.artifacts.get(uri)
+            return {
+                "uri": descriptor.uri,
+                "digest": descriptor.digest,
+                "sizeBytes": descriptor.size_bytes,
+                "mediaType": descriptor.media_type,
+                "redacted": descriptor.redacted,
+                "verified": True,
+                "metadata": descriptor.metadata or {},
+            }, data
+
+    @staticmethod
+    def _artifact_uri(services: EngineServices, reference: str) -> str:
+        hex_part = reference
+        for prefix in ("artifact://sha256/", "sha256:"):
+            if reference.startswith(prefix):
+                hex_part = reference[len(prefix) :]
+        hex_part = hex_part.lower()
+        if len(hex_part) < 6 or any(char not in "0123456789abcdef" for char in hex_part):
+            raise ConfigurationError(
+                f"not an artifact reference or digest prefix (6+ hex characters): {reference}"
+            )
+        meta_root = services.artifacts.meta_root
+        if len(hex_part) == 64:
+            matches = [hex_part] if (meta_root / f"{hex_part}.json").exists() else []
+        else:
+            matches = sorted(item.stem for item in meta_root.glob(f"{hex_part}*.json"))
+        if not matches:
+            raise NotFoundError(f"artifact not found: {reference}")
+        if len(matches) > 1:
+            raise ConfigurationError(
+                f"artifact prefix {reference} matches {len(matches)} artifacts; use more characters"
+            )
+        return f"artifact://sha256/{matches[0]}"
+
+    @staticmethod
+    def _run_id(services: EngineServices, reference: str) -> str:
+        reference = reference.strip()
+        try:
+            services.state.get("execution", reference, Execution)
+            return reference
+        except NotFoundError:
+            pass
+        runs = services.state.list(
+            "execution", Execution, project_id=services.resolved.project.project_id
+        )
+        if reference == "latest":
+            if not runs:
+                raise NotFoundError("execution not found: latest (the project has no runs)")
+            return max(runs, key=lambda item: item.created_at).execution_id
+        prefixes = (reference, f"run_{reference}")
+        matches = sorted(
+            item.execution_id for item in runs if item.execution_id.startswith(prefixes)
+        )
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            raise ConfigurationError(
+                f"run prefix {reference} matches {len(matches)} runs: {', '.join(matches[:5])}"
+            )
+        raise NotFoundError(f"execution not found: {reference}")
 
     @contextmanager
     def _services(self, path: Path) -> Iterator[EngineServices]:

@@ -40,7 +40,7 @@ def test_project_schema_accepts_the_verification_section_and_its_absence(
 ) -> None:
     value = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
     _validate("project-config.schema.json", value)
-    assert value["verification"] == {"requirementTraceability": "enforce"}
+    assert value["verification"] == {"requirementTraceability": "enforce", "outputParsers": True}
     del value["verification"]
     _validate("project-config.schema.json", value)
     with pytest.raises(ValidationError):

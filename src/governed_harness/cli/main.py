@@ -2,14 +2,20 @@ from __future__ import annotations
 
 import json
 import sys
+import weakref
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import typer
 
+from governed_harness import __version__
 from governed_harness.application import HarnessApplication
+from governed_harness.application.exceptions import ExceptionOptions
+from governed_harness.application.hints import default_hint
+from governed_harness.cli.render import render_human, wants_json
 from governed_harness.domain.enums import (
     DecisionKind,
     MemoryLevel,
@@ -30,6 +36,10 @@ recommendation_app = typer.Typer(help="Retrospective recommendation commands")
 plugins_app = typer.Typer(help="Plugin and extension commands")
 benchmark_app = typer.Typer(help="Benchmark commands")
 api_app = typer.Typer(help="Local API and web dashboard")
+artifact_app = typer.Typer(help="Artifact store commands")
+exceptions_app = typer.Typer(help="Exception ledger commands")
+rules_app = typer.Typer(help="Rule and validator health across runs")
+outcome_app = typer.Typer(help="Outcomes after a run (incidents, reverts, hotfixes)")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -41,6 +51,10 @@ app.add_typer(recommendation_app, name="recommendation")
 app.add_typer(plugins_app, name="plugins")
 app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
+app.add_typer(artifact_app, name="artifact")
+app.add_typer(exceptions_app, name="exceptions")
+app.add_typer(rules_app, name="rules")
+app.add_typer(outcome_app, name="outcome")
 
 
 ACTOR_HELP = (
@@ -50,51 +64,117 @@ ACTOR_HELP = (
 )
 
 
-def _emit(value: object, json_output: bool = True) -> None:
+JSON_OPTION: Any = typer.Option(
+    None,
+    "--json/--no-json",
+    help="Print JSON, or readable text with --no-json (default: JSON unless standard output "
+    "is a terminal)",
+)
+
+RUN_OPTION: Any = typer.Option(
+    ...,
+    "--run",
+    help="Run (execution) identifier, `latest` or a unique prefix such as run_1a2b",
+)
+RUN_OPTION_LATEST: Any = typer.Option(
+    "latest",
+    "--run",
+    help="Run (execution) identifier, `latest` or a unique prefix such as run_1a2b",
+)
+
+_OUTPUT: dict[str, bool | None] = {"json": None}
+"""The global --json/--no-json choice of the current invocation (None: decide by terminal)."""
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"harness {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Print the harness version and exit",
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Governed Agent Harness CLI. Output is JSON when standard output is not a terminal (or
+    with --json) and readable text on a terminal (or with --no-json)."""
+    _OUTPUT["json"] = json_output
+
+
+def _plain(value: object) -> object:
     if hasattr(value, "model_dump"):
-        value = value.model_dump(mode="json", by_alias=True)
-    elif isinstance(value, list):
-        value = [
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, list):
+        return [
             item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item
             for item in value
         ]
-    if json_output:
+    return value
+
+
+def _json_wanted(json_output: bool | None = None) -> bool:
+    return wants_json(json_output if json_output is not None else _OUTPUT["json"])
+
+
+def _emit(value: object, json_output: bool | None = None, kind: str | None = None) -> None:
+    value = _plain(value)
+    if _json_wanted(json_output):
         typer.echo(json.dumps(value, indent=2, ensure_ascii=False, default=str))
     else:
-        typer.echo(value)
+        typer.echo(render_human(value, kind))
 
 
-_ACTING: list[HarnessApplication] = []
+_ACTING: weakref.WeakSet[HarnessApplication] = weakref.WeakSet()
 
 
 def _acting() -> HarnessApplication:
     """The application for a human act; its notices (for example a Git identity that could
     not be used) are printed on standard error by ``_call``."""
     application = HarnessApplication()
-    _ACTING.append(application)
+    _ACTING.add(application)
     return application
 
 
 def _flush_notices() -> None:
-    while _ACTING:
-        for notice in _ACTING.pop().notices:
+    # One application may serve several calls (gate decide resolves the run first), so its
+    # notices are printed and cleared, and it stays registered while it is in use.
+    for application in list(_ACTING):
+        for notice in application.notices:
             typer.echo(f"warning: {notice}", err=True)
+        application.notices.clear()
 
 
-def _call[T](operation: Callable[[], T]) -> T:
+Hint = Callable[[BaseException], str | None]
+
+
+def _report_error(payload: dict[str, Any]) -> None:
+    if wants_json(_OUTPUT["json"], sys.stderr):
+        typer.echo(json.dumps(payload, indent=2), err=True)
+        return
+    typer.echo(f"Error: {payload['error']}", err=True)
+    if payload.get("hint"):
+        typer.echo(f"Hint: {payload['hint']}", err=True)
+
+
+def _call[T](operation: Callable[[], T], hint: Hint | None = None) -> T:
     try:
         return operation()
     except HarnessError as error:
-        typer.echo(json.dumps({"status": "ERROR", "error": str(error)}, indent=2), err=True)
+        payload: dict[str, Any] = {"status": "ERROR", "error": str(error)}
+        advice = (hint(error) if hint else None) or default_hint(error)
+        if advice:
+            payload["hint"] = advice
+        _report_error(payload)
         raise typer.Exit(code=error.exit_code) from error
     except Exception as error:
-        typer.echo(
-            json.dumps(
-                {"status": "ERROR", "errorType": type(error).__name__, "error": str(error)},
-                indent=2,
-            ),
-            err=True,
-        )
+        _report_error({"status": "ERROR", "errorType": type(error).__name__, "error": str(error)})
         raise typer.Exit(code=1) from error
     finally:
         _flush_notices()
@@ -126,9 +206,31 @@ def init(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
     force: bool = typer.Option(False, "--force", help="Replace an existing project configuration"),
+    gitignore: bool = typer.Option(
+        True,
+        "--gitignore/--no-gitignore",
+        help="Add .harness/ to the project's .gitignore (state, artifacts and copies of the code "
+        "live there)",
+    ),
+    example_task: bool = typer.Option(
+        True,
+        "--example-task/--no-example-task",
+        help="Write an example task to .harness/task.example.yaml",
+    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
-    """Create .harness/project.yaml for a repository, using the detected technology profiles."""
-    _emit(_call(lambda: HarnessApplication().init(path, force=force)))
+    """Create .harness/project.yaml for a repository, using the detected technology profiles,
+    add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
+    next commands."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().init(
+                path, force=force, gitignore=gitignore, example_task=example_task
+            )
+        ),
+        json_output,
+        kind="init",
+    )
 
 
 @app.command()
@@ -136,9 +238,7 @@ def inspect(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Detect the technology profiles of a repository (read-only), with confidence and
     evidence."""
@@ -150,15 +250,16 @@ def doctor(
     path: Path | None = typer.Option(
         None, "--path", help="Also validate the project in this directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Check the local environment (Python and Git required; Node.js and npm reported as
-    NOT_APPLICABLE when absent) and, with --path, the project configuration. Exit code 2 when a
-    required check fails."""
+    NOT_APPLICABLE when absent; Git identity reported) and, with --path, the project: its
+    configuration, the agent CLI of the configured provider on PATH, the agent sandbox mechanism,
+    the validators, the baseline commit and whether .harness/ is ignored by Git. Each check that
+    is not PASSED says how to fix it. Exit code 2 when a required check FAILED; a WARNING does
+    not fail."""
     result = _call(lambda: HarnessApplication().doctor(path))
-    _emit(result, json_output)
+    _emit(result, json_output, kind="doctor")
     if result["status"] != "PASSED":
         raise typer.Exit(code=2)
 
@@ -168,9 +269,7 @@ def config_validate(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Validate the project configuration and print the resolved profiles, workflow,
     validators, capabilities and policies, the settings that are declared but not applied
@@ -186,9 +285,7 @@ def task_create(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Validate a task file (YAML or JSON) and persist it as a versioned task. A task needs
     at least one acceptance criterion (exit code 2 otherwise), except under
@@ -204,12 +301,10 @@ def task_list(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """List the tasks persisted in the project."""
-    _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output)
+    _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output, kind="tasks")
 
 
 @task_app.command("show")
@@ -274,38 +369,34 @@ def run_start(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Create a run for a task and execute the normative phases until a stop condition. Exit
     code 4 means the automated phases finished and a human decision is pending; 6 means a
     validation, policy or blocking condition stopped the run."""
     execution = _call(lambda: HarnessApplication().start_run(path, task, provider))
-    _emit(execution, json_output)
+    _emit(execution, json_output, kind="execution")
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
 @run_app.command("continue")
 def run_continue(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Resume a run from its persisted state, for example after fixing the environment or after
     REQUEST_CHANGES."""
     execution = _call(lambda: HarnessApplication().continue_run(path, run))
-    _emit(execution, json_output)
+    _emit(execution, json_output, kind="execution")
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
 @run_app.command("cancel")
 def run_cancel(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     actor: str | None = typer.Option(
         None,
         "--actor",
@@ -319,7 +410,7 @@ def run_cancel(
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
     event."""
     execution = _call(lambda: _acting().cancel_run(path, run, actor))
-    _emit(execution)
+    _emit(execution, kind="execution")
 
 
 @run_app.command("list")
@@ -329,27 +420,25 @@ def run_list(
     ),
 ) -> None:
     """List the runs of the project, newest first."""
-    _emit(_call(lambda: HarnessApplication().list_runs(path)))
+    _emit(_call(lambda: HarnessApplication().list_runs(path)), kind="runs")
 
 
 @app.command()
 def status(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Show the full status projection of a run: phases, validations, findings, gate, human
     decision, event-chain check and metrics."""
-    _emit(_call(lambda: HarnessApplication().status(path, run)), json_output)
+    _emit(_call(lambda: HarnessApplication().status(path, run)), json_output, kind="status")
 
 
 @app.command()
 def trace(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     format: str = typer.Option("markdown", "--format", help="markdown, json, jsonl or sarif"),
     output: Path | None = typer.Option(
         None, "--output", help="Write to this file instead of standard output"
@@ -409,7 +498,7 @@ def gc(
 
 @evidence_app.command("list")
 def evidence_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -420,13 +509,13 @@ def evidence_list(
 
 @findings_app.command("list")
 def findings_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
     """List the structured findings of a run with severity, rule and location."""
-    _emit(_call(lambda: HarnessApplication().list_findings(path, run)))
+    _emit(_call(lambda: HarnessApplication().list_findings(path, run)), kind="findings")
 
 
 def _memory_value(raw: str) -> dict[str, Any]:
@@ -517,7 +606,7 @@ def memory_list(
 
 @memory_app.command("manifest")
 def memory_manifest(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -572,15 +661,23 @@ def memory_invalidate(
 
 @gate_app.command("decide")
 def gate_decide(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
-    decision: DecisionKind = typer.Option(
-        ..., "--decision", case_sensitive=False, help="Human decision"
+    run: str = RUN_OPTION,
+    decision: DecisionKind | None = typer.Option(
+        None,
+        "--decision",
+        case_sensitive=False,
+        help="Human decision; asked interactively when omitted on a terminal",
     ),
-    change_set_digest: str = typer.Option(
-        ..., "--change-set-digest", help="Current ChangeSet digest shown by status (sha256:...)"
+    change_set_digest: str | None = typer.Option(
+        None,
+        "--change-set-digest",
+        help="Current ChangeSet digest shown by status or review (sha256:...); confirmed "
+        "interactively when omitted on a terminal",
     ),
-    rationale: str = typer.Option(
-        ..., "--rationale", help="Justification recorded with the decision"
+    rationale: str | None = typer.Option(
+        None,
+        "--rationale",
+        help="Justification recorded with the decision; asked interactively when omitted",
     ),
     actor: str | None = typer.Option(
         None,
@@ -591,88 +688,391 @@ def gate_decide(
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
     ),
+    expires_in: str | None = typer.Option(
+        None,
+        "--expires-in",
+        help="APPROVE_EXCEPTION under review.exceptions: validity such as 14d, 36h or 2w "
+        "(default review.exceptionDays)",
+    ),
+    expires_at: str | None = typer.Option(
+        None, "--expires-at", help="APPROVE_EXCEPTION: ISO 8601 instant the exception expires"
+    ),
+    scope: list[str] | None = typer.Option(
+        None,
+        "--scope",
+        help="APPROVE_EXCEPTION: findings covered, as rule or rule:path (repeatable; default: "
+        "the blocking findings of the gate, by fingerprint)",
+    ),
+    alternative_evidence: str | None = typer.Option(
+        None,
+        "--alternative-evidence",
+        help="APPROVE_EXCEPTION: evidence that compensates for the blocking findings",
+    ),
+    follow_up: str | None = typer.Option(
+        None, "--follow-up", help="APPROVE_EXCEPTION: issue or task that will remove the exception"
+    ),
+    interactive: bool = typer.Option(
+        False,
+        "--interactive",
+        "-i",
+        help="Show the decision brief and confirm the ChangeSet digest even when every option "
+        "is given",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
     """Record a human decision bound to the current ChangeSet digest. A decision for a stale
-    digest, APPROVE over a gate that did not pass, or an actor id of an agent, validator or the
-    harness is rejected with exit code 5. Under `governance.confirmDecisionDigest: true` and on a
-    terminal, the decision, the gate and the changed files are shown first and the first
-    characters of the ChangeSet digest must be typed to confirm (a wrong answer exits with 5 and
-    records nothing)."""
-    _confirm_decision(path, run, decision, change_set_digest)
-    record, execution = _call(
-        lambda: _acting().decide_gate(
-            path,
-            execution_id=run,
-            decision=decision,
-            change_set_digest=change_set_digest,
-            actor_id=actor,
-            rationale=rationale,
-            continue_after=continue_after,
+    digest, or APPROVE over a gate that did not pass, is rejected with exit code 5. On a
+    terminal, omitting --decision, --change-set-digest or --rationale shows the decision brief,
+    asks for the missing values and asks the person to type the start of the digest the decision
+    binds to; a digest that is not confirmed records nothing (exit 5). Without a terminal the
+    three options are required (exit 2). Under `governance.confirmDecisionDigest: true` the
+    same confirmation is asked on a terminal even when every option is given. An actor id of an
+    agent, validator or the harness is refused with exit 5; without --actor the decider is the
+    Git user under `governance.deciderIdentity: git` (human.local, with a warning, when Git has
+    no identity)."""
+    application = _acting()
+    run_id = _call(lambda: application.resolve_run(path, run))
+    missing = decision is None or change_set_digest is None or rationale is None
+    terminal = sys.stdin.isatty() and sys.stdout.isatty()
+    if missing and not (interactive or terminal):
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "missing --decision, --change-set-digest or --rationale",
+                "hint": "Pass the three options, or run `harness gate decide --run "
+                f"{run_id}` on a terminal (or with --interactive) to decide interactively.",
+            }
         )
+        raise typer.Exit(code=2)
+    exception = ExceptionOptions(
+        expires_in=expires_in,
+        expires_at=expires_at,
+        scope=tuple(scope or ()),
+        alternative_evidence=alternative_evidence,
+        follow_up=follow_up,
+    )
+    confirm = terminal and _digest_confirmation_configured(path)
+    if missing or interactive or confirm:
+        decision, change_set_digest, rationale = _interactive_decision(
+            application, path, run_id, decision, change_set_digest, rationale
+        )
+        if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
+            exception = _interactive_exception(exception)
+    assert decision is not None and change_set_digest is not None and rationale is not None
+    chosen, digest, reason = decision, change_set_digest, rationale
+    record, execution = _call(
+        lambda: application.decide_gate(
+            path,
+            execution_id=run_id,
+            decision=chosen,
+            change_set_digest=digest,
+            actor_id=actor,
+            rationale=reason,
+            continue_after=continue_after,
+            exception=exception,
+        ),
+        hint=_decide_hint(application, path, run_id),
     )
     _emit(
         {
             "decision": record.model_dump(mode="json", by_alias=True),
             "execution": execution.model_dump(mode="json", by_alias=True),
-        }
+        },
+        kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
-CONFIRM_PREFIX_CHARS = 12
-"""Hex characters of the ChangeSet digest typed to confirm an interactive decision."""
-
-
-def _interactive() -> bool:
-    """Whether a person is at the terminal (standard input and error are terminals)."""
-    return sys.stdin.isatty() and sys.stderr.isatty()
-
-
-def _confirm_decision(path: Path, run: str, decision: DecisionKind, change_set_digest: str) -> None:
-    if not _interactive():
-        return
-    summary = _call(lambda: HarnessApplication().decision_summary(path, run))
-    if not summary["confirmDigest"]:
-        return
-    current = str(summary["changeSetDigest"] or "")
-    typer.echo(
-        f"Run {summary['executionId']} (task {summary['taskId']}), phase "
-        f"{summary['currentPhase']}\nGate: {summary['gateStatus']} "
-        f"{' '.join(summary['gateReasonCodes'])}\nChangeSet {current}:",
-        err=True,
-    )
-    for item in summary["files"]:
-        typer.echo(
-            f"  {item['status']:<9} {item['path']} (+{item['additions']} -{item['deletions']})",
-            err=True,
+def _digest_confirmation_configured(path: Path) -> bool:
+    """``governance.confirmDecisionDigest``: confirm the digest on a terminal every time."""
+    try:
+        return bool(
+            HarnessApplication().validate_config(path)["governance"]["confirmDecisionDigest"]
         )
-    expected = current.removeprefix("sha256:")[:CONFIRM_PREFIX_CHARS]
-    answer = typer.prompt(
-        f"Decision {decision.value} on {change_set_digest}. Type the first "
-        f"{CONFIRM_PREFIX_CHARS} characters of the ChangeSet digest after 'sha256:' to confirm",
-        err=True,
+    except Exception:  # noqa: BLE001 - decide reports configuration errors itself
+        return False
+
+
+def _exceptions_enabled(path: Path) -> bool:
+    try:
+        return bool(HarnessApplication().validate_config(path)["review"]["exceptions"])
+    except Exception:  # noqa: BLE001 - decide reports configuration errors itself
+        return False
+
+
+def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
+    """Ask for what an exception records when the options were not given."""
+
+    def ask(question: str) -> str | None:
+        answer = typer.prompt(question, default="", show_default=False)
+        return str(answer).strip() or None
+
+    return replace(
+        exception,
+        expires_in=exception.expires_in
+        if exception.expires_in or exception.expires_at
+        else ask("Expires in (e.g. 14d, 36h, 2w; empty for the project default)"),
+        alternative_evidence=exception.alternative_evidence
+        or ask("Alternative evidence (optional)"),
+        follow_up=exception.follow_up or ask("Follow-up issue or task (optional)"),
     )
-    if not expected or answer.strip().lower() != expected:
-        typer.echo(
-            json.dumps(
-                {
-                    "status": "ERROR",
-                    "error": "decision not confirmed: the typed characters do not match the "
-                    "current ChangeSet digest; nothing was recorded",
-                },
-                indent=2,
-            ),
-            err=True,
+
+
+DIGEST_CONFIRM_CHARS = 12
+"""Hex characters of the ChangeSet digest a person types to confirm an interactive decision."""
+
+
+def _interactive_decision(
+    application: HarnessApplication,
+    path: Path,
+    run_id: str,
+    decision: DecisionKind | None,
+    change_set_digest: str | None,
+    rationale: str | None,
+) -> tuple[DecisionKind, str, str]:
+    brief = _call(lambda: application.review(path, run_id))
+    typer.echo(render_human(brief, "review"))
+    typer.echo("")
+    current = brief["run"]["changeSetDigest"]
+    if not brief["run"]["awaitingDecision"] or not current:
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": f"run {run_id} is not waiting for a decision "
+                f"({brief['run']['status']} in {brief['run']['currentPhase']})",
+                "hint": "; ".join(brief["next"]) or None,
+            }
         )
         raise typer.Exit(code=5)
+    if decision is None:
+        # Validated here rather than with click.Choice: click is not a declared dependency,
+        # and recent Typer versions no longer install it.
+        allowed = [item.value for item in DecisionKind]
+        while decision is None:
+            choice = str(typer.prompt(f"Decision ({', '.join(allowed)})")).strip().upper()
+            if choice in allowed:
+                decision = DecisionKind(choice)
+            else:
+                typer.echo(f"Choose one of: {', '.join(allowed)}", err=True)
+    while not (rationale or "").strip():
+        rationale = typer.prompt("Rationale (what you checked and why)")
+    if change_set_digest is not None and change_set_digest != current:
+        # Let the engine reject it with its usual message and exit code.
+        return decision, change_set_digest, str(rationale)
+    expected = current.removeprefix("sha256:")
+    typed = typer.prompt(
+        f"Type the first {DIGEST_CONFIRM_CHARS} characters of the digest to bind this "
+        f"{decision.value} to {current}"
+    )
+    typed = typed.strip().lower().removeprefix("sha256:")
+    if len(typed) < DIGEST_CONFIRM_CHARS or not expected.startswith(typed):
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "the ChangeSet digest was not confirmed; no decision was recorded",
+                "hint": f"Type at least {DIGEST_CONFIRM_CHARS} characters of {current}.",
+            }
+        )
+        raise typer.Exit(code=5)
+    return decision, current, str(rationale)
+
+
+def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hint:
+    def hint(error: BaseException) -> str | None:
+        message = str(error)
+        try:
+            status = application.status(path, run_id)
+        except Exception:  # noqa: BLE001 - a hint must never hide the original error
+            return None
+        execution = status["execution"]
+        if "does not match the current ChangeSet" in message:
+            prior = (
+                ""
+                if status["humanDecision"]
+                else " No decision has been recorded on the current digest."
+            )
+            return (
+                f"The current ChangeSet digest is {execution['changeSetDigest']}.{prior} Review "
+                f"it with `harness review --run {run_id}` and decide on that digest (or omit "
+                "--change-set-digest on a terminal to confirm it interactively)."
+            )
+        if "accepted only in DECISION" in message:
+            return (
+                f"The run is {execution['status']} in {execution['currentPhase']}. Fix the cause "
+                f"and `harness run continue --run {run_id}`, or `harness run cancel --run "
+                f"{run_id}`; `harness review --run {run_id}` shows what did not pass."
+            )
+        if "APPROVE is only valid" in message:
+            return (
+                "The gate did not pass: decide REQUEST_CHANGES with what must change, REJECT, or "
+                f"APPROVE_EXCEPTION with a rationale. `harness review --run {run_id}` lists the "
+                "blocking findings."
+            )
+        return None
+
+    return hint
+
+
+@app.command()
+def inbox(
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the runs of the project that wait for a person, oldest first: a decision in
+    DECISION (gate status, digest, blocking findings) or answers to clarification questions in
+    INTENT, each with the next command."""
+    _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+
+
+@rules_app.command("health")
+def rules_health(
+    since: int | None = typer.Option(
+        None, "--since", min=1, help="Only runs created in the last N days"
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show how each rule and validator behaved across the runs of the project: how often it
+    fired, blocked a gate, was excepted, fired on a ChangeSet that was later corrected, fired in
+    a rejected run or in a run later linked to an outcome. Read-only; nothing is changed and no
+    figure is per person."""
+    _emit(
+        _call(lambda: HarnessApplication().rule_health(path, since_days=since)),
+        json_output,
+        kind="health",
+    )
+
+
+@outcome_app.command("record")
+def outcome_record(
+    run: str = RUN_OPTION,
+    kind: str = typer.Option(..., "--kind", help="INCIDENT, REVERT, HOTFIX, REGRESSION or OTHER"),
+    summary: str = typer.Option(..., "--summary", help="What happened"),
+    reference: str | None = typer.Option(
+        None, "--reference", help="Link or identifier of the incident, revert or fix"
+    ),
+    observed_at: str | None = typer.Option(
+        None, "--observed-at", help="ISO 8601 instant it happened (default: now)"
+    ),
+    actor: str | None = typer.Option(
+        None,
+        "--actor",
+        help=ACTOR_HELP,
+        show_default=False,
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Link something that happened after a run (an incident, a revert, a hotfix, a regression)
+    to it. The outcome feeds `harness rules health` and the causal retrospective; nothing is
+    applied. An actor id of an agent, validator or the harness exits with 5."""
+    _emit(
+        _call(
+            lambda: _acting().record_outcome(
+                path,
+                execution_id=run,
+                kind=kind,
+                summary=summary,
+                reference=reference,
+                observed_at=observed_at,
+                actor_id=actor,
+            )
+        ),
+        json_output,
+    )
+
+
+@outcome_app.command("list")
+def outcome_list(
+    run: str | None = typer.Option(None, "--run", help="Only the outcomes of this run"),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the outcomes linked to the runs of the project, oldest first."""
+    _emit(_call(lambda: HarnessApplication().list_outcomes(path, run)), json_output)
+
+
+@exceptions_app.command("list")
+def exceptions_list(
+    status: str = typer.Option("all", "--status", help="all, active or expired"),
+    expiring_within: int | None = typer.Option(
+        None, "--expiring-within", min=0, help="Only active exceptions expiring within N days"
+    ),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the exceptions of the project (review.exceptions): who granted each, on which run
+    and digest, its scope, alternative evidence and follow-up, when it expires and the runs whose
+    gate relied on it. An expired exception no longer covers any finding."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().list_exceptions(
+                path, status=status, expiring_within=expiring_within
+            )
+        ),
+        json_output,
+        kind="exceptions",
+    )
+
+
+@app.command()
+def review(
+    run: str = RUN_OPTION_LATEST,
+    diff: bool = typer.Option(False, "--diff", help="Include the ChangeSet diff (redacted)"),
+    json_output: bool | None = JSON_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the decision brief of a run: what was asked, what changed, the risks with file and
+    line, what was verified on which ChangeSet digest and what was not, active exceptions,
+    retries and corrections, what changed since the last decision and the exact decide
+    command. It only reads the record."""
+    _emit(
+        _call(lambda: HarnessApplication().review(path, run, include_diff=diff)),
+        json_output,
+        kind="review",
+    )
+
+
+@artifact_app.command("show")
+def artifact_show(
+    reference: str = typer.Argument(
+        ..., help="artifact://sha256/<hex>, sha256:<hex> or a unique hex prefix (6+ characters)"
+    ),
+    describe: bool = typer.Option(
+        False, "--describe", help="Print the descriptor (digest, size, media type, metadata)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Print an artifact's content after verifying its digest, or its descriptor with
+    --describe. Artifacts are stored redacted; a digest mismatch exits with 1."""
+    descriptor, data = _call(lambda: HarnessApplication().show_artifact(path, reference))
+    if describe:
+        _emit(descriptor)
+        return
+    sys.stdout.flush()
+    sys.stdout.buffer.write(data)
+    sys.stdout.flush()
 
 
 @app.command()
 def retrospect(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -684,7 +1084,7 @@ def retrospect(
 
 @recommendation_app.command("list")
 def recommendation_list(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -695,7 +1095,7 @@ def recommendation_list(
 
 @recommendation_app.command("decide")
 def recommendation_decide(
-    run: str = typer.Option(..., "--run", help="Run (execution) identifier"),
+    run: str = RUN_OPTION,
     recommendation: str = typer.Option(
         ..., "--recommendation", help="Recommendation identifier shown by retrospect"
     ),
