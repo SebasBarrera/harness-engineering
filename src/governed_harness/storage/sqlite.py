@@ -88,10 +88,11 @@ class SQLiteStateStore:
             )
 
     def get_dict(self, record_type: str, record_id: str) -> dict[str, Any]:
-        row = self.connection.execute(
-            "SELECT payload_json FROM records WHERE record_type=? AND record_id=?",
-            (record_type, record_id),
-        ).fetchone()
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT payload_json FROM records WHERE record_type=? AND record_id=?",
+                (record_type, record_id),
+            ).fetchone()
         if row is None:
             raise NotFoundError(f"{record_type} not found: {record_id}")
         payload: dict[str, Any] = json.loads(row["payload_json"])
@@ -119,10 +120,11 @@ class SQLiteStateStore:
         direction = "DESC" if newest_first else "ASC"
         # Only code-defined literals are interpolated (the clause list and the direction);
         # every value is bound as a parameter, so Bandit B608 is a false positive here.
-        rows = self.connection.execute(
-            f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",  # nosec B608
-            tuple(params),
-        ).fetchall()
+        with self._lock:
+            rows = self.connection.execute(
+                f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",  # nosec B608
+                tuple(params),
+            ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
     def list(
@@ -190,7 +192,10 @@ class SQLiteStateStore:
             )
 
     def get_flag(self, key: str) -> str | None:
-        row = self.connection.execute("SELECT value FROM flags WHERE key=?", (key,)).fetchone()
+        # Validators may run side by side (#3, #58) and poll the cancellation flag while the
+        # process ledger writes: every use of the shared connection holds the lock.
+        with self._lock:
+            row = self.connection.execute("SELECT value FROM flags WHERE key=?", (key,)).fetchone()
         return str(row["value"]) if row else None
 
     def close(self) -> None:
