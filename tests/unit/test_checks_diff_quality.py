@@ -598,10 +598,10 @@ class TestSecrets:
     @pytest.mark.parametrize(
         "line",
         [
-            'API_KEY: str = "k-91827364-live"',
+            'API_KEY: str = "orange-river-stone"',
             'connect(host="db", password="Pr0d-Pa55-x")',
-            'const config = { apiKey: "k-91827364-live" };',
-            'secret_token = "k-91827364-live"',
+            'const config = { apiKey: "orange-river-stone" };',
+            'secret_token = "orange-river-stone"',
         ],
     )
     def test_credential_forms(self, line: str) -> None:
@@ -641,7 +641,7 @@ class TestSecrets:
         assert secret_issues(
             "src/app/boot.py", 'os.environ.setdefault("API_TOKEN", "Pr0d-Token-77")'
         ) == [("secrets.environment-assignment", FindingSeverity.CRITICAL)]
-        assert secret_issues("web/src/boot.js", 'process.env.API_KEY = "abcdef123456"') == [
+        assert secret_issues("web/src/boot.js", 'process.env.API_KEY = "orange-river-stone"') == [
             ("secrets.environment-assignment", FindingSeverity.CRITICAL)
         ]
         assert secret_issues(

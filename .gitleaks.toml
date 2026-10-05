@@ -7,3 +7,7 @@ useDefault = true
 [[allowlists]]
 description = "Fictitious password set by a hidden test of the controlled evaluation; it is not a credential."
 regexes = ['''s3cret-from-env''']
+
+[[allowlists]]
+description = "Fictitious sample values of the context-aware secret check's unit tests in an earlier commit of the wave 2 branch; they are not credentials and were replaced by plain words."
+regexes = ['''k-91827364-live''', '''"abcdef123456"''']
