@@ -74,8 +74,11 @@ def test_config_validate_reports_declarative_settings(python_workspace: Path) ->
     assert result.exit_code == 0
     body = json.loads(result.stdout)
     keys = {item["key"] for item in body["declarative"]}
-    assert {"runtime.maxParallel", "workspace.units", "workflow.phases[].dependsOn"} <= keys
+    assert {"workspace.units", "workflow.phases[].allowedCapabilities"} <= keys
+    # Enforced under governance.enforceWorkflow (#3), which the fixture leaves out.
+    assert not keys & {"runtime.maxParallel", "workflow.phases[].dependsOn"}
     assert any(item.startswith("runtime.maxParallel is declarative") for item in body["warnings"])
+    assert any("set governance.enforceWorkflow: true" in item for item in body["warnings"])
     assert "retention is applied only when harness gc --apply runs" in body["warnings"]
     assert body["governance"]["applyWorkflowSettings"] is True
     assert body["governance"]["decisionExpiryHours"] == 72
@@ -92,9 +95,12 @@ def test_schema_marks_declarative_fields() -> None:
     root = Path(__file__).resolve().parents[2]
     project = json.loads((root / "schemas" / "v1" / "project-config.schema.json").read_text())
     workflow = json.loads((root / "schemas" / "v1" / "workflow.schema.json").read_text())
-    assert project["$defs"]["RuntimeConfig"]["properties"]["maxParallel"]["x-declarative"] is True
+    assert project["$defs"]["WorkspaceConfig"]["properties"]["units"]["x-declarative"] is True
+    assert "x-declarative" not in project["$defs"]["RuntimeConfig"]["properties"]["maxParallel"]
     phase = workflow["$defs"]["WorkflowPhaseDefinition"]["properties"]
-    assert phase["parallelizable"]["x-declarative"] is True
+    assert phase["allowedCapabilities"]["x-declarative"] is True
+    assert "x-declarative" not in phase["parallelizable"]
+    assert "x-declarative" not in phase["dependsOn"]
     assert "x-declarative" not in phase["maxAttempts"]
 
 

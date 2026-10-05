@@ -272,7 +272,8 @@ validators, policies, agent providers and runtime limits. Four policies are **lo
 weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessBlocks` (always
 `true`) and `retrospectiveAutoApply` (always `false`). `findingBlockSeverities` (default `HIGH`,
 `CRITICAL`) and `allowEmptyChangeSet` are configurable. `runtime.allowNetwork`,
-`runtime.maxParallel`, `retention` and `workspace.units` are **declarative: nothing enforces them**.
+`retention` and `workspace.units` are **declarative: nothing enforces them**; so is
+`runtime.maxParallel` unless `governance.enforceWorkflow` is on.
 `intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
 ("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`

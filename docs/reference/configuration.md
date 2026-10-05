@@ -192,6 +192,7 @@ governance:
   applyNetworkPolicy: true
   stopTheLine: restore
   phasePermissions: true
+  enforceWorkflow: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -288,7 +289,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `workspace.units` | `[]` | Declared units (`unitId`, `root`, `profile`). **Declarative: not used by the engine.** |
 | `workspace.snapshot`, `workspace.baseline`, `workspace.snapshotCache` | 1.0.0 behaviour when absent; `init` writes `git`, `manifest`, `true` | How the workspace is listed, how the baseline is stored and whether file digests are cached. See [large repositories](#large-repositories). |
 | `profiles` | `["auto"]` | `auto` selects the detected profiles; otherwise list profile ids (`python_default`, `node_default`). |
-| `workflow` | `default_development` | The normative workflow. Only the built-in workflow exists; its phase order is fixed (see issue #3). |
+| `workflow` | `default_development` | The normative workflow. Only the built-in workflow exists; the order of its nine phases is fixed, and under `governance.enforceWorkflow` its `exitGate`, `dependsOn` and `parallelizable` take effect (see [declared settings](#declared-settings)). |
 | `capabilities.default` | `deny` | Only `deny` is accepted. |
 | `capabilities.grants` | `[]` | Extra grants: `capability`, `scope` (globs or command names), `approvalRequired`, `conditions` (for example `allowDelete`). They are **added** to the profile grants (issue #4). |
 | `validators` | `[]` | Validator ids to run; empty means the profile defaults. An id not defined by a selected profile is a configuration error. |
@@ -297,7 +298,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `agentProviders` | `{}` | Named providers: `kind` (`command`, or since 1.1 a built-in adapter `claude-code`, `codex`, `gemini-cli`, `aider`), `command` (argv list, not empty; required for `command`, optional for an adapter), optional `model`, and since 1.1 `args` (extra arguments of an adapter), `passEnv` and `env`. See [external agents](../guides/external-agents.md). |
 | `runtime.commandTimeoutSeconds` | `900` | Timeout of agent-provider processes. Validators use their own `timeoutSeconds` from the profile. |
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
-| `runtime.maxParallel` | `2` | **Declarative: not used by the engine** (phases run sequentially); `x-declarative` in the schema. |
+| `runtime.maxParallel` | `2` | Under `governance.enforceWorkflow`, the most validators declared `parallelSafe` that a parallelizable `VERIFICATION` runs at once; without the key it is declarative (validators run one at a time). Phases always run one at a time. |
 | `runtime.allowNetwork` | `false`; `init` writes `true` | Under `governance.applyNetworkPolicy` and `runtime.agentSandbox: enforce`, `false` denies the agent outbound network connections (see [declared settings](#declared-settings)); otherwise **declarative**. Validators are never confined. `init` writes `true` because agent CLIs call their model API. |
 | `runtime.agentSandbox` | `off` when the key is absent; `init` writes `enforce` | Write confinement of command-provider (agent) processes: `enforce` or `off`. See [agent sandbox](#agent-sandbox). |
 | `runtime.sandboxWritePaths` | none when absent; `init` writes the list above | Paths the agent may write besides the workspace and `$TMPDIR`: absolute or starting with `~/`, no `$` variables, an optional single trailing `*` for a name prefix. |
@@ -322,6 +323,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
+| `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
@@ -842,13 +844,15 @@ Several settings were declared, written by `init` or shipped in the built-in wor
 and read by nothing. The ones with a clear meaning now take effect behind these keys; the rest are
 marked `x-declarative` in the generated JSON Schema, and `harness config validate` lists them under
 `declarative` and adds a line to `warnings` for each one the project relies on (for example
-`runtime.maxParallel`, or `maxAttempts` while `applyWorkflowSettings` is off).
+`workspace.units`, `maxAttempts` while `applyWorkflowSettings` is off, or `exitGate` while
+`enforceWorkflow` is off).
 
 | Key | Absent | `init` | Effect |
 |---|---|---|---|
 | `applyWorkflowSettings` | `false` | `true` | The built-in workflow's per-phase settings apply. `maxAttempts`: once a phase has that many failed attempts (`FAILED`, `ERROR`, `TIMED_OUT`, `INTERRUPTED`; a `BLOCKED` wait in `DECISION` is not a failure), it is not started again: the run is `BLOCKED` with the reason and a `phase.attempts.exhausted` event (for example a fourth `VERIFICATION` after two automatic corrections). `timeoutSeconds`: the wall-clock budget of one attempt; the agent process and each validator get at most the time left, and an attempt that ends after it is `TIMED_OUT`. `exitGate`: recorded with every attempt in `phase.completed` (`exitGate`, `exitGateMet`, with `timeoutSeconds` and `maxAttempts`); the condition itself is evaluated by the phase. |
 | `decisionExpiryHours` | none | `72` | A human decision gets `expiresAt` that many hours after it is recorded (1 to 8760), unless it records an exception under `review.exceptions`, whose expiry (`--expires-in`, `--expires-at` or `review.exceptionDays`) is then the decision's `expiresAt`: there is one expiry per decision; a decision that expired before `DECISION` used it (for example one recorded with `--no-continue`) leaves `DECISION` `BLOCKED` until a new decision is recorded. |
 | `applyProfilePolicies` | `false` | `true` | The profile policies `missingTestCommand` (Python: a missing executable or module of a mandatory validator) and `missingTestScript` (Node.js: a missing package script) set the status of the unavailable mandatory validator, `BLOCKED` (the profiles' value) or `FAILED`; any other value is a configuration error. A project policy `coverage: {minimumPercent: N}` (0 to 100) adds the mandatory validator `python.coverage` to `VERIFICATION` of a Python project: it runs `python -m coverage run -m pytest -q` (the tests run a second time) and `python -m coverage report --fail-under=N`, keeping the data under `.harness/coverage/`; without the `coverage` package it is `BLOCKED` (or the `missingTestCommand` status). The profile's `coverage: optional_for_research_prototype` is not a threshold and stays declarative. |
+| `enforceWorkflow` | `false` | `true` | The workflow is enforced (#3). `exitGate`: after a phase attempt returns `PASSED`, its exit gate and the condition of the transition it takes are evaluated from the run's records (`intent_complete`: the task has acceptance criteria and INTENT evidence; `discovery_sufficient`: the baseline snapshot and revision; `specification_approved`: the acceptance contract, still produced by the run's task when it is pinned; `plan_authorized`: the run's stored plan, a `PASSED` PLANNING being authorised; `candidate_changeset`: a current, non-empty ChangeSet unless `allowEmptyChangeSet`; `verification_passed`: every mandatory validation of the attempt for the current ChangeSet passed; `review_complete`: the independent review result for the current ChangeSet; `decision_approved`, also named `decision_recorded`: a current `APPROVE` or `APPROVE_EXCEPTION` bound to the current digest and not expired; `run_closed`: `run.closed` for the current ChangeSet). An unmet one leaves the attempt and the run `BLOCKED` with the reason, a `phase.exit_gate.unmet` event and `exitGateMet: false`; `phase.completed` lists every condition under `exitConditions`. An unknown gate or condition, a `dependsOn` on a later phase or a parallelizable phase allowed `filesystem.write` is a configuration error. `dependsOn`: a phase starts only when the latest attempt of each phase it depends on passed, otherwise the run is `BLOCKED` with a `phase.dependencies.unmet` event; the next phase comes from the graph, which keeps the fixed order. `parallelizable`: in a parallelizable, read-only `VERIFICATION`, consecutive validators declared `parallelSafe` run at once, up to `runtime.maxParallel` (`verification.validators.parallel` event), and their results are recorded in the declared order. Phases still run one at a time (a run has one current phase), and the sub-tasks of a decomposition run one after another because they share the workspace that each one's IMPLEMENTATION writes: a sub-task starts only after every earlier one passed its gate. A `workflow.schedule` event records the order, the dependencies, the validator batches and these limits. |
 | `applyNetworkPolicy` | `false` | `true` | `runtime.allowNetwork: false` denies the agent outbound IP connections under `runtime.agentSandbox: enforce`: `(deny network-outbound (remote ip "*:*"))` in the Seatbelt profile (local sockets stay allowed), `--unshare-net` with `bwrap`, and `network: denied` in the sandbox evidence. |
 
 `harness gc` applies `retention` to runs that ended (closed, cancelled or rejected) longer ago than
@@ -859,10 +863,10 @@ missing; `eventDays` removes the run with its events, records, flags and artifac
 `--apply` it only prints what it would remove. `gc` is a command a person runs; nothing runs it
 automatically.
 
-Still declarative: `workspace.units`, `runtime.maxParallel`, the policies
-`repositoryContentTrusted`, `destructiveActionsDefault` and `ambiguousPackageManager`, and the
-workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase `validators` and
-`invariants`.
+Still declarative: `workspace.units`, the policies `repositoryContentTrusted`,
+`destructiveActionsDefault` and `ambiguousPackageManager`, and the workflow's
+`allowedCapabilities`, per-phase `validators` and `invariants`. Without `enforceWorkflow`, so are
+`exitGate`, `dependsOn`, `parallelizable` and `runtime.maxParallel`.
 
 ## Large repositories
 
@@ -898,7 +902,7 @@ optional; absent keys keep the 1.0.0 behaviour and the configuration digest.
 | `profilePaths` | none | none | YAML files, or directories of `*.yaml` files, relative to the workspace root, each a profile in the format of the built-in ones (`profileVersion`, `profileId`, `technology`, `detectors`, `validators`, `defaultValidators`, `policies`, `capabilities`). `profiles` may name them by `profileId`, and `auto` detects them by their `detectors` (a profile without detectors applies to every workspace). The id of a built-in profile (`python`, `python_default`, `node`, `node_default`) is refused. |
 | `profileDetection` | `best` | `all` | Under `profiles: [auto]`, `all` selects every detected profile (several profiles per repository: a Python service with a Node.js front end gets both sets of validators); `best` selects the one with the highest confidence. |
 | `interpreter` | `system` | `auto` | `auto` runs the validators whose command starts with `python` or `python3` with the project's interpreter: `.venv` or `venv` in the workspace (by absolute path), else `uv run --no-sync python` with `uv.lock` and `uv` on `PATH`, else `poetry run python` with `poetry.lock` and `poetry` on `PATH`. The interpreter prefix gets its own `process.execute` grant. |
-| `validators` | none | none | Validators of the project. An entry with the id of a selected validator replaces it (for example `python.pytest` with `[uv, run, pytest, tests/unit]`); any other entry is added. Each needs a `command`; besides the keys of a profile validator (`mandatory`, `whenAvailable`, `timeoutSeconds`) it may set `parser`, `severity`, `failureSeverity` and `passEnv`. The exact command gets a `process.execute` grant. |
+| `validators` | none | none | Validators of the project. An entry with the id of a selected validator replaces it (for example `python.pytest` with `[uv, run, pytest, tests/unit]`); any other entry is added. Each needs a `command`; besides the keys of a profile validator (`mandatory`, `whenAvailable`, `timeoutSeconds`) it may set `parser`, `severity`, `failureSeverity`, `passEnv` and `parallelSafe`. The exact command gets a `process.execute` grant. |
 
 The keys a validator of a profile or of the project may set since 1.1:
 
@@ -908,6 +912,7 @@ The keys a validator of a profile or of the project may set since 1.1:
 | `severity` | error as the failure finding, warning `LOW`, note `INFO` | Severity of a parsed issue by its level, for example `{error: HIGH, warning: MEDIUM}`. |
 | `failureSeverity` | `HIGH` when mandatory, `MEDIUM` otherwise | Severity of the finding of a failing run. |
 | `passEnv` | none | Variables of the harness's environment the command receives as they are; their values are redacted from every artifact. |
+| `parallelSafe` | none (runs alone) | The command writes nothing another validator reads or writes (no shared build directory, for example). Under `governance.enforceWorkflow` it may run at the same time as the neighbouring parallel-safe validators of a parallelizable `VERIFICATION`. The harness does not confine the command: the declaration is the project's. |
 
 ```yaml
 toolchain:

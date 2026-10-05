@@ -576,6 +576,10 @@ class Friction:
             )
         return outputs
 
+    def fast_verification_applies(self, execution: Execution) -> bool:
+        """Whether VERIFICATION of this run uses the fast-lane verification."""
+        return self.fast_verification is not None and self.fast(execution)
+
     # ----- PLANNING: the plan-approval checkpoint (#8) -----------------------------------------
     def plan_checkpoint(
         self, execution: Execution, phase: PhaseExecution, task: Task, plan: Plan, plan_ref: str
