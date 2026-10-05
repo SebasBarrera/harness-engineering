@@ -31,6 +31,30 @@
   criteria is asked again. The task, clarification-request and clarification-record schemas gain
   `criteriaPending` and the rule id `C0`. The clarification demo flow now also runs a
   one-sentence task.
+- A feedback loop around command providers (#36). A failed `VERIFICATION` stopped the run and a
+  `REQUEST_CHANGES` decision sent the agent the same request again, so the agent never learned
+  why its attempt was not accepted, an agent that reported success on a failing change left no
+  trace of the gap, and a provider call that failed on an overloaded or rate-limited service
+  stopped the run. New optional `runtime` settings, written by `harness init`, change that for
+  command providers (the simulated provider is not affected): `verificationCorrections` (init 2)
+  returns a change whose mandatory validator failed to `IMPLEMENTATION` up to N times per run,
+  each cycle a `correction.authorized` event with `trigger: VERIFICATION_FAILED` that invalidates
+  the failed verification, and stops as before when they are used up (`correction.exhausted`);
+  `providerFeedback` (init true) adds a bounded `feedback` block to the next request (gate or
+  verification status and reason codes, up to 20 findings, the last 4,000 characters of each
+  failing validator stream with 16,000 in all, the decision rationale and the attempt number;
+  new contract `provider-feedback.schema.json`); the same loop records an
+  `agent.unsupported-claim` finding (severity `unsupportedClaimSeverity`, default `MEDIUM`) when
+  the agent answered `PASSED` and verification failed; `providerRetries` (init 3) and
+  `providerRetryDelaySeconds` (init 60) repeat a call whose stderr or JSON result matches
+  `providerTransientPatterns` (default: timed out, connection reset, went to sleep, overloaded,
+  429, 529, rate limit, usage limit), never a process killed at its timeout, each repetition an
+  `agent.invocation.retried` event with evidence. New metrics `correction.verification_cycles`,
+  `agent.unsupported_claims` and `agent.transient_retries`; `correction.cycles` counts both kinds
+  of correction and the retrospective keeps reporting the human-authorized ones. A
+  `project.yaml` without the settings behaves as before, sends the same provider request and
+  keeps its configuration snapshot digest. `harness config validate` shows the effective values
+  under `feedbackLoop`.
 
 ## 1.0.0 - 2026-10-01
 

@@ -45,6 +45,51 @@ governed memory that applies to the run, the request also carries `context`, wit
 records and their digest (`{"records": [...], "digest": "sha256:…"}`); a run without memory sends
 no `context` key. See [memory and retrospective decisions](memory.md).
 
+When `runtime.providerFeedback` is true (written by `harness init`), the attempt that follows a
+failed `VERIFICATION` (see `runtime.verificationCorrections`) or a `REQUEST_CHANGES` decision also
+carries `feedback`: why the previous attempt was not accepted. Its contract is
+`schemas/v1/provider-feedback.schema.json`; unlike the task and plan it uses camelCase names.
+This one was sent by the fixture agent of `tests/integration/test_verification_corrections.py`,
+whose first attempt left `apply_discount` unchanged (abridged: a `python.ruff` finding and the
+start of the pytest output are left out):
+
+```json
+"feedback": {
+  "schemaVersion": "1.0",
+  "attempt": 2,
+  "trigger": "VERIFICATION_FAILED",
+  "changeSetDigest": "sha256:70dccacdd7bf806dd7f315a6386f90f966f1a431557e70030fed13a832c576d8",
+  "gate": {"gateId": "verification", "gateEvaluationId": null, "status": "FAILED",
+           "reasonCodes": ["python.pytest_FAILED"]},
+  "findings": [
+    {"ruleId": "python.pytest.failed", "severity": "HIGH", "validatorId": "python.pytest",
+     "location": {"path": null, "startLine": null, "endLine": null},
+     "message": "python.pytest failed with exit code 1"},
+    {"ruleId": "agent.unsupported-claim", "severity": "MEDIUM", "validatorId": "harness.claim-check",
+     "location": null,
+     "message": "The agent reported PASSED ('Implemented the threshold discount') but verification failed: python.pytest FAILED"}
+  ],
+  "omittedFindings": 0,
+  "validators": [{"validatorId": "python.pytest", "status": "FAILED", "exitCode": 1,
+                  "summary": "python.pytest failed with exit code 1",
+                  "stdout": "…E       assert 100 == 90\nE        +  where 100 = apply_discount(100, 100, 0.1)\n\ntests/test_pricing.py:4: AssertionError\n…FAILED tests/test_pricing.py::test_at_threshold - assert 100 == 90\n1 failed in 0.01s\n",
+                  "stderr": "", "stdoutTruncated": false, "stderrTruncated": false}],
+  "decision": null
+}
+```
+
+| Field | Content |
+|---|---|
+| `attempt` | Number of the `IMPLEMENTATION` attempt that receives the request (2 or more). |
+| `trigger` | `VERIFICATION_FAILED` (automatic correction) or `CHANGES_REQUESTED` (human decision). |
+| `gate` | For `VERIFICATION_FAILED`, the verification status and one reason code per failing mandatory validator (`<validatorId>_<STATUS>`); for `CHANGES_REQUESTED`, the `delivery_candidate` gate the person decided on, with its id, status and reason codes. |
+| `findings` | Up to 20 findings, most severe first: rule, severity, validator, location and message (at most 1,000 characters). `omittedFindings` counts the rest. |
+| `validators` | Each failing mandatory validator with the end of its redacted stdout and stderr: at most 4,000 characters per stream and 16,000 for all streams together; `*Truncated` says that something was cut. |
+| `decision` | After `REQUEST_CHANGES`: the decision, the rationale (at most 4,000 characters) and the actor id; otherwise `null`. |
+
+The first attempt of a run, and every request of a project without the setting, has no
+`feedback` key, so the request and its prompt digest are the same as before.
+
 **Response (stdout)**: the whole standard output must be one JSON object, and the process must
 exit with 0:
 
@@ -66,6 +111,12 @@ Anything else on standard output (logs, progress) breaks the protocol and the in
 recorded as `ERROR` (`PROTOCOL_ERROR`). Write diagnostics to standard error; both streams are stored
 as redacted artifacts. A non-zero exit code is recorded with the process status without parsing
 the output.
+
+A call that does not pass with a transient cause (a network, overload, rate-limit or usage-limit
+message on standard error or in the JSON result) is repeated with the same request when
+`runtime.providerRetries` is set; a process killed at the timeout is not. If the agent answers
+`PASSED` and the verification of its change fails, the run records an `agent.unsupported-claim`
+finding. See [provider feedback loop](../reference/configuration.md#provider-feedback-loop).
 
 ## Declare what the agent may change
 

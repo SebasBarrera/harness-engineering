@@ -38,3 +38,19 @@ non-functional constraints. The answer about results becomes the acceptance crit
 without criteria never passes `INTENT`, whatever the policy is when the run starts: the phase
 stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
 [tasks without acceptance criteria](../reference/configuration.md#tasks-without-acceptance-criteria).
+
+## Correcting a failed verification
+
+A `REQUEST_CHANGES` decision has always returned the run from `DECISION` to `IMPLEMENTATION`. With
+`runtime.verificationCorrections: N` (written by `harness init` as 2) a command provider's change
+that fails `VERIFICATION` because a mandatory validator failed also returns to `IMPLEMENTATION`,
+up to N times per run, instead of stopping. No phase is added and the workflow file is unchanged:
+the state machine authorizes the transition from `VERIFICATION` only, the failed verification is
+invalidated as a `REQUEST_CHANGES` invalidates the gate, and the next candidate goes through
+`VERIFICATION` again, so a run never leaves the phase with a failing mandatory validator. Each
+cycle is a `correction.authorized` event (`trigger: VERIFICATION_FAILED`); when the cycles are
+used up the run stops in `VERIFICATION` as before. With `runtime.providerFeedback` the next
+request tells the agent why (validator output, findings, reason codes and, after
+`REQUEST_CHANGES`, the rationale); an agent that reported success on a change that then failed
+verification gets an `agent.unsupported-claim` finding. See the
+[provider feedback loop](../reference/configuration.md#provider-feedback-loop).

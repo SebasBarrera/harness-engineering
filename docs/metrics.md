@@ -33,9 +33,12 @@ The list below is the complete set computed by `MetricsProjector.project` in
 | `duration.tool_ms` | ms | DERIVED | Sum of persisted tool invocation durations. | tool invocation records | |
 | `duration.human_wait_ms` | ms | DERIVED, or NOT_AVAILABLE | Elapsed time from the latest gate evaluation to the latest human decision. | gate and decision events | NOT_AVAILABLE until a decision follows a gate evaluation. |
 | `agent.invocations` | count | OBSERVED | Number of persisted agent invocation records. | agent invocation records | |
+| `agent.transient_retries` | count | OBSERVED | Command-provider calls repeated after a transient failure (`runtime.providerRetries`, `agent.invocation.retried` events). | event store | The failed calls are also counted in `agent.invocations`. |
+| `agent.unsupported_claims` | count | DERIVED | Findings `agent.unsupported-claim`: the agent reported success and the verification of its change failed. | finding records | Recorded only when `runtime.verificationCorrections` is set and the provider is a command provider. |
 | `tool.invocations` | count | OBSERVED | Number of persisted tool invocation records. | tool invocation records | |
 | `implementation.attempts` | count | DERIVED | Count of `IMPLEMENTATION` phase-start events. | event store | |
-| `correction.cycles` | count | OBSERVED | Count of human-authorized transitions from `DECISION` back to `IMPLEMENTATION` (`REQUEST_CHANGES`). | event store | |
+| `correction.cycles` | count | OBSERVED | Count of authorized transitions back to `IMPLEMENTATION`: `REQUEST_CHANGES` decisions and automatic corrections after a failed `VERIFICATION` (`correction.authorized` events). | event store | Before the automatic corrections existed it counted `REQUEST_CHANGES` only. |
+| `correction.verification_cycles` | count | OBSERVED | Automatic corrections after a failed `VERIFICATION` (`runtime.verificationCorrections`). | event store | 0 when the setting is absent or the provider is simulated. |
 | `review.cycles` | count | DERIVED | Count of `INDEPENDENT_REVIEW` phase-start events. | event store | |
 | `replanning.count` | count | OBSERVED | Count of plan replacement events after the first accepted plan. | event store | No component emits the `plan.replaced` event yet, so the value is always 0. |
 | `validation.non_passed` | count | DERIVED | Validation results whose normalized status is not `PASSED` (includes `NOT_APPLICABLE`). | validation records | Counts optional validators that did not apply. |
