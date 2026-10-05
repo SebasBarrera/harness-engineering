@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791171793737,
+  "lastUpdate": 1791172846761,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2429,6 +2429,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 3.181,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "b52f0fae8d4144a5ea70662e7705f76cdf3e7eef",
+          "message": "Merge branch 'feat/verification-corrections' into develop\n\nThe harness now closes the loop with the agent. After REQUEST_CHANGES or a\nfailed verification, the command-provider request carries a feedback block\n(status and reason codes, findings, bounded output of the failing validators,\nthe human rationale; provider-feedback.schema.json). With\nruntime.verificationCorrections (init writes 2) a failed blocking validator\nreturns the run to IMPLEMENTATION with that feedback before stopping; a run\nnever passes VERIFICATION with a failing blocking validator. An agent that\nreports success while verification fails gets an agent.unsupported-claim\nfinding, and transient provider failures (network, sleep, overload, rate or\nusage limits) are retried (init writes 3, 60 s apart), recorded apart from\ncorrections. Corrections and retries run in the same agent sandbox. A\nproject.yaml without the keys keeps the 1.0.0 behavior and its digest.\n\nCloses #36\n\nVerification on the branch head 6a004b8316af: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419017\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419025\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419049\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419052\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419132\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37261419137\nFiles of the v0.8.0 cut in the tree: matched: 113/232  mismatched: 95  missing: 24",
+          "timestamp": "2026-10-04T23:00:00-05:00",
+          "tree_id": "ce2a0045bfb93222c640ffe5497ecf2050bdd866",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/b52f0fae8d4144a5ea70662e7705f76cdf3e7eef"
+        },
+        "date": 1791172845964,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001213,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001904,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011582,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.07453,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.253756,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 11.010589,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.597414,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 5.679,
             "unit": "%"
           }
         ]
