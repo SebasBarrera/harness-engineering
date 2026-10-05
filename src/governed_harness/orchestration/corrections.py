@@ -31,7 +31,11 @@ from governed_harness.domain.enums import (
     ValidationKind,
 )
 from governed_harness.domain.models import Actor, ChangeSet, Execution, Finding, PhaseExecution
-from governed_harness.orchestration.workspace_ops import changes_since, materialized
+from governed_harness.orchestration.workspace_ops import (
+    changes_since,
+    materialized,
+    snapshot_contents,
+)
 from governed_harness.runtime import CancellationToken, SafeProcessRunner, WorkspaceSnapshotter
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import ValidatorOutput
@@ -186,7 +190,9 @@ class Corrections:
         )
         argv = ("python", "-m", "pytest", "-q", *python_tests)
         record: dict[str, Any] = {"tests": python_tests, "revertedSources": sources}
-        with materialized(workspace, results.s.paths.harness_dir / "tmp", before, sources) as copy:
+        with materialized(
+            workspace, results.s.paths.harness_dir / "tmp", snapshot_contents(before), sources
+        ) as copy:
             if copy is None:
                 return []
             outcome = SafeProcessRunner(copy).run(

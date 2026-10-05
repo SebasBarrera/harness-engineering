@@ -17,12 +17,15 @@ from pydantic import BaseModel
 from governed_harness.configuration.models import ProjectConfiguration, WorkflowDefinition
 from governed_harness.domain.models import (
     AgentInvocation,
+    AgentSelfReport,
     Artifact,
     CapabilityGrant,
     ChangeSet,
     ClarificationRecord,
     ClarificationRequest,
+    ComponentProvenance,
     Evidence,
+    EvidenceBundleManifest,
     ExceptionRecord,
     Execution,
     Finding,
@@ -50,11 +53,14 @@ type SchemaModel = type[BaseModel]
 
 MODELS: dict[str, SchemaModel] = {
     "agent-invocation.schema.json": AgentInvocation,
+    "agent-self-report.schema.json": AgentSelfReport,
     "artifact.schema.json": Artifact,
     "capability-grant.schema.json": CapabilityGrant,
     "change-set.schema.json": ChangeSet,
     "clarification-record.schema.json": ClarificationRecord,
     "clarification-request.schema.json": ClarificationRequest,
+    "component-provenance.schema.json": ComponentProvenance,
+    "evidence-bundle-manifest.schema.json": EvidenceBundleManifest,
     "evidence.schema.json": Evidence,
     "exception.schema.json": ExceptionRecord,
     "execution.schema.json": Execution,

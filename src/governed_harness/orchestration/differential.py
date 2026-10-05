@@ -47,7 +47,7 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.evidence import sha256_json
-from governed_harness.orchestration.workspace_ops import changes_since, materialized
+from governed_harness.orchestration.workspace_ops import materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.validators import CommandValidator, ValidationContext, ValidatorOutput
 from governed_harness.validators.parsers import parse_output
@@ -202,10 +202,13 @@ class Differential:
         if not pending:
             return runs
         workspace = results.s.paths.workspace
-        diff = changes_since(workspace, baseline)
+        diff = results.baseline_changes(execution)
+        contents = results.baseline_contents(execution)
+        if diff is None or contents is None:
+            return runs
         paths = [item.path for item in diff.changes]
         scratch = results.s.paths.harness_dir / "tmp"
-        with materialized(workspace, scratch, baseline, paths) as copy:
+        with materialized(workspace, scratch, contents, paths) as copy:
             if copy is None:
                 results.s.events.append(
                     execution.execution_id,

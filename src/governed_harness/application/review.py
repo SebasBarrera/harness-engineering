@@ -13,7 +13,9 @@ from typing import Any
 
 from governed_harness.domain.enums import FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import (
+    AgentSelfReport,
     ChangeSet,
+    ComponentProvenance,
     Execution,
     Finding,
     GateEvaluation,
@@ -406,6 +408,7 @@ def build_brief(
             for item in decisions
         ],
         "next": _next(execution, awaiting),
+        **_provenance_sections(services, execution_id, digest),
     }
     if agent_results:
         brief["riskFactors"] = agent_results
@@ -435,3 +438,52 @@ def _agent_results_section(
             for item in signals
         ],
     }
+
+
+def _provenance_sections(
+    services: EngineServices, execution_id: str, digest: str | None
+) -> dict[str, Any]:
+    """``provenance`` and ``selfReports`` (``provenance`` settings, since 1.1); absent when the
+    run recorded neither, so the brief of other runs keeps its form."""
+    sections: dict[str, Any] = {}
+    records = [
+        item
+        for item in services.state.list(
+            "component_provenance", ComponentProvenance, execution_id=execution_id
+        )
+        if item.change_set_digest == digest
+    ]
+    if records:
+        latest = records[-1]
+        out_of_band = [item.path for item in latest.files if item.source == "OUT_OF_BAND"]
+        sections["provenance"] = {
+            "changeSetDigest": latest.change_set_digest,
+            "agentFiles": len(latest.files) - len(out_of_band),
+            "outOfBandFiles": len(out_of_band),
+            "outOfBandPaths": out_of_band,
+            "files": [item.model_dump(mode="json", by_alias=True) for item in latest.files],
+        }
+    reports = services.state.list("agent_self_report", AgentSelfReport, execution_id=execution_id)
+    if reports:
+        sections["selfReports"] = [
+            {
+                "invocationId": item.invocation_id,
+                "quality": item.quality.value,
+                "assumptions": list(item.assumptions),
+                "alternativesDiscarded": list(item.alternatives_discarded),
+                "lowConfidenceAreas": [
+                    entry.model_dump(mode="json", by_alias=True)
+                    for entry in item.low_confidence_areas
+                ],
+                "unrequestedChanges": [
+                    entry.model_dump(mode="json", by_alias=True)
+                    for entry in item.unrequested_changes
+                ],
+                "problems": list(item.problems),
+                "contrast": item.contrast.model_dump(mode="json", by_alias=True)
+                if item.contrast
+                else None,
+            }
+            for item in reports[-3:]
+        ]
+    return sections

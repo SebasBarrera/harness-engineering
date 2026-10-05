@@ -28,7 +28,7 @@ from governed_harness.domain.enums import (
 )
 from governed_harness.domain.errors import PolicyViolationError
 from governed_harness.domain.models import ChangeSet, Execution
-from governed_harness.orchestration.workspace_ops import changes_since, restore_changes
+from governed_harness.orchestration.workspace_ops import restore_changes
 from governed_harness.runtime.guard import IGNORED_PATTERNS
 from governed_harness.validators import ValidatorOutput
 
@@ -111,11 +111,11 @@ class StopLine:
 
     def _record(self, execution: Execution, reason: str, *, restore: bool) -> dict[str, Any] | None:
         results = self.results
-        baseline = results.baseline_snapshot(execution)
-        if baseline is None:
+        diff = results.baseline_changes(execution)
+        contents = results.baseline_contents(execution)
+        if diff is None or contents is None:
             return None
         workspace = results.s.paths.workspace
-        diff = changes_since(workspace, baseline)
         if not diff.changes:
             return None
         patch = results.s.artifacts.put(
@@ -126,7 +126,7 @@ class StopLine:
         restored: list[str] = []
         unrestorable: list[str] = []
         if restore:
-            restored, unrestorable = restore_changes(workspace, baseline, diff)
+            restored, unrestorable = restore_changes(workspace, contents, diff)
         record: dict[str, Any] = {
             "executionId": execution.execution_id,
             "reason": reason,
@@ -164,13 +164,12 @@ class StopLine:
         if not owned or task.implementation.mode == "patch":
             return None
         owned_set = {str(item) for item in owned}
-        baseline = self.results.baseline_snapshot(execution)
-        if baseline is None:
+        since = self.results.baseline_changes(execution)
+        if since is None:
             return None
-
         outside = [
             item.path
-            for item in changes_since(self.results.s.paths.workspace, baseline).changes
+            for item in since.changes
             if item.path not in owned_set
             and not any(fnmatch.fnmatchcase(item.path, pattern) for pattern in IGNORED_PATTERNS)
         ]

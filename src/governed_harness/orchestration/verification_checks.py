@@ -49,7 +49,7 @@ from governed_harness.domain.models import (
     PhaseExecution,
     Task,
 )
-from governed_harness.runtime import CancellationToken, WorkspaceSnapshot
+from governed_harness.runtime import CancellationToken
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidationContext, ValidatorOutput
 
@@ -144,7 +144,7 @@ class VerificationChecks:
             diff,
             files,
             self.results.s.paths.workspace,
-            self.results.baseline_snapshot(execution),
+            self.results.baseline_text(execution),
         ):
             outputs.append(
                 self._output(
@@ -731,7 +731,7 @@ def pure_checks(
     diff: Sequence[DiffFile],
     files: Mapping[str, str],
     workspace: Path,
-    baseline: WorkspaceSnapshot | None,
+    baseline_text: Callable[[str], str | None] | None,
 ) -> list[CheckResult]:
     """The checks that read only the diff and the files (VERIFICATION and ``harness check``):
     interface, architecture, security patterns, constraints, weakened controls and secrets."""
@@ -749,7 +749,7 @@ def pure_checks(
             (
                 ARCHITECTURE_ID,
                 "enforce",
-                lambda: architecture_issues(config.architecture, files, baseline),
+                lambda: architecture_issues(config.architecture, files, baseline_text),
             )
         )
     if config.security_patterns:
@@ -827,7 +827,7 @@ def interface_issues(workspace: Path, task: Task, policy: str) -> tuple[list[Iss
 
 
 def architecture_issues(
-    config: Any, files: Mapping[str, str], baseline: WorkspaceSnapshot | None
+    config: Any, files: Mapping[str, str], baseline_text: Callable[[str], str | None] | None
 ) -> tuple[list[Issue], str]:
     severity = config.severity or FindingSeverity.MEDIUM
     limits = ArchitectureLimits(
@@ -842,8 +842,7 @@ def architecture_issues(
     for issue in check_architecture(files, limits, severity=severity):
         # A limit the file already exceeded on the baseline (same rule, same subject) is
         # pre-existing: reported as LOW so the agent is not blamed for it.
-        state = baseline.files.get(issue.path) if baseline and issue.path else None
-        before = state.text if state else None
+        before = baseline_text(issue.path) if baseline_text and issue.path else None
         previous = (
             check_architecture({issue.path or "": before}, limits, severity=severity)
             if before is not None

@@ -1,9 +1,16 @@
 # Connecting an external agent
 
-The harness does not ship a native integration with Claude Code, Codex or any model API. An agent
-is connected through the **command provider**: a program that the harness launches in the
-`IMPLEMENTATION` phase, sends the task and plan as JSON on standard input, and reads one JSON result
-from standard output. Anything that can be wrapped in such a program can be governed.
+An agent is connected in one of two ways:
+
+- a **built-in adapter** (since 1.1) for Claude Code, Codex, Gemini CLI or Aider: the harness runs
+  the agent CLI itself in its non-interactive mode, renders the task as a prompt and reads the
+  CLI's own output, including the tokens and cost it reports (see
+  [built-in adapters](#built-in-adapters));
+- the **command provider**: a program that the harness launches in the `IMPLEMENTATION` phase,
+  sends the task and plan as JSON on standard input, and reads one JSON result from standard
+  output. Anything that can be wrapped in such a program can be governed.
+
+The harness calls no model API itself.
 
 The provider only proposes a change. It never evaluates or approves it: verification, independent
 review, the gate and the human decision stay with the harness.
@@ -26,6 +33,73 @@ of `command` must be allowed by a `process.execute` capability (the Python profi
 `python`, the Node.js profile `npm` and `node`); add a grant in `capabilities.grants` for anything
 else. The process runs with `cwd` set to the workspace, without a shell, with the
 `runtime.commandTimeoutSeconds` timeout and the `runtime.maxOutputBytes` output bound.
+
+## Built-in adapters
+
+```yaml
+agentProvider: claude
+agentProviders:
+  claude:
+    kind: claude-code              # or codex, gemini-cli, aider
+    model: claude-sonnet-4-5       # passed as --model and recorded on the invocation
+    passEnv: [ANTHROPIC_API_KEY, HTTPS_PROXY]
+capabilities:
+  grants:
+    - capability: process.execute
+      scope: [claude]
+```
+
+| `kind` | Runs (before `args`) | Prompt | Reads |
+|---|---|---|---|
+| `claude-code` | `claude -p --output-format json --permission-mode acceptEdits` | standard input | `result`, `is_error`, `subtype`, `session_id`, `usage` (input tokens are input, cache-creation and cache-read tokens), `total_cost_usd` |
+| `codex` | `codex exec --json --full-auto --skip-git-repo-check -` | standard input | JSON events: the last `agent_message`, `turn.completed` usage (no cost), `turn.failed` or `error`, the `thread_id` |
+| `gemini-cli` | `gemini --output-format json --approval-mode auto_edit --prompt <a pointer to standard input>` | standard input | `response`, `error`, `stats.models.*.tokens` (`prompt`, `candidates`, `thoughts`; no cost) |
+| `aider` | `aider --yes-always --no-auto-commits --no-dirty-commits --no-stream --no-pretty --no-gitignore --no-check-update --analytics-disable`, history files in the null device, `--message <prompt>` | command line (recorded as `<prompt>`) | the `Tokens: … sent, … received. Cost: $… message, $… session.` lines (counts above 1,000 are printed rounded) |
+
+`command` replaces the executable (for example `[npx, -y, "@anthropic-ai/claude-code"]` or a
+wrapper script); `args` adds arguments after the adapter's own, such as `--allowedTools` for
+Claude Code. The first element of the command needs a `process.execute` grant, as for any
+provider. The adapters run under the same sandbox, capability grant, timeout, output bound and
+transient-failure retries as a command provider, and a failed call's summary carries the end of
+its standard error.
+
+The prompt holds the task (title, intent, requirements, acceptance criteria, constraints, the
+files it owns or the patches it describes), the plan, the governed memory selected for the run, the
+`feedback` block of a correction attempt (gate, findings with their location, the end of the
+failing validators' output and a reviewer's rationale) and, under `provenance.selfReport`, the
+request for a self-report. The prompt digest recorded on the invocation is the digest of the same
+request a command provider would receive.
+
+The command lines follow each CLI's documentation. They are covered by tests with fake CLIs that
+print each documented output format (`tests/integration/test_native_adapters.py`); they have not
+been run against the live agents in this repository. Codex has its own sandbox: under
+`runtime.agentSandbox: enforce` on macOS a sandbox inside `sandbox-exec` may be refused by the
+operating system (not verified); `args: [--sandbox, danger-full-access]` leaves confinement to the
+harness's sandbox.
+
+## Environment and secrets
+
+The process runner gives a provider only `PATH`, `HOME`, `SYSTEMROOT`, `TMPDIR`, `TEMP`, `LANG`
+and `LC_ALL`. A provider declares what else it receives:
+
+```yaml
+agentProviders:
+  claude:
+    kind: claude-code
+    passEnv: [HTTPS_PROXY, SSL_CERT_FILE]     # passed as they are, when set
+    env:
+      ANTHROPIC_API_KEY: {fromEnv: HARNESS_ANTHROPIC_KEY}   # read when the provider starts
+      CLAUDE_CODE_MAX_OUTPUT_TOKENS: "16000"                 # a literal value
+```
+
+A `fromEnv` variable that is not set stops `IMPLEMENTATION` (`BLOCKED`) before the provider starts,
+instead of running the agent without its credentials. Only the names are recorded (evidence and an
+`agent.environment.applied` event). Every value that comes from the environment (`passEnv` and
+`fromEnv`, of every configured provider and of the project validators' `passEnv`) of at least 8
+characters is redacted from every stored artifact and from the agent's summary as
+`<REDACTED_ENV>`; shorter values are not, so that a value such as `1` does not erase every
+occurrence in an output. With `runtime.extendedRedaction` the stored artifacts are also cleaned of
+model-API keys, Slack tokens, JSON Web Tokens and passwords in URLs.
 
 ## Write confinement
 
@@ -200,6 +274,7 @@ prompt = (
 )
 # AGENT_COMMAND is the agent's non-interactive invocation, for example the documented
 # 'print' or 'exec' mode of your agent CLI; the prompt is appended as the last argument.
+# The provider receives it through passEnv (see below).
 command = shlex.split(os.environ["AGENT_COMMAND"]) + [prompt]
 result = subprocess.run(command, capture_output=True, text=True)
 sys.stderr.write(result.stdout + result.stderr)          # keep stdout for the protocol only
@@ -207,10 +282,25 @@ status = "PASSED" if result.returncode == 0 else "FAILED"
 print(json.dumps({"status": status, "summary": f"agent exited with {result.returncode}"}))
 ```
 
-Register it with `command: [python, tools/agent_adapter.py]` and pass `AGENT_COMMAND` in the
-environment of the harness process. If the agent CLI reports its token and cost usage, forward it
-in `usage`; otherwise the metrics `tokens.*` and `cost.usd` stay `NOT_AVAILABLE`
-(see [metrics](../metrics.md)).
+Register it and declare the variables it reads; before 1.1 the guide said to set
+`AGENT_COMMAND` in the environment of the harness process, but the provider only received
+`PATH`, `HOME`, `LANG` and `TMPDIR`, and the wrapper failed with `KeyError: 'AGENT_COMMAND'`:
+
+```yaml
+agentProviders:
+  wrapped:
+    kind: command
+    command: [python, tools/agent_adapter.py]
+    passEnv: [AGENT_COMMAND, ANTHROPIC_API_KEY]
+```
+
+For Claude Code, Codex, Gemini CLI and Aider a [built-in adapter](#built-in-adapters) replaces
+the wrapper. If the agent CLI reports its token and cost usage, forward it in `usage`; otherwise the
+metrics `tokens.*` and `cost.usd` stay `NOT_AVAILABLE` (see [metrics](../metrics.md)). Under
+`provenance.selfReport` the request also carries `selfReport`, and the response may answer
+`selfReport` with `assumptions`, `alternativesDiscarded` (lists of text), `lowConfidenceAreas` and
+`unrequestedChanges` (lists of `{path, description}`); it is stored as `REPORTED` data and a
+malformed one is recorded with its `problems`, never as a protocol error.
 
 ## External plugins
 

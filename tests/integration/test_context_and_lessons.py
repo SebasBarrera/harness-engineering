@@ -122,7 +122,9 @@ def test_without_the_settings_the_request_keeps_the_1_0_form(
     application = HarnessApplication()
     run(application, python_workspace, tmp_path, "task_plain")
     [request] = requests(log)
-    assert set(request) <= {"schemaVersion", "task", "plan", "context", "feedback"}
+    # selfReport belongs to provenance.selfReport (wave 4), not to the agent-results settings.
+    assert set(request) <= {"schemaVersion", "task", "plan", "context", "feedback", "selfReport"}
+    assert "kind" not in request and "instructions" not in request
     assert request["schemaVersion"] == "1.0"
 
 

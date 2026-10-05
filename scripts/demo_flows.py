@@ -7,12 +7,16 @@ checked against the documented expectation. The script is used by CI in three wa
 
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
-  clarification, traceability, corrections, integrity and agent-results flows, leaving the
-  projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
+  clarification, traceability, corrections, integrity, delivery and agent-results flows,
+  leaving the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them;
 * any single flow name, for local debugging.
 
 A JSON transcript (command, expected and actual exit code) is written with ``--transcript``.
 Exit code 0 means every step matched its expectation.
+
+The harness runs without the developer's global or system Git configuration (as the fixture
+repositories do): a closure commit (``delivery.closureCommit``) would otherwise be signed with the
+developer's key.
 """
 
 from __future__ import annotations
@@ -135,7 +139,9 @@ class Transcript:
         self, flow: str, cwd: Path, args: Sequence[str], expect: int
     ) -> subprocess.CompletedProcess[str]:
         argv = [self.harness, *args]
-        proc = subprocess.run(argv, cwd=cwd, capture_output=True, text=True, check=False)
+        proc = subprocess.run(
+            argv, cwd=cwd, capture_output=True, text=True, check=False, env=ISOLATED_GIT_ENV
+        )
         matched = proc.returncode == expect
         self.ok &= matched
         self.steps.append(
@@ -163,6 +169,15 @@ class Transcript:
         self.ok &= condition
         mark = "ok " if condition else "BAD"
         print(f"[{mark}] {flow:<14} check: {description}")
+
+
+ISOLATED_GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+def git_output(cwd: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", *args], cwd=cwd, check=True, capture_output=True, text=True, env=ISOLATED_GIT_ENV
+    ).stdout.strip()
 
 
 def git(cwd: Path, *args: str) -> None:
@@ -1137,6 +1152,62 @@ def flow_integrity(t: Transcript, root: Path) -> None:
     t.run(flow, root, ["trace", *here, "--run", run_id, "--format", "json"], 6)
 
 
+def flow_delivery(t: Transcript, root: Path) -> None:
+    """Wave 4: the approved ChangeSet becomes one commit with trailers on harness/<run> (the
+    closure commit init enables), the evidence bundle verifies without the workspace, and
+    verify-approval passes for the closure commit with the bundle, fails without an approval
+    (exit 5) and fails once a later commit changes the range (exit 5)."""
+    flow = "delivery"
+    python_project(root)
+    (root / "task.yaml").write_text(PY_TASK)
+    t.run(flow, root, ["init", "--path", "."], 0)
+    t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
+    run_id = t.json(
+        flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 4
+    )["executionId"]
+    base = git_output(root, "rev-parse", "HEAD")
+    digest = current_digest(t, flow, root, run_id)
+    t.run(
+        flow,
+        root,
+        [
+            "gate",
+            "decide",
+            "--path",
+            ".",
+            "--run",
+            run_id,
+            "--decision",
+            "APPROVE",
+            "--change-set-digest",
+            digest,
+            "--actor",
+            "you",
+            "--rationale",
+            "Criteria covered by tests",
+        ],
+        0,
+    )
+    branch = f"harness/{run_id}"
+    message = git_output(root, "log", "-1", "--format=%B", branch)
+    t.check(
+        flow,
+        f"Harness-Run: {run_id}" in message and f"Harness-ChangeSet: {digest}" in message,
+        "the closure commit carries the run and the approved digest as trailers",
+    )
+    t.check(flow, git_output(root, "rev-parse", "HEAD") == base, "the current branch did not move")
+    t.run(flow, root, ["export", "--path", ".", "--run", run_id, "--bundle", "evidence.tar.gz"], 0)
+    t.run(flow, root, ["verify", "--bundle", "evidence.tar.gz"], 0)
+    approval = ["verify-approval", "--path", ".", "--base", base, "--no-workspace"]
+    t.run(flow, root, [*approval, "--head", branch, "--bundle", "evidence.tar.gz"], 0)
+    t.run(flow, root, [*approval, "--head", branch], 5)
+    git(root, "checkout", "-q", "--force", branch)  # the working tree holds the same change
+    with (root / "src" / "sample" / "pricing.py").open("a") as handle:
+        handle.write("# a later edit nobody approved\n")
+    git(root, "commit", "-qam", "later edit")
+    t.run(flow, root, [*approval, "--head", "HEAD", "--bundle", "evidence.tar.gz"], 5)
+
+
 def flow_agent_results(t: Transcript, root: Path) -> None:
     """The agent-results settings init writes (wave 2, #52), with the simulated provider: a
     failure the baseline already has does not block, harness check runs the gate without
@@ -1204,6 +1275,7 @@ FLOWS = {
     "traceability": flow_traceability,
     "corrections": flow_corrections,
     "integrity": flow_integrity,
+    "delivery": flow_delivery,
     "agent-results": flow_agent_results,
 }
 

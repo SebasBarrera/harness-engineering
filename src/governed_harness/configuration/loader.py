@@ -56,14 +56,18 @@ def resource_text(*parts: str) -> str:
     return target.read_text(encoding="utf-8")
 
 
+_BUILTIN_PROFILES = {
+    "python": "python.yaml",
+    "python_default": "python.yaml",
+    "node": "node.yaml",
+    "node_default": "node.yaml",
+}
+BUILTIN_PROFILE_IDS = frozenset(_BUILTIN_PROFILES)
+"""Ids (and aliases) of the built-in profiles; a project profile cannot reuse them."""
+
+
 def load_builtin_profile(profile_id: str) -> TechnologyProfileDefinition:
-    aliases = {
-        "python": "python.yaml",
-        "python_default": "python.yaml",
-        "node": "node.yaml",
-        "node_default": "node.yaml",
-    }
-    filename = aliases.get(profile_id)
+    filename = _BUILTIN_PROFILES.get(profile_id)
     if filename is None:
         raise ConfigurationError(f"unknown built-in profile: {profile_id}")
     try:

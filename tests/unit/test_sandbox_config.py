@@ -51,6 +51,7 @@ def test_project_file_without_the_sandbox_keys_is_off_and_keeps_its_snapshot(
         unsupportedClaimSeverity=None,
         providerRetries=None,
         providerRetryDelaySeconds=None,
+        extendedRedaction=None,
     )
     resolved = ConfigurationResolver().resolve(python_workspace)
     assert resolved.project.runtime.agent_sandbox is None

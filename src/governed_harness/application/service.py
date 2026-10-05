@@ -19,7 +19,16 @@ from governed_harness.configuration import (
 )
 from governed_harness.configuration.declared import declared_settings_report
 from governed_harness.configuration.loader import find_project_config, load_yaml
-from governed_harness.configuration.models import ProjectConfiguration
+from governed_harness.configuration.models import ProjectConfiguration, PublisherConfig
+from governed_harness.delivery.approval import verify_approval
+from governed_harness.delivery.bundle import export_bundle, verify_bundle
+from governed_harness.delivery.publisher import (
+    GitHubPublisher,
+    Transport,
+    render_brief_markdown,
+    transport_for,
+)
+from governed_harness.delivery.vcs import Git, repository_from_remote
 from governed_harness.domain.actors import (
     DEFAULT_CLI_ACTOR,
     IdentitySource,
@@ -199,8 +208,45 @@ class HarnessApplication:
             "feedbackLoop": self._feedback_loop(resolved.project.runtime),
             "governance": self._governance(resolved.project.governance_settings),
             "agentResults": agent_results_summary(resolved.project),
+            **self._wave4_settings(resolved),
             "declarative": declarative,
             "warnings": warnings,
+        }
+
+    @staticmethod
+    def _wave4_settings(resolved: Any) -> dict[str, Any]:
+        """Effective workspace, toolchain, provenance and delivery settings (since 1.1;
+        absent keys resolve to the 1.0.0 behaviour)."""
+        project = resolved.project
+        workspace = project.workspace
+        toolchain = project.toolchain_settings
+        provenance = project.provenance_settings
+        delivery = project.delivery_settings
+        return {
+            "snapshots": {
+                "snapshot": workspace.snapshot or "walk",
+                "baseline": workspace.baseline or "text",
+                "snapshotCache": bool(workspace.snapshot_cache),
+            },
+            "toolchain": {
+                "profileDetection": toolchain.profile_detection or "best",
+                "interpreter": toolchain.interpreter or "system",
+                "projectProfiles": [
+                    item for item in resolved.source_files if not item.startswith("builtin:")
+                ][1:],
+                "commands": {
+                    item.validator_id: list(item.command or ())
+                    for item in resolved.effective_validators
+                },
+            },
+            "provenance": {
+                "agentSnapshots": bool(provenance.agent_snapshots),
+                "selfReport": bool(provenance.self_report),
+            },
+            "delivery": {
+                "closureCommit": delivery.mode,
+                "branch": delivery.branch_template if delivery.mode == "branch" else None,
+            },
         }
 
     @staticmethod
@@ -749,6 +795,98 @@ class HarnessApplication:
                 "runCount": len(runs),
                 "runs": runs,
             }
+
+    def export_bundle(self, path: Path, execution_id: str, output: Path) -> dict[str, Any]:
+        """Write the portable evidence bundle of a run (``delivery.bundle``). Under
+        ``governance.verifyRecords`` the run is verified first, as for ``trace``."""
+        with self._services(path) as services:
+            execution_id = self._run_id(services, execution_id)
+            if services.resolved.project.governance_settings.verify_records:
+                verification = RunVerifier(services).verify(execution_id)
+                if not verification.valid:
+                    raise IntegrityError(
+                        f"run {execution_id} does not verify ({verification.summary()}); "
+                        "inspect it with harness verify --run"
+                    )
+            return export_bundle(services, execution_id, output)
+
+    @staticmethod
+    def verify_bundle(bundle: Path) -> dict[str, Any]:
+        """Verify a bundle without a workspace or a project configuration."""
+        if not bundle.is_file():
+            raise NotFoundError(f"bundle not found: {bundle}")
+        return verify_bundle(bundle)
+
+    @staticmethod
+    def verify_approval(
+        path: Path,
+        *,
+        base: str,
+        head: str = "HEAD",
+        bundles: tuple[Path, ...] = (),
+        use_workspace: bool = True,
+    ) -> dict[str, Any]:
+        """Whether the range ``base..head`` is a ChangeSet a person approved
+        (``delivery.approval``); needs a Git repository, not a project configuration."""
+        for bundle in bundles:
+            if not bundle.is_file():
+                raise NotFoundError(f"bundle not found: {bundle}")
+        root = path.resolve()
+        if not Git(root).is_repository():
+            raise ConfigurationError(f"not a Git repository: {root}")
+        top = Path(Git(root).text("rev-parse", "--show-toplevel"))
+        return verify_approval(top, base, head, bundles=bundles, use_workspace=use_workspace)
+
+    def publish_pull_request(
+        self,
+        path: Path,
+        execution_id: str,
+        *,
+        pull_request: int,
+        repository: str | None = None,
+        transport: str | None = None,
+        sarif: bool | None = None,
+        commit_sha: str | None = None,
+        transport_override: Transport | None = None,
+    ) -> dict[str, Any]:
+        """Post the decision brief of a run on a pull request and upload its SARIF report."""
+        with self._services(path) as services:
+            run_id = self._run_id(services, execution_id)
+            settings = services.resolved.project.delivery_settings.publisher or PublisherConfig()
+            updates: dict[str, Any] = {}
+            if repository is not None:
+                updates["repository"] = repository
+            if transport is not None:
+                updates["transport"] = transport
+            if sarif is not None:
+                updates["sarif"] = sarif
+            settings = PublisherConfig.model_validate(
+                settings.model_dump(by_alias=True)
+                | {
+                    PublisherConfig.model_fields[key].alias or key: value
+                    for key, value in updates.items()
+                }
+            )
+            name = settings.repository or repository_from_remote(services.paths.workspace)
+            if name is None:
+                raise ConfigurationError(
+                    "no repository: pass --repository owner/name or set "
+                    "delivery.publisher.repository (no GitHub remote named origin was found)"
+                )
+            execution = services.state.get("execution", run_id, Execution)
+            brief = build_brief(services, run_id, exceptions=brief_exceptions(services, execution))
+            report = None
+            if settings.sarif:
+                findings = services.state.list("finding", Finding, execution_id=run_id)
+                report = TraceReporter().render_sarif(findings)
+            publisher = GitHubPublisher(transport_override or transport_for(settings), name)
+            return publisher.publish(
+                pull_request=pull_request,
+                run_id=run_id,
+                brief_markdown=render_brief_markdown(brief),
+                sarif=report,
+                commit_sha=commit_sha,
+            )
 
     def list_runs(self, path: Path) -> list[Execution]:
         with self._services(path) as services:

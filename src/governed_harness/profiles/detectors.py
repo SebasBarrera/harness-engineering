@@ -1,7 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # the configuration package imports this module
+    from governed_harness.configuration.models import TechnologyProfileDefinition
 
 
 @dataclass(frozen=True)
@@ -73,6 +78,36 @@ class NodeDetector(MarkerDetector):
         )
 
 
-def detect_profiles(workspace: Path) -> list[DetectionResult]:
+class DeclaredProfileDetector:
+    """Detection of a project profile (``toolchain.profilePaths``) by the markers its YAML
+    declares. A profile that declares no marker applies to every workspace."""
+
+    def __init__(self, profile: TechnologyProfileDefinition) -> None:
+        self.profile = profile
+
+    def detect(self, workspace: Path) -> DetectionResult:
+        root = workspace.resolve(strict=True)
+        if not self.profile.detectors:
+            return DetectionResult(
+                profile_id=self.profile.profile_id,
+                technology=self.profile.technology,
+                confidence=1.0,
+                evidence=("no detectors declared",),
+            )
+        evidence = [item.marker for item in self.profile.detectors if (root / item.marker).exists()]
+        score = sum(item.weight for item in self.profile.detectors if item.marker in evidence)
+        return DetectionResult(
+            profile_id=self.profile.profile_id,
+            technology=self.profile.technology,
+            confidence=min(1.0, score),
+            evidence=tuple(evidence),
+        )
+
+
+def detect_profiles(
+    workspace: Path, extra: Iterable[TechnologyProfileDefinition] = ()
+) -> list[DetectionResult]:
+    """The built-in detections and, since 1.1, those of the project profiles in ``extra``."""
     results = [PythonDetector().detect(workspace), NodeDetector().detect(workspace)]
+    results.extend(DeclaredProfileDetector(profile).detect(workspace) for profile in extra)
     return sorted(results, key=lambda item: (item.confidence, item.profile_id), reverse=True)

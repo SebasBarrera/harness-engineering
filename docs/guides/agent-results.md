@@ -32,6 +32,13 @@ output and the usage it reports are evidence of the run, and each kind may use i
 model and effort (`intake.clarifyAgent`, `verification.acceptanceTests.author`,
 `planning.planner`, `review.reviewer`), sent in the request as `routing`.
 
+A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
+request as a prompt (the instructions, then the request as JSON) and reads the `result` object
+from the last JSON object with a `result` key in the agent's answer. The router's model and
+effort become `--model` and, for Claude Code, `--effort`; for Codex,
+`-c model_reasoning_effort="..."`. These paths are covered by tests against the documented
+output formats, not against the live agents.
+
 An implement request keeps the 1.0 form unless an agent-results key adds something to it; then
 it is version `1.1` and may carry `kind`, `instructions`, `workspace`, `gate`, `permissions`,
 `routing`, `budget`, `contextFiles`, `lessons` and `acceptanceTests`, as described below.

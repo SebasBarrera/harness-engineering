@@ -303,11 +303,61 @@ def parse_pytest_text(lines: list[str]) -> list[ParsedIssue]:
     return issues
 
 
+def _load_json(text: str) -> Any:
+    stripped = text.strip()
+    if not stripped.startswith(("{", "[")):
+        return None
+    try:
+        return json.loads(stripped)
+    except ValueError:
+        return None
+
+
+def _parse_only(
+    parser: str, stdout: str, stderr: str, workspace: Path, reports: tuple[str, ...]
+) -> list[ParsedIssue]:
+    """The issues of one named format (``toolchain.validators[].parser``)."""
+    texts = (*reports, stdout)
+    lines = [line.rstrip() for line in (stdout + "\n" + stderr).splitlines()]
+    issues: list[ParsedIssue] = []
+    if parser == "junit":
+        for text in texts:
+            if "<testsuite" in text:
+                issues.extend(parse_junit(text, workspace))
+        return issues
+    text_parsers = {"mypy": parse_mypy_text, "tsc": parse_tsc_text, "pytest": parse_pytest_text}
+    if parser in text_parsers:
+        return text_parsers[parser](lines)
+    for text in texts:
+        data = _load_json(text)
+        if parser == "sarif" and isinstance(data, dict) and "runs" in data:
+            issues.extend(parse_sarif(data, workspace))
+        elif parser in {"eslint", "ruff"} and isinstance(data, list):
+            rows = [item for item in data if isinstance(item, dict)]
+            issues.extend(
+                parse_eslint_json(rows, workspace)
+                if parser == "eslint"
+                else parse_ruff_json(rows, workspace)
+            )
+    if parser == "ruff" and not issues:
+        issues.extend(parse_ruff_text(lines))
+    return issues
+
+
 def parse_output(
-    stdout: str, stderr: str, workspace: Path, reports: tuple[str, ...] = ()
+    stdout: str,
+    stderr: str,
+    workspace: Path,
+    reports: tuple[str, ...] = (),
+    parser: str = "auto",
 ) -> list[ParsedIssue]:
     """Every issue the output of one validator run reports, in order, at most ``MAX_ISSUES``
-    (callers count the rest)."""
+    (callers count the rest). ``parser`` names one format (``sarif``, ``junit``, ``ruff``,
+    ``mypy``, ``eslint``, ``tsc``, ``pytest``); ``auto`` recognizes every format by content."""
+    if parser == "none":
+        return []
+    if parser != "auto":
+        return _normalized(_parse_only(parser, stdout, stderr, workspace, reports), workspace)
     issues: list[ParsedIssue] = []
     for text in (*reports, stdout):
         parsed = _parse_json(text, workspace)
@@ -318,8 +368,12 @@ def parse_output(
             issues.extend(parse_junit(text, workspace))
     if not issues:
         lines = [line.rstrip() for line in (stdout + "\n" + stderr).splitlines()]
-        for parser in (parse_ruff_text, parse_mypy_text, parse_tsc_text, parse_pytest_text):
-            issues.extend(parser(lines))
+        for text_parser in (parse_ruff_text, parse_mypy_text, parse_tsc_text, parse_pytest_text):
+            issues.extend(text_parser(lines))
+    return _normalized(issues, workspace)
+
+
+def _normalized(issues: list[ParsedIssue], workspace: Path) -> list[ParsedIssue]:
     return [
         ParsedIssue(
             rule=item.rule,

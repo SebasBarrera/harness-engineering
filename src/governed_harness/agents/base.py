@@ -29,6 +29,8 @@ class AgentExecutionResult:
     tool_invocations: tuple[ToolInvocation, ...] = ()
     output_ref: str | None = None
     usage: ResourceUsage | None = None
+    self_report: Any = None
+    """The raw self-report the agent gave (``provenance.selfReport``), read by the engine."""
 
 
 class AgentContext(Protocol):

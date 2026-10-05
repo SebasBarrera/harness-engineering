@@ -401,6 +401,30 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
             for key, title in (("findingsResolved", "resolved"), ("findingsNew", "new")):
                 for item in delta[key]:
                     lines.append(f"  {title}: {item['ruleId']} {item['location']}")
+    provenance = brief.get("provenance")
+    if provenance:
+        lines.extend(
+            [
+                "",
+                f"Provenance: {provenance['agentFiles']} file(s) written by an agent invocation, "
+                f"{provenance['outOfBandFiles']} changed out of band",
+                *(f"  out of band: {path}" for path in provenance["outOfBandPaths"]),
+            ]
+        )
+    for report in brief.get("selfReports") or []:
+        lines.extend(
+            ["", f"Agent self-report (REPORTED, not verified) of {report['invocationId']}"]
+        )
+        lines.extend(f"  assumption: {item}" for item in report["assumptions"])
+        lines.extend(
+            f"  low confidence: {item.get('path') or '-'}: {item['description']}"
+            for item in report["lowConfidenceAreas"]
+        )
+        lines.extend(
+            f"  unrequested change: {item.get('path') or '-'}: {item['description']}"
+            for item in report["unrequestedChanges"]
+        )
+        lines.extend(f"  problem: {item}" for item in report["problems"])
     if brief.get("next"):
         lines.extend(["", "Next:", *(f"  {step}" for step in brief["next"])])
     if changed.get("diff"):

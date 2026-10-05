@@ -44,6 +44,7 @@ plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-task
 acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
 budget_app = typer.Typer(help="Governed budget of agent calls")
 routing_app = typer.Typer(help="Model and effort routing of agent calls")
+pr_app = typer.Typer(help="Pull request integration")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -63,6 +64,7 @@ app.add_typer(plan_app, name="plan")
 app.add_typer(acceptance_app, name="acceptance")
 app.add_typer(budget_app, name="budget")
 app.add_typer(routing_app, name="routing")
+app.add_typer(pr_app, name="pr")
 
 
 ACTOR_HELP = (
@@ -670,6 +672,12 @@ def verify(
     run: str | None = typer.Option(
         None, "--run", help="Run (execution) identifier; without it, every run of the workspace"
     ),
+    bundle: Path | None = typer.Option(
+        None,
+        "--bundle",
+        dir_okay=False,
+        help="Verify a portable evidence bundle instead (no workspace needed)",
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
@@ -677,12 +685,111 @@ def verify(
     """Verify the record of a run (or of every run): the event chain, the head of the chain
     against its anchor outside .harness (`governance.chainAnchor`), every record that has an
     event against that event, the execution's pointers and every referenced artifact against its
-    digest. Prints a report and never repairs anything. Exit code 0 when everything verifies, 6
-    when any check fails, 3 for an unknown run."""
-    report = _call(lambda: HarnessApplication().verify(path, run))
+    digest. Prints a report and never repairs anything. With --bundle, verify an evidence bundle
+    of `harness export` instead: its entries against the manifest, the event chain, the artifacts
+    and the decision records. Exit code 0 when everything verifies, 6 when any check fails, 3 for
+    an unknown run or bundle."""
+    if bundle is not None:
+        if run is not None:
+            _report_error({"status": "ERROR", "error": "use --run or --bundle, not both"})
+            raise typer.Exit(code=2)
+        report = _call(lambda: HarnessApplication.verify_bundle(bundle))
+    else:
+        report = _call(lambda: HarnessApplication().verify(path, run))
     _emit(report)
     if not report["valid"]:
         raise typer.Exit(code=6)
+
+
+@app.command()
+def export(
+    bundle: Path = typer.Option(
+        ..., "--bundle", dir_okay=False, help="Write the portable evidence bundle (tar.gz) here"
+    ),
+    run: str = RUN_OPTION_LATEST,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Export a run as a portable evidence bundle: its event chain, records, every artifact they
+    reference and a manifest with the digest of each entry. `harness verify --bundle` and
+    `harness verify-approval --bundle` check it without the workspace. A run whose event chain
+    does not verify is not exported (exit code 5; 6 under `governance.verifyRecords` when the
+    record does not verify)."""
+    _emit(_call(lambda: HarnessApplication().export_bundle(path, run, bundle)))
+
+
+@app.command("verify-approval")
+def verify_approval(
+    base: str = typer.Option(
+        ..., "--base", help="Revision the change starts from (the pull request base)"
+    ),
+    head: str = typer.Option("HEAD", "--head", help="Revision to verify (the merged tree)"),
+    bundle: list[Path] | None = typer.Option(
+        None, "--bundle", help="Evidence bundle with the approval (repeatable)"
+    ),
+    workspace: bool = typer.Option(
+        True,
+        "--workspace/--no-workspace",
+        help="Also look for the approval in the workspace's .harness/state.db",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Repository directory"
+    ),
+) -> None:
+    """Check in CI that the range --base..--head is a ChangeSet a person approved: recompute its
+    ChangeSet digest from the two revisions and require an unexpired APPROVE or
+    APPROVE_EXCEPTION bound to that digest in a bundle (or the workspace record). Any other
+    change in the range fails. Exit code 0 when it passes, 5 when no approval matches."""
+    report = _call(
+        lambda: HarnessApplication.verify_approval(
+            path, base=base, head=head, bundles=tuple(bundle or ()), use_workspace=workspace
+        )
+    )
+    _emit(report)
+    if report["status"] != "PASSED":
+        raise typer.Exit(code=5)
+
+
+@pr_app.command("publish")
+def pr_publish(
+    pull_request: int = typer.Option(..., "--pr", min=1, help="Pull request number"),
+    run: str = RUN_OPTION_LATEST,
+    repository: str | None = typer.Option(
+        None, "--repository", help="owner/name (default: delivery.publisher or the origin remote)"
+    ),
+    transport: str | None = typer.Option(
+        None,
+        "--transport",
+        help="gh (the GitHub CLI) or api (HTTPS with the token in delivery.publisher.tokenEnv, "
+        "GITHUB_TOKEN by default)",
+    ),
+    sarif: bool | None = typer.Option(
+        None, "--sarif/--no-sarif", help="Upload the run's findings to code scanning"
+    ),
+    commit: str | None = typer.Option(
+        None, "--commit", help="Commit the SARIF report belongs to (default: the PR head)"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Post the decision brief of a run on a GitHub pull request (one comment per run, updated
+    when published again) and upload the run's findings as SARIF. Information only: nothing is
+    decided on the pull request."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().publish_pull_request(
+                path,
+                run,
+                pull_request=pull_request,
+                repository=repository,
+                transport=transport,
+                sarif=sarif,
+                commit_sha=commit,
+            )
+        )
+    )
 
 
 @app.command()

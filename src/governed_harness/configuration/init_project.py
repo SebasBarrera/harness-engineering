@@ -39,7 +39,13 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
     value = {
         "configVersion": "1.0",
         "projectId": project_id_from_path(target),
-        "workspace": {"root": "..", "units": []},
+        "workspace": {
+            "root": "..",
+            "units": [],
+            "snapshot": "git",
+            "baseline": "manifest",
+            "snapshotCache": True,
+        },
         "profiles": ["auto"],
         "workflow": "default_development",
         "capabilities": {"default": "deny", "grants": []},
@@ -62,10 +68,11 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "unsupportedClaimSeverity": "MEDIUM",
             "providerRetries": 3,
             "providerRetryDelaySeconds": 60,
+            "extendedRedaction": True,
             "gateContract": True,
             "reproduceFirst": True,
         },
-        "retention": {"artifactDays": 30, "eventDays": 365},
+        "retention": {"artifactDays": 30, "eventDays": 365, "orphanArtifacts": True},
         "intake": {
             "criteriaPolicy": "enforce",
             "ambiguityReview": "agent",
@@ -144,6 +151,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "stopTheLine": "restore",
             "phasePermissions": True,
         },
+        "toolchain": {"profileDetection": "all", "interpreter": "auto"},
+        "provenance": {"agentSnapshots": True, "selfReport": True},
+        "delivery": {"closureCommit": "branch"},
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

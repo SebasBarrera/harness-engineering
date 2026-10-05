@@ -21,11 +21,20 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    during the run is included.
 2. **Install the project's test dependencies where the harness runs.** Validators run the
    project's own commands (`python -m pytest`, `npm test`) with the interpreter or tools found on
-   `PATH`. A missing test dependency is not detected in advance: the tests fail to collect.
+   `PATH`; under `toolchain.interpreter: auto` (written by `harness init` since 1.1) the Python
+   validators use the project's `.venv` or `venv`, `uv run --no-sync` or `poetry run` instead. A
+   project whose commands differ declares its own validators under `toolchain.validators` (see
+   [project toolchain](../reference/configuration.md#project-toolchain)). A missing test
+   dependency is not detected in advance: the tests fail to collect.
 3. **The baseline may already be broken.** The harness does not yet tell pre-existing failures from
    introduced ones (the `PREEXISTING_ERROR` status exists but is never assigned, issue #7). The
    evidence shows which files failed, so you can see that they are outside the ChangeSet.
-4. **Respect the existing conventions.** Detection is read-only: the weights of the marker files
+4. **Large repositories.** Since 1.1 `harness init` writes `workspace.snapshot: git`,
+   `workspace.baseline: manifest` and `workspace.snapshotCache: true`: files that `.gitignore`
+   excludes are never read or stored, the baseline is a manifest of digests, and unchanged files
+   are not hashed again. See [large repositories](../reference/configuration.md#large-repositories)
+   for the measurement on 10,001 files.
+5. **Respect the existing conventions.** Detection is read-only: the weights of the marker files
    found are added up to a confidence of at most 1.0 and reported with the files as evidence. Lock
    files (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) add to the Node.js confidence, but the
    profile always runs `npm`; its `ambiguousPackageManager` policy is declared and not enforced. If

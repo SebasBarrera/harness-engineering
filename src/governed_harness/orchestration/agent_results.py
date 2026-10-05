@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import fnmatch
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -50,13 +51,20 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
-from governed_harness.orchestration.workspace_ops import changes_since, restore_changes
+from governed_harness.orchestration.workspace_ops import (
+    Contents,
+    changes_since,
+    restore_changes,
+    snapshot_contents,
+)
 from governed_harness.runtime import (
     CancellationToken,
     PatchApplier,
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
 )
+from governed_harness.runtime.snapshots import StoredSnapshot
+from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
@@ -114,7 +122,7 @@ class AgentResults:
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
-        self._baselines: dict[str, WorkspaceSnapshot | None] = {}
+        self._baselines: dict[str, StoredSnapshot | None] = {}
 
     def after_verification(
         self,
@@ -127,17 +135,47 @@ class AgentResults:
         ``verification.ratchet``)."""
         return self.differential.reclassify(execution, phase, change_set, outputs)
 
-    def baseline_snapshot(self, execution: Execution) -> WorkspaceSnapshot | None:
-        """The workspace as DISCOVERY recorded it (with file texts), or ``None``."""
+    def baseline_stored(self, execution: Execution) -> StoredSnapshot | None:
+        """The workspace as DISCOVERY recorded it (1.0.0 text snapshot or manifest)."""
         key = execution.execution_id
         if key not in self._baselines:
             uri = self.s.state.get_flag(f"baseline:{key}")
-            self._baselines[key] = (
-                self.engine._snapshot_from_dict(json.loads(self.s.artifacts.get(uri)))
-                if uri
-                else None
-            )
+            self._baselines[key] = self.engine.snapshots.load(uri) if uri else None
         return self._baselines[key]
+
+    def baseline_snapshot(self, execution: Execution) -> WorkspaceSnapshot | None:
+        stored = self.baseline_stored(execution)
+        return stored.snapshot if stored else None
+
+    def baseline_contents(self, execution: Execution) -> Contents | None:
+        """The recorded bytes of the baseline's files (from the text it kept or from Git)."""
+        stored = self.baseline_stored(execution)
+        if stored is None:
+            return None
+        snapshots = self.engine.snapshots
+        return Contents(
+            lambda path: path in stored.snapshot.files,
+            lambda path: snapshots.content(stored, path),
+        )
+
+    def baseline_text(self, execution: Execution) -> Callable[[str], str | None]:
+        contents = self.baseline_contents(execution)
+
+        def text(path: str) -> str | None:
+            if contents is None or not contents.existed(path):
+                return None
+            data = contents.content(path)
+            return data.decode("utf-8", "replace") if data is not None else None
+
+        return text
+
+    def baseline_changes(self, execution: Execution) -> WorkspaceDiff | None:
+        """Every change since DISCOVERY (not only the owned paths), with a unified diff."""
+        stored = self.baseline_stored(execution)
+        if stored is None:
+            return None
+        snapshots = self.engine.snapshots
+        return snapshots.diff(stored, snapshots.take())
 
     # ----- configuration -------------------------------------------------------------------
     @property
@@ -650,7 +688,9 @@ class AgentResults:
         )
         diff = changes_since(self.s.paths.workspace, before)
         if diff.changes:
-            restored, unrestorable = restore_changes(self.s.paths.workspace, before, diff)
+            restored, unrestorable = restore_changes(
+                self.s.paths.workspace, snapshot_contents(before), diff
+            )
             shown = ", ".join(item.path for item in diff.changes[:10])
             self.record_finding(
                 execution,
@@ -742,7 +782,10 @@ class AgentResults:
 
     def provider_command(self, provider_id: str) -> tuple[str, ...]:
         configured = self.project.agent_providers.get(provider_id)
-        return configured.command if configured else ()
+        if configured is None:
+            return ()
+        # A built-in adapter (kind claude-code, codex, ...) names its family by its kind.
+        return (*(configured.command or ()), configured.kind)
 
     def routing_for(
         self,
@@ -876,12 +919,8 @@ class AgentResults:
 
         extra: dict[str, Any] = {}
         context = self.project.context
-        baseline = self.baseline_snapshot(execution)
-        changed = (
-            [item.path for item in changes_since(self.s.paths.workspace, baseline).changes]
-            if baseline is not None
-            else []
-        )
+        since = self.baseline_changes(execution)
+        changed = [item.path for item in since.changes] if since is not None else []
         owned = [str(item) for item in task.metadata.get("ownedPaths") or []]
         lessons = self.lessons.for_request(execution, phase, task, [*owned, *changed])
         if lessons:

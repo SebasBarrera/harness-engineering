@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import json
 import tempfile
+from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -35,7 +37,8 @@ from governed_harness.domain.models import (
     Task,
 )
 from governed_harness.evidence import LocalArtifactStore
-from governed_harness.runtime import CancellationToken, SafeProcessRunner, WorkspaceSnapshotter
+from governed_harness.runtime import CancellationToken, SafeProcessRunner
+from governed_harness.runtime.snapshots import SnapshotSettings, SnapshotStore
 from governed_harness.validators import CommandValidator, ValidationContext
 from governed_harness.validators.review import RULES
 
@@ -131,13 +134,13 @@ class GateContract:
 
     def write_check_state(self, execution: Execution, task: Task) -> Path:
         """The task and the baseline ``harness check`` compares the workspace with."""
-        baseline = self.results.baseline_snapshot(execution)
         path = check_state_path(self.results.s.paths.harness_dir, execution.execution_id)
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         value = {
             "executionId": execution.execution_id,
             "task": task.model_dump(mode="json", by_alias=True),
-            "baseline": self.results.engine._snapshot_to_dict(baseline) if baseline else None,
+            # The stored baseline (text snapshot or manifest), read from the artifact store.
+            "baselineRef": self.results.s.state.get_flag(f"baseline:{execution.execution_id}"),
         }
         path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
         return path
@@ -174,7 +177,6 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
-    from governed_harness.orchestration.engine import RunEngine
     from governed_harness.orchestration.verification_checks import (
         current_files,
         pure_checks,
@@ -184,20 +186,31 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     workspace = resolved.workspace_root.resolve()
     state = _check_state(workspace / ".harness", execution_id)
     task = Task.model_validate(state["task"]) if state else None
-    baseline = (
-        RunEngine._snapshot_from_dict(state["baseline"]) if state and state["baseline"] else None
-    )
+    baseline_ref = state.get("baselineRef") if state else None
     run_id = str(state["executionId"]) if state else "check"
     validators: list[dict[str, Any]] = []
     blocking_names = resolved.effective_policies.get("findingBlockSeverities", ["HIGH", "CRITICAL"])
     blocking = {FindingSeverity(str(name)) for name in blocking_names}
-    snapshotter = WorkspaceSnapshotter(workspace)
     diff_text = ""
     digest = "sha256:check"
-    if baseline is not None:
-        diff = snapshotter.diff(baseline, snapshotter.snapshot())
+    baseline_text: Callable[[str], str | None] | None = None
+    if isinstance(baseline_ref, str):
+        # Read-only: the artifact store and the snapshot listing without the snapshot cache,
+        # so the check runs inside the agent sandbox, which keeps .harness read-only.
+        snapshots = SnapshotStore(
+            workspace,
+            LocalArtifactStore(workspace / ".harness" / "artifacts"),
+            replace(SnapshotSettings.from_config(resolved.project.workspace), cache=False),
+        )
+        stored = snapshots.load(baseline_ref)
+        diff = snapshots.diff(stored, snapshots.take())
         diff_text = diff.unified_diff.decode("utf-8", "replace")
         digest = diff.digest
+
+        def baseline_text(path: str) -> str | None:
+            data = snapshots.content(stored, path)
+            return data.decode("utf-8", "replace") if data is not None else None
+
     with tempfile.TemporaryDirectory(prefix="harness-check-") as scratch:
         store = LocalArtifactStore(Path(scratch) / "artifacts")
         change_set = ChangeSet(
@@ -245,7 +258,7 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             )
     checks: list[dict[str, Any]] = []
     verification = resolved.project.verification
-    if verification is not None and task is not None and baseline is not None:
+    if verification is not None and task is not None and baseline_text is not None:
         parsed = parse_unified_diff(diff_text)
         for item in pure_checks(
             verification,
@@ -253,7 +266,7 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             parsed,
             current_files(workspace, parsed),
             workspace,
-            baseline,
+            baseline_text,
         ):
             checks.append(
                 {
