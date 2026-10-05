@@ -426,8 +426,8 @@ checks, without repairing anything:
 - every artifact the run's artifact and evidence records reference: present and with the digest
   of its URI (`missing`, `content-differs`, `digest-differs`).
 
-It prints a JSON report and exits with 0 when everything verifies and 6 otherwise. `harness
-status` no longer aborts on a broken chain in any project: it reports `eventChainValid: false` and
+It prints a JSON report and exits with 0 when everything verifies and 6 otherwise.
+`harness status` no longer aborts on a broken chain in any project: it reports `eventChainValid: false` and
 the reason in `eventChainError` (before, an edited event made it exit with 1).
 
 | Key | Absent | `init` | Effect |

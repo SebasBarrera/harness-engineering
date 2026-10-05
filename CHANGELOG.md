@@ -178,8 +178,8 @@
   policy `coverage: {minimumPercent: N}` into a mandatory `python.coverage` validator;
   `applyNetworkPolicy` makes `runtime.allowNetwork: false` deny the agent outbound connections
   in the sandbox (Seatbelt rule or `bwrap --unshare-net`). `harness init` now writes
-  `runtime.allowNetwork: true`, since agent CLIs call their model API. The new `harness gc
-  [--apply]` applies `retention.artifactDays` (prunes the artifacts of runs that ended, with a
+  `runtime.allowNetwork: true`, since agent CLIs call their model API. The new
+  `harness gc [--apply]` applies `retention.artifactDays` (prunes the artifacts of runs that ended, with a
   `retention.artifacts.pruned` event that `verify` honours) and `retention.eventDays` (removes
   the run). The remaining declared settings (`workspace.units`, `runtime.maxParallel`, three
   policies, the workflow's `dependsOn`, `parallelizable`, `allowedCapabilities`, per-phase
