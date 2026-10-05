@@ -75,6 +75,7 @@ governed_harness = [
   "py.typed",
   "resources/profiles/*.yaml",
   "resources/workflows/*.yaml",
+  "resources/verification/*.yaml",
   "resources/schemas/v1/*.json",
 ]
 

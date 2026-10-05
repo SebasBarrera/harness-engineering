@@ -5,9 +5,11 @@ from pathlib import Path
 
 from governed_harness.configuration.loader import (
     BUILTIN_PROFILE_IDS,
+    EXTENDED_PROFILES,
     find_project_config,
     load_builtin_profile,
     load_builtin_workflow,
+    load_extended_profiles,
     load_project_config,
     load_yaml,
 )
@@ -49,13 +51,20 @@ class ConfigurationResolver:
         workspace_root = (config_path.parent / project.workspace.root).resolve(strict=True)
         toolchain = project.toolchain_settings
         project_profiles, profile_files = load_project_profiles(
-            workspace_root, toolchain.profile_paths or ()
+            workspace_root,
+            toolchain.profile_paths or (),
+            reserved=frozenset(EXTENDED_PROFILES) if toolchain.extended_profiles else frozenset(),
         )
+        # Since #55: the built-in Go, Rust, JVM, Swift and Android profiles are detected under
+        # toolchain.extendedProfiles; without it detection is the 1.0.0 one.
+        extended = load_extended_profiles() if toolchain.extended_profiles else {}
         requested = list(project.profiles)
         if requested == ["auto"] or "auto" in requested:
             detections = [
                 result
-                for result in detect_profiles(workspace_root, project_profiles.values())
+                for result in detect_profiles(
+                    workspace_root, [*project_profiles.values(), *extended.values()]
+                )
                 if result.confidence > 0
             ]
             if not detections:
@@ -211,7 +220,7 @@ class ConfigurationResolver:
 
 
 def load_project_profiles(
-    workspace_root: Path, paths: tuple[str, ...]
+    workspace_root: Path, paths: tuple[str, ...], reserved: frozenset[str] = frozenset()
 ) -> tuple[dict[str, TechnologyProfileDefinition], tuple[str, ...]]:
     """The profiles of ``toolchain.profilePaths`` by id, and the files they came from."""
     files: list[Path] = []
@@ -235,7 +244,7 @@ def load_project_profiles(
             raise
         except Exception as error:
             raise ConfigurationError(f"invalid project profile {path}: {error}") from error
-        if profile.profile_id in BUILTIN_PROFILE_IDS:
+        if profile.profile_id in BUILTIN_PROFILE_IDS | reserved:
             raise ConfigurationError(
                 f"project profile {path} uses the built-in profile id {profile.profile_id!r}"
             )

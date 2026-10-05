@@ -1,0 +1,33 @@
+profileVersion: '1.0'
+profileId: go_default
+technology: go
+detectors:
+  - marker: go.mod
+    weight: 0.80
+  - marker: go.sum
+    weight: 0.20
+defaultCommands:
+  test: [go, test, ./...]
+  lint: [go, vet, ./...]
+defaultValidators:
+  - go.test
+  - go.vet
+validators:
+  - id: go.test
+    command: [go, test, ./...]
+    mandatory: true
+    timeoutSeconds: 900
+  - id: go.vet
+    command: [go, vet, ./...]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 300
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['**/*.go', 'go.mod', 'go.sum', 'testdata/**']
+  process.execute: [go]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

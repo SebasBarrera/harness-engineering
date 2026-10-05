@@ -62,6 +62,7 @@ jobs:
               "governed_harness/resources/workflows/default.yaml",
               "governed_harness/resources/profiles/python.yaml",
               "governed_harness/resources/profiles/node.yaml",
+              "governed_harness/resources/verification/capabilities.yaml",
           ]
           schemas = [n for n in names if n.startswith("governed_harness/resources/schemas/v1/")]
           missing = [n for n in required if n not in names]

@@ -1,0 +1,33 @@
+profileVersion: '1.0'
+profileId: jvm_maven
+technology: jvm
+detectors:
+  - marker: pom.xml
+    weight: 0.80
+  - marker: mvnw
+    weight: 0.10
+defaultCommands:
+  test: [mvn, --batch-mode, --quiet, test]
+  typecheck: [mvn, --batch-mode, --quiet, compile]
+defaultValidators:
+  - maven.test
+  - maven.compile
+validators:
+  - id: maven.test
+    command: [mvn, --batch-mode, --quiet, test]
+    mandatory: true
+    timeoutSeconds: 1800
+  - id: maven.compile
+    command: [mvn, --batch-mode, --quiet, compile]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 1800
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['src/**', '**/src/**', 'pom.xml', '**/pom.xml']
+  process.execute: [mvn]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

@@ -67,9 +67,7 @@ class LadderConfig(_Section):
 
     mode: LadderMode | None = None
     default_level: VerificationLevel | None = Field(default=None, alias="defaultLevel")
-    deferred_expiry_days: int | None = Field(
-        default=None, alias="deferredExpiryDays", ge=1, le=365
-    )
+    deferred_expiry_days: int | None = Field(default=None, alias="deferredExpiryDays", ge=1, le=365)
     preflight: bool | None = None
     capability_detection: bool | None = Field(default=None, alias="capabilityDetection")
     detection_timeout_seconds: int | None = Field(
