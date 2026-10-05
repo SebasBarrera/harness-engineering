@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Onboarding (#53). `harness --version` prints the version (it was `No such option`, exit 2). On
+  a terminal every command prints readable text; JSON stays the default when standard output is
+  not a terminal, `--json` forces it and `--no-json` forces text (it printed a Python `repr`),
+  both per command and before the command name. `harness init` reports the detected profiles and
+  the next commands, adds `.harness/` to `.gitignore` (`--no-gitignore` skips it) and writes
+  `.harness/task.example.yaml` (`--no-example-task` skips it); the Python API `init` does neither
+  unless asked. `harness doctor` also reports the Git identity, the baseline commit, whether
+  `.harness/` is ignored, the agent CLI of the configured provider on `PATH`, the agent sandbox
+  mechanism and every validator's command, each with a fix; a missing default agent CLI, a
+  missing mandatory validator or a missing sandbox mechanism for a command provider fail it
+  (exit 2), the rest are `WARNING`s. Errors keep their text and exit code and gain a `hint`
+  (JSON) or `Hint:` line (terminal) with the command that fixes them. The README documents a
+  pipx install from the release wheel (not exercised in CI).
+
 - `INTENT` checks that acceptance criteria can be verified (#32). A task whose only criterion was
   "It works." passed `INTENT` and `SPECIFICATION` and was approved. A deterministic assessment now
   raises clarification questions with stable ids for a criterion without an observable result

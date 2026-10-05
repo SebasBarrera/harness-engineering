@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,7 +9,10 @@ from typing import Any
 
 import typer
 
+from governed_harness import __version__
 from governed_harness.application import HarnessApplication
+from governed_harness.application.hints import default_hint
+from governed_harness.cli.render import render_human, wants_json
 from governed_harness.domain.enums import (
     DecisionKind,
     MemoryLevel,
@@ -42,34 +46,86 @@ app.add_typer(benchmark_app, name="benchmark")
 app.add_typer(api_app, name="api")
 
 
-def _emit(value: object, json_output: bool = True) -> None:
+JSON_OPTION: Any = typer.Option(
+    None,
+    "--json/--no-json",
+    help="Print JSON, or readable text with --no-json (default: JSON unless standard output "
+    "is a terminal)",
+)
+
+_OUTPUT: dict[str, bool | None] = {"json": None}
+"""The global --json/--no-json choice of the current invocation (None: decide by terminal)."""
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"harness {__version__}")
+        raise typer.Exit()
+
+
+@app.callback()
+def root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Print the harness version and exit",
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Governed Agent Harness CLI. Output is JSON when standard output is not a terminal (or
+    with --json) and readable text on a terminal (or with --no-json)."""
+    _OUTPUT["json"] = json_output
+
+
+def _plain(value: object) -> object:
     if hasattr(value, "model_dump"):
-        value = value.model_dump(mode="json", by_alias=True)
-    elif isinstance(value, list):
-        value = [
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, list):
+        return [
             item.model_dump(mode="json", by_alias=True) if hasattr(item, "model_dump") else item
             for item in value
         ]
-    if json_output:
+    return value
+
+
+def _json_wanted(json_output: bool | None = None) -> bool:
+    return wants_json(json_output if json_output is not None else _OUTPUT["json"])
+
+
+def _emit(value: object, json_output: bool | None = None, kind: str | None = None) -> None:
+    value = _plain(value)
+    if _json_wanted(json_output):
         typer.echo(json.dumps(value, indent=2, ensure_ascii=False, default=str))
     else:
-        typer.echo(value)
+        typer.echo(render_human(value, kind))
 
 
-def _call[T](operation: Callable[[], T]) -> T:
+Hint = Callable[[BaseException], str | None]
+
+
+def _report_error(payload: dict[str, Any]) -> None:
+    if wants_json(_OUTPUT["json"], sys.stderr):
+        typer.echo(json.dumps(payload, indent=2), err=True)
+        return
+    typer.echo(f"Error: {payload['error']}", err=True)
+    if payload.get("hint"):
+        typer.echo(f"Hint: {payload['hint']}", err=True)
+
+
+def _call[T](operation: Callable[[], T], hint: Hint | None = None) -> T:
     try:
         return operation()
     except HarnessError as error:
-        typer.echo(json.dumps({"status": "ERROR", "error": str(error)}, indent=2), err=True)
+        payload: dict[str, Any] = {"status": "ERROR", "error": str(error)}
+        advice = (hint(error) if hint else None) or default_hint(error)
+        if advice:
+            payload["hint"] = advice
+        _report_error(payload)
         raise typer.Exit(code=error.exit_code) from error
     except Exception as error:
-        typer.echo(
-            json.dumps(
-                {"status": "ERROR", "errorType": type(error).__name__, "error": str(error)},
-                indent=2,
-            ),
-            err=True,
-        )
+        _report_error({"status": "ERROR", "errorType": type(error).__name__, "error": str(error)})
         raise typer.Exit(code=1) from error
 
 
@@ -97,9 +153,31 @@ def init(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
     force: bool = typer.Option(False, "--force", help="Replace an existing project configuration"),
+    gitignore: bool = typer.Option(
+        True,
+        "--gitignore/--no-gitignore",
+        help="Add .harness/ to the project's .gitignore (state, artifacts and copies of the code "
+        "live there)",
+    ),
+    example_task: bool = typer.Option(
+        True,
+        "--example-task/--no-example-task",
+        help="Write an example task to .harness/task.example.yaml",
+    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
-    """Create .harness/project.yaml for a repository, using the detected technology profiles."""
-    _emit(_call(lambda: HarnessApplication().init(path, force=force)))
+    """Create .harness/project.yaml for a repository, using the detected technology profiles,
+    add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
+    next commands."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().init(
+                path, force=force, gitignore=gitignore, example_task=example_task
+            )
+        ),
+        json_output,
+        kind="init",
+    )
 
 
 @app.command()
@@ -107,9 +185,7 @@ def inspect(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Detect the technology profiles of a repository (read-only), with confidence and
     evidence."""
@@ -121,15 +197,16 @@ def doctor(
     path: Path | None = typer.Option(
         None, "--path", help="Also validate the project in this directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Check the local environment (Python and Git required; Node.js and npm reported as
-    NOT_APPLICABLE when absent) and, with --path, the project configuration. Exit code 2 when a
-    required check fails."""
+    NOT_APPLICABLE when absent; Git identity reported) and, with --path, the project: its
+    configuration, the agent CLI of the configured provider on PATH, the agent sandbox mechanism,
+    the validators, the baseline commit and whether .harness/ is ignored by Git. Each check that
+    is not PASSED says how to fix it. Exit code 2 when a required check FAILED; a WARNING does
+    not fail."""
     result = _call(lambda: HarnessApplication().doctor(path))
-    _emit(result, json_output)
+    _emit(result, json_output, kind="doctor")
     if result["status"] != "PASSED":
         raise typer.Exit(code=2)
 
@@ -139,9 +216,7 @@ def config_validate(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Validate the project configuration and print the resolved profiles, workflow,
     validators, capabilities and policies."""
@@ -156,9 +231,7 @@ def task_create(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Validate a task file (YAML or JSON) and persist it as a versioned task. A task needs
     at least one acceptance criterion (exit code 2 otherwise), except under
@@ -172,12 +245,10 @@ def task_list(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """List the tasks persisted in the project."""
-    _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output)
+    _emit(_call(lambda: HarnessApplication().list_tasks(path)), json_output, kind="tasks")
 
 
 @task_app.command("show")
@@ -245,15 +316,13 @@ def run_start(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Create a run for a task and execute the normative phases until a stop condition. Exit
     code 4 means the automated phases finished and a human decision is pending; 6 means a
     validation, policy or blocking condition stopped the run."""
     execution = _call(lambda: HarnessApplication().start_run(path, task, provider))
-    _emit(execution, json_output)
+    _emit(execution, json_output, kind="execution")
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
@@ -263,14 +332,12 @@ def run_continue(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Resume a run from its persisted state, for example after fixing the environment or after
     REQUEST_CHANGES."""
     execution = _call(lambda: HarnessApplication().continue_run(path, run))
-    _emit(execution, json_output)
+    _emit(execution, json_output, kind="execution")
     _exit_for_execution(execution.status, execution.current_phase.value)
 
 
@@ -289,7 +356,7 @@ def run_cancel(
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
     event."""
     execution = _call(lambda: HarnessApplication().cancel_run(path, run, actor))
-    _emit(execution)
+    _emit(execution, kind="execution")
 
 
 @run_app.command("list")
@@ -299,7 +366,7 @@ def run_list(
     ),
 ) -> None:
     """List the runs of the project, newest first."""
-    _emit(_call(lambda: HarnessApplication().list_runs(path)))
+    _emit(_call(lambda: HarnessApplication().list_runs(path)), kind="runs")
 
 
 @app.command()
@@ -308,13 +375,11 @@ def status(
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
-    json_output: bool = typer.Option(
-        True, "--json/--no-json", help="Print JSON (default) or a plain representation"
-    ),
+    json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Show the full status projection of a run: phases, validations, findings, gate, human
     decision, event-chain check and metrics."""
-    _emit(_call(lambda: HarnessApplication().status(path, run)), json_output)
+    _emit(_call(lambda: HarnessApplication().status(path, run)), json_output, kind="status")
 
 
 @app.command()
@@ -357,7 +422,7 @@ def findings_list(
     ),
 ) -> None:
     """List the structured findings of a run with severity, rule and location."""
-    _emit(_call(lambda: HarnessApplication().list_findings(path, run)))
+    _emit(_call(lambda: HarnessApplication().list_findings(path, run)), kind="findings")
 
 
 def _memory_value(raw: str) -> dict[str, Any]:

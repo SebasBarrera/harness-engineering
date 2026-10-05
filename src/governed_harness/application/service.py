@@ -44,13 +44,57 @@ from governed_harness.reporting import TraceReporter
 from governed_harness.telemetry import MetricsProjector
 
 from .clarification_loader import load_clarification_file
+from .hints import default_hint
+from .onboarding import (
+    EXAMPLE_TASK_NAME,
+    ensure_gitignore,
+    git_identity,
+    provider_checks,
+    repository_checks,
+    sandbox_check,
+    validator_checks,
+    write_example_task,
+)
 from .task_loader import load_task_file
 
 
 class HarnessApplication:
-    def init(self, path: Path, *, force: bool = False) -> dict[str, Any]:
+    def init(
+        self,
+        path: Path,
+        *,
+        force: bool = False,
+        gitignore: bool = False,
+        example_task: bool = False,
+    ) -> dict[str, Any]:
+        """Write .harness/project.yaml. The CLI also asks for the .gitignore entry and the
+        example task (``gitignore``/``example_task``); the Python API leaves the workspace
+        untouched beyond .harness/ unless asked."""
         config = initialize_project(path, force=force)
-        return {"status": "PASSED", "configuration": str(config)}
+        workspace = config.parent.parent
+        detections = [item for item in detect_profiles(workspace) if item.confidence > 0]
+        result: dict[str, Any] = {
+            "status": "PASSED",
+            "configuration": str(config),
+            "profiles": [
+                {"profileId": item.profile_id, "confidence": item.confidence} for item in detections
+            ],
+        }
+        if gitignore:
+            result["gitignore"] = ensure_gitignore(workspace)
+        example: Path | None = None
+        if example_task:
+            example = write_example_task(
+                config.parent, [item.technology for item in detections], force=force
+            )
+            result["exampleTask"] = str(example) if example else None
+        task_file = f".harness/{EXAMPLE_TASK_NAME}" if example or example_task else "task.yaml"
+        result["next"] = [
+            "harness doctor --path .",
+            f"harness task create --file {task_file}   (after editing it)",
+            "harness run start --task <taskId>",
+        ]
+        return result
 
     def inspect(self, path: Path) -> dict[str, Any]:
         workspace = path.resolve(strict=True)
@@ -646,6 +690,9 @@ class HarnessApplication:
             "node": {"status": "PASSED" if shutil.which("node") else "NOT_APPLICABLE"},
             "npm": {"status": "PASSED" if shutil.which("npm") else "NOT_APPLICABLE"},
         }
+        if checks["git"]["status"] == "FAILED":
+            checks["git"]["hint"] = "Install Git: the harness records baselines from Git."
+        checks["gitIdentity"] = git_identity(path if path and path.is_dir() else None)
         if path is not None:
             try:
                 resolved = ConfigurationResolver().resolve(path)
@@ -659,8 +706,19 @@ class HarnessApplication:
                     "status": "PASSED" if os.access(harness_dir, os.W_OK) else "FAILED",
                     "path": str(harness_dir),
                 }
+                if checks["filesystem"]["status"] == "FAILED":
+                    checks["filesystem"]["hint"] = f"Make {harness_dir} writable by this user."
+                checks.update(repository_checks(resolved.workspace_root))
+                checks.update(provider_checks(resolved))
+                checks["agentSandbox"] = sandbox_check(resolved)
+                checks["validators"] = validator_checks(resolved)
             except Exception as error:
-                checks["configuration"] = {"status": "FAILED", "message": str(error)}
+                checks["configuration"] = {
+                    "status": "FAILED",
+                    "message": str(error),
+                    "hint": default_hint(error)
+                    or "Fix .harness/project.yaml; `harness config validate` shows the error.",
+                }
         status = (
             "PASSED"
             if all(item["status"] not in {"FAILED", "ERROR"} for item in checks.values())

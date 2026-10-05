@@ -5,11 +5,20 @@
 `harness` 1.0.0 exposes 30 commands. Every command accepts `--help`.
 Exit codes are documented in [exit codes](exit-codes.md).
 
+Global options go before the command name (`harness --no-json run list`):
+
+| Option | Type | Required | Default | Description |
+|---|---|---|---|---|
+| `--version` | flag | no | false | Print the harness version and exit |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
+| `--install-completion` | flag | no |  | Install completion for the current shell. |
+| `--show-completion` | flag | no |  | Show completion for the current shell, to copy it or customize the installation. |
+
 | Command | Summary |
 |---|---|
-| [`harness init`](#harness-init) | Create .harness/project.yaml for a repository, using the detected technology profiles. |
+| [`harness init`](#harness-init) | Create .harness/project.yaml for a repository, using the detected technology profiles, add .harness/ to .gitignore... |
 | [`harness inspect`](#harness-inspect) | Detect the technology profiles of a repository (read-only), with confidence and evidence. |
-| [`harness doctor`](#harness-doctor) | Check the local environment (Python and Git required; Node.js and npm reported as NOT_APPLICABLE when absent) and,... |
+| [`harness doctor`](#harness-doctor) | Check the local environment (Python and Git required; Node.js and npm reported as NOT_APPLICABLE when absent; Git... |
 | [`harness status`](#harness-status) | Show the full status projection of a run: phases, validations, findings, gate, human decision, event-chain check and... |
 | [`harness trace`](#harness-trace) | Export the trace of a run as Markdown, JSON, JSONL or SARIF. |
 | [`harness retrospect`](#harness-retrospect) | Derive non-mutating observations and recommendations from a closed run. |
@@ -40,7 +49,9 @@ Exit codes are documented in [exit codes](exit-codes.md).
 
 ## harness init
 
-Create .harness/project.yaml for a repository, using the detected technology profiles.
+Create .harness/project.yaml for a repository, using the detected technology profiles,
+add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
+next commands.
 
 ```text
 harness init [OPTIONS]
@@ -50,6 +61,9 @@ harness init [OPTIONS]
 |---|---|---|---|---|
 | `--path` | path | no |  | Project directory |
 | `--force` | flag | no | false | Replace an existing project configuration |
+| `--gitignore`, `--no-gitignore` | flag | no | --gitignore | Add .harness/ to the project's .gitignore (state, artifacts and copies of the code live there) |
+| `--example-task`, `--no-example-task` | flag | no | --example-task | Write an example task to .harness/task.example.yaml |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness inspect
 
@@ -63,13 +77,16 @@ harness inspect [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness doctor
 
 Check the local environment (Python and Git required; Node.js and npm reported as
-NOT_APPLICABLE when absent) and, with --path, the project configuration. Exit code 2 when a
-required check fails.
+NOT_APPLICABLE when absent; Git identity reported) and, with --path, the project: its
+configuration, the agent CLI of the configured provider on PATH, the agent sandbox mechanism,
+the validators, the baseline commit and whether .harness/ is ignored by Git. Each check that
+is not PASSED says how to fix it. Exit code 2 when a required check FAILED; a WARNING does
+not fail.
 
 ```text
 harness doctor [OPTIONS]
@@ -78,7 +95,7 @@ harness doctor [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | path | no |  | Also validate the project in this directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness status
 
@@ -93,7 +110,7 @@ harness status [OPTIONS]
 |---|---|---|---|---|
 | `--run` | str | yes |  | Run (execution) identifier |
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness trace
 
@@ -136,7 +153,7 @@ harness config validate [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness task create
 
@@ -153,7 +170,7 @@ harness task create [OPTIONS]
 |---|---|---|---|---|
 | `--file` | file | yes |  | Task file (YAML or JSON) |
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness task list
 
@@ -166,7 +183,7 @@ harness task list [OPTIONS]
 | Option | Type | Required | Default | Description |
 |---|---|---|---|---|
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness task show
 
@@ -228,7 +245,7 @@ harness run start [OPTIONS]
 | `--task` | str | yes |  | Task identifier (taskId) |
 | `--provider` | str | no |  | Agent provider id; defaults to the project agentProvider |
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness run continue
 
@@ -243,7 +260,7 @@ harness run continue [OPTIONS]
 |---|---|---|---|---|
 | `--run` | str | yes |  | Run (execution) identifier |
 | `--path` | path | no |  | Project directory |
-| `--json`, `--no-json` | flag | no | --json | Print JSON (default) or a plain representation |
+| `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |
 
 ## harness run cancel
 
