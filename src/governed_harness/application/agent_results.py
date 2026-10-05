@@ -8,12 +8,70 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.domain.actors import require_human_actor
-from governed_harness.domain.enums import ActorType, PhaseId, ResultStatus
-from governed_harness.domain.errors import ConfigurationError, PolicyViolationError
+from governed_harness.domain.enums import ActorType, DecisionKind, PhaseId, ResultStatus
+from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
 from governed_harness.domain.models import Actor, ChangeRequestItem
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices
+
+
+def plan_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
+    """The decomposition of a run (``planning.decomposition``) and the progress of its
+    sub-tasks."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    engine = RunEngine(services)
+    execution = engine.get_execution(execution_id)
+    state = engine.results.decomposition.state(execution)
+    if state is None:
+        raise NotFoundError(f"run {execution_id} has no decomposition")
+    completed = [
+        event.payload
+        for event in services.events.list(execution_id)
+        if event.event_type == "subtask.completed"
+    ]
+    return {
+        "executionId": execution_id,
+        "status": state["status"],
+        "digest": state["digest"],
+        "subtasks": state["subtasks"],
+        "currentSubtask": engine.results.decomposition.index(execution) + 1,
+        "completed": completed,
+    }
+
+
+def decide_plan(
+    services: EngineServices,
+    execution_id: str,
+    *,
+    decision: DecisionKind,
+    digest: str,
+    actor_id: str,
+    rationale: str,
+    continue_after: bool,
+) -> dict[str, Any]:
+    """Approve or reject a proposed decomposition (a person only, bound to its digest)."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    require_human_actor(actor_id, "decide a decomposition plan")
+    engine = RunEngine(services)
+    execution = engine.get_execution(execution_id)
+    state = engine.results.decomposition.decide(
+        execution,
+        decision=decision,
+        digest=digest,
+        actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+        rationale=rationale,
+    )
+    result: dict[str, Any] = {"executionId": execution_id, "plan": state}
+    if continue_after:
+        result["execution"] = engine.continue_execution(execution_id).model_dump(
+            mode="json", by_alias=True
+        )
+    else:
+        engine.anchor_chain(execution_id)
+    return result
 
 
 def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -> dict[str, Any]:

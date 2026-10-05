@@ -71,7 +71,7 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
-from .agent_results import parse_change_requests, quarantine_run
+from .agent_results import decide_plan, parse_change_requests, plan_state, quarantine_run
 from .clarification_loader import load_clarification_file
 from .exceptions import (
     ExceptionOptions,
@@ -375,6 +375,38 @@ class HarnessApplication:
             execution_id = self._run_id(services, execution_id)
             decider = self._decider(services, actor_id)[0]
             return self._after(services, RunEngine(services).cancel(execution_id, decider))
+
+    def plan(self, path: Path, execution_id: str) -> dict[str, Any]:
+        """The decomposition of a run and the progress of its sub-tasks (#39)."""
+        with self._services(path) as services:
+            return plan_state(services, self._run_id(services, execution_id))
+
+    def decide_plan(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        digest: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Approve or reject the decomposition PLANNING proposed (digest-bound, a person)."""
+        with self._services(path) as services, self._leased(services, "plan decide") as lease:
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_plan(
+                services,
+                execution_id,
+                decision=decision,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                continue_after=continue_after,
+            )
 
     def check(self, path: Path, execution_id: str | None = None) -> dict[str, Any]:
         """``harness check``: the gate's validators and diff checks on the workspace, with

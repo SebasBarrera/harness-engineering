@@ -40,6 +40,9 @@ artifact_app = typer.Typer(help="Artifact store commands")
 exceptions_app = typer.Typer(help="Exception ledger commands")
 rules_app = typer.Typer(help="Rule and validator health across runs")
 outcome_app = typer.Typer(help="Outcomes after a run (incidents, reverts, hotfixes)")
+plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-tasks")
+budget_app = typer.Typer(help="Governed budget of agent calls")
+routing_app = typer.Typer(help="Model and effort routing of agent calls")
 app.add_typer(config_app, name="config")
 app.add_typer(task_app, name="task")
 app.add_typer(run_app, name="run")
@@ -55,6 +58,9 @@ app.add_typer(artifact_app, name="artifact")
 app.add_typer(exceptions_app, name="exceptions")
 app.add_typer(rules_app, name="rules")
 app.add_typer(outcome_app, name="outcome")
+app.add_typer(plan_app, name="plan")
+app.add_typer(budget_app, name="budget")
+app.add_typer(routing_app, name="routing")
 
 
 ACTOR_HELP = (
@@ -411,6 +417,56 @@ def run_cancel(
     event."""
     execution = _call(lambda: _acting().cancel_run(path, run, actor))
     _emit(execution, kind="execution")
+
+
+@plan_app.command("show")
+def plan_show(
+    run: str = RUN_OPTION,
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the decomposition PLANNING proposed for a run (`planning.decomposition`), its
+    digest, its status and the sub-tasks completed so far."""
+    _emit(_call(lambda: HarnessApplication().plan(path, run)), kind="plan")
+
+
+@plan_app.command("decide")
+def plan_decide(
+    run: str = RUN_OPTION,
+    decision: DecisionKind = typer.Option(
+        ..., "--decision", case_sensitive=False, help="APPROVE or REJECT"
+    ),
+    digest: str = typer.Option(
+        ..., "--digest", help="Digest of the proposed plan shown by plan show"
+    ),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
+    sub-tasks in order, each with its own verification and gate; REJECT keeps the task whole.
+    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5."""
+    result = _call(
+        lambda: _acting().decide_plan(
+            path,
+            execution_id=run,
+            decision=decision,
+            digest=digest,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result, kind="plan")
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
 @app.command("check")

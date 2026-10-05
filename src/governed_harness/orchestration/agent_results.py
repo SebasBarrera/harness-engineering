@@ -94,6 +94,7 @@ class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
+        from governed_harness.orchestration.decomposition import Decomposition
         from governed_harness.orchestration.differential import Differential
         from governed_harness.orchestration.gate_contract import GateContract
         from governed_harness.orchestration.intent_review import IntentReview
@@ -108,6 +109,7 @@ class AgentResults:
         self.gate = GateContract(self)
         self.corrections = Corrections(self)
         self.agent_review = AgentReview(self)
+        self.decomposition = Decomposition(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(
@@ -818,7 +820,8 @@ class AgentResults:
         return value
 
     def implementation_task(self, execution: Execution, task: Task) -> Task:
-        return task
+        """The current sub-task under an approved decomposition (#39), else the task."""
+        return self.decomposition.subtask_task(execution, task)
 
     def implement_extras(
         self,
@@ -963,7 +966,28 @@ class AgentResults:
 
     # ----- decomposition hooks (#39) --------------------------------------------------------
     def after_passed_verification(self, execution: Execution) -> bool:
-        return False
+        return self.decomposition.after_passed_verification(execution)
 
     def replan_after_failure(self, execution: Execution) -> bool:
-        return False
+        return self.decomposition.replan_after_failure(execution)
+
+    def implement_model(self, execution: Execution, task: Task) -> str | None:
+        """The model an implement call would use (no record): the router's choice under
+        ``agentRouting: tiered``, else the provider's configured model."""
+        provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
+        configured = self.project.agent_providers.get(provider_id)
+        policy = self.project.agent_routing
+        if policy is not None:
+            family = provider_family(
+                provider_id, self.provider_command(provider_id), policy.families
+            )
+            decision = select(
+                "implement",
+                self.task_signals(execution, task),
+                RoutingHistory(escalations=self.escalations(execution)),
+                policy,
+                family=family,
+            )
+            if decision.model:
+                return decision.model
+        return configured.model if configured else None

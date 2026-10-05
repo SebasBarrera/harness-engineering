@@ -1054,6 +1054,11 @@ class RunEngine:
 
     def _phase_planning(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
+        if self.results.active:
+            # planning.decomposition (#39): a large task waits for an approved plan.
+            blocked = self.results.decomposition.plan(execution, phase, task)
+            if blocked is not None:
+                return blocked
         selection = MemoryStore(self.s.state).select(
             project_id=execution.project_id,
             task_id=task.task_id,
@@ -1084,11 +1089,14 @@ class RunEngine:
                 expected_evidence=("findings", "gate evaluation", "human decision"),
             ),
         )
+        plan_steps: tuple[PlanStep, ...] = steps
+        if self.results.active:
+            plan_steps = (*self.results.decomposition.plan_steps(execution), *steps)
         plan = Plan(
             plan_id=new_id("plan"),
             execution_id=execution.execution_id,
             task_id=task.task_id,
-            steps=steps,
+            steps=plan_steps,
             risks=("Repository content is untrusted", "Approval becomes stale after any change"),
             validator_ids=tuple(item.validator_id for item in self.s.resolved.effective_validators)
             + (
@@ -1895,6 +1903,9 @@ class RunEngine:
         """Relate the task's identified requirements to the tests of the workspace; the mapping
         is recorded as VERIFICATION evidence and each untraced requirement as a finding."""
         task = self.run_task(execution)
+        if self.results.active:
+            # Under decomposition, the requirements of the sub-tasks implemented so far.
+            task = self.results.decomposition.verification_task(execution, task)
         validator = RequirementTraceabilityValidator(
             policy, (profile.technology for profile in self.s.resolved.profiles)
         )
@@ -2165,9 +2176,13 @@ class RunEngine:
             return False
         if runtime.claim_check_enabled:
             self._record_unsupported_claim(execution, failing)
+        events = self.s.events.list(execution.execution_id)
+        if self.results.active:
+            # planning.decomposition (#39): each sub-task has its own correction budget.
+            events = events[self.results.decomposition.budget_start(events) :]
         used = sum(
             1
-            for event in self.s.events.list(execution.execution_id)
+            for event in events
             if event.event_type == "correction.authorized"
             and event.payload.get("trigger") == "VERIFICATION_FAILED"
         )
