@@ -80,6 +80,17 @@ def test_a_file_without_the_settings_keeps_its_serialized_form() -> None:
     assert not {"planning", "context", "budget", "memory", "agentRouting"} & set(dumped)
     assert not {"standards", "testing", "architecture"} & set(dumped)
     assert "forge" not in dumped.get("delivery", {})
+    assert set(dumped["runtime"]) == {
+        "commandTimeoutSeconds",
+        "maxOutputBytes",
+        "maxParallel",
+        "allowNetwork",
+    }
+    with_sections = ProjectConfiguration.model_validate(
+        {**raw, "verification": {"requirementTraceability": "warn"}, "review": {}}
+    ).model_dump(mode="json", by_alias=True)
+    assert with_sections["verification"] == {"requirementTraceability": "warn"}
+    assert with_sections["review"] == {}
 
 
 def test_init_writes_the_engineering_settings(python_workspace: Path) -> None:
@@ -100,14 +111,3 @@ def test_init_writes_the_engineering_settings(python_workspace: Path) -> None:
     assert engineering["standards"]["packs"] == ["python"]
     assert engineering["testing"]["strategy"] == "conventional"
     assert engineering["projectKind"] == "existing"
-    assert set(dumped["runtime"]) == {
-        "commandTimeoutSeconds",
-        "maxOutputBytes",
-        "maxParallel",
-        "allowNetwork",
-    }
-    with_sections = ProjectConfiguration.model_validate(
-        {**raw, "verification": {"requirementTraceability": "warn"}, "review": {}}
-    ).model_dump(mode="json", by_alias=True)
-    assert with_sections["verification"] == {"requirementTraceability": "warn"}
-    assert with_sections["review"] == {}
