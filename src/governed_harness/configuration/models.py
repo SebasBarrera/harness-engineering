@@ -49,7 +49,8 @@ DEFAULT_AGENT_SANDBOX: AgentSandboxMode = "off"
 """Mode of a project.yaml without ``runtime.agentSandbox`` (files written before 1.1)."""
 
 DEFAULT_SANDBOX_WRITE_PATHS: tuple[tuple[str, str], ...] = (
-    ("/tmp", "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it."),
+    # An allow-list entry of the agent's write sandbox, not a file the harness creates.
+    ("/tmp", "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it."),  # nosec B108
     (
         "/var/folders",
         "Per-user temporary and cache directories of macOS (/private/var/folders); $TMPDIR "
