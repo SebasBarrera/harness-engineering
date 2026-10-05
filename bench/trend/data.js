@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791202275287,
+  "lastUpdate": 1791202636514,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -2619,6 +2619,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 3.723,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "js.barrerap@gmail.com",
+            "name": "Sebastian Barrera",
+            "username": "SebasBarrera"
+          },
+          "distinct": true,
+          "id": "17375737b8dd82b521a891b19f7b3bf54b7f6bd9",
+          "message": "Merge branch 'fix/wave1-integrity' into develop\n\nWave 1 closes the integrity gaps found by testing the harness: decisions under\nagent, validator or harness identities are refused (always); the stored ChangeSet\ndiff is a valid unified diff (always); status reports a broken event chain instead\nof aborting and harness verify checks chain, records and artifacts, with an\noptional chain-head anchor; a run pins its task revision and decisions bind the\nacceptance contract; writes outside the ChangeSet (.git, .harness, venvs, build\noutput) are CRITICAL and the sandbox keeps .harness and .git read-only; a\nworkspace lease serializes runs and an interrupted run is recovered without\nimplementing twice; and declared settings are applied (per-phase attempts and\ntimeouts, decision expiry, profile policies, coverage, network policy, retention\nwith harness gc) or reported as declarative. Behaviour changes sit behind\ngovernance keys harness init writes; a project.yaml without them keeps the 1.0.0\nbehaviour and digest.\n\nCloses #45, #46, #47, #48, #49, #50, #51\n\nVerification on the branch head dc2eaab0b051: 21 CI job(s) succeeded, no blocking job failed.\n  ci: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701026\n  docs-smoke: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701029\n  docker: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701030\n  lint: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701076\n  build: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701135\n  security: https://github.com/SebasBarrera/harness-engineering/actions/runs/37307701142\nFiles of the v0.8.0 cut in the tree: matched: 86/232  mismatched: 122  missing: 24",
+          "timestamp": "2026-10-05T07:16:47-05:00",
+          "tree_id": "03ecbacf85ed4eb01a4784a687244dca2310f202",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/17375737b8dd82b521a891b19f7b3bf54b7f6bd9"
+        },
+        "date": 1791202635665,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000721,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001022,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.00622,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.034422,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.157508,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.475789,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 7.768496,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 4.564,
             "unit": "%"
           }
         ]
