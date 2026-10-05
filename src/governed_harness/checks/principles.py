@@ -76,38 +76,17 @@ _TRIVIAL = re.compile(r"^[\s{}()\[\];,]*$|^(?:import|from|using|package|#include
 _COMMENT = re.compile(r"^\s*(?:#|//|/\*|\*|--)")
 
 PRINCIPLES_CHECKLIST: tuple[tuple[str, str], ...] = (
-    ("principles.srp", "Each new or changed class or module has one reason to change."),
-    (
-        "principles.ocp",
-        "New behaviour is added by extension (a new type or strategy), not by growing a switch "
-        "over types in stable code.",
-    ),
-    (
-        "principles.lsp",
-        "Subtypes keep the contract of their base: no narrower inputs, no new exceptions, no "
-        "methods left unsupported.",
-    ),
-    (
-        "principles.isp",
-        "Interfaces are small and client-specific; no client depends on methods it does not use.",
-    ),
-    (
-        "principles.dip",
-        "High-level policy depends on abstractions; infrastructure is passed in, not created "
-        "inside domain code.",
-    ),
-    ("principles.dry", "A piece of knowledge (a rule, a constant, a format) lives in one place."),
-    ("principles.kiss", "The simplest design that meets the criteria; no speculative generality."),
-    ("principles.yagni", "No option, hook or abstraction the task does not ask for."),
-    (
-        "principles.least-astonishment",
-        "Names, signatures, defaults and side effects do what a reader expects.",
-    ),
-    ("principles.composition", "Behaviour is reused by composition, not by deep inheritance."),
-    (
-        "principles.boy-scout",
-        "Cleanup only in the code the change touches; no unrelated refactors or reformatting.",
-    ),
+    ("principles.srp", "One reason to change per class or module."),
+    ("principles.ocp", "Extend with new types, not by growing switches over types."),
+    ("principles.lsp", "Subtypes keep their base's contract."),
+    ("principles.isp", "Small, client-specific interfaces."),
+    ("principles.dip", "Policy depends on abstractions; infrastructure is injected."),
+    ("principles.dry", "Each rule, constant or format lives in one place."),
+    ("principles.kiss", "Simplest design that meets the criteria."),
+    ("principles.yagni", "Nothing the task does not ask for."),
+    ("principles.least-astonishment", "Names, signatures and side effects as a reader expects."),
+    ("principles.composition", "Composition over deep inheritance."),
+    ("principles.boy-scout", "Cleanup only in touched code; no unrelated refactors."),
 )
 """The principles checklist appended to the review call, with rule ids for its findings."""
 

@@ -50,8 +50,6 @@ def cards_payload(cards: list[Card], digest: str, *, packs: list[str]) -> dict[s
         "digest": digest,
         "packs": packs,
         "cards": [item.compact() for item in cards],
-        "note": "Follow these cards in the files they apply to; an exception listed on a card "
-        "is allowed. Tools verify the cards that name a tool rule.",
     }
 
 

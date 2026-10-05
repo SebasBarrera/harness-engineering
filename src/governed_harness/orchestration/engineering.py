@@ -231,8 +231,8 @@ class Engineering:
             if payload["cards"]:
                 extra["standards"] = payload
                 notes.append(
-                    "Follow the standards cards in the standards block for the files they apply "
-                    "to; the exceptions listed on a card are allowed."
+                    "Follow the standards cards for the files they apply to; listed exceptions "
+                    "are allowed."
                 )
         if self.testing_config is not None or self.setup_record(execution.project_id):
             strategy = self.strategy(execution.project_id)
@@ -313,9 +313,8 @@ class Engineering:
         if not checklist:
             return {}, ""
         return {"checklist": checklist}, (
-            "Also check every item of the checklist below against the ChangeSet and report each "
-            "violation as a finding whose rule is the item id; report nothing for an item that "
-            "holds."
+            "Also check each checklist item against the ChangeSet; report a violation as a "
+            "finding whose rule is the item id."
         )
 
     # ----- TDD evidence (VERIFICATION) ---------------------------------------------------------
