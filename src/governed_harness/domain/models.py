@@ -613,12 +613,16 @@ FEEDBACK_TEXT_CHARS = 1000
 """Characters kept from a finding message, a validator summary or a claim summary."""
 FEEDBACK_RATIONALE_CHARS = 4000
 
+FeedbackTrigger = Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED", "REVIEW_FINDINGS"]
+"""Why a correction attempt was sent back to the agent; ``REVIEW_FINDINGS`` since 1.1
+(``review.agentReview``, #38)."""
+
 
 class FeedbackGate(StrictModel):
     """The outcome the feedback is about: the VERIFICATION result (``gate_id`` ``verification``)
     or the delivery gate a person decided on (``delivery_candidate``)."""
 
-    gate_id: Literal["verification", "delivery_candidate"]
+    gate_id: Literal["verification", "delivery_candidate", "independent_review"]
     gate_evaluation_id: str | None = None
     status: ResultStatus
     reason_codes: tuple[str, ...]
@@ -661,7 +665,7 @@ class ProviderFeedback(StrictModel):
 
     schema_version: Literal["1.0"] = "1.0"
     attempt: int = Field(ge=2)
-    trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"]
+    trigger: FeedbackTrigger
     change_set_digest: str
     gate: FeedbackGate
     findings: tuple[FeedbackFinding, ...] = Field(default=(), max_length=FEEDBACK_MAX_FINDINGS)

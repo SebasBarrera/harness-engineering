@@ -64,6 +64,7 @@ from governed_harness.domain.models import (
     Execution,
     FeedbackDecision,
     FeedbackGate,
+    FeedbackTrigger,
     Finding,
     FindingLocation,
     GateEvaluation,
@@ -417,7 +418,20 @@ class RunEngine:
                         execution, outcome
                     ):
                         continue
+                    if (
+                        phase_id is PhaseId.INDEPENDENT_REVIEW
+                        and self.results.active
+                        and self.results.after_failed_review(execution, outcome.summary)
+                    ):
+                        continue
                     return execution
+                if (
+                    phase_id is PhaseId.VERIFICATION
+                    and self.results.active
+                    and self.results.after_passed_verification(execution)
+                ):
+                    # planning.decomposition: the next sub-task starts (#39).
+                    continue
             if execution.status in {
                 ResultStatus.PASSED,
                 ResultStatus.CANCELLED,
@@ -1953,6 +1967,15 @@ class RunEngine:
             )
         )
         self._save_validator_output(execution, output)
+        if self.results.active:
+            # review.agentReview (#38): a second reviewer after the deterministic checks.
+            review = self.results.agent_review.run(execution, phase, change_set)
+            if review.blocking and self.results.review_correction_available(execution):
+                return PhaseOutcome(
+                    ResultStatus.FAILED,
+                    f"The agent review found {len(review.blocking)} blocking finding(s)",
+                    output.result.evidence_refs,
+                )
         return PhaseOutcome(
             ResultStatus.PASSED,
             output.result.summary,
@@ -2163,7 +2186,8 @@ class RunEngine:
                         "changeSetDigest": execution.change_set_digest,
                     },
                 )
-            return False
+            # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
+            return self.results.active and self.results.replan_after_failure(execution)
         feedback_ref: str | None = None
         if self._feedback_applies(execution.execution_id):
             findings = [
@@ -2212,6 +2236,9 @@ class RunEngine:
                 "feedbackRef": feedback_ref,
             },
         )
+        if self.results.active:
+            # agentRouting (#44): a quality failure climbs the escalation ladder.
+            self.results.escalate(execution, "VERIFICATION_FAILED")
         return True
 
     def _record_unsupported_claim(
@@ -2296,7 +2323,7 @@ class RunEngine:
         execution: Execution,
         phase_id: PhaseId,
         *,
-        trigger: Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED"],
+        trigger: FeedbackTrigger,
         change_set_digest: str,
         gate: FeedbackGate,
         validations: list[ValidationResult],

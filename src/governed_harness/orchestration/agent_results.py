@@ -92,6 +92,7 @@ class AgentCallOutcome:
 
 class AgentResults:
     def __init__(self, engine: RunEngine) -> None:
+        from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
         from governed_harness.orchestration.differential import Differential
         from governed_harness.orchestration.gate_contract import GateContract
@@ -106,6 +107,7 @@ class AgentResults:
         self.stop_line = StopLine(self)
         self.gate = GateContract(self)
         self.corrections = Corrections(self)
+        self.agent_review = AgentReview(self)
         self._baselines: dict[str, WorkspaceSnapshot | None] = {}
 
     def after_verification(
@@ -852,3 +854,116 @@ class AgentResults:
     ) -> dict[str, Any]:
         """The context manifest (#41) and the active lessons (#43) of an implement call."""
         return {}
+
+    # ----- second reviewer corrections (#38) -----------------------------------------------
+    def _corrections_used(self, execution: Execution, trigger: str) -> int:
+        return sum(
+            1
+            for event in self.s.events.list(execution.execution_id)
+            if event.event_type == "correction.authorized"
+            and event.payload.get("trigger") == trigger
+        )
+
+    def review_correction_available(self, execution: Execution) -> bool:
+        return self.engine._external_provider(execution.execution_id) and (
+            self._corrections_used(execution, "REVIEW_FINDINGS")
+            < self.project.runtime.correction_limit
+        )
+
+    def after_failed_review(self, execution: Execution, summary: str) -> bool:
+        """Send blocking findings of the agent review back to IMPLEMENTATION (with feedback
+        under ``runtime.providerFeedback``) while the correction budget lasts."""
+        from governed_harness.domain.models import FeedbackGate
+        from governed_harness.orchestration.agent_review import AGENT_REVIEW_ID
+
+        engine = self.engine
+        execution = engine.get_execution(execution.execution_id)
+        if not execution.change_set_digest or not self.review_correction_available(execution):
+            return False
+        used = self._corrections_used(execution, "REVIEW_FINDINGS")
+        limit = self.project.runtime.correction_limit
+        validations = engine._latest_validations(
+            execution.execution_id, execution.change_set_digest
+        )
+        review = [item for item in validations if item.validator_id == AGENT_REVIEW_ID]
+        findings = [
+            self.s.state.get("finding", finding_id, Finding)
+            for item in review
+            for finding_id in item.finding_ids
+        ]
+        feedback_ref: str | None = None
+        if engine._feedback_applies(execution.execution_id):
+            feedback_ref = engine._record_feedback(
+                execution,
+                PhaseId.INDEPENDENT_REVIEW,
+                trigger="REVIEW_FINDINGS",
+                change_set_digest=execution.change_set_digest,
+                gate=FeedbackGate(
+                    gate_id="independent_review",
+                    status=ResultStatus.FAILED,
+                    reason_codes=(f"{AGENT_REVIEW_ID}_FINDINGS",),
+                ),
+                validations=[],
+                findings=findings,
+            )
+        transition = engine.state_machine.authorize_review_correction(PhaseId.INDEPENDENT_REVIEW)
+        engine._save_execution(
+            execution.model_copy(
+                update={
+                    "status": ResultStatus.PENDING,
+                    "current_phase": transition.target,
+                    "gate_evaluation_id": None,
+                    "human_decision_id": None,
+                    "terminal_reason": None,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "correction.authorized",
+            {
+                "trigger": "REVIEW_FINDINGS",
+                "cycle": used + 1,
+                "maxCycles": limit,
+                "summary": summary,
+                "findings": [item.finding_id for item in findings],
+                "changeSetDigest": execution.change_set_digest,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+                "feedbackRef": feedback_ref,
+            },
+        )
+        self.escalate(execution, "REVIEW_FINDINGS")
+        return True
+
+    # ----- escalation (#44) -----------------------------------------------------------------
+    def escalate(self, execution: Execution, trigger: str) -> None:
+        """A quality failure moves the next implement call one rung up the ladder (effort
+        before model) while ``agentRouting.maxEscalations`` allows; environment failures are
+        retried at the same rung and never get here."""
+        from governed_harness.agents.routing import can_escalate
+
+        policy = self.project.agent_routing
+        if policy is None or policy.mode != "tiered":
+            return
+        history = RoutingHistory(escalations=self.escalations(execution))
+        if not can_escalate(history, policy):
+            self.s.events.append(
+                execution.execution_id,
+                "agent.routing.escalation.capped",
+                {"trigger": trigger, "escalations": history.escalations},
+            )
+            return
+        self.s.state.set_flag(f"escalations:{execution.execution_id}", str(history.escalations + 1))
+        self.s.events.append(
+            execution.execution_id,
+            "agent.routing.escalated",
+            {"trigger": trigger, "escalations": history.escalations + 1},
+        )
+
+    # ----- decomposition hooks (#39) --------------------------------------------------------
+    def after_passed_verification(self, execution: Execution) -> bool:
+        return False
+
+    def replan_after_failure(self, execution: Execution) -> bool:
+        return False
