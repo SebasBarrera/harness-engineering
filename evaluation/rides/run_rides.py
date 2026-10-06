@@ -58,7 +58,8 @@ import run_eval  # noqa: E402
 from agentlib import build_prompt, run_claude  # noqa: E402
 from product_owner import ProductOwner  # noqa: E402
 from quality import analyze  # noqa: E402
-from run_eval import git, harness, run_harness  # noqa: E402
+
+git, harness, run_harness = run_eval.git, run_eval.harness, run_eval.run_harness
 from run_session import calls_since, final_measures, usage  # noqa: E402
 
 PROMPTS = yaml.safe_load((HERE / "prompts.yaml").read_text(encoding="utf-8"))
@@ -88,8 +89,9 @@ SECTIONS = requirements_by_section()
 
 def super_text() -> str:
     lines = [PROMPTS["requirements_intro"], "", "Engineering guide (it applies to every step):",
-             *[f"- {g}" for g in PROMPTS["engineering_guide"]], "", "Work plan. Build it in this order, and do not start a step until "
-             "the previous one is complete and every test passes:"]
+             *[f"- {g}" for g in PROMPTS["engineering_guide"]], "",
+             ("Work plan. Build it in this order, and do not start a step until "
+              "the previous one is complete and every test passes:")]
     for number, step in enumerate(PROMPTS["steps"], start=1):
         lines.append(f"{number}. {step['title']} (sections {', '.join(step['sections'])} of docs/SPEC.md).")
     lines += ["", "Approval conditions for every step:", *[f"- {c}" for c in PROMPTS["approval_conditions"]], "",

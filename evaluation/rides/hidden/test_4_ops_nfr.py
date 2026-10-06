@@ -44,6 +44,7 @@ from __future__ import annotations
 import ast
 import copy
 import gc
+import importlib.util
 import inspect
 import re
 import sqlite3
@@ -54,9 +55,9 @@ from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
-
 import rides
-from rides import Platform
+
+Platform = rides.Platform
 
 D = Decimal
 CENT = D("0.01")
@@ -1962,7 +1963,8 @@ def test_u2_schema_version_has_one_row(tmp_path):
     path = _schema_db(tmp_path)
     con = sqlite3.connect(path)
     try:
-        assert con.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0] == 1
+        versions = con.execute("SELECT COUNT(*) FROM schema_version").fetchone()[0]
+        assert versions == 1
     finally:
         con.close()
     assert Platform.open(path).now() == START
@@ -2101,11 +2103,10 @@ def test_x5_returned_lists_and_dicts_are_new_objects(w):
         assert call() == snapshot, name
 
 
-try:  # the oracle runs with --timeout=120 when pytest-timeout is installed; V3 needs a long setup
-    import pytest_timeout  # noqa: F401
-
+# The oracle runs with --timeout=120 when pytest-timeout is installed; V3 needs a long setup.
+if importlib.util.find_spec("pytest_timeout") is not None:
     LONG_SETUP = pytest.mark.timeout(3600)
-except ImportError:  # without the plugin the marker would be unknown (and fail with --strict-markers)
+else:  # without the plugin the marker would be unknown (and fail with --strict-markers)
     def LONG_SETUP(test):  # noqa: N802
         return test
 

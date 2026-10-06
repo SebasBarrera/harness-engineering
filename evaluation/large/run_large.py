@@ -43,8 +43,10 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / "longitudinal"))
 
+import run_eval  # noqa: E402
 from agentlib import build_prompt, run_claude  # noqa: E402
-from run_eval import git, harness, run_harness  # noqa: E402
+
+git, harness, run_harness = run_eval.git, run_eval.harness, run_eval.run_harness
 from run_session import calls_since, final_measures, usage  # noqa: E402
 
 SPEC = yaml.safe_load((HERE / "prompts.yaml").read_text(encoding="utf-8"))
@@ -75,8 +77,8 @@ def requirements_text() -> str:
 
 
 def super_text() -> str:
-    lines = [requirements_text(), "", "Work plan. Build it in this order, and do not start a step until the "
-             "previous one is complete and every test passes:"]
+    lines = [requirements_text(), "", ("Work plan. Build it in this order, and do not start a step until the "
+                                         "previous one is complete and every test passes:")]
     for number, inc in enumerate(SPEC["increments"], start=1):
         parts = ", ".join(LABELS[p] for p in inc["parts"])
         lines.append(f"{number}. {inc['title']} ({parts}).")
@@ -173,8 +175,6 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
         harness(workspace, "init", "--path", ".")
         created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
         return {"outcome": f"task-refused-exit-{created.returncode}", "delivered": False, "corrections": 0}
-    import run_eval
-
     original = run_eval.configure_provider
 
     def with_limits(ws: Path, m: str, agent: str = "claude", effort: str = "") -> None:

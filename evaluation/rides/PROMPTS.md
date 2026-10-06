@@ -841,7 +841,7 @@ with a short summary of the change.
 
 The paragraph task runs with `intake.criteriaPolicy: enforce`. INTENT asks questions about the criterion `It works.`; a separate agent call plays the product owner with the prompt below (`{task}` is the current task, `{questions}` the open questions, `{knowledge}` SPEC.md). Its answers go to `harness task clarify` as `human.product-owner-simulated`.
 
-```text
+````text
 You are the product owner of the product described at the end of this message. A developer
 wrote the task below for a coding agent, and the development process tool stopped it before any work because
 its acceptance criteria cannot be checked. The tool asks the questions below.
@@ -879,4 +879,4 @@ Questions:
 
 Product description:
 {knowledge}
-```
+````
