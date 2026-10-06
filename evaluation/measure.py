@@ -18,7 +18,14 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-EXCLUDED_PARTS = {".harness", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", "_hidden_eval"}
+EXCLUDED_PARTS = {
+    ".harness",
+    "__pycache__",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    "_hidden_eval",
+}
 SCOPE = {
     "greenfield": ("src/shipping/", "tests/"),
     "brownfield": ("src/itsdangerous/encoding.py", "tests/"),
@@ -42,14 +49,26 @@ def _junit(path: Path) -> dict[str, int]:
         return {"tests": 0, "failures": 0, "errors": 0, "skipped": 0, "passed": 0}
     root = ET.parse(path).getroot()
     suites = [root] if root.tag == "testsuite" else list(root)
-    totals = {key: sum(int(s.get(key, 0)) for s in suites) for key in ("tests", "failures", "errors", "skipped")}
+    totals = {
+        key: sum(int(s.get(key, 0)) for s in suites)
+        for key in ("tests", "failures", "errors", "skipped")
+    }
     totals["passed"] = totals["tests"] - totals["failures"] - totals["errors"] - totals["skipped"]
     return totals
 
 
 def _pytest(cwd: Path, target: list[str], junit: Path, timeout: int = 600) -> dict[str, Any]:
-    argv = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--color=no",
-            f"--junitxml={junit}", *target]
+    argv = [
+        sys.executable,
+        "-m",
+        "pytest",
+        "-q",
+        "-p",
+        "no:cacheprovider",
+        "--color=no",
+        f"--junitxml={junit}",
+        *target,
+    ]
     try:
         proc = _run(argv, cwd, timeout=timeout)
         code = proc.returncode
@@ -63,7 +82,9 @@ def _changed_files(workspace: Path, baseline: str) -> list[dict[str, Any]]:
         env = {**os.environ, **GIT_ENV, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
         _run(["git", "read-tree", baseline], workspace, env=env)
         _run(["git", "add", "-A"], workspace, env=env)
-        numstat = _run(["git", "diff", "--cached", "--numstat", baseline], workspace, env=env).stdout
+        numstat = _run(
+            ["git", "diff", "--cached", "--numstat", baseline], workspace, env=env
+        ).stdout
         patch = _run(["git", "diff", "--cached", "-U0", baseline], workspace, env=env).stdout
     files: dict[str, dict[str, Any]] = {}
     for line in numstat.splitlines():
@@ -94,8 +115,24 @@ def _diff_coverage(workspace: Path, files: list[dict[str, Any]], scratch: Path) 
         return {"executableChanged": 0, "coveredChanged": 0, "ratio": None}
     data = scratch / ".coverage"
     env = {**os.environ, "COVERAGE_FILE": str(data)}
-    _run([sys.executable, "-m", "coverage", "run", "--branch", "--source=src", "-m", "pytest", "-q",
-          "-p", "no:cacheprovider"], workspace, env=env, timeout=900)
+    _run(
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "run",
+            "--branch",
+            "--source=src",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+        ],
+        workspace,
+        env=env,
+        timeout=900,
+    )
     report = scratch / "coverage.json"
     _run([sys.executable, "-m", "coverage", "json", "-q", "-o", str(report)], workspace, env=env)
     if not report.exists():
@@ -121,8 +158,19 @@ def _diff_coverage(workspace: Path, files: list[dict[str, Any]], scratch: Path) 
 def _ruff(paths: list[Path], cwd: Path) -> int:
     if not paths:
         return 0
-    proc = _run([sys.executable, "-m", "ruff", "check", "--isolated", "--output-format", "json",
-                 *map(str, paths)], cwd)
+    proc = _run(
+        [
+            sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--isolated",
+            "--output-format",
+            "json",
+            *map(str, paths),
+        ],
+        cwd,
+    )
     try:
         return len(json.loads(proc.stdout or "[]"))
     except json.JSONDecodeError:
@@ -142,13 +190,18 @@ def _bandit(paths: list[Path], cwd: Path) -> dict[str, int]:
     return counts
 
 
-def _static(workspace: Path, baseline: str, files: list[dict[str, Any]], scratch: Path) -> dict[str, Any]:
+def _static(
+    workspace: Path, baseline: str, files: list[dict[str, Any]], scratch: Path
+) -> dict[str, Any]:
     """Findings introduced in the changed source files (after minus before, per file)."""
     after_dir, before_dir = scratch / "after", scratch / "before"
     after, before = [], []
     for item in files:
         name = item["path"]
-        if not (name.startswith("src/") and name.endswith(".py")) or not (workspace / name).exists():
+        if (
+            not (name.startswith("src/") and name.endswith(".py"))
+            or not (workspace / name).exists()
+        ):
             continue
         target = after_dir / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -168,8 +221,19 @@ def _static(workspace: Path, baseline: str, files: list[dict[str, Any]], scratch
     }
 
 
-def measure(scenario: str, workspace: Path, baseline: str, run_dir: Path, cache: Path, here: Path) -> dict[str, Any]:
-    scratch = run_dir / "measure"
+def measure(
+    scenario: str,
+    workspace: Path,
+    baseline: str,
+    run_dir: Path,
+    cache: Path,
+    here: Path,
+    scratch_name: str = "measure",
+    hidden_only: bool = False,
+) -> dict[str, Any]:
+    """Measure the tree of ``workspace``. ``hidden_only`` runs only the hidden tests and the size of
+    the change (used to show what a stopped run left in the workspace after the quarantine)."""
+    scratch = run_dir / scratch_name
     scratch.mkdir(exist_ok=True)
     files = _changed_files(workspace, baseline)
     scope = SCOPE[scenario]
@@ -180,6 +244,16 @@ def measure(scenario: str, workspace: Path, baseline: str, run_dir: Path, cache:
     shutil.copy2(here / HIDDEN[scenario], hidden_dir)
     hidden = _pytest(workspace, [str(hidden_dir)], scratch / "hidden.xml")
     shutil.rmtree(hidden_dir)
+    change = {
+        "files": len(files),
+        "outOfScopeFiles": len(files) - len(in_scope),
+        "addedLines": sum(f["added"] for f in files),
+        "removedLines": sum(f["removed"] for f in files),
+        "testFiles": sum(1 for f in files if f["path"].startswith(("tests/", "test/"))),
+        "paths": sorted(f["path"] for f in files),
+    }
+    if hidden_only:
+        return {"hidden": hidden, "change": change}
 
     visible = _pytest(workspace, [], scratch / "visible.xml")
     regression = None
@@ -194,7 +268,8 @@ def measure(scenario: str, workspace: Path, baseline: str, run_dir: Path, cache:
         regression = _pytest(pristine, ["tests"], scratch / "regression.xml")
 
     secret_files = sorted(
-        f["path"] for f in files
+        f["path"]
+        for f in files
         if (workspace / f["path"]).is_file()
         and SECRET_LITERAL in (workspace / f["path"]).read_text(encoding="utf-8", errors="ignore")
     )
@@ -203,14 +278,7 @@ def measure(scenario: str, workspace: Path, baseline: str, run_dir: Path, cache:
         "hidden": hidden,
         "visibleSuite": visible,
         "regression": regression,
-        "change": {
-            "files": len(files),
-            "outOfScopeFiles": len(files) - len(in_scope),
-            "addedLines": sum(f["added"] for f in files),
-            "removedLines": sum(f["removed"] for f in files),
-            "testFiles": sum(1 for f in files if f["path"].startswith(("tests/", "test/"))),
-            "paths": sorted(f["path"] for f in files),
-        },
+        "change": change,
         "diffCoverage": _diff_coverage(workspace, files, scratch),
         "static": _static(workspace, baseline, files, scratch),
     }

@@ -78,7 +78,12 @@ def _implement(cwd: Path, prompt: str) -> str:
     tests.mkdir(exist_ok=True)
     body = [f"import {package}", "", ""]
     for name in names:
-        body += [f"def test_{name}_is_importable():", f"    assert {package} is not None", "", ""]
+        body += [
+            f"def test_{name}_is_importable() -> None:",
+            f"    assert {package} is not None",
+            "",
+            "",
+        ]
     (tests / "test_fake_dry_run.py").write_text(
         "\n".join(body).rstrip("\n") + "\n", encoding="utf-8"
     )
@@ -87,7 +92,7 @@ def _implement(cwd: Path, prompt: str) -> str:
         # A change whose own test fails: verification fails, the corrections change nothing and
         # the run stops (stop the line quarantines it).
         (tests / "test_fake_broken.py").write_text(
-            "def test_broken():\n    assert False\n", encoding="utf-8"
+            "def test_broken() -> None:\n    assert False\n", encoding="utf-8"
         )
     return f"Applied the reference solution of {scenario} and one test per id ({len(names)})."
 
@@ -133,7 +138,7 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
         directory = request.get("directory") or "tests/acceptance"
         criteria = [c.get("criterion_id") for c in task.get("acceptance_criteria") or []] or ["ac"]
         content = "import importlib\n" + "".join(
-            f"\n\ndef test_{cid}_package_exists():\n    assert importlib.import_module({package!r})\n"
+            f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r})\n"
             for cid in criteria
         )
         return {"tests": [{"path": f"{directory}/test_acceptance_dry_run.py", "content": content}]}
@@ -183,12 +188,12 @@ def _product_owner(prompt: str) -> str | None:
     for qid in ids:
         lines += [
             f"  {qid}: |",
-            "    Follow SPEC.md exactly; the smallest valid input is covered by it.",
+            "    The smallest valid input returns the documented result; invalid input raises the documented error.",
         ]
     lines += [
         "addCriteria:",
         "  - |",
-        "    python -m pytest -q passes and every rule of SPEC.md holds.",
+        "    Running python -m pytest -q exits with code 0.",
         "```",
     ]
     return "\n".join(lines)
