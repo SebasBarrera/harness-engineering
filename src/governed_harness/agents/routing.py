@@ -315,17 +315,23 @@ def select(
             _ladder_index(table.ladder, base, by_model=False) if table.ladder else None,
         )
 
-    ladder = table.ladder or ()
     steps = min(history.escalations, _max_escalations(policy))
+    rule, chosen, index, escalations = _tier_choice(table, base, call_kind, size, steps)
+    return decision(rule, chosen.model, chosen.effort, index, escalations)
+
+
+def _tier_choice(
+    table: FamilyTable, base: Rung, call_kind: CallKind, size: SizeClass, steps: int
+) -> tuple[str, Rung, int | None, int]:
+    """``(rule, rung, ladder index, escalations)`` of a tiered call: ``steps`` rungs up the
+    family's ladder from ``base`` for a call that escalates, else ``base`` itself."""
+    ladder = table.ladder or ()
     if call_kind in _ESCALATING_KINDS and steps > 0 and ladder:
         start = _ladder_index(ladder, base, by_model=True) or 0
         index = min(start + steps, len(ladder) - 1)
-        chosen = ladder[index]
-        return decision(
-            f"escalation:{steps}:{call_kind}:{size}", chosen.model, chosen.effort, index, steps
-        )
+        return f"escalation:{steps}:{call_kind}:{size}", ladder[index], index, steps
     index_used = _ladder_index(ladder, base, by_model=False) if ladder else None
-    return decision(f"tier:{call_kind}:{size}", base.model, base.effort, index_used)
+    return f"tier:{call_kind}:{size}", base, index_used, 0
 
 
 def select_reviewer(
