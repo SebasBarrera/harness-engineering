@@ -207,6 +207,7 @@ class Decomposition:
             {"threshold": threshold, "maxSubtasks": max_subtasks, "replan": replan},
             task=task,
             instruction_values={"maxSubtasks": max_subtasks},
+            validate=lambda result: validate_plan(task, result, max_subtasks),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(

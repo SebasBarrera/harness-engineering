@@ -108,6 +108,30 @@ class AmbiguityReviewConfig(_Section):
         return self.on_exhausted or "block"
 
 
+# ----- read-only calls (#80) ----------------------------------------------------------------
+ContractRetryMode = Literal["once", "off"]
+
+
+class ContractRetryConfig(_Section):
+    """A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer
+    breaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase
+    rejects) is sent once more before the phase blocks (``mode: once``), to
+    ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
+    provider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1."""
+
+    mode: ContractRetryMode = "once"
+    fallback_provider: str | None = Field(default=None, alias="fallbackProvider", min_length=1)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "once"
+
+
 # ----- VERIFICATION (#40, #52) --------------------------------------------------------------
 class ForbiddenImport(_Section):
     """Modules under ``source`` must not import modules under ``target`` (dotted prefixes)."""

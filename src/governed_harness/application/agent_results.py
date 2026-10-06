@@ -314,6 +314,7 @@ def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     off = _off_or_value
     return {
         "ambiguityReview": off(intake.ambiguity_review if intake else None),
+        "contractRetry": off(runtime.contract_retry),
         "validateAnswers": bool(intake and intake.validate_answers),
         "agentReview": off(review.agent_review if review else None),
         "structuredChanges": bool(review and review.structured_changes),

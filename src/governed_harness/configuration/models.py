@@ -23,6 +23,7 @@ from governed_harness.configuration.agent_results import (
     ArchitectureConfig,
     BudgetConfig,
     ContextConfig,
+    ContractRetryConfig,
     InvariantCheck,
     MemoryConfig,
     PlanningConfig,
@@ -167,6 +168,7 @@ _OPTIONAL_RUNTIME_FIELDS = {
     "reproduce_first": "reproduceFirst",
     "extended_redaction": "extendedRedaction",
     "state_dir": "stateDir",
+    "contract_retry": "contractRetry",
 }
 """Optional runtime keys left out of the serialized configuration while they are unset."""
 
@@ -289,6 +291,9 @@ class RuntimeConfig(ConfigModel):
     """Since 1.1 (#52): the implement request carries the gate contract (validators, review
     rules, blocking severities, the workspace path and the ``harness check`` command) and the
     agent's permissions derived from the capability grants."""
+    contract_retry: ContractRetryConfig | None = Field(default=None, alias="contractRetry")
+    """Since #80: a read-only call whose answer breaks its contract is retried once (on
+    ``fallbackProvider`` when configured) before the phase blocks; both attempts are recorded."""
     reproduce_first: bool | None = Field(default=None, alias="reproduceFirst")
     """Since 1.1 (#52): a correction attempt that changes nothing is a finding, and a correction
     after REQUEST_CHANGES must add a test that fails before it and passes after it."""
@@ -967,6 +972,18 @@ class ProjectConfiguration(ConfigModel):
         if not value:
             return ("auto",)
         return value
+
+    @model_validator(mode="after")
+    def _known_fallback_provider(self) -> ProjectConfiguration:
+        """``runtime.contractRetry.fallbackProvider`` (#80) names a provider that can answer a
+        read-only call: ``simulated`` or an entry of ``agentProviders``."""
+        retry = self.runtime.contract_retry
+        name = retry.fallback_provider if retry is not None else None
+        if name is not None and name != "simulated" and name not in self.agent_providers:
+            raise ValueError(
+                f"runtime.contractRetry.fallbackProvider {name!r} is not in agentProviders"
+            )
+        return self
 
     @property
     def criteria_policy(self) -> CriteriaPolicy:

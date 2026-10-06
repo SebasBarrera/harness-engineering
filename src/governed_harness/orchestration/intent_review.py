@@ -253,7 +253,13 @@ class IntentReview:
             payload.update(context.payload())
             suffix = context.suffix()
         outcome = results.call_agent(
-            execution, phase, "clarify", payload, task=task, instructions_suffix=suffix
+            execution,
+            phase,
+            "clarify",
+            payload,
+            task=task,
+            instructions_suffix=suffix,
+            validate=lambda result: _questions_from(result, task),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return _Items(

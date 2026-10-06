@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -33,6 +34,7 @@ from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
+    ErrorKind,
     EvidenceKind,
     FindingSeverity,
     PhaseId,
@@ -624,13 +626,93 @@ class AgentResults:
         task: Task,
         instruction_values: dict[str, Any] | None = None,
         instructions_suffix: str = "",
+        validate: Callable[[dict[str, Any]], object] | None = None,
     ) -> AgentCallOutcome:
         """Send a read-only request of ``kind`` and return its structured result.
 
         The request, the provider's output and the routing decision are evidence; a call that
-        changed the workspace is undone and answered with ``ERROR``."""
-        engine = self.engine
+        changed the workspace is undone and answered with ``ERROR``. Under
+        ``runtime.contractRetry`` (#80) an answer that breaks its contract (a protocol error,
+        or a ``result`` that ``validate`` rejects with ``ValueError``) is sent once more, to
+        the fallback provider when one is configured, and both attempts are recorded."""
         provider_id = self.provider_for(execution, kind)
+        first = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=provider_id,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        retry = self.project.runtime.contract_retry
+        problem = contract_problem(first, validate)
+        if retry is None or not retry.enabled or problem is None:
+            return first
+        fallback = retry.fallback_provider or provider_id
+        self._record_contract_retry(execution, phase, kind, first, problem, provider_id, fallback)
+        second = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=fallback,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        return replace(second, evidence_refs=(*first.evidence_refs, *second.evidence_refs))
+
+    def _record_contract_retry(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        first: AgentCallOutcome,
+        problem: str,
+        provider_id: str,
+        fallback: str,
+    ) -> None:
+        """The first attempt of a read-only call broke its contract: say why and where the
+        second goes."""
+        record = {
+            "callKind": kind,
+            "attempt": 1,
+            "provider": provider_id,
+            "retryProvider": fallback,
+            "problem": problem[:2000],
+            "invocationId": first.invocation_id,
+            "evidenceRefs": list(first.evidence_refs),
+        }
+        ref = self.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-contract-retry",
+            summary=f"The {kind} answer broke its contract; sent again to {fallback}",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.call.contract-retry",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _call_once(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        payload: dict[str, Any],
+        *,
+        task: Task,
+        provider_id: str,
+        instruction_values: dict[str, Any] | None,
+        instructions_suffix: str,
+    ) -> AgentCallOutcome:
+        """One attempt of a read-only call on ``provider_id`` (see :meth:`call_agent`)."""
+        engine = self.engine
         built = engine._build_provider(execution, phase, provider_id)
         if not isinstance(built, tuple):
             return AgentCallOutcome(built.status, built.summary, None, None, built.evidence_refs)
@@ -724,6 +806,7 @@ class AgentResults:
             answer.response if answer.execution.status is ResultStatus.PASSED else None,
             answer.execution.invocation.invocation_id,
             refs,
+            protocol_error=protocol_error(answer.execution),
         )
 
     def _call_with_retries(
@@ -1199,6 +1282,32 @@ class AgentResults:
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the contract of a read-only answer (#80) ----------------------------------------------
+def protocol_error(result: AgentExecutionResult) -> str | None:
+    """Why an answer broke the provider protocol (no JSON, no ``result`` object), or ``None``."""
+    error = result.invocation.error
+    if result.status is not ResultStatus.ERROR or error is None:
+        return None
+    return error.message if error.kind is ErrorKind.PROTOCOL_ERROR else None
+
+
+def contract_problem(
+    outcome: AgentCallOutcome, validate: Callable[[dict[str, Any]], object] | None
+) -> str | None:
+    """Why a read-only answer breaks its contract: a protocol error, or a ``result`` that the
+    phase's ``validate`` rejects (``ValueError``); ``None`` for an answer that keeps it, and for
+    any other failure (a provider that did not answer, a call that changed the workspace)."""
+    if outcome.protocol_error is not None:
+        return outcome.protocol_error
+    if validate is None or outcome.status is not ResultStatus.PASSED or outcome.result is None:
+        return None
+    try:
+        validate(outcome.result)
+    except ValueError as error:
+        return str(error)
+    return None
 
 
 # ----- the configuration of each read-only call kind -----------------------------------------
