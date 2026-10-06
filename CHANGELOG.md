@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A review served from the global review cache reports no model call (closes #75). On a global
+  cache hit `harness review-code` (and the panel of a governed run) copied the cached report's
+  reviewers, so `tokens.modelCalls` counted their attempts and the second opinion and each
+  reviewer kept the `cache` value of the original review, although no model was called (the
+  review corpus of the 2.0.0 evaluation reported 34 calls while its fixture received none). Now
+  the report of a hit has `tokens.total` and `tokens.modelCalls` 0, every reviewer that answered
+  is marked `cache: hit`, the second opinion carries 0 tokens, and the cached review's numbers
+  are kept under `tokens.cachedFrom` (`total`, `modelCalls`). `harness metrics` counts the agent
+  invocations a run recorded, and a cache hit records none. A bug fix of the report's counts; it
+  applies always, with no new key.
 - A provider launch refused by `destructiveActionsDefault: deny` blocks the run instead of ending
   it as an internal error (closes #76). The refusal reached the phase as an exception, so the run
   ended `ERROR` and `run start` exited with 1, as if the harness had failed. Now the phase and the

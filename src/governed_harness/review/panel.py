@@ -201,6 +201,9 @@ class PanelReport:
     second_opinion: dict[str, Any] | None = None
     cache: str = "off"
     reviewer_cache_hits: int = 0
+    cached_from: dict[str, int] | None = None
+    """On a global cache hit: the tokens and model calls of the review the report was cached
+    from (this review called no model, #75)."""
 
     @property
     def tokens(self) -> int:
@@ -211,7 +214,8 @@ class PanelReport:
     @property
     def model_calls(self) -> int:
         calls = sum(item.attempts for item in self.reviewers if item.cache != "hit")
-        return calls + (1 if self.second_opinion and self.second_opinion.get("status") else 0)
+        second = self.second_opinion or {}
+        return calls + int(bool(second.get("status")) and second.get("cache") != "hit")
 
     def body(self) -> dict[str, Any]:
         """The deterministic part of the report (what its digest covers)."""
@@ -236,6 +240,13 @@ class PanelReport:
 
     def as_dict(self) -> dict[str, Any]:
         errors = sum(1 for item in self.findings if item.blocking)
+        tokens: dict[str, Any] = {
+            "total": self.tokens,
+            "byReviewer": {item.reviewer: item.tokens for item in self.reviewers},
+            "modelCalls": self.model_calls,
+        }
+        if self.cached_from is not None:
+            tokens["cachedFrom"] = dict(self.cached_from)
         return {
             **self.body(),
             "digest": self.digest,
@@ -258,11 +269,7 @@ class PanelReport:
             "drift": self.drift,
             "secondOpinion": self.second_opinion,
             "cache": {"global": self.cache, "reviewerHits": self.reviewer_cache_hits},
-            "tokens": {
-                "total": self.tokens,
-                "byReviewer": {item.reviewer: item.tokens for item in self.reviewers},
-                "modelCalls": self.model_calls,
-            },
+            "tokens": tokens,
         }
 
     @classmethod
@@ -783,6 +790,25 @@ def _verdict(
     return verdict_of(findings)
 
 
+def _served_from_cache(value: Mapping[str, Any]) -> PanelReport:
+    """The report of a global cache hit: no reviewer and no second opinion was called, so the
+    review reports 0 model calls and 0 tokens; every reviewer that answered is marked as served
+    from the cache, and the cached review's numbers are kept under ``cachedFrom`` (#75)."""
+    report = PanelReport.from_dict(value)
+    report.cache = "hit"
+    usage = value.get("tokens") or {}
+    report.cached_from = {
+        "total": int(usage.get("total") or 0),
+        "modelCalls": int(usage.get("modelCalls") or 0),
+    }
+    for outcome in report.reviewers:
+        if outcome.status != "SKIPPED":
+            outcome.cache = "hit"
+    if report.second_opinion is not None:
+        report.second_opinion = {**report.second_opinion, "tokens": 0, "cache": "hit"}
+    return report
+
+
 def run_panel(inputs: PanelInputs) -> PanelReport:
     settings = inputs.settings
     limit = settings.finding_limit
@@ -793,9 +819,7 @@ def run_panel(inputs: PanelInputs) -> PanelReport:
     key = _global_key(inputs, hashed) if inputs.cache is not None else None
     cached = inputs.cache.get(key) if inputs.cache is not None and key is not None else None
     if cached is not None:
-        report = PanelReport.from_dict(cached)
-        report.cache = "hit"
-        return report
+        return _served_from_cache(cached)
     report = PanelReport(
         mode=inputs.mode,
         base=inputs.base,
