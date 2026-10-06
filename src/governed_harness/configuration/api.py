@@ -39,7 +39,7 @@ ApiRole = Literal["viewer", "reviewer", "admin"]
 API_ROLES: tuple[ApiRole, ...] = ("viewer", "reviewer", "admin")
 """The roles from the least to the most privileged; each one includes the ones before it."""
 
-DEFAULT_API_TOKEN_ENV = "HARNESS_API_TOKEN"
+DEFAULT_API_TOKEN_ENV = "HARNESS_API_TOKEN"  # nosec B105 - an environment variable name, not a token
 DEFAULT_API_TOKEN_ROLE: ApiRole = "admin"
 MIN_API_TOKEN_LENGTH = 16
 """Shorter tokens taken from the environment are refused at start (fail closed)."""

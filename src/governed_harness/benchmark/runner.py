@@ -82,9 +82,9 @@ def run_benchmarks(*, iterations: int = 1000) -> dict[str, object]:
         subprocess_iterations = max(5, min(30, iterations // 50 or 5))
 
         def direct_process() -> object:
-            import subprocess
+            import subprocess  # nosec B404 - the benchmark's own baseline process
 
-            return subprocess.run(
+            return subprocess.run(  # nosec B603 - fixed argv: this interpreter with -c pass, no shell
                 [sys.executable, "-c", "pass"],
                 cwd=root,
                 capture_output=True,

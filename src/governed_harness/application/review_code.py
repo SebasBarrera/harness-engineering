@@ -49,7 +49,7 @@ from governed_harness.runtime.process_runner import SafeProcessRunner
 
 MODES = ("hook", "manual", "staged")
 REF_PREFIX = "refs/harness/review"
-REF_KINDS = {"PASS": "pass", "PASS_WARN": "pass-warn"}
+REF_KINDS = {"PASS": "pass", "PASS_WARN": "pass-warn"}  # nosec B105 - git ref names, not passwords
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 HOOK_MARKER = "# governed-harness review hook (harness review hook install)"
 PULL_REQUEST_BASE_ENV = (

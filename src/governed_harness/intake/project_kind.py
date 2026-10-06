@@ -11,7 +11,7 @@ architecture call advises options (new) or surveys what is there (existing)."""
 from __future__ import annotations
 
 import re
-import subprocess
+import subprocess  # nosec B404 - git with a fixed argv, no shell
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any

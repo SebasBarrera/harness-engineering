@@ -4,7 +4,7 @@ import contextlib
 import os
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 - the governed runner: resolved executable, no shell
 import threading
 import time
 from collections.abc import Mapping
@@ -146,7 +146,7 @@ class SafeProcessRunner:
             destructive.check(spec.argv, cwd, actor, grants)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603 - executable resolved and checked by policy, shell=False
             [*spec.sandbox_prefix, resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,

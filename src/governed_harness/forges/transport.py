@@ -14,7 +14,7 @@ import base64
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - gh or glab api with a fixed argv, no shell
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field

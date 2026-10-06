@@ -27,7 +27,7 @@ import json
 import os
 import platform
 import re
-import subprocess
+import subprocess  # nosec B404 - git rev-parse with a fixed argv, no shell
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -71,7 +71,7 @@ def repository_identity(workspace: Path) -> Path:
     """The Git common directory of ``workspace`` (shared by its worktrees), else the workspace
     itself."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607 - git from PATH, fixed argv, no shell
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=workspace,
             capture_output=True,

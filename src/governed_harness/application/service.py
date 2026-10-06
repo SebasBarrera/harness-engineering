@@ -2034,7 +2034,7 @@ class HarnessApplication(ReviewCodeCommands):
         if environment is not None:
             hooks = environment.git_hooks
             if install_hooks and hooks and hooks.install:
-                import subprocess
+                import subprocess  # nosec B404 - runs the project's declared hook installer
 
                 completed = subprocess.run(  # nosec B603 - the project's own declared command
                     list(hooks.install),
