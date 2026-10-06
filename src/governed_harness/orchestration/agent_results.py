@@ -938,7 +938,7 @@ class AgentResults:
                 else []
             )
             paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, task, paths)
+            engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
             extra.update(engineering)
         if not extra:
             return None

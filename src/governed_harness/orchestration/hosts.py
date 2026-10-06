@@ -439,9 +439,7 @@ class EngineeringPort(Protocol):
     def features_directory(self) -> str:
         """Where the feature files live."""
 
-    def review_extra(
-        self, execution: Execution, change_set: ChangeSet
-    ) -> tuple[dict[str, Any], str]:
+    def review_extra(self, change_set: ChangeSet) -> tuple[dict[str, Any], str]:
         """The checklist the review call gains."""
 
     def setup_record(self, project_id: str) -> dict[str, Any]:

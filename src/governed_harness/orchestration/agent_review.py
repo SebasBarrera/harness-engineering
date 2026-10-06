@@ -123,7 +123,7 @@ class AgentReview:
         if results.engineering.configured:
             # The standards cards no tool verifies and the principles checklist ride on this
             # call (#56): no extra agent call.
-            checklist, suffix = results.engineering.review_extra(execution, change_set)
+            checklist, suffix = results.engineering.review_extra(change_set)
             payload.update(checklist)
         outcome = results.call_agent(
             execution, phase, "review", payload, task=task, instructions_suffix=suffix
