@@ -1,0 +1,391 @@
+{
+  "cases": 16,
+  "defective": 8,
+  "identicalAcrossRepetitions": {
+    "c-correct-l1": true,
+    "c-correct-l2": true,
+    "c-correct-l2-unit-only": true,
+    "c-correct-l3": true,
+    "c-endswith-l1": true,
+    "c-endswith-l3": true,
+    "c-history-untested": true,
+    "d-correct": true,
+    "d-correct-no-assertion": true,
+    "d-total-no-assertion": true,
+    "d-total-not-exercised": true,
+    "d-total-passes-on-baseline": true,
+    "e-cli-correct-l1-weak": true,
+    "e-cli-correct-l3": true,
+    "e-cli-float-l1": true,
+    "e-cli-float-l3": true
+  },
+  "inadequateEvidence": 11,
+  "table": [
+    {
+      "case": "c-endswith-l1",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "0/7",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "c-endswith-l3",
+      "certification": "NOT_CERTIFIED",
+      "criteria": {
+        "ac_c_extension": "NOT_CERTIFIED",
+        "ac_c_invalid": "NOT_CERTIFIED",
+        "ac_c_roundtrip": "NOT_CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": null,
+      "mutation": [],
+      "oracle": "0/7",
+      "phase": "VERIFICATION",
+      "runStatus": "FAILED",
+      "testQuality": []
+    },
+    {
+      "case": "c-history-untested",
+      "certification": "PARTIAL",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "NOT_CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": null,
+      "mutation": [],
+      "oracle": "6/7",
+      "phase": "VERIFICATION",
+      "runStatus": "FAILED",
+      "testQuality": [
+        "tests.changed-lines-uncovered"
+      ]
+    },
+    {
+      "case": "d-total-not-exercised",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_d_low_stock": "CERTIFIED",
+        "ac_d_total": "CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": "FAILED",
+      "mutation": [
+        "tests.change-not-exercised"
+      ],
+      "oracle": "1/2",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": [
+        "tests.changed-lines-uncovered"
+      ]
+    },
+    {
+      "case": "d-total-no-assertion",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_d_low_stock": "CERTIFIED",
+        "ac_d_total": "CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": "FAILED",
+      "mutation": [],
+      "oracle": "1/2",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": [
+        "tests.assertion-free"
+      ]
+    },
+    {
+      "case": "d-total-passes-on-baseline",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_d_low_stock": "CERTIFIED",
+        "ac_d_total": "CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": "FAILED",
+      "mutation": [
+        "tests.change-not-exercised"
+      ],
+      "oracle": "1/2",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": [
+        "tests.changed-lines-uncovered"
+      ]
+    },
+    {
+      "case": "e-cli-float-l3",
+      "certification": "NOT_CERTIFIED",
+      "criteria": {
+        "ac_e_value": "NOT_CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": null,
+      "mutation": [],
+      "oracle": "2/3",
+      "phase": "VERIFICATION",
+      "runStatus": "FAILED",
+      "testQuality": [
+        "tests.changed-lines-uncovered"
+      ]
+    },
+    {
+      "case": "e-cli-float-l1",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_e_value": "CERTIFIED"
+      },
+      "defective": true,
+      "evidenceAdequate": false,
+      "gate": "FAILED",
+      "mutation": [
+        "tests.change-not-exercised"
+      ],
+      "oracle": "2/3",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": [
+        "tests.changed-lines-uncovered"
+      ]
+    },
+    {
+      "case": "c-correct-l1",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": true,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "7/7",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "c-correct-l3",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": true,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "7/7",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "c-correct-l2",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": true,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "7/7",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "c-correct-l2-unit-only",
+      "certification": "PARTIAL",
+      "criteria": {
+        "ac_c_extension": "CERTIFIED",
+        "ac_c_invalid": "CERTIFIED",
+        "ac_c_roundtrip": "NOT_CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": false,
+      "gate": null,
+      "mutation": [],
+      "oracle": "7/7",
+      "phase": "VERIFICATION",
+      "runStatus": "FAILED",
+      "testQuality": []
+    },
+    {
+      "case": "d-correct",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_d_low_stock": "CERTIFIED",
+        "ac_d_total": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": true,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "2/2",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "d-correct-no-assertion",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_d_low_stock": "CERTIFIED",
+        "ac_d_total": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": false,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "2/2",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": [
+        "tests.assertion-free"
+      ]
+    },
+    {
+      "case": "e-cli-correct-l3",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_e_value": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": true,
+      "gate": "PASSED",
+      "mutation": [
+        "tests.change-not-exercised"
+      ],
+      "oracle": "3/3",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    },
+    {
+      "case": "e-cli-correct-l1-weak",
+      "certification": "CERTIFIED",
+      "criteria": {
+        "ac_e_value": "CERTIFIED"
+      },
+      "defective": false,
+      "evidenceAdequate": false,
+      "gate": "PASSED",
+      "mutation": [],
+      "oracle": "3/3",
+      "phase": "DECISION",
+      "runStatus": "BLOCKED",
+      "testQuality": []
+    }
+  ],
+  "truthConsistent": 16,
+  "vsDefective": {
+    "any": {
+      "fn": 1,
+      "fp": 3,
+      "sensitivity": 0.875,
+      "specificity": 0.625,
+      "tn": 5,
+      "tp": 7
+    },
+    "certification": {
+      "fn": 5,
+      "fp": 1,
+      "sensitivity": 0.375,
+      "specificity": 0.875,
+      "tn": 7,
+      "tp": 3
+    },
+    "gateNotPassed": {
+      "fn": 1,
+      "fp": 1,
+      "sensitivity": 0.875,
+      "specificity": 0.875,
+      "tn": 7,
+      "tp": 7
+    },
+    "mutation": {
+      "fn": 5,
+      "fp": 1,
+      "sensitivity": 0.375,
+      "specificity": 0.875,
+      "tn": 7,
+      "tp": 3
+    },
+    "testQuality": {
+      "fn": 2,
+      "fp": 1,
+      "sensitivity": 0.75,
+      "specificity": 0.875,
+      "tn": 7,
+      "tp": 6
+    }
+  },
+  "vsInadequateEvidence": {
+    "any": {
+      "fn": 2,
+      "fp": 1,
+      "sensitivity": 0.818,
+      "specificity": 0.8,
+      "tn": 4,
+      "tp": 9
+    },
+    "certification": {
+      "fn": 7,
+      "fp": 0,
+      "sensitivity": 0.364,
+      "specificity": 1.0,
+      "tn": 5,
+      "tp": 4
+    },
+    "gateNotPassed": {
+      "fn": 3,
+      "fp": 0,
+      "sensitivity": 0.727,
+      "specificity": 1.0,
+      "tn": 5,
+      "tp": 8
+    },
+    "mutation": {
+      "fn": 8,
+      "fp": 1,
+      "sensitivity": 0.273,
+      "specificity": 0.8,
+      "tn": 4,
+      "tp": 3
+    },
+    "testQuality": {
+      "fn": 4,
+      "fp": 0,
+      "sensitivity": 0.636,
+      "specificity": 1.0,
+      "tn": 5,
+      "tp": 7
+    }
+  }
+}
