@@ -1,0 +1,391 @@
+# Code and test blocks the cases of the verification-ladder corpus compose (N01-a).
+# "source" blocks are appended to the class Inventory of src/inventory/__init__.py (with the
+# imports they list); test blocks become whole test files.
+
+source:
+  c_correct:
+    imports: ["import json", "from pathlib import Path"]
+    code: |
+      def save(self, path):
+          data = {
+              "items": [
+                  {**i, "price": str(i["price"]), "history": [list(h) for h in self._history[i["sku"]]]}
+                  for i in self.list_items()
+              ]
+          }
+          Path(path).write_text(json.dumps(data), encoding="utf-8")
+
+      @classmethod
+      def load(cls, path):
+          path = Path(path)
+          if path.suffix != ".json" or path.stat().st_size > 1024 * 1024:
+              raise ValueError("invalid file")
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              inv = cls()
+              for item in data["items"]:
+                  inv.add_item(item["sku"], item["name"], item["price"], item["quantity"])
+                  for kind, qty in item.get("history", []):
+                      if kind not in ("receive", "ship"):
+                          raise ValueError("invalid history")
+                      inv._history[item["sku"]].append((kind, _qty(qty, positive=True)))
+          except (KeyError, TypeError, json.JSONDecodeError) as exc:
+              raise ValueError("invalid data") from exc
+          return inv
+  # The defect of block D (Haiku with the harness, 0.9.0): the suffix is checked with
+  # str.endswith, so a pathlib.Path argument raises AttributeError instead of being loaded.
+  c_endswith:
+    imports: ["import json", "import os"]
+    code: |
+      def save(self, path):
+          data = {
+              "items": [
+                  {**i, "price": str(i["price"]), "history": [list(h) for h in self._history[i["sku"]]]}
+                  for i in self.list_items()
+              ]
+          }
+          with open(path, "w", encoding="utf-8") as handle:
+              handle.write(json.dumps(data))
+
+      @classmethod
+      def load(cls, path):
+          if not path.endswith(".json") or os.path.getsize(path) > 1024 * 1024:
+              raise ValueError("invalid file")
+          try:
+              with open(path, encoding="utf-8") as handle:
+                  data = json.loads(handle.read())
+              inv = cls()
+              for item in data["items"]:
+                  inv.add_item(item["sku"], item["name"], item["price"], item["quantity"])
+                  for kind, qty in item.get("history", []):
+                      if kind not in ("receive", "ship"):
+                          raise ValueError("invalid history")
+                      inv._history[item["sku"]].append((kind, _qty(qty, positive=True)))
+          except (KeyError, TypeError, json.JSONDecodeError) as exc:
+              raise ValueError("invalid data") from exc
+          return inv
+  # A save that drops the movement history (the round trip loses it).
+  c_no_history:
+    imports: ["import json", "from pathlib import Path"]
+    code: |
+      def save(self, path):
+          data = {"items": [{**i, "price": str(i["price"])} for i in self.list_items()]}
+          Path(path).write_text(json.dumps(data), encoding="utf-8")
+
+      @classmethod
+      def load(cls, path):
+          path = Path(path)
+          if path.suffix != ".json" or path.stat().st_size > 1024 * 1024:
+              raise ValueError("invalid file")
+          try:
+              data = json.loads(path.read_text(encoding="utf-8"))
+              inv = cls()
+              for item in data["items"]:
+                  inv.add_item(item["sku"], item["name"], item["price"], item["quantity"])
+                  for kind, qty in item.get("history", []):
+                      if kind not in ("receive", "ship"):
+                          raise ValueError("invalid history")
+                      inv._history[item["sku"]].append((kind, _qty(qty, positive=True)))
+          except (KeyError, TypeError, json.JSONDecodeError) as exc:
+              raise ValueError("invalid data") from exc
+          return inv
+  d_correct:
+    imports: []
+    code: |
+      def low_stock(self, threshold):
+          return sorted(k for k, v in self._items.items() if v["quantity"] < threshold)
+
+      def total_value(self):
+          total = sum((v["price"] * v["quantity"] for v in self._items.values()), Decimal(0))
+          return total.quantize(_CENT, rounding=ROUND_HALF_UP)
+  # total_value returns a float: Decimal("6.02") != 6.02.
+  d_float_total:
+    imports: []
+    code: |
+      def low_stock(self, threshold):
+          return sorted(k for k, v in self._items.items() if v["quantity"] < threshold)
+
+      def total_value(self):
+          return round(float(sum(v["price"] * v["quantity"] for v in self._items.values())), 2)
+
+files:
+  e_cli_correct: |
+    """Command line: python -m inventory.cli value FILE prints the item count and the stock value."""
+
+    import json
+    import sys
+    from decimal import ROUND_HALF_UP, Decimal
+
+    from inventory import Inventory
+
+
+    def main(argv=None):
+        args = sys.argv[1:] if argv is None else argv
+        if len(args) != 2 or args[0] != "value":
+            print("usage: python -m inventory.cli value FILE", file=sys.stderr)
+            return 2
+        with open(args[1], encoding="utf-8") as handle:
+            data = json.load(handle)
+        inv = Inventory()
+        for item in data["items"]:
+            inv.add_item(item["sku"], item["name"], item["price"], item["quantity"])
+        items = inv.list_items()
+        total = sum((i["price"] * i["quantity"] for i in items), Decimal(0))
+        total = total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        print(json.dumps({"items": len(items), "totalValue": str(total)}))
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+  # The value is computed in floating point from the raw prices of the file (0.335 * 3 + 2.5 * 2
+  # prints 6.00), not from the prices the inventory stores rounded to cents.
+  e_cli_float: |
+    """Command line: python -m inventory.cli value FILE prints the item count and the stock value."""
+
+    import json
+    import sys
+
+
+    def main(argv=None):
+        args = sys.argv[1:] if argv is None else argv
+        if len(args) != 2 or args[0] != "value":
+            print("usage: python -m inventory.cli value FILE", file=sys.stderr)
+            return 2
+        with open(args[1], encoding="utf-8") as handle:
+            data = json.load(handle)
+        total = sum(float(item["price"]) * item["quantity"] for item in data["items"])
+        print(json.dumps({"items": len(data["items"]), "totalValue": f"{total:.2f}"}))
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+
+tests:
+  c_good: |
+    import pytest
+
+    from inventory import Inventory
+
+
+    def make():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        return inv
+
+
+    def test_ac_c_roundtrip_preserves_items_prices_and_history(tmp_path):
+        inv = make()
+        inv.receive("ABC-0001", 2)
+        path = tmp_path / "inv.json"
+        inv.save(path)
+        loaded = Inventory.load(path)
+        assert loaded.list_items() == inv.list_items()
+        assert loaded.history("ABC-0001") == [("receive", 2)]
+
+
+    @pytest.mark.parametrize("name", ["inv.txt", "inv.json.bak", "inv"])
+    def test_ac_c_extension_rejects_other_suffixes(tmp_path, name):
+        path = tmp_path / name
+        path.write_text("{}")
+        for value in (path, str(path)):
+            with pytest.raises(ValueError):
+                Inventory.load(value)
+
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "{not json",
+            '{"items": [{"sku": "bad", "name": "x", "price": "1", "quantity": 1}]}',
+            '{"items": [{"sku": "ABC-0001", "name": "x", "price": "1", "quantity": -3}]}',
+            '{"items": [{"sku": "ABC-0001", "name": "x", "price": "-1", "quantity": 3}]}',
+        ],
+    )
+    def test_ac_c_invalid_rejects_bad_content(tmp_path, content):
+        path = tmp_path / "inv.json"
+        path.write_text(content)
+        with pytest.raises(ValueError):
+            Inventory.load(path)
+
+
+    def test_ac_c_invalid_rejects_large_files(tmp_path):
+        path = tmp_path / "big.json"
+        path.write_text(" " * (1024 * 1024 + 1) + "{}")
+        with pytest.raises(ValueError):
+            Inventory.load(path)
+  # The same tests with str paths only: they pass with the endswith defect.
+  c_str_only: |
+    import pytest
+
+    from inventory import Inventory
+
+
+    def make():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        return inv
+
+
+    def test_ac_c_roundtrip_preserves_items_prices_and_history(tmp_path):
+        inv = make()
+        inv.receive("ABC-0001", 2)
+        path = str(tmp_path / "inv.json")
+        inv.save(path)
+        loaded = Inventory.load(path)
+        assert loaded.list_items() == inv.list_items()
+        assert loaded.history("ABC-0001") == [("receive", 2)]
+
+
+    @pytest.mark.parametrize("name", ["inv.txt", "inv.json.bak", "inv"])
+    def test_ac_c_extension_rejects_other_suffixes(tmp_path, name):
+        path = tmp_path / name
+        path.write_text("{}")
+        with pytest.raises(ValueError):
+            Inventory.load(str(path))
+
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "{not json",
+            '{"items": [{"sku": "bad", "name": "x", "price": "1", "quantity": 1}]}',
+            '{"items": [{"sku": "ABC-0001", "name": "x", "price": "1", "quantity": -3}]}',
+            '{"items": [{"sku": "ABC-0001", "name": "x", "price": "-1", "quantity": 3}]}',
+        ],
+    )
+    def test_ac_c_invalid_rejects_bad_content(tmp_path, content):
+        path = tmp_path / "inv.json"
+        path.write_text(content)
+        with pytest.raises(ValueError):
+            Inventory.load(str(path))
+
+
+    def test_ac_c_invalid_rejects_large_files(tmp_path):
+        path = tmp_path / "big.json"
+        path.write_text(" " * (1024 * 1024 + 1) + "{}")
+        with pytest.raises(ValueError):
+            Inventory.load(str(path))
+  # No test names ac_c_roundtrip (and none checks that the history survives).
+  c_without_roundtrip: |
+    import pytest
+
+    from inventory import Inventory
+
+
+    def test_ac_c_extension_rejects_other_suffixes(tmp_path):
+        path = tmp_path / "inv.txt"
+        path.write_text("{}")
+        with pytest.raises(ValueError):
+            Inventory.load(path)
+
+
+    def test_ac_c_invalid_rejects_malformed_json(tmp_path):
+        path = tmp_path / "inv.json"
+        path.write_text("{not json")
+        with pytest.raises(ValueError):
+            Inventory.load(path)
+  c_roundtrip_integration: |
+    from inventory import Inventory
+
+
+    def test_ac_c_roundtrip_through_a_file(tmp_path):
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.receive("ABC-0001", 2)
+        path = tmp_path / "inv.json"
+        inv.save(path)
+        loaded = Inventory.load(path)
+        assert loaded.list_items() == inv.list_items()
+        assert loaded.history("ABC-0001") == [("receive", 2)]
+  d_good: |
+    from decimal import Decimal
+
+    from inventory import Inventory
+
+
+    def test_ac_d_low_stock_lists_skus_below_the_threshold():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        inv.add_item("MMM-0005", "M", 1, 0)
+        assert inv.low_stock(5) == ["MMM-0005", "XYZ-0002"]
+        assert inv.low_stock(4) == ["MMM-0005"]
+
+
+    def test_ac_d_total_value_in_decimal_cents():
+        inv = Inventory()
+        inv.add_item("AAA-0001", "A", "0.335", 3)
+        inv.add_item("BBB-0002", "B", "2.50", 2)
+        assert inv.total_value() == Decimal("6.02")
+        assert Inventory().total_value() == Decimal("0.00")
+  # The test named after ac_d_total exercises low_stock, not total_value.
+  d_total_not_exercised: |
+    from inventory import Inventory
+
+
+    def make():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        inv.add_item("MMM-0005", "M", 1, 0)
+        return inv
+
+
+    def test_ac_d_low_stock_lists_skus_below_the_threshold():
+        assert make().low_stock(5) == ["MMM-0005", "XYZ-0002"]
+        assert make().low_stock(4) == ["MMM-0005"]
+
+
+    def test_ac_d_total_value_counts_the_low_stock_items():
+        assert len(make().low_stock(5)) == 2
+  # The test named after ac_d_total calls total_value but asserts nothing.
+  d_total_no_assert: |
+    from inventory import Inventory
+
+
+    def make():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        inv.add_item("MMM-0005", "M", 1, 0)
+        return inv
+
+
+    def test_ac_d_low_stock_lists_skus_below_the_threshold():
+        assert make().low_stock(5) == ["MMM-0005", "XYZ-0002"]
+        assert make().low_stock(4) == ["MMM-0005"]
+
+
+    def test_ac_d_total_value_runs():
+        make().total_value()
+  # The test named after ac_d_total passes on the baseline too (it checks unchanged behaviour).
+  d_total_passes_on_baseline: |
+    from inventory import Inventory
+
+
+    def make():
+        inv = Inventory()
+        inv.add_item("ABC-0001", "Bolt", "1.50", 10)
+        inv.add_item("XYZ-0002", "Nut", "0.25", 4)
+        inv.add_item("MMM-0005", "M", 1, 0)
+        return inv
+
+
+    def test_ac_d_low_stock_lists_skus_below_the_threshold():
+        assert make().low_stock(5) == ["MMM-0005", "XYZ-0002"]
+        assert make().low_stock(4) == ["MMM-0005"]
+
+
+    def test_ac_d_total_value_of_an_empty_inventory_has_no_items():
+        assert Inventory().list_items() == []
+  e_weak: |
+    from inventory.cli import main
+
+
+    def test_ac_e_value_prints_json(capsys):
+        assert main(["value", "fixtures/stock.json"]) == 0
+        assert "totalValue" in capsys.readouterr().out

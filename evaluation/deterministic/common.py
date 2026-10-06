@@ -290,14 +290,20 @@ def simulated_person(
             else []
         )
         kind = str(pending[0].get("kind")) if pending else ""
+        plan_digest = ""
         if not kind and state == "BLOCKED" and phase == "PLANNING":
-            # A plan waiting for approval is not listed by harness inbox (observed on 2.0.0).
+            # A plan waiting for approval is not listed by harness inbox (observed on 2.0.0):
+            # either the plan-approval checkpoint (friction.planApproval, `approval` PENDING) or
+            # a decomposition into sub-tasks (planning.decomposition, `status` PROPOSED).
             _, shown, _ = h.run(
                 ws, "plan", "show", "--path", ".", "--run", run_id, label="plan show"
             )
-            approval = shown.get("approval") if isinstance(shown, dict) else None
+            shown = shown if isinstance(shown, dict) else {}
+            approval = shown.get("approval")
             if isinstance(approval, dict) and approval.get("status") == "PENDING":
-                kind = "plan"
+                kind, plan_digest = "plan", str(approval.get("digest"))
+            elif shown.get("status") == "PROPOSED" and shown.get("digest"):
+                kind, plan_digest = "decomposition", str(shown.get("digest"))
         if not kind and state == "BLOCKED" and phase == "SPECIFICATION":
             kind = "acceptance"
         questions: list[dict[str, Any]] = []
@@ -364,15 +370,17 @@ def simulated_person(
                 "simulated approval",
                 label="acceptance decide",
             )
-        elif kind == "plan":
-            _, shown, _ = h.run(
-                ws, "plan", "show", "--path", ".", "--run", run_id, label="plan show"
-            )
-            digest = (
-                ((shown.get("approval") or {}).get("digest") or shown.get("digest"))
-                if isinstance(shown, dict)
-                else ""
-            )
+        elif kind in {"plan", "decomposition"}:
+            digest = plan_digest
+            if not digest:
+                _, shown, _ = h.run(
+                    ws, "plan", "show", "--path", ".", "--run", run_id, label="plan show"
+                )
+                digest = (
+                    ((shown.get("approval") or {}).get("digest") or shown.get("digest"))
+                    if isinstance(shown, dict)
+                    else ""
+                )
             code, _, _ = h.run(
                 ws,
                 "plan",

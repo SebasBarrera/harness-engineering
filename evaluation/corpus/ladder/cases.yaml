@@ -1,0 +1,154 @@
+# Verification-ladder corpus (N01-a): seeded changes with known truth on the inventory library
+# (parts A and B in the baseline). Each case is one task in patch mode (the simulated provider
+# applies it), so the change is exactly the seeded one.
+#
+# truth.defective: the change is wrong per the hidden oracle (evaluation/longitudinal/hidden for
+#   parts C and D, hidden/test_hidden_cli.py for part E); the runner re-checks it on a copy.
+# truth.evidenceAdequate: the tests or probes the change brings really reach the declared rung of
+#   every criterion (they exercise the changed behaviour, assert on it and fail without it).
+
+probes:
+  load_path:
+    command: [python, fixtures/load_probe.py, "{file}"]
+    output: json
+    variants:
+      - {name: stock, values: {file: fixtures/stock.json}, env: {PYTHONPATH: src}}
+    assertions:
+      - {kind: exitCode, equals: 0}
+      - {kind: jsonPath, path: "$.items", equals: 2}
+  # One variant: an assertion's `variants` narrows only `differs` (src/governed_harness/ladder/
+  # probes.py, evaluate); a jsonPath assertion is checked on every variant of the probe.
+  cli_value:
+    command: [python, -m, inventory.cli, value, "{file}"]
+    output: json
+    variants:
+      - {name: stock, values: {file: fixtures/stock.json}, env: {PYTHONPATH: src}}
+    assertions:
+      - {kind: exitCode, equals: 0}
+      - {kind: jsonPath, path: "$.items", equals: 2}
+      - {kind: jsonPath, path: "$.totalValue", equals: "6.02"}
+
+parts:
+  c:
+    title: Persistence (part C)
+    intent: Save the inventory to a JSON file and load it back, rejecting unsafe input.
+    oracle: [test_c_]
+    criteria:
+      ac_c_roundtrip: save(path) and Inventory.load(path) round-trip items, prices and history, for a str or a pathlib.Path path.
+      ac_c_extension: load raises ValueError for a path that does not end in .json, given as str or pathlib.Path.
+      ac_c_invalid: load raises ValueError for malformed JSON, an invalid SKU, a negative quantity or price, and a file over 1 MB.
+    source_file: src/inventory/__init__.py
+  d:
+    title: Stock reports (part D)
+    intent: Report the SKUs with low stock and the stock value.
+    oracle: [test_d_]
+    criteria:
+      ac_d_low_stock: low_stock(threshold) returns the sorted SKUs whose quantity is below the threshold.
+      ac_d_total: total_value() returns the stock value as a Decimal rounded half up to cents (Decimal("0.00") when empty).
+    source_file: src/inventory/__init__.py
+  e:
+    title: Stock value on the command line (part E)
+    intent: Add python -m inventory.cli value FILE, which prints the item count and the stock value as JSON.
+    oracle: [test_e_]
+    criteria:
+      ac_e_value: python -m inventory.cli value FILE prints {"items", "totalValue"} with the value in cents as a string (6.02 for fixtures/stock.json, 0.00 when empty); a usage error exits 2.
+
+cases:
+  # ----- defective changes ---------------------------------------------------------------------
+  - id: c-endswith-l1
+    part: c
+    levels: {ac_c_roundtrip: L1, ac_c_extension: L1, ac_c_invalid: L1}
+    source: c_endswith
+    tests: {tests/test_persistence.py: c_str_only}
+    truth: {defective: true, evidenceAdequate: false, defect: "path.endswith on a pathlib.Path (block D, Haiku)"}
+  - id: c-endswith-l3
+    part: c
+    levels: {ac_c_roundtrip: L1, ac_c_extension: {level: L3, probe: load_path}, ac_c_invalid: L1}
+    source: c_endswith
+    tests: {tests/test_persistence.py: c_str_only}
+    truth: {defective: true, evidenceAdequate: false, defect: "same change; the criterion is declared L3 with a probe that loads a pathlib.Path"}
+  - id: c-history-untested
+    part: c
+    levels: {ac_c_roundtrip: L1, ac_c_extension: L1, ac_c_invalid: L1}
+    source: c_no_history
+    tests: {tests/test_persistence.py: c_without_roundtrip}
+    truth: {defective: true, evidenceAdequate: false, defect: "save drops the history; no test names ac_c_roundtrip"}
+  - id: d-total-not-exercised
+    part: d
+    levels: {ac_d_low_stock: L1, ac_d_total: L1}
+    source: d_float_total
+    tests: {tests/test_reports.py: d_total_not_exercised}
+    truth: {defective: true, evidenceAdequate: false, defect: "total_value returns a float; its test does not exercise the changed block"}
+  - id: d-total-no-assertion
+    part: d
+    levels: {ac_d_low_stock: L1, ac_d_total: L1}
+    source: d_float_total
+    tests: {tests/test_reports.py: d_total_no_assert}
+    truth: {defective: true, evidenceAdequate: false, defect: "total_value returns a float; its test has no assertion"}
+  - id: d-total-passes-on-baseline
+    part: d
+    levels: {ac_d_low_stock: L1, ac_d_total: L1}
+    source: d_float_total
+    tests: {tests/test_reports.py: d_total_passes_on_baseline}
+    truth: {defective: true, evidenceAdequate: false, defect: "total_value returns a float; its test passes on the baseline too"}
+  - id: e-cli-float-l3
+    part: e
+    levels: {ac_e_value: {level: L3, probe: cli_value}}
+    files: {src/inventory/cli.py: e_cli_float}
+    tests: {tests/test_cli.py: e_weak}
+    truth: {defective: true, evidenceAdequate: false, defect: "float arithmetic on the raw prices prints 6.00; the unit test only checks the key"}
+  - id: e-cli-float-l1
+    part: e
+    levels: {ac_e_value: L1}
+    files: {src/inventory/cli.py: e_cli_float}
+    tests: {tests/test_cli.py: e_weak}
+    truth: {defective: true, evidenceAdequate: false, defect: "same change with the criterion declared L1"}
+  # ----- correct changes -----------------------------------------------------------------------
+  - id: c-correct-l1
+    part: c
+    levels: {ac_c_roundtrip: L1, ac_c_extension: L1, ac_c_invalid: L1}
+    source: c_correct
+    tests: {tests/test_persistence.py: c_good}
+    truth: {defective: false, evidenceAdequate: true}
+  - id: c-correct-l3
+    part: c
+    levels: {ac_c_roundtrip: L1, ac_c_extension: {level: L3, probe: load_path}, ac_c_invalid: L1}
+    source: c_correct
+    tests: {tests/test_persistence.py: c_good}
+    truth: {defective: false, evidenceAdequate: true}
+  - id: c-correct-l2
+    part: c
+    levels: {ac_c_roundtrip: L2, ac_c_extension: L1, ac_c_invalid: L1}
+    source: c_correct
+    tests: {tests/test_persistence.py: c_good, tests/integration/test_persistence_roundtrip.py: c_roundtrip_integration}
+    truth: {defective: false, evidenceAdequate: true}
+  - id: c-correct-l2-unit-only
+    part: c
+    levels: {ac_c_roundtrip: L2, ac_c_extension: L1, ac_c_invalid: L1}
+    source: c_correct
+    tests: {tests/test_persistence.py: c_good}
+    truth: {defective: false, evidenceAdequate: false, defect: "none in the code; the L2 rung has no integration test"}
+  - id: d-correct
+    part: d
+    levels: {ac_d_low_stock: L1, ac_d_total: L1}
+    source: d_correct
+    tests: {tests/test_reports.py: d_good}
+    truth: {defective: false, evidenceAdequate: true}
+  - id: d-correct-no-assertion
+    part: d
+    levels: {ac_d_low_stock: L1, ac_d_total: L1}
+    source: d_correct
+    tests: {tests/test_reports.py: d_total_no_assert}
+    truth: {defective: false, evidenceAdequate: false, defect: "none in the code; the total_value test asserts nothing"}
+  - id: e-cli-correct-l3
+    part: e
+    levels: {ac_e_value: {level: L3, probe: cli_value}}
+    files: {src/inventory/cli.py: e_cli_correct}
+    tests: {tests/test_cli.py: e_weak}
+    truth: {defective: false, evidenceAdequate: true}
+  - id: e-cli-correct-l1-weak
+    part: e
+    levels: {ac_e_value: L1}
+    files: {src/inventory/cli.py: e_cli_correct}
+    tests: {tests/test_cli.py: e_weak}
+    truth: {defective: false, evidenceAdequate: false, defect: "none in the code; the unit test only checks that the key is printed"}
