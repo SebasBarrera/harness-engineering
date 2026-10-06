@@ -1,0 +1,203 @@
+{
+  "bySource": {
+    "evaluation/tasks (harness do)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 3,
+      "withQuestions": 0
+    },
+    "evaluation/tasks (task file without criteria)": {
+      "byRule": {
+        "C0": 21
+      },
+      "errors": 0,
+      "questions": 21,
+      "tasks": 3,
+      "withQuestions": 3
+    },
+    "evaluation/tasks (task file)": {
+      "byRule": {
+        "C1": 3,
+        "T1": 3
+      },
+      "errors": 0,
+      "questions": 6,
+      "tasks": 6,
+      "withQuestions": 3
+    },
+    "large/prompts (harness do)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 1,
+      "withQuestions": 0
+    },
+    "large/prompts (task file without criteria)": {
+      "byRule": {
+        "C0": 7
+      },
+      "errors": 0,
+      "questions": 7,
+      "tasks": 1,
+      "withQuestions": 1
+    },
+    "large/steps (task file)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 8,
+      "withQuestions": 0
+    },
+    "large/whole (task file)": {
+      "byRule": {
+        "C0": 7,
+        "C1": 1
+      },
+      "errors": 0,
+      "questions": 8,
+      "tasks": 3,
+      "withQuestions": 2
+    },
+    "longitudinal/bug_reports (harness do)": {
+      "byRule": {
+        "T1": 1
+      },
+      "errors": 0,
+      "questions": 1,
+      "tasks": 16,
+      "withQuestions": 1
+    },
+    "longitudinal/bug_reports (task file without criteria)": {
+      "byRule": {
+        "C0": 112
+      },
+      "errors": 0,
+      "questions": 112,
+      "tasks": 16,
+      "withQuestions": 16
+    },
+    "longitudinal/bug_reports (task file)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 16,
+      "withQuestions": 0
+    },
+    "longitudinal/increments (harness do)": {
+      "byRule": {
+        "C1": 1,
+        "C2": 1,
+        "T1": 4
+      },
+      "errors": 0,
+      "questions": 6,
+      "tasks": 5,
+      "withQuestions": 4
+    },
+    "longitudinal/increments (task file without criteria)": {
+      "byRule": {
+        "C0": 35
+      },
+      "errors": 0,
+      "questions": 35,
+      "tasks": 5,
+      "withQuestions": 5
+    },
+    "longitudinal/increments (task file)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 5,
+      "withQuestions": 0
+    },
+    "rides/prompts (harness do)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 1,
+      "withQuestions": 0
+    },
+    "rides/prompts (task file without criteria)": {
+      "byRule": {
+        "C0": 7
+      },
+      "errors": 0,
+      "questions": 7,
+      "tasks": 1,
+      "withQuestions": 1
+    },
+    "rides/steps (task file)": {
+      "byRule": {},
+      "errors": 0,
+      "questions": 0,
+      "tasks": 16,
+      "withQuestions": 0
+    },
+    "rides/whole (task file)": {
+      "byRule": {
+        "C0": 7,
+        "C1": 1
+      },
+      "errors": 0,
+      "questions": 8,
+      "tasks": 3,
+      "withQuestions": 2
+    }
+  },
+  "rulesApplied": [
+    "C0",
+    "C1",
+    "C2",
+    "C3",
+    "T1"
+  ],
+  "rulesNotApplied": {
+    "A1": "needs an agent",
+    "A2": "applies to answers and needs the workspace",
+    "A3": "needs an agent (locate)",
+    "P1": "needs the workspace"
+  },
+  "tasks": 109,
+  "withQuestions": 38,
+  "withQuestionsList": [
+    "evaluation/tasks/brownfield-itsdangerous-poor (task file): {'C1': 1, 'T1': 1}",
+    "evaluation/tasks/greenfield-alerts-poor (task file): {'C1': 1, 'T1': 1}",
+    "evaluation/tasks/greenfield-shipping-poor (task file): {'C1': 1, 'T1': 1}",
+    "evaluation/tasks/brownfield-itsdangerous-casual (task file without criteria): {'C0': 7}",
+    "evaluation/tasks/greenfield-alerts-casual (task file without criteria): {'C0': 7}",
+    "evaluation/tasks/greenfield-shipping-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/increments/I1-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/increments/I2-casual (harness do): {'T1': 1}",
+    "longitudinal/increments/I2-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/increments/I3-casual (harness do): {'C1': 1, 'T1': 1}",
+    "longitudinal/increments/I3-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/increments/I4-casual (harness do): {'C2': 1, 'T1': 1}",
+    "longitudinal/increments/I4-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/increments/I5-casual (harness do): {'T1': 1}",
+    "longitudinal/increments/I5-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_a_add_and_get_item-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_a_invalid_sku_rejected-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_a_duplicate_and_bad_values_rejected-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_a_unknown_sku_and_remove-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_a_list_sorted_and_price_two_places-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_b_receive_ship_and_history-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_b_overship_rejected_without_change-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_b_invalid_quantities-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_b_unknown_sku-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_c_round_trip-casual (harness do): {'T1': 1}",
+    "longitudinal/bug_reports/fix-test_c_round_trip-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_c_rejects_non_json_extension-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_c_rejects_invalid_content-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_c_rejects_large_files-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_d_low_stock-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-test_d_total_value_rounding-casual (task file without criteria): {'C0': 7}",
+    "longitudinal/bug_reports/fix-collection-casual (task file without criteria): {'C0': 7}",
+    "rides/whole/one_line (task file): {'C0': 7}",
+    "rides/whole/paragraph (task file): {'C1': 1}",
+    "rides/prompts/one_line-text (task file without criteria): {'C0': 7}",
+    "large/whole/one_line (task file): {'C0': 7}",
+    "large/whole/paragraph (task file): {'C1': 1}",
+    "large/prompts/one_line-text (task file without criteria): {'C0': 7}"
+  ]
+}

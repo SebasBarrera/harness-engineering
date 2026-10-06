@@ -1,0 +1,9 @@
+# The corpora are copied into standalone projects whose own tools lint them (the inventory and
+# billing packages are first-party there, not here). Inside this repository they keep the
+# repository's rules except the one that depends on that context: the import grouping of a
+# first-party package. This file is not copied into the workspaces (only the baseline directories
+# are). The review baseline has its own pyproject.toml, which Ruff reads first for its files.
+extend = "../../pyproject.toml"
+
+[lint.per-file-ignores]
+"*/baseline/tests/*.py" = ["I001"]

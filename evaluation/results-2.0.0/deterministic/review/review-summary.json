@@ -1,0 +1,243 @@
+{
+  "cache": {
+    "firstReviewFixtureCalls": 34,
+    "firstReviewModelCalls": 34,
+    "identicalReReviewFixtureCalls": 0,
+    "identicalReReviewGlobalHits": 23,
+    "identicalReReviewModelCalls": 0,
+    "identicalReReviewTokens": 0,
+    "testOnlyReviewFixtureCalls": 22,
+    "testOnlyReviewModelCalls": 22,
+    "testOnlyReviewerCacheHits": 29,
+    "testOnlyReviewersRun": [
+      "tests"
+    ]
+  },
+  "cases": 23,
+  "cleanCases": 7,
+  "deterministicDetected": 8,
+  "deterministicDetectionByDomain": {
+    "architecture": {
+      "cases": [
+        {
+          "by": null,
+          "case": "architecture-dependency-direction",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "signal structure on a changed line",
+          "rule": "architecture.dependency-direction",
+          "verifiedBy": "ai"
+        }
+      ],
+      "detectedDeterministic": 0,
+      "seeded": 1,
+      "toolVerifiedRules": 0
+    },
+    "concurrency": {
+      "cases": [
+        {
+          "by": null,
+          "case": "concurrency-shared-state",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "signal concurrency on a changed line",
+          "rule": "concurrency.shared-mutable-state",
+          "verifiedBy": "ai"
+        }
+      ],
+      "detectedDeterministic": 0,
+      "seeded": 1,
+      "toolVerifiedRules": 0
+    },
+    "consistency": {
+      "cases": [
+        {
+          "by": "consistency",
+          "case": "consistency-check-fails",
+          "detected": true,
+          "domainReviewer": null,
+          "domainReviewerReason": null,
+          "rule": "consistency:compile",
+          "verifiedBy": null
+        }
+      ],
+      "detectedDeterministic": 1,
+      "seeded": 1,
+      "toolVerifiedRules": 1
+    },
+    "pipeline-security": {
+      "cases": [
+        {
+          "by": [
+            "tool:harness:weakened-gates"
+          ],
+          "case": "pipeline-weakened-gate",
+          "detected": true,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "pipeline-security.weakened-gate",
+          "verifiedBy": "tool:harness:weakened-gates"
+        },
+        {
+          "by": [
+            "tool:harness:dangerous-paths"
+          ],
+          "case": "pipeline-dangerous-paths",
+          "detected": true,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "pipeline-security.dangerous-paths",
+          "verifiedBy": "tool:harness:dangerous-paths"
+        },
+        {
+          "by": null,
+          "case": "pipeline-command-injection",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "pipeline-security.command-injection",
+          "verifiedBy": "ai"
+        },
+        {
+          "by": [
+            "tool:harness:temporary-files"
+          ],
+          "case": "pipeline-temporary-file",
+          "detected": true,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "pipeline-security.temporary-files",
+          "verifiedBy": "tool:harness:temporary-files"
+        },
+        {
+          "by": [
+            "tool:harness:embedded-instructions"
+          ],
+          "case": "instructions-addressed-to-an-agent",
+          "detected": true,
+          "domainReviewer": "SKIPPED",
+          "domainReviewerReason": "no file of its slice changed",
+          "rule": "pipeline-security.embedded-instructions",
+          "verifiedBy": "tool:harness:embedded-instructions"
+        },
+        {
+          "by": [
+            "tool:harness:secrets"
+          ],
+          "case": "credential-in-source",
+          "detected": true,
+          "domainReviewer": "SKIPPED",
+          "domainReviewerReason": "no file of its slice changed",
+          "rule": "pipeline-security.exposed-credentials",
+          "verifiedBy": "tool:harness:secrets"
+        }
+      ],
+      "detectedDeterministic": 5,
+      "seeded": 6,
+      "toolVerifiedRules": 5
+    },
+    "quality": {
+      "cases": [
+        {
+          "by": null,
+          "case": "quality-wrong-logic",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "quality.wrong-logic",
+          "verifiedBy": "ai"
+        },
+        {
+          "by": null,
+          "case": "quality-dead-code",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "quality.dead-code",
+          "verifiedBy": "ai"
+        },
+        {
+          "by": [
+            "tool:ruff"
+          ],
+          "case": "mutable-default-argument",
+          "detected": true,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "tool:ruff:B006",
+          "verifiedBy": "tool:ruff:B006"
+        }
+      ],
+      "detectedDeterministic": 1,
+      "seeded": 3,
+      "toolVerifiedRules": 1
+    },
+    "resilience": {
+      "cases": [
+        {
+          "by": null,
+          "case": "resilience-external-call-timeout",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "signal external-calls on a changed line",
+          "rule": "resilience.external-call-limits",
+          "verifiedBy": "ai"
+        },
+        {
+          "by": null,
+          "case": "resilience-swallowed-exception",
+          "detected": false,
+          "domainReviewer": "SKIPPED",
+          "domainReviewerReason": "no external-calls signal on a changed line of its slice",
+          "rule": "resilience.swallowed-exception",
+          "verifiedBy": "ai"
+        }
+      ],
+      "detectedDeterministic": 0,
+      "seeded": 2,
+      "toolVerifiedRules": 0
+    },
+    "tests": {
+      "cases": [
+        {
+          "by": [
+            "tool:harness:tautological-assertion"
+          ],
+          "case": "tests-tautological-assertion",
+          "detected": true,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "tests.tautological-assertion",
+          "verifiedBy": "tool:harness:tautological-assertion"
+        },
+        {
+          "by": null,
+          "case": "tests-mock-of-subject",
+          "detected": false,
+          "domainReviewer": "PASS",
+          "domainReviewerReason": "1 file(s) of its slice changed",
+          "rule": "tests.mock-of-subject",
+          "verifiedBy": "ai"
+        }
+      ],
+      "detectedDeterministic": 1,
+      "seeded": 2,
+      "toolVerifiedRules": 1
+    }
+  },
+  "falsePositives": {
+    "cleanCasesWithAnyFinding": 0,
+    "cleanCasesWithBlockingVerdict": 0,
+    "extraFindingsOnSeededCases": [],
+    "findingsOnCleanCases": []
+  },
+  "locationFiltering": {
+    "decoysOutOfCatalogSent": 34,
+    "decoysOutsideSent": 34,
+    "downgraded": 35,
+    "droppedOutside": 34,
+    "seededFindingsKeptInOracleMode": 15
+  },
+  "seededCases": 16,
+  "seededFindings": 16
+}

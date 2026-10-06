@@ -1,0 +1,370 @@
+{
+  "benchmark": {
+    "micro": [
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-1.json",
+        "run": 1,
+        "seconds": 1.57,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-2.json",
+        "run": 2,
+        "seconds": 1.54,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-3.json",
+        "run": 3,
+        "seconds": 1.53,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-4.json",
+        "run": 4,
+        "seconds": 1.51,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-5.json",
+        "run": 5,
+        "seconds": 1.49,
+        "stderr": ""
+      }
+    ],
+    "scenarios": {
+      "exitCode": 0,
+      "file": "benchmark-scenarios.json",
+      "seconds": 19.06,
+      "stderr": ""
+    }
+  },
+  "demo": {
+    "byFlow": {
+      "agent-results": {
+        "mismatches": 0,
+        "steps": 8
+      },
+      "bdd": {
+        "mismatches": 0,
+        "steps": 5
+      },
+      "broken-baseline": {
+        "mismatches": 0,
+        "steps": 8
+      },
+      "clarification": {
+        "mismatches": 0,
+        "steps": 17
+      },
+      "corrections": {
+        "mismatches": 0,
+        "steps": 12
+      },
+      "delivery": {
+        "mismatches": 0,
+        "steps": 10
+      },
+      "friction": {
+        "mismatches": 0,
+        "steps": 7
+      },
+      "gitlab": {
+        "mismatches": 0,
+        "steps": 9
+      },
+      "integrity": {
+        "mismatches": 0,
+        "steps": 15
+      },
+      "ladder": {
+        "mismatches": 0,
+        "steps": 16
+      },
+      "later-change": {
+        "mismatches": 0,
+        "steps": 11
+      },
+      "memory": {
+        "mismatches": 0,
+        "steps": 26
+      },
+      "node": {
+        "mismatches": 0,
+        "steps": 6
+      },
+      "quickstart": {
+        "mismatches": 0,
+        "steps": 15
+      },
+      "review-cache": {
+        "mismatches": 0,
+        "steps": 3
+      },
+      "review-exception": {
+        "mismatches": 0,
+        "steps": 6
+      },
+      "review-hook": {
+        "mismatches": 0,
+        "steps": 4
+      },
+      "review-panel": {
+        "mismatches": 0,
+        "steps": 5
+      },
+      "review-unknown": {
+        "mismatches": 0,
+        "steps": 3
+      },
+      "tdd": {
+        "mismatches": 0,
+        "steps": 10
+      },
+      "traceability": {
+        "mismatches": 0,
+        "steps": 8
+      }
+    },
+    "checksBad": 0,
+    "checksOk": 50,
+    "command": "python scripts/demo_flows.py all --workdir DIR --transcript FILE",
+    "exitCode": 0,
+    "flows": 21,
+    "mismatches": 0,
+    "seconds": 155.15,
+    "stateDir": "<work>/work/block0-w9/demo-state",
+    "steps": 204,
+    "workdir": "<work>/work/block0-w9/demo"
+  },
+  "environment": {
+    "evaluationCodeDigest": "2fa38d882a04aaa4",
+    "git": "git version 2.56.0",
+    "harnessExecutable": "<repo>/.venv/bin/harness",
+    "harnessVersion": "harness 1.0.0",
+    "machine": "arm64",
+    "modelCalls": 0,
+    "platform": "macOS-15.8.1-arm64-arm-64bit",
+    "python": "3.12.11",
+    "recordedAt": "2026-10-06T14:27:37Z",
+    "repo": "<repo>",
+    "repositoryHead": "6158cc60cec2e1eb1a7dd262da84d107cae856d7",
+    "suite": "block0",
+    "wheel": null,
+    "wheelSha256": null
+  },
+  "large": {
+    "configuration": "harness init with validators [python.pytest]; 'without-workspace-keys' removes workspace.snapshot, baseline and snapshotCache",
+    "runs": [
+      {
+        "envSecretStored": true,
+        "generationSeconds": 7.2,
+        "harnessDirBytes": 8312,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 860291072,
+        "rep": 1,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 50.55,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497350,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": true,
+        "generationSeconds": 6.8,
+        "harnessDirBytes": 8312,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 823263232,
+        "rep": 2,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 49.94,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497350,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": true,
+        "generationSeconds": 7.0,
+        "harnessDirBytes": 8312,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 860241920,
+        "rep": 3,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 50.13,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497350,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 6.9,
+        "harnessDirBytes": 1558183,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 350535680,
+        "rep": 1,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 20.65,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2266233,
+        "trackedFiles": 10001,
+        "variant": "init"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 6.8,
+        "harnessDirBytes": 1558183,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 340787200,
+        "rep": 2,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 21.74,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2266232,
+        "trackedFiles": 10001,
+        "variant": "init"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 6.8,
+        "harnessDirBytes": 1558183,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 350044160,
+        "rep": 3,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 20.59,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2266233,
+        "trackedFiles": 10001,
+        "variant": "init"
+      }
+    ]
+  },
+  "security": {
+    "family": {
+      "errors": 0,
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0,
+      "tests": 4
+    },
+    "tests": [
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_path_inside_workspace"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_path_traversal_is_denied"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_absolute_path_under_a_symlinked_ancestor_is_contained"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_symlink_inside_the_workspace_is_still_rejected_through_an_alias"
+      }
+    ]
+  },
+  "static": {
+    "mypy": {
+      "exitCode": 0,
+      "seconds": 3.21,
+      "summary": "Success: no issues found in 244 source files"
+    },
+    "ruffCheck": {
+      "exitCode": 0,
+      "findings": 0,
+      "stderr": ""
+    },
+    "ruffFormat": {
+      "exitCode": 0,
+      "summary": "368 files already formatted",
+      "wouldReformat": 0
+    },
+    "versions": {
+      "mypy": "mypy 1.20.2 (compiled: yes)",
+      "ruff": "ruff 0.16.7"
+    }
+  },
+  "tests": {
+    "byFamily": {
+      "contract": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 15,
+        "skipped": 0,
+        "tests": 15
+      },
+      "e2e": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 8,
+        "skipped": 0,
+        "tests": 8
+      },
+      "integration": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 432,
+        "skipped": 0,
+        "tests": 432
+      },
+      "performance": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 3,
+        "skipped": 0,
+        "tests": 3
+      },
+      "security": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 4,
+        "skipped": 0,
+        "tests": 4
+      },
+      "unit": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 727,
+        "skipped": 0,
+        "tests": 727
+      }
+    },
+    "command": "<work>/venvs/eval-w9/bin/python -m pytest -W error::ResourceWarning --cov=governed_harness --cov-branch",
+    "coverage": {
+      "branchPercent": 80.02,
+      "branches": 8264,
+      "combinedPercent": 88.42,
+      "coveredBranches": 6613,
+      "coveredLines": 25270,
+      "linePercent": 90.92,
+      "statements": 27795
+    },
+    "exitCode": 0,
+    "pytestSummary": "1189 passed, 2 warnings in 574.37s (0:09:34)",
+    "seconds": 575.41,
+    "totals": {
+      "errors": 0,
+      "failed": 0,
+      "passed": 1189,
+      "skipped": 0,
+      "tests": 1189
+    }
+  }
+}

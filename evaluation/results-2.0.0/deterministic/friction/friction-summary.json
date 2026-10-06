@@ -1,0 +1,298 @@
+{
+  "byCondition": {
+    "fast-lane": {
+      "riskFree": {
+        "callsByKind": [
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "implement": 1
+          },
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "implement": 1
+          }
+        ],
+        "delivered": 2,
+        "lanes": [
+          "fast",
+          "fast"
+        ],
+        "medianCommandSeconds": 5.4,
+        "medianCommandsTyped": 2.0,
+        "medianHumanInteractions": 1.0,
+        "medianRecordedCalls": 3.0,
+        "medianRecordedTokens": 4966.0,
+        "runs": 2
+      },
+      "withRiskFactor": {
+        "blocked": 6,
+        "byRisk": {
+          "credential/above-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": true,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "credential/at-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": true,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "eval/above-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "eval/at-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "outside-owned/above-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "outside-owned/at-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          }
+        },
+        "deliveredAfterAPerson": 0,
+        "escalatedOrFullLane": 2,
+        "falseFastLane": 0,
+        "runs": 6
+      }
+    },
+    "fast-lane+pre-approval": {
+      "riskFree": {
+        "callsByKind": [
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "implement": 1
+          },
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "implement": 1
+          }
+        ],
+        "delivered": 2,
+        "lanes": [
+          "fast",
+          "fast"
+        ],
+        "medianCommandSeconds": 5.45,
+        "medianCommandsTyped": 1.0,
+        "medianHumanInteractions": 1.0,
+        "medianRecordedCalls": 3.0,
+        "medianRecordedTokens": 5008.0,
+        "runs": 2
+      },
+      "withRiskFactor": {
+        "blocked": 6,
+        "byRisk": {
+          "credential/above-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": true,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "credential/at-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": true,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "eval/above-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "eval/at-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "outside-owned/above-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          },
+          "outside-owned/at-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": "fast",
+            "withoutAPerson": false
+          }
+        },
+        "deliveredAfterAPerson": 0,
+        "escalatedOrFullLane": 2,
+        "falseFastLane": 0,
+        "runs": 6
+      }
+    },
+    "full": {
+      "riskFree": {
+        "callsByKind": [
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "clarify": 1,
+            "implement": 1,
+            "review": 2
+          },
+          {
+            "acceptance": 1,
+            "architecture": 1,
+            "clarify": 1,
+            "implement": 1,
+            "review": 2
+          }
+        ],
+        "delivered": 2,
+        "lanes": [
+          null,
+          null
+        ],
+        "medianCommandSeconds": 6.72,
+        "medianCommandsTyped": 3.0,
+        "medianHumanInteractions": 1.0,
+        "medianRecordedCalls": 6.0,
+        "medianRecordedTokens": 8810.0,
+        "runs": 2
+      },
+      "withRiskFactor": {
+        "blocked": 6,
+        "byRisk": {
+          "credential/above-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": null,
+            "withoutAPerson": false
+          },
+          "credential/at-threshold": {
+            "blocking": [
+              "CRITICAL:secrets.credential"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": null,
+            "withoutAPerson": false
+          },
+          "eval/above-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": null,
+            "withoutAPerson": false
+          },
+          "eval/at-threshold": {
+            "blocking": [
+              "HIGH:review.dynamic-eval"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": "FAILED",
+            "lane": null,
+            "withoutAPerson": false
+          },
+          "outside-owned/above-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": null,
+            "withoutAPerson": false
+          },
+          "outside-owned/at-threshold": {
+            "blocking": [
+              "HIGH:workspace.outside-owned-paths"
+            ],
+            "delivered": false,
+            "escalated": false,
+            "gate": null,
+            "lane": null,
+            "withoutAPerson": false
+          }
+        },
+        "deliveredAfterAPerson": 0,
+        "escalatedOrFullLane": 6,
+        "falseFastLane": 0,
+        "runs": 6
+      }
+    }
+  },
+  "estimate": "tokens = ceil(characters of the request JSON / 4), reported by the fixture provider and recorded by the harness",
+  "friction": "commands the person typed, interactions the harness recorded and the wall-clock seconds of those commands on this machine (no human time)"
+}

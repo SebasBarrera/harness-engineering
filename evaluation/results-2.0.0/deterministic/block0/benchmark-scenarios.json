@@ -1,0 +1,78 @@
+{
+  "environment": {
+    "node": "v26.10.0",
+    "platform": "macOS-15.8.1-arm64-arm-64bit",
+    "python": "3.12.11"
+  },
+  "generatedAt": "2026-10-06T14:40:15.087315+00:00",
+  "methodology": {
+    "directPath": "Apply the same deterministic patch and execute the mandatory test command.",
+    "governedPath": "Initialize, persist task, execute all normative phases, validate, review, evaluate the gate, apply a programmatic benchmark approval, close, and project status.",
+    "humanWait": "Excluded: the benchmark approval is immediate and programmatic.",
+    "network": "No network access required.",
+    "scope": "Synthetic local fixtures; not a productivity or quality claim."
+  },
+  "scenarios": {
+    "node": {
+      "directImplementationAndTests": {
+        "iterations": 3.0,
+        "maxMs": 407.789,
+        "meanMs": 318.5751803333333,
+        "medianMs": 277.373833,
+        "minMs": 270.562708,
+        "p95Ms": 407.789
+      },
+      "governanceOverhead": {
+        "absoluteMedianMs": 1773.5140419999998,
+        "relativeMedianPercent": 639.3948638983547
+      },
+      "governedEndToEnd": {
+        "iterations": 3.0,
+        "maxMs": 2396.948666,
+        "meanMs": 2158.974694,
+        "medianMs": 2050.887875,
+        "minMs": 2029.087541,
+        "p95Ms": 2396.948666
+      },
+      "lastRun": {
+        "eventChainValid": true,
+        "events": 120,
+        "executionId": "run_3ada1df1992e4a62953886dd9ef43dee",
+        "findings": 0,
+        "validations": 14
+      },
+      "status": "PASSED"
+    },
+    "python": {
+      "directImplementationAndTests": {
+        "iterations": 3.0,
+        "maxMs": 126.933375,
+        "meanMs": 123.81566666666667,
+        "medianMs": 123.531375,
+        "minMs": 120.98225,
+        "p95Ms": 126.933375
+      },
+      "governanceOverhead": {
+        "absoluteMedianMs": 3114.774416,
+        "relativeMedianPercent": 2521.4439780986813
+      },
+      "governedEndToEnd": {
+        "iterations": 3.0,
+        "maxMs": 3319.64,
+        "meanMs": 3203.806486,
+        "medianMs": 3238.305791,
+        "minMs": 3053.473667,
+        "p95Ms": 3319.64
+      },
+      "lastRun": {
+        "eventChainValid": true,
+        "events": 131,
+        "executionId": "run_4c19d5615f6d4cf3ac4cf5920a3847be",
+        "findings": 3,
+        "validations": 16
+      },
+      "status": "PASSED"
+    }
+  },
+  "schemaVersion": "1.0"
+}
