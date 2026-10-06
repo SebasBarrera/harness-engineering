@@ -34,6 +34,8 @@ configuration the same way.
    the edits become the candidate ChangeSet, attributed to `agent.session`, and VERIFICATION,
    the review and the gate run. A failed verification is not corrected automatically for the
    session provider: the session reads the findings (`harness_status`), edits and continues.
+   The frozen acceptance tests the harness wrote after a person approved them are not the
+   session's edits: IMPLEMENTATION waits until the session changes something else (#81).
 5. At DECISION (exit 4) the session stops and shows the person `harness review`; the person
    decides with `harness gate decide` in a terminal.
 

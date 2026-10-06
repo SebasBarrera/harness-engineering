@@ -182,7 +182,10 @@ the findings are MEDIUM at most.
 (rejected, cancelled, or failed in IMPLEMENTATION or VERIFICATION) as a quarantined patch and
 restores the baseline; `block` keeps them and refuses new runs in the workspace until a person
 runs `harness run quarantine --run <runId>`. A task that declares `ownedPaths` gets a HIGH
-finding for every changed path outside them.
+finding for every changed path outside them. The frozen acceptance tests of a run that can still
+be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace when its changes are
+restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
+restored with the rest.
 
 ## Budget (#42)
 

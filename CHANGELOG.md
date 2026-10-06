@@ -30,6 +30,11 @@
     name next to it (`renamed` in `acceptance show` and in `acceptance.tests.decided`) instead
     of overwriting it; the later run overwrote the earlier frozen file and its agent was blamed
     with a HIGH `weakened.test-deleted` (#82).
+  - Embedded mode with acceptance tests: the frozen files the harness writes on approval no
+    longer count as the session's edits, so IMPLEMENTATION waits for the session instead of
+    passing at once; stop the line keeps the frozen files of a run that can still be continued
+    (`keptPaths` in the quarantine record) instead of deleting them, so the next verification
+    does not report `acceptance.modified` (#81).
 
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without

@@ -1493,7 +1493,10 @@ class RunEngine:
             # Embedded mode (#56): the agent session that drives the harness implements.
             def changed() -> list[str]:
                 diff = self._compute_owned_diff(execution)
-                return [item.path for item in diff.changes]
+                # The frozen acceptance tests the harness wrote are not the session's edits
+                # (#81): a session that changed nothing else has not implemented anything.
+                harness_written = self.results.acceptance.untouched(execution)
+                return [item.path for item in diff.changes if item.path not in harness_written]
 
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.session", version="1")
             return SessionAgentProvider(changed), actor, sandbox, sandbox_refs

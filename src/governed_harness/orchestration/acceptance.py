@@ -370,6 +370,20 @@ class AcceptanceTests:
         results.set_flag_json(self._key(execution), state)
 
     # ----- IMPLEMENTATION and VERIFICATION --------------------------------------------------
+    def untouched(self, execution: Execution) -> set[str]:
+        """The frozen files the harness wrote on approval that are still as approved: they
+        are the harness's, not the agent's edits (#81)."""
+        state = self.state(execution)
+        if not state or state.get("status") != "APPROVED":
+            return set()
+        workspace = self.results.s.paths.workspace
+        kept: set[str] = set()
+        for path, digest in (state.get("frozen") or {}).items():
+            target = workspace / path
+            if target.is_file() and sha256_bytes(target.read_bytes()) == digest:
+                kept.add(path)
+        return kept
+
     def request_extra(self, execution: Execution) -> dict[str, Any] | None:
         state = self.state(execution)
         if not state or state.get("status") != "APPROVED" or not state.get("frozen"):
