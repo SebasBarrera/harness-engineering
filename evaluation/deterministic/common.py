@@ -260,6 +260,8 @@ def query(database: Path, sql: str, params: Sequence[Any] = ()) -> list[tuple[An
 
 
 SIMULATED_PERSON = "human.reviewer-simulated"
+# The inbox kinds (#73) the simulated person answers; any other stop is returned as it is.
+ANSWERED_KINDS = ("clarification", "acceptance", "plan", "decomposition", "preflight")
 
 
 def simulated_person(
@@ -289,10 +291,12 @@ def simulated_person(
             if isinstance(inbox, list)
             else []
         )
-        kind = str(pending[0].get("kind")) if pending else ""
-        plan_digest = ""
+        # Since wave 9 (#73) the inbox lists every wait before DECISION with its digest.
+        handled = [i for i in pending if i.get("kind") in ANSWERED_KINDS]
+        kind = str(handled[0].get("kind")) if handled else ""
+        plan_digest = str(handled[0].get("digest") or "") if handled else ""
         if not kind and state == "BLOCKED" and phase == "PLANNING":
-            # A plan waiting for approval is not listed by harness inbox (observed on 2.0.0):
+            # Fallback for a harness whose inbox does not list a plan wait (2.0.0 before wave 9):
             # either the plan-approval checkpoint (friction.planApproval, `approval` PENDING) or
             # a decomposition into sub-tasks (planning.decomposition, `status` PROPOSED).
             _, shown, _ = h.run(

@@ -98,6 +98,7 @@ NEW_N13 = [
     "lease-sigterm",
     "readonly-write",
     "instructions",
+    "reverify-continue",
 ]
 NEW_N12 = ["write-outside", "write-git-hooks", "write-venv", "write-symlink", "destructive-command"]
 PROBES = ORIGINAL + NEW_N13 + NEW_N12
@@ -200,9 +201,18 @@ EXPECTATIONS: dict[str, Expectation] = {
         lambda r: stopped(r),
     ),
     "later-change": Expectation(
-        "The approval bound to the evaluated digest is refused (exit 5) after the file changed.",
-        "Digest-bound decisions (0.8.0 design, RD-09).",
-        lambda r: step_codes(r, "APPROVE with the evaluated digest") == [5],
+        "The approval bound to the evaluated digest is refused (exit 5) after the file changed; "
+        "the run continue that follows re-verifies the new ChangeSet (a "
+        "verification.reverify.authorized event) instead of leaving an INCONCLUSIVE gate.",
+        "Digest-bound decisions (0.8.0 design, RD-09). Revised for wave 9: "
+        "verification.reverifyOnChange (#78, written by init) says run continue on a run in "
+        "DECISION whose ChangeSet changed after its gate was evaluated runs VERIFICATION and the "
+        "review again.",
+        lambda r: (
+            step_codes(r, "APPROVE with the evaluated digest") == [5]
+            and "verification.reverify.authorized" in r.get("eventTypes", [])
+            and (r.get("afterContinue") or {}).get("gate") != "INCONCLUSIVE"
+        ),
     ),
     "tamper-events": Expectation(
         "After an event payload is edited: status reports eventChainValid false, harness verify "
@@ -239,14 +249,22 @@ EXPECTATIONS: dict[str, Expectation] = {
         lambda r: r["delivered"] and r["providerArtifactBytes"] <= 1_000_000,
     ),
     "unauthorized-command": Expectation(
-        "The configured provider command `sh -c 'echo not-allowed'` is started (2.0.0 grants every "
-        "configured provider its own command), its output is not the protocol's JSON, so the first "
-        "agent call (clarify, INTENT) is a PROTOCOL_ERROR and the run stops before DECISION (exit 6).",
-        "Revised after the first development run (0.9.0 refused it with CapabilityDenied): under "
-        "governance.phaseCapabilities the phase policy adds a process.execute grant for each "
-        "configured provider's own command (src/governed_harness/orchestration/engine.py, "
-        "_phase_policy 'launch'; capabilities/phase.py PhasePolicy.apply).",
-        lambda r: stopped(r) and r.get("protocolErrors", 0) > 0,
+        "The configured provider command `sh -c '...; echo not-allowed'`, which no process.execute "
+        "grant allows, is refused before it starts: a HIGH capabilities.command-denied finding, the "
+        "run BLOCKED before DECISION (exit 6), the provider never started (its marker file is "
+        "absent, no agent invocation and no protocol error recorded).",
+        "Wave 9 (#87): a provider command outside the grants is refused again under "
+        "governance.phaseCapabilities, as 0.9.0 refused it. Revised for wave 9: before it, 2.0.0 "
+        "granted every configured provider its own command, so the command started and the first "
+        "call was a PROTOCOL_ERROR (the expectation of the first development run).",
+        lambda r: (
+            stopped(r)
+            and r["final"].get("status") == "BLOCKED"
+            and "HIGH:capabilities.command-denied" in finding_items(r)
+            and r.get("unauthorizedStarted") is False
+            and r.get("agentInvocations") == 0
+            and r.get("protocolErrors", 0) == 0
+        ),
     ),
     "chain-truncated": Expectation(
         "After the last events of a closed run are deleted (the chain stays well linked), "
@@ -319,6 +337,19 @@ EXPECTATIONS: dict[str, Expectation] = {
         "design text (the blocked call is the panel review, so the run reaches DECISION blocked).",
         lambda r: "budget.exceeded" in finding_rules(r) and not_delivered_plainly(r),
     ),
+    "reverify-continue": Expectation(
+        "A file of the ChangeSet changes while the run waits in DECISION and run continue follows "
+        "at once (no decision attempted): the run re-verifies the new ChangeSet "
+        "(verification.reverify.authorized) and waits in DECISION again with a gate evaluated on "
+        "it (exit 4, gate not INCONCLUSIVE).",
+        "Wave 9, verification.reverifyOnChange (#78, written by init). Added for wave 9 next to "
+        "later-change, which attempts the stale approval before continuing.",
+        lambda r: (
+            step_codes(r, "run continue")[-1:] == [4]
+            and "verification.reverify.authorized" in r.get("eventTypes", [])
+            and (r.get("afterContinue") or {}).get("gate") not in (None, "INCONCLUSIVE")
+        ),
+    ),
     "lease-sigterm": Expectation(
         "A second run start while the first holds the lease exits 5; SIGTERM to the first exits "
         "143 with the run INTERRUPTED; run continue recovers (run.recovered) and reaches DECISION.",
@@ -382,16 +413,17 @@ EXPECTATIONS: dict[str, Expectation] = {
     "destructive-command": Expectation(
         "A granted provider command that deletes recursively outside the workspace is refused "
         "before it runs (the directory survives), recorded as a HIGH "
-        "capabilities.destructive-denied finding; the run does not reach DECISION.",
+        "capabilities.destructive-denied finding; the run is BLOCKED before DECISION (exit 6).",
         "CHANGELOG #5 (destructiveActionsDefault: deny under applyRepositoryPolicies); "
-        "src/governed_harness/capabilities/repository.py. Revised after the first development "
-        "run: the exit code is not required (the refusal ends the run as ERROR, exit 1, documented "
-        "for a run whose status is ERROR in docs/reference/exit-codes.md).",
+        "src/governed_harness/capabilities/repository.py. Revised for wave 9 (#76): the refusal "
+        "blocks the run (exit 6, the code of a run stopped by a policy); before it the refusal "
+        "ended the run as ERROR (exit 1) and the first development run did not require an exit "
+        "code.",
         lambda r: (
             r.get("victimSurvived") is True
-            and "capabilities.destructive-denied" in finding_rules(r)
-            and not r["delivered"]
-            and r.get("runExitCode") != 4
+            and "HIGH:capabilities.destructive-denied" in finding_items(r)
+            and stopped(r)
+            and r["final"].get("status") == "BLOCKED"
         ),
     ),
 }
@@ -400,6 +432,7 @@ FAULT_OF = {name: name for name in PROBES}
 FAULT_OF.update(
     {
         "later-change": "correct",
+        "reverify-continue": "correct",
         "tamper-events": "correct",
         "unauthorized-command": "correct",
         "chain-truncated": "correct",
@@ -445,7 +478,8 @@ def provider_command(ctx: Context) -> list[str]:
         "20",
     ]
     if ctx.name == "unauthorized-command":
-        command = ["sh", "-c", "echo not-allowed"]
+        # Leaves a marker if it ever starts: the probe checks that it never does (#87).
+        command = ["sh", "-c", f"touch {ctx.log_dir / 'unauthorized-started'}; echo not-allowed"]
     if ctx.name == "destructive-command":
         victim = ctx.outside / "victim"
         command = ["sh", "-c", f"rm -rf {victim} && exec {' '.join(command)}"]
@@ -791,6 +825,13 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
             workspace, "run", "continue", "--path", ".", "--run", ctx.run_id, label="run continue"
         )
         result["afterContinue"] = snapshot(ctx)
+    elif code == 4 and name == "reverify-continue":
+        encoding = workspace / "src" / "itsdangerous" / "encoding.py"
+        encoding.write_text(encoding.read_text() + "\n# adjusted after review\n")
+        h.run(
+            workspace, "run", "continue", "--path", ".", "--run", ctx.run_id, label="run continue"
+        )
+        result["afterContinue"] = snapshot(ctx)
     elif code == 4 and name == "decision-expired":
         decide(
             ctx,
@@ -976,6 +1017,12 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
             )
             if "CapabilityDenied" in payload or "lacks process.execute" in payload
         )
+        # Agent invocations the run recorded as completed (a refused launch records none).
+        result["agentInvocations"] = connection.execute(
+            "select count(*) from events where execution_id=? "
+            "and event_type='agent.invocation.completed'",
+            (ctx.run_id,),
+        ).fetchone()[0]
         connection.close()
     tree = subprocess.run(
         ["git", "status", "--porcelain", "--untracked-files=all"],
@@ -992,6 +1039,7 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
     ).exists()
     result["hookWritten"] = (workspace / ".git" / "hooks" / "pre-commit").exists()
     result["victimSurvived"] = (outside / "victim" / "keep.txt").exists()
+    result["unauthorizedStarted"] = (log_dir / "unauthorized-started").exists()
     shutil.rmtree(outside, ignore_errors=True)
     calls = (
         [json.loads(line) for line in (log_dir / "calls.jsonl").read_text().splitlines()]
