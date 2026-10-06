@@ -3,6 +3,7 @@ panel with a fake invoker (no provider, no network)."""
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from governed_harness.review import (
     ReviewerAnswer,
     ReviewerCall,
     builtin_rules,
+    global_key,
     load_reviewers,
     merge,
     normalize,
@@ -422,8 +424,23 @@ def test_reviewer_key_leaves_the_mode_out() -> None:
         "mcp_hash": "x",
         "options": {},
     }
-    assert reviewer_key(**values) == reviewer_key(**values)
-    assert reviewer_key(**values) != reviewer_key(**{**values, "message_hash": "other"})
+    # The per-reviewer key takes no mode, so a manual review and the pre-push hook reuse each
+    # other's answers; the global key binds the mode and keeps whole reports apart.
+    assert "mode" not in inspect.signature(reviewer_key).parameters
+    review: dict[str, Any] = {
+        "diff_hash": "d",
+        "definitions_hash": "h",
+        "runner_version": "1",
+        "skip": (),
+        "forced_model": None,
+        "provider": "p",
+        "fallback": None,
+        "options": {},
+    }
+    assert global_key(mode="manual", **review) != global_key(mode="hook", **review)
+    key = reviewer_key(**values)
+    assert reviewer_key(**dict(values)) == key  # stable for the same inputs
+    assert reviewer_key(**{**values, "message_hash": "other"}) != key
 
 
 # ----- routing ----------------------------------------------------------------------------------
