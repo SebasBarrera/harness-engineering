@@ -46,6 +46,8 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
     assert config["review"]["agentReview"] == "enforce"
     assert config["governance"]["stopTheLine"] == "restore"
     assert {"planning", "context", "budget", "memory", "agentRouting"} <= set(config)
+    # #85: the invoking model is the ceiling of the routing tables.
+    assert config["agentRouting"]["mode"] == "anchored"
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
     assert summary["agentReview"] == "enforce"
     assert summary["checks"]["differential"] is True

@@ -182,7 +182,7 @@ memory:
   learnFromFindings: auto
   autoApproveRecurring: false
 agentRouting:
-  mode: tiered
+  mode: anchored
   thresholds:
     requirements:
     - 5
@@ -350,6 +350,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
+| `agentRouting.mode`, `agentRouting.anchorModel` | `fixed` when absent; `init` writes `anchored` (before #85: `tiered`) | `fixed` keeps the provider's model, `tiered` chooses from the tables, `anchored` chooses from the tables with the invoking model as the ceiling; `anchorModel` names the invoking model when the provider does not (for example an embedded session). See [anchored routing](../guides/agent-results.md#anchored-at-the-invoking-model-85). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |

@@ -213,8 +213,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "warnAt": 0.8,
         },
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
+        # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
-            "mode": "tiered",
+            "mode": "anchored",
             "thresholds": {key: list(value) for key, value in DEFAULT_SIZE_THRESHOLDS.items()},
             "maxEscalations": 2,
         },

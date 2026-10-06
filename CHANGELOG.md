@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
+  `harness init` now writes instead of `tiered`, uses the routing tables with the invoking model
+  as the ceiling: rungs of a cheaper tier are kept, rungs of its tier run on it with their
+  effort, rungs above it become the top rung allowed, and escalation climbs only up to it. The
+  invoking model is `agentRouting.anchorModel` (new key), else the `model` of the provider that
+  answers the call (`agentProvider` for the embedded session provider), else the `--model` or
+  `-m` value of its command or `args`; without one each call keeps the provider's model. Every
+  anchored decision records its `anchor`. A `project.yaml` with `tiered`, `fixed` or without
+  `agentRouting` keeps its behaviour and configuration digest. Fix that applies without a key:
+  every reviewer call of the review panel now records `agent.routing.decided` (with `reviewer`
+  and `attempt`) under `agentRouting` or a reviewer's own model, as every other agent call does;
+  `harness routing calibrate` counts the reviewers of one run on the same model once.
+  Guide: `docs/guides/agent-results.md#anchored-at-the-invoking-model-85`.
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

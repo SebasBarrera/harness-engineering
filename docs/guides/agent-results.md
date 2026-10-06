@@ -220,6 +220,43 @@ Codex `-m`/`model_reasoning_effort`); they are a starting point, and whether an 
 a model is not checked. `harness routing calibrate` reports the cost per approved task of the
 recorded decisions and suggests a table; nothing is applied.
 
+### Anchored at the invoking model (#85)
+
+With the starting tables `tiered` ignores the model the person invoked: in the 2.0.0 pilot the
+cells invoked with Haiku, Sonnet and Opus routed every call to the same Sonnet and Opus rungs.
+`agentRouting.mode: anchored`, which `harness init` writes since #85, uses the same tables and
+thresholds with the invoking model as the ceiling:
+
+- a rung of a cheaper tier than the invoking model is kept (cheaper rungs for the simple call
+  kinds and sizes);
+- a rung of the invoking model's tier runs on the invoking model with the rung's effort;
+- a rung above it becomes the top rung allowed (rule `anchored:ceiling:KIND:SIZE`);
+- escalation (`implement`, `review`) climbs the allowed rungs up to the invoking model, never
+  above (`anchored:escalation:N:KIND:SIZE`).
+
+Claude models are ranked by name (`haiku` below `sonnet` below `opus`); the models of another
+family by their first rung in its ladder. A model whose tier cannot be told allows only itself.
+With the starting tables: invoked with `claude-haiku-4-5-20251001`, every call runs on it;
+with `claude-sonnet-5-5`, the `plan`, `review`, `architecture` and size-`L` rungs run on
+Sonnet with `high` effort; with `claude-opus-5-5`, the models and efforts are those of `tiered`.
+
+How the invoking model is determined, for the provider that answers the call:
+
+- `agentRouting.anchorModel` when it is set;
+- else the provider's `model` (`agentProviders.<id>.model`);
+- else the value of `--model` (or `-m`, `--model=...`) in its `command` or `args`, as a command
+  provider that wraps a CLI is usually invoked;
+- for the embedded `session` provider, whose model the harness cannot see, the same order applied
+  to `agentProvider`, which answers the read-only calls of a session run (see
+  [embedded mode](embedded-mode.md)); the session implements with its own model.
+
+Without any of them each call keeps the provider's own model (rule `anchored:no-anchor:...`). A
+call kind's own `model` or `effort` (`intake.clarifyAgent`, `planning.planner`, ...) and a
+reviewer's own `models` entry still win, as under `tiered`. Every decision records the `anchor`.
+Since #85 every reviewer of the review panel also records `agent.routing.decided` (with
+`reviewer` and `attempt`), and `harness routing calibrate` counts the reviewers of one run on the
+same model once.
+
 ## Where each setting is tested
 
 | Setting | Tests |
@@ -233,5 +270,5 @@ recorded decisions and suggests a table; nothing is applied.
 | `planning` | `tests/integration/test_decomposition.py` |
 | `context`, `memory` | `tests/integration/test_context_and_lessons.py`, `tests/unit/test_context_manifest.py` |
 | `budget` | `tests/integration/test_budget.py` |
-| `agentRouting` | `tests/integration/test_agent_routing.py`, `tests/unit/test_routing.py` |
+| `agentRouting` | `tests/integration/test_agent_routing.py`, `tests/unit/test_routing.py`, `tests/unit/test_routing_anchored.py`, `tests/integration/test_review_panel_run.py` (reviewer decisions) |
 | The defaults `harness init` writes | `tests/integration/test_agent_results_defaults.py` and the `agent-results` flow of `scripts/demo_flows.py` |
