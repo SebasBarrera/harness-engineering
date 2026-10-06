@@ -91,7 +91,7 @@ def run_probe(
             runs.append(VariantRun(variant.name, False, None, "", problem=problem))
             records.append({**record, "ran": False, "problem": problem})
             continue
-        except Exception as error:  # noqa: BLE001 - a refused or failed start is "unavailable"
+        except Exception as error:  # noqa: BLE001  # a refused or failed start is "unavailable"
             problem = f"{type(error).__name__}: {error}"
             runs.append(VariantRun(variant.name, False, None, "", problem=problem))
             records.append({**record, "ran": False, "problem": problem})

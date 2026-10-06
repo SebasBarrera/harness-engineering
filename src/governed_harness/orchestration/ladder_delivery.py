@@ -24,6 +24,7 @@ Each step is recorded as CLOSURE evidence and an event; nothing is repeated on a
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -55,12 +56,15 @@ class LadderDelivery:
             value = getattr(contract, name) if contract is not None else None
             return configured if value is None else value
 
-        comment_policy = delivery.comment or "never"
         comment = chosen("comment", None)
+        if comment is None:
+            comment_policy = delivery.comment or "never"
+        else:
+            comment_policy = "always" if comment else "never"
         return {
             "push": bool(chosen("push", delivery.push)),
             "pullRequest": bool(chosen("create_pull_request", pull.create if pull else None)),
-            "comment": comment_policy if comment is None else ("always" if comment else "never"),
+            "comment": comment_policy,
             "stage": bool(delivery.stage),
             "branch": contract.branch if contract and contract.branch else None,
         }
@@ -79,101 +83,167 @@ class LadderDelivery:
         allowed = self.authorisation(task)
         state_key = f"delivered:{execution.execution_id}"
         state: dict[str, Any] = results.flag_json(state_key) or {}
-        workspace = hub.s.paths.workspace
-        git = Git(workspace)
+        git = Git(hub.s.paths.workspace)
         report: dict[str, Any] = {"authorisation": allowed, "commit": commit.commit}
         branch = commit.branch
         if commit.commit and branch is None and git.is_repository():
             current = git.run("symbolic-ref", "--quiet", "--short", "HEAD", check=False)
             branch = current.stdout.decode("utf-8", "replace").strip() or None
         if not allowed["push"] or not commit.commit or not branch:
-            if allowed["stage"] and git.is_repository() and not state.get("staged"):
-                staged = self._stage(git, workspace, change_set)
-                state["staged"] = staged
-                report["staged"] = staged
-                hub.s.events.append(
-                    execution.execution_id,
-                    "delivery.staged",
-                    {"paths": staged, "reason": "the contract does not authorise a push"},
-                    phase_execution_id=phase.phase_execution_id,
-                )
+            self._stage_only(execution, phase, git, change_set, allowed, state, report)
             results.set_flag_json(state_key, state)
             self._record(execution, report, "Delivery: change staged, not pushed")
             return None
         remote = self._remote()
-        if not state.get("pushed"):
-            try:
-                git.run("push", remote, f"{branch}:{branch}")
-            except VcsError as error:
-                hub.s.events.append(
-                    execution.execution_id,
-                    "delivery.push.failed",
-                    {"remote": remote, "branch": branch, "reason": str(error)[:500]},
-                    phase_execution_id=phase.phase_execution_id,
-                )
-                return PhaseOutcome(ResultStatus.BLOCKED, f"Push of {branch} refused: {error}")
-            state["pushed"] = {"remote": remote, "branch": branch, "commit": commit.commit}
-            results.set_flag_json(state_key, state)
-            hub.s.events.append(
-                execution.execution_id,
-                "delivery.pushed",
-                state["pushed"],
-                phase_execution_id=phase.phase_execution_id,
-            )
-        report["pushed"] = state["pushed"]
-        if allowed["pullRequest"] and not state.get("pullRequest"):
-            from governed_harness.application.forges import create_on_forge, forge_settings
-
-            pull = hub.project.delivery_settings.pull_request
-            try:
-                # The forge layer of #56 records delivery.pull-request.created itself.
-                created = create_on_forge(
-                    hub.s,
-                    execution.execution_id,
-                    head=branch,
-                    base=forge_settings(hub.s).base_branch or self._base(git, remote),
-                    title=task.title,
-                    draft=pull.draft if pull else None,
-                    transport_override=TRANSPORT["override"],
-                )
-            except Exception as error:  # noqa: BLE001 - the reason is reported, CLOSURE waits
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED, f"The pull request of {branch} was not created: {error}"
-                )
-            state["pullRequest"] = {
-                **created["pullRequest"],
-                "forge": created["forge"]["kind"],
-                "repository": created["forge"]["repository"],
-                "head": created["head"],
-                "base": created["base"],
-                "labels": created["labels"],
-                "template": created["template"],
-            }
-            results.set_flag_json(state_key, state)
-        report["pullRequest"] = state.get("pullRequest")
-        number = (state.get("pullRequest") or {}).get("number")
-        if isinstance(number, int) and not state.get("commented"):
-            policy = allowed["comment"]
-            reasons = self.not_clean(execution, decision)
-            if policy == "always" or (policy == "notClean" and reasons):
-                try:
-                    posted = self._forge().upsert_comment(
-                        number, execution.execution_id, self._brief(execution)
-                    )
-                except Exception as error:  # noqa: BLE001
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED, f"The comment on #{number} was not posted: {error}"
-                    )
-                state["commented"] = {**posted, "reasons": reasons}
+        steps: tuple[Callable[[], PhaseOutcome | None], ...] = (
+            lambda: self._push(execution, phase, git, remote, branch, commit, state),
+            lambda: self._pull_request(execution, task, git, remote, branch, allowed, state),
+            lambda: self._comment(execution, phase, decision, allowed, state),
+        )
+        for step in steps:
+            before = dict(state)
+            outcome = step()
+            if outcome is not None:
+                return outcome
+            if state != before:
                 results.set_flag_json(state_key, state)
-                hub.s.events.append(
-                    execution.execution_id,
-                    "delivery.comment.posted",
-                    state["commented"],
-                    phase_execution_id=phase.phase_execution_id,
-                )
+        report["pushed"] = state["pushed"]
+        report["pullRequest"] = state.get("pullRequest")
         report["comment"] = state.get("commented")
         self._record(execution, report, f"Delivery: {branch} pushed to {remote}")
+        return None
+
+    # ----- the steps ------------------------------------------------------------------------------
+    def _stage_only(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        git: Git,
+        change_set: ChangeSet,
+        allowed: dict[str, Any],
+        state: dict[str, Any],
+        report: dict[str, Any],
+    ) -> None:
+        """When the change is not pushed: stage the run's files once, if the contract says so."""
+        if not allowed["stage"] or not git.is_repository() or state.get("staged"):
+            return
+        staged = self._stage(git, self.ladder.s.paths.workspace, change_set)
+        state["staged"] = staged
+        report["staged"] = staged
+        self.ladder.s.events.append(
+            execution.execution_id,
+            "delivery.staged",
+            {"paths": staged, "reason": "the contract does not authorise a push"},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _push(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        git: Git,
+        remote: str,
+        branch: str,
+        commit: ClosureCommit,
+        state: dict[str, Any],
+    ) -> PhaseOutcome | None:
+        """Push the closure commit's branch once; a refusal stops CLOSURE with the reason."""
+        if state.get("pushed"):
+            return None
+        events = self.ladder.s.events
+        try:
+            git.run("push", remote, f"{branch}:{branch}")
+        except VcsError as error:
+            events.append(
+                execution.execution_id,
+                "delivery.push.failed",
+                {"remote": remote, "branch": branch, "reason": str(error)[:500]},
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return PhaseOutcome(ResultStatus.BLOCKED, f"Push of {branch} refused: {error}")
+        state["pushed"] = {"remote": remote, "branch": branch, "commit": commit.commit}
+        events.append(
+            execution.execution_id,
+            "delivery.pushed",
+            state["pushed"],
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return None
+
+    def _pull_request(
+        self,
+        execution: Execution,
+        task: Task,
+        git: Git,
+        remote: str,
+        branch: str,
+        allowed: dict[str, Any],
+        state: dict[str, Any],
+    ) -> PhaseOutcome | None:
+        """Create the pull request once, when the contract authorises it."""
+        if not allowed["pullRequest"] or state.get("pullRequest"):
+            return None
+        from governed_harness.application.forges import create_on_forge, forge_settings
+
+        hub = self.ladder
+        pull = hub.project.delivery_settings.pull_request
+        try:
+            # The forge layer of #56 records delivery.pull-request.created itself.
+            created = create_on_forge(
+                hub.s,
+                execution.execution_id,
+                head=branch,
+                base=forge_settings(hub.s).base_branch or self._base(git, remote),
+                title=task.title,
+                draft=pull.draft if pull else None,
+                transport_override=TRANSPORT["override"],
+            )
+        except Exception as error:  # noqa: BLE001  # the reason is reported, CLOSURE waits
+            return PhaseOutcome(
+                ResultStatus.BLOCKED, f"The pull request of {branch} was not created: {error}"
+            )
+        state["pullRequest"] = {
+            **created["pullRequest"],
+            "forge": created["forge"]["kind"],
+            "repository": created["forge"]["repository"],
+            "head": created["head"],
+            "base": created["base"],
+            "labels": created["labels"],
+            "template": created["template"],
+        }
+        return None
+
+    def _comment(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        decision: HumanDecision,
+        allowed: dict[str, Any],
+        state: dict[str, Any],
+    ) -> PhaseOutcome | None:
+        """Comment the brief on the pull request once, as the comment policy says."""
+        number = (state.get("pullRequest") or {}).get("number")
+        if not isinstance(number, int) or state.get("commented"):
+            return None
+        policy = allowed["comment"]
+        reasons = self.not_clean(execution, decision)
+        if policy != "always" and not (policy == "notClean" and reasons):
+            return None
+        try:
+            posted = self._forge().upsert_comment(
+                number, execution.execution_id, self._brief(execution)
+            )
+        except Exception as error:  # noqa: BLE001  # the reason is reported, CLOSURE waits
+            return PhaseOutcome(
+                ResultStatus.BLOCKED, f"The comment on #{number} was not posted: {error}"
+            )
+        state["commented"] = {**posted, "reasons": reasons}
+        self.ladder.s.events.append(
+            execution.execution_id,
+            "delivery.comment.posted",
+            state["commented"],
+            phase_execution_id=phase.phase_execution_id,
+        )
         return None
 
     # ----- helpers --------------------------------------------------------------------------------

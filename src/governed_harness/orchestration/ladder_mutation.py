@@ -397,7 +397,7 @@ class Mutation:
                 ),
                 cancellation=CancellationToken(lambda: engine.is_cancelled(execution.execution_id)),
             )
-        except Exception:  # noqa: BLE001 - a command that cannot start gives no evidence
+        except Exception:  # noqa: BLE001  # a command that cannot start gives no evidence
             return None
         if result.status in {ResultStatus.PASSED, ResultStatus.FAILED}:
             return result.status
