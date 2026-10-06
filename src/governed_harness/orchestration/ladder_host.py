@@ -19,21 +19,27 @@ if TYPE_CHECKING:
 
 class LadderHost(Protocol):
     @property
-    def engine(self) -> EngineHost: ...
+    def engine(self) -> EngineHost:
+        """The engine that owns the ladder."""
 
     @property
-    def s(self) -> EngineServices: ...
+    def s(self) -> EngineServices:
+        """The project's configuration, paths and stores."""
 
     @property
-    def project(self) -> ProjectConfiguration: ...
+    def project(self) -> ProjectConfiguration:
+        """The project configuration."""
 
-    def capabilities(self, execution: Execution) -> list[CapabilityStatus]: ...
+    def capabilities(self, execution: Execution) -> list[CapabilityStatus]:
+        """The profiles' capabilities and their availability here."""
 
-    def profile_verifications(self) -> list[tuple[str, ProfileVerification]]: ...
+    def profile_verifications(self) -> list[tuple[str, ProfileVerification]]:
+        """The verification settings of each selected profile."""
 
     def latest_certification(
         self, execution_id: str, digest: str | None
-    ) -> CertificationRecord | None: ...
+    ) -> CertificationRecord | None:
+        """The latest certification of a run for a digest."""
 
 
 __all__ = ["LadderHost"]

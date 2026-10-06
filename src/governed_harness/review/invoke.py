@@ -41,7 +41,8 @@ from governed_harness.runtime.workspace import WorkspaceDiff
 class CallingProvider(Protocol):
     def call(
         self, kind: Any, request: dict[str, Any], context: Any, *, phase_id: PhaseId
-    ) -> AgentCallResult: ...
+    ) -> AgentCallResult:
+        """Send a read-only request of ``kind`` and return the provider's answer."""
 
 
 @dataclass(frozen=True)

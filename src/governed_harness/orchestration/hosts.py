@@ -72,68 +72,94 @@ class EngineHost(Protocol):
     """The :class:`RunEngine` as its helpers use it."""
 
     @property
-    def friction(self) -> FrictionPort: ...
+    def friction(self) -> FrictionPort:
+        """The friction settings of the run (#58)."""
 
     @property
-    def gate_engine(self) -> GateEngine: ...
+    def gate_engine(self) -> GateEngine:
+        """The gate evaluation of DECISION."""
 
     @property
-    def ladder(self) -> LadderPort: ...
+    def ladder(self) -> LadderPort:
+        """The verification ladder (#55)."""
 
     @property
-    def provenance(self) -> ProvenancePort: ...
+    def provenance(self) -> ProvenancePort:
+        """The provenance recorder of the ChangeSet's files."""
 
     @property
-    def results(self) -> ResultsHost: ...
+    def results(self) -> ResultsHost:
+        """The agent-results settings of the run."""
 
     @property
-    def s(self) -> EngineServices: ...
+    def s(self) -> EngineServices:
+        """The project's configuration, paths and stores."""
 
     @property
-    def sandbox_host(self) -> SandboxHost: ...
+    def sandbox_host(self) -> SandboxHost:
+        """The host the agent sandbox is built for."""
 
     @property
-    def snapshots(self) -> SnapshotStore: ...
+    def snapshots(self) -> SnapshotStore:
+        """The workspace snapshots of the run."""
 
     @property
-    def state_machine(self) -> NormativeStateMachine: ...
+    def state_machine(self) -> NormativeStateMachine:
+        """The normative phase transitions."""
 
     @property
-    def validators(self) -> ValidatorRegistry: ...
+    def validators(self) -> ValidatorRegistry:
+        """The validators available to VERIFICATION."""
 
-    def baseline_digests(self, execution: Execution) -> dict[str, str]: ...
+    def baseline_digests(self, execution: Execution) -> dict[str, str]:
+        """Path to digest of the run's baseline snapshot."""
 
-    def current_change_set(self, execution_id: str) -> ChangeSet: ...
+    def current_change_set(self, execution_id: str) -> ChangeSet:
+        """The run's current ChangeSet."""
 
-    def get_execution(self, execution_id: str) -> Execution: ...
+    def get_execution(self, execution_id: str) -> Execution:
+        """The stored run."""
 
-    def is_cancelled(self, execution_id: str) -> bool: ...
+    def is_cancelled(self, execution_id: str) -> bool:
+        """Whether the run was cancelled."""
 
-    def run_task(self, execution: Execution) -> Task: ...
+    def run_task(self, execution: Execution) -> Task:
+        """The task revision the run works on."""
 
-    def _agent_network_allowed(self) -> bool: ...
+    def _agent_network_allowed(self) -> bool:
+        """Whether the agent sandbox allows outbound network."""
 
-    def _bounded_definition(self, definition: ValidatorDefinition) -> ValidatorDefinition: ...
+    def _bounded_definition(self, definition: ValidatorDefinition) -> ValidatorDefinition:
+        """The validator definition within the phase's time budget."""
 
-    def _bounded_timeout(self, seconds: int) -> int: ...
+    def _bounded_timeout(self, seconds: int) -> int:
+        """A timeout within the phase's time budget."""
 
     def _build_provider(
         self, execution: Execution, phase: PhaseExecution, provider_id: str
-    ) -> tuple[AgentProvider, Actor, SandboxPlan | None, tuple[str, ...]] | PhaseOutcome: ...
+    ) -> tuple[AgentProvider, Actor, SandboxPlan | None, tuple[str, ...]] | PhaseOutcome:
+        """The provider of a run, or the outcome when it cannot start."""
 
-    def _compute_owned_diff(self, execution: Execution) -> WorkspaceDiff: ...
+    def _compute_owned_diff(self, execution: Execution) -> WorkspaceDiff:
+        """The task-owned diff, without persisting unredacted content."""
 
-    def _current_contract_digest(self, execution: Execution) -> str | None: ...
+    def _current_contract_digest(self, execution: Execution) -> str | None:
+        """The digest of the frozen acceptance contract."""
 
-    def _external_provider(self, execution_id: str) -> bool: ...
+    def _external_provider(self, execution_id: str) -> bool:
+        """Whether the run uses a configured command provider."""
 
-    def _feedback_applies(self, execution_id: str) -> bool: ...
+    def _feedback_applies(self, execution_id: str) -> bool:
+        """Whether provider feedback applies to the run."""
 
-    def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]: ...
+    def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]:
+        """The latest validation of each validator for a digest."""
 
-    def _protected_paths(self) -> tuple[Path, ...]: ...
+    def _protected_paths(self) -> tuple[Path, ...]:
+        """Paths the agent sandbox keeps read-only."""
 
-    def _provenance(self, execution: Execution) -> Provenance: ...
+    def _provenance(self, execution: Execution) -> Provenance:
+        """The provenance of the run's records."""
 
     def _record_evidence(
         self,
@@ -144,7 +170,8 @@ class EngineHost(Protocol):
         summary: str,
         *,
         supports: tuple[str, ...] = ...,
-    ) -> Evidence: ...
+    ) -> Evidence:
+        """Record an artifact as evidence of a phase."""
 
     def _record_feedback(
         self,
@@ -157,7 +184,8 @@ class EngineHost(Protocol):
         validations: list[ValidationResult],
         findings: list[Finding],
         decision: FeedbackDecision | None = ...,
-    ) -> str: ...
+    ) -> str:
+        """Store the feedback for the next IMPLEMENTATION attempt."""
 
     def _record_provider_retry(
         self,
@@ -166,91 +194,121 @@ class EngineHost(Protocol):
         result: AgentExecutionResult,
         cause: str,
         retry: int,
-    ) -> None: ...
+    ) -> None:
+        """Record a retry of a transient provider failure."""
 
-    def _runner(self, execution: Execution) -> SafeProcessRunner: ...
+    def _runner(self, execution: Execution) -> SafeProcessRunner:
+        """The process runner of the run."""
 
     def _save_agent_result(
         self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
-    ) -> None: ...
+    ) -> None:
+        """Record what an agent call did."""
 
-    def _save_execution(self, execution: Execution) -> None: ...
+    def _save_execution(self, execution: Execution) -> None:
+        """Store the run."""
 
-    def _save_tool(self, execution: Execution, tool: ToolInvocation) -> None: ...
+    def _save_tool(self, execution: Execution, tool: ToolInvocation) -> None:
+        """Record a tool invocation."""
 
-    def _save_validator_output(self, execution: Execution, output: Any) -> None: ...
+    def _save_validator_output(self, execution: Execution, output: Any) -> None:
+        """Record a validator's result and findings."""
 
-    def _transient_cause(self, result: AgentExecutionResult) -> str | None: ...
+    def _transient_cause(self, result: AgentExecutionResult) -> str | None:
+        """The pattern that marks a failed provider call as transient."""
 
-    def _wait_for_retry(self, execution_id: str, delay: float) -> bool: ...
+    def _wait_for_retry(self, execution_id: str, delay: float) -> bool:
+        """Wait before a retry; ``False`` when the run is cancelled."""
 
     @staticmethod
-    def _snapshot_from_dict(value: dict[str, Any]) -> WorkspaceSnapshot: ...
+    def _snapshot_from_dict(value: dict[str, Any]) -> WorkspaceSnapshot:
+        """A workspace snapshot from its stored form."""
 
     @staticmethod
-    def _snapshot_to_dict(snapshot: WorkspaceSnapshot) -> dict[str, Any]: ...
+    def _snapshot_to_dict(snapshot: WorkspaceSnapshot) -> dict[str, Any]:
+        """The stored form of a workspace snapshot."""
 
 
 class ResultsHost(Protocol):
     """The :class:`AgentResults` as its helpers use it."""
 
     @property
-    def acceptance(self) -> AcceptancePort: ...
+    def acceptance(self) -> AcceptancePort:
+        """The acceptance tests (``verification.acceptanceTests``)."""
 
     @property
-    def active(self) -> bool: ...
+    def active(self) -> bool:
+        """Whether any agent-results setting is configured."""
 
     @property
-    def agent_review(self) -> AgentReviewPort: ...
+    def agent_review(self) -> AgentReviewPort:
+        """The single independent reviewer."""
 
     @property
-    def architecture(self) -> ArchitecturePort: ...
+    def architecture(self) -> ArchitecturePort:
+        """The architecture flow (#56)."""
 
     @property
-    def corrections(self) -> CorrectionsPort: ...
+    def corrections(self) -> CorrectionsPort:
+        """The reproduce-first corrections."""
 
     @property
-    def engine(self) -> EngineHost: ...
+    def engine(self) -> EngineHost:
+        """The engine that owns these settings."""
 
     @property
-    def engineering(self) -> EngineeringPort: ...
+    def engineering(self) -> EngineeringPort:
+        """The standards, principles and testing strategy (#56)."""
 
     @property
-    def panel(self) -> PanelPort: ...
+    def panel(self) -> PanelPort:
+        """The review panel (#57)."""
 
     @property
-    def project(self) -> ProjectConfiguration: ...
+    def project(self) -> ProjectConfiguration:
+        """The project configuration."""
 
     @property
-    def project_setup(self) -> ProjectSetupPort: ...
+    def project_setup(self) -> ProjectSetupPort:
+        """The project setup questions (#56)."""
 
     @property
-    def s(self) -> EngineServices: ...
+    def s(self) -> EngineServices:
+        """The project's configuration, paths and stores."""
 
     @property
-    def secrets_in_context(self) -> bool: ...
+    def secrets_in_context(self) -> bool:
+        """Whether secrets may reach an agent's context."""
 
     @property
-    def stop_line(self) -> StopLinePort: ...
+    def stop_line(self) -> StopLinePort:
+        """The stop-the-line checks."""
 
     @property
-    def verification(self) -> VerificationPort: ...
+    def verification(self) -> VerificationPort:
+        """The verification checks."""
 
     def after_agent_call(
         self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
-    ) -> None: ...
+    ) -> None:
+        """Account for a finished agent call."""
 
-    def baseline_changes(self, execution: Execution) -> WorkspaceDiff | None: ...
+    def baseline_changes(self, execution: Execution) -> WorkspaceDiff | None:
+        """Every change since DISCOVERY, with a unified diff."""
 
-    def baseline_contents(self, execution: Execution) -> Contents | None: ...
+    def baseline_contents(self, execution: Execution) -> Contents | None:
+        """The recorded bytes of the baseline's files."""
 
-    def baseline_snapshot(self, execution: Execution) -> WorkspaceSnapshot | None: ...
+    def baseline_snapshot(self, execution: Execution) -> WorkspaceSnapshot | None:
+        """The workspace as DISCOVERY recorded it."""
 
-    def baseline_text(self, execution: Execution) -> Callable[[str], str | None]: ...
+    def baseline_text(self, execution: Execution) -> Callable[[str], str | None]:
+        """The baseline text of a path, when it had one."""
 
     def before_agent_call(
         self, execution: Execution, phase: PhaseExecution, kind: CallKind
-    ) -> PhaseOutcome | None: ...
+    ) -> PhaseOutcome | None:
+        """Fail closed before an agent call when a limit is crossed."""
 
     def call_agent(
         self,
@@ -262,15 +320,20 @@ class ResultsHost(Protocol):
         task: Task,
         instruction_values: dict[str, Any] | None = ...,
         instructions_suffix: str = ...,
-    ) -> AgentCallOutcome: ...
+    ) -> AgentCallOutcome:
+        """Send a read-only request and return its structured result."""
 
-    def change_requests(self, execution: Execution) -> list[dict[str, Any]]: ...
+    def change_requests(self, execution: Execution) -> list[dict[str, Any]]:
+        """The structured change requests of the run."""
 
-    def flag_json(self, key: str) -> Any: ...
+    def flag_json(self, key: str) -> Any:
+        """A JSON flag of the state store."""
 
-    def implement_model(self, execution: Execution, task: Task) -> str | None: ...
+    def implement_model(self, execution: Execution, task: Task) -> str | None:
+        """The model an implement call would use."""
 
-    def provider_for(self, execution: Execution, kind: CallKind) -> str: ...
+    def provider_for(self, execution: Execution, kind: CallKind) -> str:
+        """The provider of a call kind."""
 
     def record_finding(
         self,
@@ -287,7 +350,8 @@ class ResultsHost(Protocol):
         recommendation: str | None = ...,
         introduced: bool | None = ...,
         actor: Actor | None = ...,
-    ) -> Finding: ...
+    ) -> Finding:
+        """Record a finding of the run."""
 
     def record_json(
         self,
@@ -299,7 +363,8 @@ class ResultsHost(Protocol):
         summary: str,
         evidence_kind: EvidenceKind = ...,
         supports: tuple[str, ...] = ...,
-    ) -> str: ...
+    ) -> str:
+        """Store a JSON artifact as evidence of a phase."""
 
     def record_validation(
         self,
@@ -314,60 +379,76 @@ class ResultsHost(Protocol):
         findings: tuple[Finding, ...] = ...,
         evidence_refs: tuple[str, ...],
         started_at: Any = ...,
-    ) -> ValidationResult: ...
+    ) -> ValidationResult:
+        """Record a validation of a ChangeSet digest."""
 
-    def required_acknowledgements(self, execution: Execution, digest: str) -> list[str]: ...
+    def required_acknowledgements(self, execution: Execution, digest: str) -> list[str]:
+        """The risk factors a decision must acknowledge."""
 
-    def set_flag_json(self, key: str, value: Any) -> None: ...
+    def set_flag_json(self, key: str, value: Any) -> None:
+        """Store a JSON flag."""
 
-    def task_signals(self, execution: Execution, task: Task) -> TaskSignals: ...
+    def task_signals(self, execution: Execution, task: Task) -> TaskSignals:
+        """Size signals of the task known before the call."""
 
 
 class AcceptancePort(Protocol):
     """The acceptance tests (``verification.acceptanceTests``) as siblings use them."""
 
-    def state(self, execution: Execution) -> dict[str, Any] | None: ...
+    def state(self, execution: Execution) -> dict[str, Any] | None:
+        """The acceptance tests' state of the run."""
 
-    def validation(self, execution: Execution, change_set: ChangeSet) -> ValidatorOutput | None: ...
+    def validation(self, execution: Execution, change_set: ChangeSet) -> ValidatorOutput | None:
+        """The acceptance tests as a validation of the ChangeSet."""
 
 
 class AgentReviewPort(Protocol):
     """The single independent reviewer as the review panel uses it."""
 
-    def blocking_severities(self) -> set[FindingSeverity]: ...
+    def blocking_severities(self) -> set[FindingSeverity]:
+        """The finding severities that block."""
 
 
 class ArchitecturePort(Protocol):
     """The architecture flow as siblings use it."""
 
-    def request_extra(self, execution: Execution) -> dict[str, Any] | None: ...
+    def request_extra(self, execution: Execution) -> dict[str, Any] | None:
+        """What the architecture adds to an agent request."""
 
-    def rules(self) -> LayerRules | None: ...
+    def rules(self) -> LayerRules | None:
+        """The layer rules of the project."""
 
 
 class CorrectionsPort(Protocol):
     """The reproduce-first corrections as the verification checks use them."""
 
-    def validation(self, execution: Execution, change_set: ChangeSet) -> ValidatorOutput | None: ...
+    def validation(self, execution: Execution, change_set: ChangeSet) -> ValidatorOutput | None:
+        """The latest correction attempt as a validation."""
 
 
 class EngineeringPort(Protocol):
     """The engineering settings (standards, testing, TDD) as siblings use them."""
 
     @property
-    def configured(self) -> bool: ...
+    def configured(self) -> bool:
+        """Whether any engineering setting is configured."""
 
-    def bdd_command(self) -> tuple[str, ...]: ...
+    def bdd_command(self) -> tuple[str, ...]:
+        """The command that runs the feature files."""
 
-    def features_directory(self) -> str: ...
+    def features_directory(self) -> str:
+        """Where the feature files live."""
 
     def review_extra(
         self, execution: Execution, change_set: ChangeSet
-    ) -> tuple[dict[str, Any], str]: ...
+    ) -> tuple[dict[str, Any], str]:
+        """The checklist the review call gains."""
 
-    def setup_record(self, project_id: str) -> dict[str, Any]: ...
+    def setup_record(self, project_id: str) -> dict[str, Any]:
+        """The project setup answers."""
 
-    def strategy(self, project_id: str) -> Strategy: ...
+    def strategy(self, project_id: str) -> Strategy:
+        """The effective testing strategy."""
 
     def tdd_validation(
         self,
@@ -375,22 +456,25 @@ class EngineeringPort(Protocol):
         change_set: ChangeSet,
         diff: list[DiffFile],
         outputs_so_far: list[ValidatorOutput],
-    ) -> ValidatorOutput | None: ...
+    ) -> ValidatorOutput | None:
+        """The TDD check as a validation of the ChangeSet."""
 
-    def technologies(self) -> tuple[str, ...]: ...
+    def technologies(self) -> tuple[str, ...]:
+        """The technologies of the project."""
 
 
 class FrictionPort(Protocol):
     """The friction settings as the engine's helpers use them."""
 
     @property
-    def active(self) -> bool: ...
+    def active(self) -> bool:
+        """Whether a friction setting that acts on a run is configured."""
 
-    def skips(self, execution: Execution, step: str, phase_id: PhaseId | None = ...) -> bool: ...
+    def skips(self, execution: Execution, step: str, phase_id: PhaseId | None = ...) -> bool:
+        """Whether the fast lane leaves a step out of the run."""
 
-    def tests_exempt(
-        self, execution: Execution, change_set: ChangeSet, check: str
-    ) -> str | None: ...
+    def tests_exempt(self, execution: Execution, change_set: ChangeSet, check: str) -> str | None:
+        """Why a test requirement does not apply to the ChangeSet."""
 
 
 class LadderIntakePort(Protocol):
@@ -398,34 +482,42 @@ class LadderIntakePort(Protocol):
 
     def defaults(
         self, execution: Execution | None = ..., task: Task | None = ...
-    ) -> dict[str, Any]: ...
+    ) -> dict[str, Any]:
+        """What the configuration says about a contract's open items."""
 
 
 class LadderPort(Protocol):
     """The verification ladder as the engine's helpers use it."""
 
     @property
-    def active(self) -> bool: ...
+    def active(self) -> bool:
+        """Whether any ladder setting that acts on a run is configured."""
 
     @property
-    def intake(self) -> LadderIntakePort: ...
+    def intake(self) -> LadderIntakePort:
+        """The intake step of the ladder."""
 
-    def after_decision(self, execution: Execution, record: HumanDecision) -> None: ...
+    def after_decision(self, execution: Execution, record: HumanDecision) -> None:
+        """Recompute the certification with the ticked items."""
 
-    def located_paths(self, execution: Execution) -> list[str]: ...
+    def located_paths(self, execution: Execution) -> list[str]:
+        """The paths the locate call found."""
 
-    def manual_items(self, task: Task) -> list[dict[str, str]]: ...
+    def manual_items(self, task: Task) -> list[dict[str, str]]:
+        """What only a person can verify."""
 
 
 class PanelPort(Protocol):
     """The review panel as the single reviewer uses it."""
 
     @property
-    def configured(self) -> bool: ...
+    def configured(self) -> bool:
+        """Whether the review panel is configured."""
 
     def run(
         self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
-    ) -> ReviewOutcome: ...
+    ) -> ReviewOutcome:
+        """Review the ChangeSet with the panel."""
 
 
 class ProjectSetupPort(Protocol):
@@ -433,16 +525,19 @@ class ProjectSetupPort(Protocol):
 
     def questions(
         self, execution: Execution, phase: PhaseExecution, task: Task, start: int
-    ) -> tuple[ClarificationQuestion, ...]: ...
+    ) -> tuple[ClarificationQuestion, ...]:
+        """The project setup questions to ask in INTENT."""
 
 
 class ProvenancePort(Protocol):
     """The provenance recorder as the review panel uses it."""
 
     @property
-    def snapshots_enabled(self) -> bool: ...
+    def snapshots_enabled(self) -> bool:
+        """Whether agent snapshots are recorded."""
 
-    def attribute(self, execution: Execution, change_set: ChangeSet, phase_id: PhaseId) -> None: ...
+    def attribute(self, execution: Execution, change_set: ChangeSet, phase_id: PhaseId) -> None:
+        """Record who produced each file of the ChangeSet."""
 
 
 class StopLinePort(Protocol):
@@ -450,13 +545,15 @@ class StopLinePort(Protocol):
 
     def owned_paths_output(
         self, execution: Execution, change_set: ChangeSet
-    ) -> ValidatorOutput | None: ...
+    ) -> ValidatorOutput | None:
+        """The owned-paths check as a validation."""
 
 
 class VerificationPort(Protocol):
     """The verification checks as siblings use them."""
 
-    def risk_actions(self) -> dict[str, str]: ...
+    def risk_actions(self) -> dict[str, str]:
+        """The action of each risk factor."""
 
     def _output(
         self,
@@ -471,7 +568,8 @@ class VerificationPort(Protocol):
         extra_evidence: tuple[str, ...] = ...,
         mandatory: bool | None = ...,
         report: dict[str, Any] | None = ...,
-    ) -> ValidatorOutput: ...
+    ) -> ValidatorOutput:
+        """A verification check's result as a validator output."""
 
 
 __all__ = [

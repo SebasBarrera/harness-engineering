@@ -86,7 +86,6 @@ class ReviewerAnswer:
 class Invoker(Protocol):
     def invoke(self, calls: Sequence[ReviewerCall], workers: int) -> list[ReviewerAnswer]:
         """Answer every call (in parallel up to ``workers``), in the order of ``calls``."""
-        ...
 
 
 Route = Callable[[Reviewer, str], tuple[str | None, str | None]]
