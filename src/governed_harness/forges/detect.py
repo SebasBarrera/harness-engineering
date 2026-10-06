@@ -51,6 +51,11 @@ def _host_and_path(url: str) -> tuple[str, str] | None:
     return None
 
 
+_AZURE_SSH_HOST = "ssh.dev.azure.com"
+_VISUALSTUDIO = ".visualstudio.com"
+"""The suffix of the hosts of the former Azure DevOps service (``org.visualstudio.com``)."""
+
+
 def kind_of_host(host: str) -> str | None:
     """The forge a host name points to, or ``None``."""
     if host == "github.com" or host.endswith(".github.com") or host.startswith("github."):
@@ -58,8 +63,8 @@ def kind_of_host(host: str) -> str | None:
     if host == "bitbucket.org" or host.endswith(".bitbucket.org"):
         return "bitbucket"
     if (
-        host in {"dev.azure.com", "ssh.dev.azure.com"}
-        or host.endswith(".visualstudio.com")
+        host in {"dev.azure.com", _AZURE_SSH_HOST}
+        or host.endswith(_VISUALSTUDIO)
         or host.endswith(".dev.azure.com")
     ):
         return "azure-devops"
@@ -80,7 +85,7 @@ def default_api_url(kind: str, host: str, repository: str = "") -> str:
         return "https://api.bitbucket.org/2.0"
     if kind == "azure-devops":
         organization = repository.split("/", 1)[0] if repository else ""
-        if host.endswith(".visualstudio.com"):
+        if host.endswith(_VISUALSTUDIO):
             return f"https://{host}"
         return f"https://dev.azure.com/{organization}" if organization else "https://dev.azure.com"
     return f"https://{host}/api/v1"
@@ -89,7 +94,7 @@ def default_api_url(kind: str, host: str, repository: str = "") -> str:
 def _azure_repository(host: str, path: str) -> str | None:
     """``organization/project/repository`` from the forms of an Azure DevOps remote."""
     segments = [item for item in path.split("/") if item]
-    if host == "ssh.dev.azure.com" and len(segments) >= 4 and segments[0] == "v3":
+    if host == _AZURE_SSH_HOST and len(segments) >= 4 and segments[0] == "v3":
         return "/".join(segments[1:4])
     if "_git" in segments:
         index = segments.index("_git")
@@ -97,7 +102,7 @@ def _azure_repository(host: str, path: str) -> str | None:
             return None
         repository = segments[index + 1]
         before = segments[:index]
-        if host.endswith(".visualstudio.com"):
+        if host.endswith(_VISUALSTUDIO):
             organization = host.split(".", 1)[0]
             project = before[-1] if before else repository
             return f"{organization}/{project}/{repository}"
@@ -123,7 +128,7 @@ def parse_remote(url: str, kind: str | None = None) -> ForgeLocation | None:
         repository = _azure_repository(host, path)
         if repository is None:
             return None
-        api_host = "dev.azure.com" if host == "ssh.dev.azure.com" else host
+        api_host = "dev.azure.com" if host == _AZURE_SSH_HOST else host
         return ForgeLocation(
             detected, api_host, repository, default_api_url(detected, api_host, repository)
         )

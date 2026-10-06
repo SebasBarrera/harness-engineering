@@ -754,7 +754,7 @@ class HarnessApplication(ReviewCodeCommands):
         """Contradictions between the configuration and the agent instruction files (#55)."""
         return config_lint(ConfigurationResolver().resolve(path))
 
-    def registry(self, path: Path | None = None) -> dict[str, Any]:
+    def registry(self) -> dict[str, Any]:
         """The projects whose run registry lives in the state directory (``runtime.stateDir:
         auto``), with their latest runs: one dashboard for several repositories (#55)."""
         from governed_harness.runtime.state_location import default_state_root, registered_projects
