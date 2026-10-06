@@ -67,6 +67,25 @@ def param_type(param: Any) -> str:
     return kind.name.lower()
 
 
+def option_rows(params: list[Any]) -> list[str]:
+    rows = [
+        "| Option | Type | Required | Default | Description |",
+        "|---|---|---|---|---|",
+    ]
+    for param in params:
+        if param.param_type_name == "option":
+            flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])
+            help_text = (param.help or "").replace("|", "\\|")
+        else:
+            flags = f"`{param.human_readable_name}`"
+            help_text = ""
+        required = "yes" if param.required else "no"
+        rows.append(
+            f"| {flags} | {param_type(param)} | {required} | {describe_default(param)} | {help_text} |"
+        )
+    return rows
+
+
 def render() -> str:
     root = typer.main.get_command(app)
     commands = list(walk(root, ()))
@@ -77,6 +96,16 @@ def render() -> str:
         "",
         f"`harness` {__version__} exposes {len(commands)} commands. Every command accepts `--help`.",
         "Exit codes are documented in [exit codes](exit-codes.md).",
+    ]
+    global_params = [p for p in root.params if p.name != "help"]
+    if global_params:
+        lines += [
+            "",
+            "Global options go before the command name (`harness --no-json run list`):",
+            "",
+            *option_rows(global_params),
+        ]
+    lines += [
         "",
         "| Command | Summary |",
         "|---|---|",
@@ -96,22 +125,7 @@ def render() -> str:
         params = [p for p in command.params if p.name != "help"]
         if not params:
             continue
-        lines += [
-            "",
-            "| Option | Type | Required | Default | Description |",
-            "|---|---|---|---|---|",
-        ]
-        for param in params:
-            if param.param_type_name == "option":
-                flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])
-                help_text = (param.help or "").replace("|", "\\|")
-            else:
-                flags = f"`{param.human_readable_name}`"
-                help_text = ""
-            required = "yes" if param.required else "no"
-            lines.append(
-                f"| {flags} | {param_type(param)} | {required} | {describe_default(param)} | {help_text} |"
-            )
+        lines += ["", *option_rows(params)]
     return "\n".join(lines) + "\n"
 
 

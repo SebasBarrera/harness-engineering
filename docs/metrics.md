@@ -33,15 +33,19 @@ The list below is the complete set computed by `MetricsProjector.project` in
 | `duration.tool_ms` | ms | DERIVED | Sum of persisted tool invocation durations. | tool invocation records | |
 | `duration.human_wait_ms` | ms | DERIVED, or NOT_AVAILABLE | Elapsed time from the latest gate evaluation to the latest human decision. | gate and decision events | NOT_AVAILABLE until a decision follows a gate evaluation. |
 | `agent.invocations` | count | OBSERVED | Number of persisted agent invocation records. | agent invocation records | |
+| `agent.transient_retries` | count | OBSERVED | Command-provider calls repeated after a transient failure (`runtime.providerRetries`, `agent.invocation.retried` events). | event store | The failed calls are also counted in `agent.invocations`. |
+| `agent.unsupported_claims` | count | DERIVED | Findings `agent.unsupported-claim`: the agent reported success and the verification of its change failed. | finding records | Recorded only when `runtime.verificationCorrections` is set and the provider is a command provider. |
 | `tool.invocations` | count | OBSERVED | Number of persisted tool invocation records. | tool invocation records | |
 | `implementation.attempts` | count | DERIVED | Count of `IMPLEMENTATION` phase-start events. | event store | |
-| `correction.cycles` | count | OBSERVED | Count of human-authorized transitions from `DECISION` back to `IMPLEMENTATION` (`REQUEST_CHANGES`). | event store | |
+| `correction.cycles` | count | OBSERVED | Count of authorized transitions back to `IMPLEMENTATION`: `REQUEST_CHANGES` decisions and automatic corrections after a failed `VERIFICATION` (`correction.authorized` events). | event store | Before the automatic corrections existed it counted `REQUEST_CHANGES` only. |
+| `correction.verification_cycles` | count | OBSERVED | Automatic corrections after a failed `VERIFICATION` (`runtime.verificationCorrections`). | event store | 0 when the setting is absent or the provider is simulated. |
 | `review.cycles` | count | DERIVED | Count of `INDEPENDENT_REVIEW` phase-start events. | event store | |
 | `replanning.count` | count | OBSERVED | Count of plan replacement events after the first accepted plan. | event store | No component emits the `plan.replaced` event yet, so the value is always 0. |
 | `validation.non_passed` | count | DERIVED | Validation results whose normalized status is not `PASSED` (includes `NOT_APPLICABLE`). | validation records | Counts optional validators that did not apply. |
 | `changesets.count` | count | OBSERVED | Number of distinct persisted ChangeSet records. | ChangeSet records | |
 | `changeset.files` | count | DERIVED | Unique paths appearing in persisted ChangeSets. | ChangeSet records | |
 | `human.decisions` | count | OBSERVED | Number of persisted human decisions. | decision records | |
+| `human.interactions` | count | OBSERVED | Events a person caused on the run: decisions, clarification answers, plan, acceptance and preflight decisions, budget raises, quarantines, contract confirmations (one confirmed with the clarification answers, or with a pre-authorised approval, counts with them), attached evidence (since #55; reported against `intake.interruptions.target`), approvals given in advance and plan approvals (since #58). A decision the harness records from a pre-authorisation is not counted again. | run events with a human actor | |
 | `tokens.input` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported input tokens; no estimation. | resource usage records | See below. |
 | `tokens.output` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported output tokens; no estimation. | resource usage records | See below. |
 | `tokens.reasoning` | tokens | REPORTED, or NOT_AVAILABLE | Sum of provider-reported reasoning tokens; no estimation. | resource usage records | See below. |
@@ -52,6 +56,14 @@ simulated provider does not call a model and creates none. A command provider cr
 response carries the optional `usage` object (see
 [connecting an external agent](guides/external-agents.md)); the values are then `REPORTED`. When a
 provider reports nothing, the harness shows the gap instead of estimating it.
+
+## Aggregated metrics
+
+`harness metrics` (since 1.1, issue #58) aggregates these records over the runs of a repository,
+or of every repository of the run registry, into tokens and cost by agent, model, task and phase,
+lines, delivery, time, quality, friction against per-size targets and trends, with zero model
+calls; costs of providers that report tokens without a cost are estimated from a price table and
+labelled `estimated`. See [local metrics](guides/local-metrics.md).
 
 ## Reading the metrics
 

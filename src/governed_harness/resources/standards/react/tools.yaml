@@ -1,0 +1,22 @@
+pack: react
+detect:
+  markers: [package.json]
+  dependencies: [react]
+  requires: [node]
+runner:
+  test: [npm, test, --silent]
+  testFiles: false
+tools:
+  - id: eslint-react
+    title: eslint-plugin-react and react-hooks
+    configFiles: [eslint.config.js, eslint.config.mjs, .eslintrc.json, .eslintrc.cjs]
+    command: [npx, --no-install, eslint, -f, json, .]
+    parser: eslint
+    coveredBy: [node.lint, standards.javascript.eslint, standards.typescript.typescript-eslint]
+    recommended: |
+      // eslint.config.js
+      import react from "eslint-plugin-react";
+      import hooks from "eslint-plugin-react-hooks";
+      import a11y from "eslint-plugin-jsx-a11y";
+      export default [react.configs.flat.recommended, hooks.configs["recommended-latest"],
+        a11y.flatConfigs.recommended];

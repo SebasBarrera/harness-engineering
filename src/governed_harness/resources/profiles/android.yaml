@@ -1,0 +1,35 @@
+profileVersion: '1.0'
+profileId: android_default
+technology: android
+detectors:
+  - marker: app/src/main/AndroidManifest.xml
+    weight: 0.80
+  - marker: src/main/AndroidManifest.xml
+    weight: 0.60
+  - marker: gradlew
+    weight: 0.10
+defaultCommands:
+  test: [./gradlew, testDebugUnitTest, --quiet]
+  lint: [./gradlew, lintDebug, --quiet]
+defaultValidators:
+  - android.unit
+  - android.lint
+validators:
+  - id: android.unit
+    command: [./gradlew, testDebugUnitTest, --quiet]
+    mandatory: true
+    timeoutSeconds: 2400
+  - id: android.lint
+    command: [./gradlew, lintDebug, --quiet]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 2400
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['app/src/**', '**/src/**', 'build.gradle', 'build.gradle.kts', '**/build.gradle', '**/build.gradle.kts']
+  process.execute: [./gradlew]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

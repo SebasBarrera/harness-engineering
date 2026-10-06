@@ -25,5 +25,5 @@ implementation:
       operation: append
       content: |
 
-        def test_at_threshold() -> None:
+        def test_req_discount_at_threshold() -> None:
             assert apply_discount(100, 100, 0.1) == 90

@@ -6,15 +6,56 @@ from typing import Any, Literal, cast
 
 import yaml
 
+from governed_harness.configuration.models import CriteriaPolicy
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     AcceptanceCriterion,
+    ChecklistItem,
+    CriterionVerification,
     FilePatch,
     ImplementationInstruction,
+    OperationalContract,
+    ProbeDefinition,
     Requirement,
     Task,
 )
+
+
+def _verification(item: dict[str, Any], where: str) -> CriterionVerification | None:
+    """The ``verification`` of a criterion (since #55): its rung and how it is reached."""
+    raw = item.get("verification")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{where}: verification must be an object with a level")
+    try:
+        return CriterionVerification.model_validate(raw)
+    except Exception as error:
+        raise ConfigurationError(f"{where}: invalid verification: {error}") from error
+
+
+def _ladder_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """The probes, checklist and operational contract of a task file (since #55)."""
+    fields: dict[str, Any] = {}
+    try:
+        if raw.get("probes"):
+            fields["probes"] = tuple(
+                ProbeDefinition.model_validate(item) for item in raw["probes"] or []
+            )
+        if raw.get("checklist"):
+            fields["checklist"] = tuple(
+                ChecklistItem.model_validate(
+                    {"id": f"CL-{index}", "text": item} if isinstance(item, str) else item
+                )
+                for index, item in enumerate(raw["checklist"] or [], start=1)
+            )
+        if raw.get("contract"):
+            fields["contract"] = OperationalContract.model_validate(raw["contract"])
+    except Exception as error:
+        raise ConfigurationError(f"invalid task definition: {error}") from error
+    return fields
+
 
 _KNOWN_FIELDS = frozenset(
     {
@@ -30,6 +71,9 @@ _KNOWN_FIELDS = frozenset(
         "acceptance_criteria",
         "implementation",
         "metadata",
+        "probes",
+        "checklist",
+        "contract",
     }
 )
 
@@ -50,7 +94,14 @@ def _required_text(value: dict[str, Any], name: str, where: str) -> str:
     return str(text)
 
 
-def load_task_file(path: Path, *, project_id: str) -> Task:
+def load_task_file(
+    path: Path, *, project_id: str, criteria_policy: CriteriaPolicy | None = None
+) -> Task:
+    """Read a task file (YAML or JSON) into a task.
+
+    A task needs at least one acceptance criterion. Only when ``criteria_policy`` is
+    ``enforce`` is a task without criteria accepted: it is marked ``criteria_pending`` and
+    INTENT asks for its criteria (rule ``C0``). Any other policy, or none, keeps the refusal."""
     try:
         if path.suffix.lower() == ".json":
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -99,6 +150,7 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
                         Literal["MUST", "SHOULD", "COULD"],
                         str(_first(item, "priority", default="MUST")).upper(),
                     ),
+                    verification=_verification(item, "an acceptance criterion"),
                 )
             )
         else:
@@ -134,9 +186,13 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
             intent=intent,
             constraints=tuple(str(item) for item in (_first(raw, "constraints", default=[]) or [])),
             requirements=tuple(requirements),
+            criteria_pending=not criteria and criteria_policy == "enforce",
             acceptance_criteria=tuple(criteria),
             implementation=implementation,
             metadata=dict(_first(raw, "metadata", default={}) or {}),
+            **_ladder_fields(raw),
         )
+    except ConfigurationError:
+        raise
     except Exception as error:
         raise ConfigurationError(f"invalid task definition: {error}") from error

@@ -1,0 +1,176 @@
+{
+  "$defs": {
+    "MetricQuality": {
+      "enum": [
+        "OBSERVED",
+        "REPORTED",
+        "DERIVED",
+        "ESTIMATED",
+        "NOT_AVAILABLE"
+      ],
+      "title": "MetricQuality",
+      "type": "string"
+    },
+    "SelfReportContrast": {
+      "additionalProperties": false,
+      "description": "The self-report compared with the ChangeSet recorded after the same invocation.",
+      "properties": {
+        "changeSetDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changesetdigest"
+        },
+        "declaredPathsNotInChangeSet": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Declaredpathsnotinchangeset",
+          "type": "array"
+        },
+        "unrequestedChangesInChangeSet": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Unrequestedchangesinchangeset",
+          "type": "array"
+        }
+      },
+      "title": "SelfReportContrast",
+      "type": "object"
+    },
+    "SelfReportItem": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "maxLength": 1000,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        }
+      },
+      "required": [
+        "description"
+      ],
+      "title": "SelfReportItem",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/agent-self-report.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What an agent says about its own work (``provenance.selfReport``): assumptions,\nalternatives it discarded, areas where it is not confident and changes nobody asked for.\n\nIt is data of quality ``REPORTED``: the harness stores and shows it, contrasts it with the\nChangeSet, and never treats it as a verification.",
+  "properties": {
+    "alternativesDiscarded": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Alternativesdiscarded",
+      "type": "array"
+    },
+    "assumptions": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Assumptions",
+      "type": "array"
+    },
+    "contrast": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/SelfReportContrast"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "invocationId": {
+      "title": "Invocationid",
+      "type": "string"
+    },
+    "lowConfidenceAreas": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SelfReportItem"
+      },
+      "title": "Lowconfidenceareas",
+      "type": "array"
+    },
+    "problems": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Problems",
+      "type": "array"
+    },
+    "provider": {
+      "title": "Provider",
+      "type": "string"
+    },
+    "quality": {
+      "$ref": "#/$defs/MetricQuality",
+      "default": "REPORTED"
+    },
+    "reportId": {
+      "title": "Reportid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "unrequestedChanges": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SelfReportItem"
+      },
+      "title": "Unrequestedchanges",
+      "type": "array"
+    }
+  },
+  "required": [
+    "reportId",
+    "executionId",
+    "invocationId",
+    "provider"
+  ],
+  "title": "AgentSelfReport",
+  "type": "object"
+}

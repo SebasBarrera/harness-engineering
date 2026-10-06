@@ -123,15 +123,18 @@ def test_command_provider_receives_memory_only_when_there_is_any(
     config["agentProviders"] = {
         "fixture_command": {"kind": "command", "command": ["python", "agent_adapter.py"]}
     }
+    config["runtime"]["agentSandbox"] = "off"  # about memory; the sandbox has its own tests
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     task_path = tmp_path / "task.yaml"
     task_path.write_text(TASK, encoding="utf-8")
     app = HarnessApplication()
 
     first = app.start_run(python_workspace, app.create_task(python_workspace, task_path).task_id)
+    # selfReport: harness init enables provenance.selfReport (since 1.1).
     assert json.loads((python_workspace / "request-keys.json").read_text()) == [
         "plan",
         "schemaVersion",
+        "selfReport",
         "task",
     ]
     assert manifest_of(app, python_workspace, first.execution_id)["records"] == []

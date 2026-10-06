@@ -14,6 +14,7 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.events import StoredEvent
+from governed_harness.reporting.fingerprint import FINGERPRINT_VERSION, finding_fingerprint
 from governed_harness.telemetry import MetricValue
 
 
@@ -172,6 +173,16 @@ class TraceReporter:
                 "ruleId": finding.rule_id,
                 "level": level_map[finding.severity],
                 "message": {"text": finding.message},
+                # Stable across attempts and runs (rule, validator, path and message without
+                # positions), so code-scanning tools can track one problem over time.
+                "partialFingerprints": {FINGERPRINT_VERSION: finding_fingerprint(finding)},
+                "properties": {
+                    "findingId": finding.finding_id,
+                    "executionId": finding.execution_id,
+                    "validatorId": finding.validator_id,
+                    "severity": finding.severity.value,
+                    "category": finding.category,
+                },
             }
             if finding.location and finding.location.path:
                 result["locations"] = [

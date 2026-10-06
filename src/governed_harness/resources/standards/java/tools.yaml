@@ -1,0 +1,36 @@
+pack: java
+detect:
+  markers: [pom.xml, build.gradle, settings.gradle]
+  extensions: [.java]
+runner:
+  test: [mvn, -q, test]
+  testFiles: false
+  bdd: [mvn, -q, test, -Dcucumber.plugin=pretty]
+bddFrameworks:
+  - name: cucumber-jvm
+    dependencies: [cucumber-java, cucumber-junit-platform-engine]
+  - name: karate
+    dependencies: [karate-junit5, karate-core]
+tools:
+  - id: checkstyle
+    title: Checkstyle
+    configFiles: [checkstyle.xml, config/checkstyle/checkstyle.xml]
+    command: [mvn, -q, checkstyle:check, -Dcheckstyle.output.format=xml, -Dcheckstyle.output.file=target/checkstyle-result.xml]
+    parser: checkstyle
+    principles: [kiss, least-astonishment]
+    recommended: |
+      <!-- checkstyle.xml: start from google_checks.xml and add -->
+      <module name="MethodLength"><property name="max" value="60"/></module>
+      <module name="ParameterNumber"><property name="max" value="5"/></module>
+      <module name="CyclomaticComplexity"><property name="max" value="10"/></module>
+  - id: pmd
+    title: PMD
+    configFiles: [pmd.xml, pmd-ruleset.xml, config/pmd/pmd.xml]
+    command: [mvn, -q, pmd:check, -Dformat=sarif]
+    parser: sarif
+    principles: [yagni, kiss]
+  - id: spotbugs
+    title: SpotBugs
+    configFiles: [spotbugs-exclude.xml, config/spotbugs/exclude.xml]
+    command: [mvn, -q, spotbugs:check, -Dspotbugs.sarifOutput=true]
+    parser: sarif

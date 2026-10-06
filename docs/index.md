@@ -9,8 +9,9 @@ the code changes afterwards, the approval no longer applies.
 
 > [!WARNING]
 > Research beta. **It is not a sandbox**: a process the harness launches keeps the file-system,
-> network, CPU and memory permissions of your user. The local dashboard has no authentication and
-> must stay on loopback.
+> network, CPU and memory permissions of your user. The local dashboard requires a local bearer
+> token only under the `api` section that `harness init` writes (none without it) and must stay on
+> loopback.
 
 ## A narrative instruction versus an applied control
 

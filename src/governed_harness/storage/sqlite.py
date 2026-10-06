@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import builtins
 import json
 import sqlite3
 import threading
@@ -87,10 +88,11 @@ class SQLiteStateStore:
             )
 
     def get_dict(self, record_type: str, record_id: str) -> dict[str, Any]:
-        row = self.connection.execute(
-            "SELECT payload_json FROM records WHERE record_type=? AND record_id=?",
-            (record_type, record_id),
-        ).fetchone()
+        with self._lock:
+            row = self.connection.execute(
+                "SELECT payload_json FROM records WHERE record_type=? AND record_id=?",
+                (record_type, record_id),
+            ).fetchone()
         if row is None:
             raise NotFoundError(f"{record_type} not found: {record_id}")
         payload: dict[str, Any] = json.loads(row["payload_json"])
@@ -118,10 +120,11 @@ class SQLiteStateStore:
         direction = "DESC" if newest_first else "ASC"
         # Only code-defined literals are interpolated (the clause list and the direction);
         # every value is bound as a parameter, so Bandit B608 is a false positive here.
-        rows = self.connection.execute(
-            f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",  # nosec B608
-            tuple(params),
-        ).fetchall()
+        with self._lock:
+            rows = self.connection.execute(
+                f"SELECT payload_json FROM records WHERE {' AND '.join(clauses)} ORDER BY updated_at {direction}",  # nosec B608
+                tuple(params),
+            ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
     def list(
@@ -149,6 +152,36 @@ class SQLiteStateStore:
                 "DELETE FROM records WHERE record_type=? AND record_id=?", (record_type, record_id)
             )
 
+    def record_types(self, execution_id: str) -> builtins.list[str]:
+        rows = self.connection.execute(
+            "SELECT DISTINCT record_type FROM records WHERE execution_id=? ORDER BY record_type",
+            (execution_id,),
+        ).fetchall()
+        return [str(row["record_type"]) for row in rows]
+
+    def flags_for(self, execution_id: str) -> dict[str, str]:
+        """The flags the engine keys by run (``<name>:<run id>``)."""
+        suffix = f":{execution_id}"
+        rows = self.connection.execute("SELECT key, value FROM flags").fetchall()
+        return {
+            str(row["key"]): str(row["value"]) for row in rows if str(row["key"]).endswith(suffix)
+        }
+
+    def delete_execution(self, execution_id: str, *, keep: frozenset[str] = frozenset()) -> None:
+        """Delete the records and flags of a run (``retention.eventDays``), except the record
+        types in ``keep``."""
+        flags = list(self.flags_for(execution_id))
+        with self._lock, self.connection:
+            for record_type in self.record_types(execution_id):
+                if record_type in keep:
+                    continue
+                self.connection.execute(
+                    "DELETE FROM records WHERE record_type=? AND execution_id=?",
+                    (record_type, execution_id),
+                )
+            for key in flags:
+                self.connection.execute("DELETE FROM flags WHERE key=?", (key,))
+
     def set_flag(self, key: str, value: str) -> None:
         now = datetime.now(UTC).isoformat()
         with self._lock, self.connection:
@@ -159,7 +192,10 @@ class SQLiteStateStore:
             )
 
     def get_flag(self, key: str) -> str | None:
-        row = self.connection.execute("SELECT value FROM flags WHERE key=?", (key,)).fetchone()
+        # Validators may run side by side (#3, #58) and poll the cancellation flag while the
+        # process ledger writes: every use of the shared connection holds the lock.
+        with self._lock:
+            row = self.connection.execute("SELECT value FROM flags WHERE key=?", (key,)).fetchone()
         return str(row["value"]) if row else None
 
     def close(self) -> None:

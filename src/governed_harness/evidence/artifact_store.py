@@ -97,6 +97,20 @@ class LocalArtifactStore:
         except (OSError, ValueError):
             return False
 
+    def delete(self, reference: ArtifactRef | str) -> bool:
+        """Remove a blob and its descriptor (retention); ``False`` when it was not stored."""
+        digest = (
+            reference.digest
+            if isinstance(reference, ArtifactRef)
+            else self._digest_from_uri(reference)
+        )
+        hex_digest = digest.split(":", 1)[1]
+        path = self._blob_path(hex_digest)
+        existed = path.exists()
+        path.unlink(missing_ok=True)
+        (self.meta_root / f"{hex_digest}.json").unlink(missing_ok=True)
+        return existed
+
     def describe(self, uri: str) -> ArtifactRef:
         digest = self._digest_from_uri(uri)
         hex_digest = digest.split(":", 1)[1]
@@ -116,6 +130,12 @@ class LocalArtifactStore:
             hex_digest = path.stem
             refs.append(self.describe(f"artifact://sha256/{hex_digest}"))
         return refs
+
+    def path_for(self, reference: ArtifactRef | str) -> Path:
+        """Where the content of an artifact is stored (read-only use: an agent may read a
+        person's attachment from there)."""
+        uri = reference.uri if isinstance(reference, ArtifactRef) else reference
+        return self._blob_path(self._digest_from_uri(uri).split(":", 1)[1])
 
     def _blob_path(self, hex_digest: str) -> Path:
         if len(hex_digest) != 64 or any(char not in "0123456789abcdef" for char in hex_digest):

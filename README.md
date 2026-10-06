@@ -19,7 +19,8 @@ English · [Español](README.es.md) · [Documentation site](https://sebasbarrera
 
 > [!WARNING]
 > Research beta. **This is not a sandbox**: the commands the harness runs keep the permissions of
-> your OS user, and the local dashboard has no authentication. Read
+> your OS user, and the local dashboard authenticates with a local token only when `project.yaml`
+> has the `api` section that `harness init` writes. Read
 > [This is not a sandbox](#this-is-not-a-sandbox) before using it on code you do not trust.
 
 ## Contents
@@ -155,6 +156,7 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 | From | Command |
 |---|---|
 | A release wheel (recommended) | `pip install <wheel URL from the release page>`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
+| A release wheel with pipx (isolated CLI) | `pipx install <wheel URL from the release page>`, or `pipx install "governed-agent-harness[api] @ <wheel URL>"` for the dashboard. The harness then lives in its own environment and the validators keep running the project's `python`/`npm` from `PATH`, so install `pytest` in the project's environment, not in the pipx one. Not exercised in CI; `harness --version` confirms the install |
 | Source | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
 | Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (published from `v1.0.0`; runs as a non-root user) |
 
@@ -177,7 +179,9 @@ every step:
 4. `harness task create --file task.yaml`, then `harness run start --task <id>` → exit **4**.
 5. `harness status --run <id>`, `harness findings list`, `harness evidence list`.
 6. `harness gate decide … --change-set-digest <current digest>` → exit **0**.
-7. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (recommendations are
+7. `harness verify --run <id>` checks the event chain, the records and the artifacts of the run
+   (exit 0 or 6).
+8. `harness trace --format markdown|json|jsonl|sarif`, `harness retrospect` (recommendations are
    never applied automatically; `harness recommendation decide` records whether a person accepts,
    edits or rejects each one). The harness never commits: review `git diff` and commit yourself.
 
@@ -213,13 +217,13 @@ a missing one is currently stored as the text `None` (issue #29).
 
 ## CLI
 
-28 commands (full reference with every option, generated from the code:
+30 commands (full reference with every option, generated from the code:
 [docs/reference/cli.md](docs/reference/cli.md)):
 
 | Group | Commands |
 |---|---|
 | Project | `init`, `inspect`, `doctor`, `config validate` |
-| Tasks | `task create`, `task list`, `task show` |
+| Tasks | `task create`, `task list`, `task show`, `task questions`, `task clarify` |
 | Runs | `run start`, `run continue`, `run cancel`, `run list`, `status` |
 | Evidence | `evidence list`, `findings list`, `trace`, `retrospect` |
 | Memory | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
@@ -268,7 +272,29 @@ validators, policies, agent providers and runtime limits. Four policies are **lo
 weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessBlocks` (always
 `true`) and `retrospectiveAutoApply` (always `false`). `findingBlockSeverities` (default `HIGH`,
 `CRITICAL`) and `allowEmptyChangeSet` are configurable. `runtime.allowNetwork`,
-`runtime.maxParallel`, `retention` and `workspace.units` are **declarative: nothing enforces them**.
+`retention` and `workspace.units` are **declarative: nothing enforces them**; so is
+`runtime.maxParallel` unless `governance.enforceWorkflow` is on.
+`intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
+("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
+`harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
+findings, `off` skips the check. Only `enforce` accepts a task without acceptance criteria;
+`INTENT` then asks for them (rule `C0`) before anything else runs.
+`verification.requirementTraceability` decides what `VERIFICATION` does with a requirement that
+carries an identifier (`A1. ...`, `[B12] ...` or an explicit `requirementId`) and that no test
+names: `enforce` (written by `init`) records a `HIGH` finding, so the gate is `FAILED`; `warn`
+records a `LOW` finding; `off` (a file without the key) skips the check.
+Each acceptance criterion may declare the rung of evidence it requires on the **verification
+ladder** (`L0` static to `L5` human): probes of the program's behaviour, deferred evidence from CI
+closed with `harness evidence attach`, and a checklist ticked in the decision; the harness
+certifies the ChangeSet from recorded evidence only (see
+[docs/guides/verification-ladder.md](docs/guides/verification-ladder.md)). Under
+`runtime.stateDir: auto` (written by `init`) the state database and artifacts live under the
+user's data directory, not in `.harness/`. A small, risk-free task takes a **fast lane**, and
+`harness do "TEXT" --pre-approve` runs it in one command with an approval given in advance that
+applies only if the gate passes, there is no risk factor and the task is size `S`
+([docs/guides/low-friction.md](docs/guides/low-friction.md)); `harness metrics` reports tokens,
+cost, delivery, time, quality and friction locally, as one self-contained HTML file among other
+formats, without calling a model ([docs/guides/local-metrics.md](docs/guides/local-metrics.md)).
 Full reference: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Technology profiles
@@ -277,6 +303,7 @@ Full reference: [docs/reference/configuration.md](docs/reference/configuration.m
 |---|---|---|---|
 | Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check .`, `python -m mypy .` |
 | Node.js | `package.json` and lock files | `npm test --silent` (needs a `test` script) | `npm run lint`, `npm run typecheck` (if defined) |
+| Go, Rust, Java/Kotlin (Gradle, Maven), Swift, Android | `go.mod`, `Cargo.toml`, `build.gradle`, `pom.xml`, `Package.swift`, `AndroidManifest.xml` (under `toolchain.extendedProfiles`) | the toolchain's test command | its static check |
 
 An absent optional validator is `NOT_APPLICABLE`; an absent mandatory executable is `BLOCKED`.
 
@@ -292,13 +319,23 @@ Claude Code, Codex or any model API**: they are connected through such a wrapper
 the [external agents guide](docs/guides/external-agents.md). The provider only proposes a change;
 verification, review, the gate and the decision stay with the harness.
 
+Since 1.1 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
+and `harness init --agent-skills`, see the [embedded mode guide](docs/guides/embedded-mode.md)),
+the run can carry the team's language standards, engineering principles, testing strategy and
+architecture ([guide](docs/guides/engineering.md)), and the result can be published on GitHub,
+GitLab, Bitbucket, Azure DevOps or Gitea ([forges and CI templates](docs/guides/forges.md)).
+
 ## Web dashboard and API
 
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requires the `api` extra) serves the
 dashboard at `/` and nine routes: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective`, and
-`POST /api/runs/{id}/decision`. **No authentication, no roles, no multi-user support: keep it on
-loopback.** Reference: [docs/reference/api.md](docs/reference/api.md).
+`POST /api/runs/{id}/decision` (1.1 adds more routes, listed in the reference). Since 1.1 (#18) the `api` section that `harness init` writes requires a
+bearer token on every route, with the roles `viewer`, `reviewer` and `admin` and users declared by
+the name of their token's variable; the token of the person who starts the server is printed once
+on standard error unless `HARNESS_API_TOKEN` provides it. **A `project.yaml` without the section
+has no authentication, no roles and no multi-user support, as in 1.0.0. Either way, keep it on
+loopback.** Reference: [docs/reference/api.md](docs/reference/api.md#authentication-and-roles).
 
 ## This is not a sandbox
 
@@ -308,7 +345,10 @@ output bounds, secret redaction before persistence, digest-bound decisions and a
 log. It does **not** isolate the processes it launches: an authorized command keeps the file-system,
 network, CPU and memory permissions of your OS user. `allowNetwork` is not enforced. The event chain
 makes tampering detectable, not impossible. Run untrusted repositories, agents or plugins only inside
-a container or VM. See [SECURITY.md](SECURITY.md).
+a container or VM. See [SECURITY.md](SECURITY.md). The one exception is write confinement of agent
+providers: with `runtime.agentSandbox: enforce`, written by `harness init`, an agent CLI cannot
+write outside the workspace and its declared paths (macOS `sandbox-exec`, Linux `bwrap`), and a host
+without either blocks `IMPLEMENTATION` instead of running it unconfined.
 
 ## Metrics and monitoring
 
@@ -350,8 +390,8 @@ Open behavioral defects (milestone
 - [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) pre-existing and introduced errors are not distinguished;
 - [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) there is no plan-approval checkpoint.
 
-Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), no
-authentication or multi-user support in the dashboard, no distributed execution, no external
+Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), only
+local token authentication in the dashboard (none without the `api` section), no distributed execution, no external
 signature of evidence, no native provider integrations, token and cost metrics only when a provider
 reports them.
 

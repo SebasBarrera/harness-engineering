@@ -72,8 +72,15 @@ nav:
       - Greenfield project: guides/greenfield.md
       - Brownfield repository: guides/brownfield.md
       - External agents: guides/external-agents.md
+      - Better agent results: guides/agent-results.md
+      - Verification ladder: guides/verification-ladder.md
+      - Low friction for small changes: guides/low-friction.md
+      - Local metrics: guides/local-metrics.md
       - Memory and retrospective decisions: guides/memory.md
       - CI integration: guides/ci-integration.md
+      - Forges and CI templates: guides/forges.md
+      - Standards, principles, testing and architecture: guides/engineering.md
+      - Embedded mode: guides/embedded-mode.md
   - Reference:
       - CLI: reference/cli.md
       - Task file: reference/task-file.md

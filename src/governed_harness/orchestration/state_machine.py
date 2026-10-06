@@ -60,6 +60,67 @@ class NormativeStateMachine:
             ),
         )
 
+    def authorize_verification_correction(self, phase: PhaseId) -> TransitionDecision:
+        """The automatic correction of ``runtime.verificationCorrections``: a failed
+        VERIFICATION returns to IMPLEMENTATION and its result stops counting, as after a
+        REQUEST_CHANGES decision."""
+        if phase is not PhaseId.VERIFICATION:
+            raise InvalidTransition("an automatic correction may only start from VERIFICATION")
+        return TransitionDecision(
+            source=PhaseId.VERIFICATION,
+            target=PhaseId.IMPLEMENTATION,
+            invalidated=(
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
+    def authorize_review_correction(self, phase: PhaseId) -> TransitionDecision:
+        """Since 1.1 (``review.agentReview``, #38): blocking findings of the second reviewer
+        return INDEPENDENT_REVIEW to IMPLEMENTATION within the correction budget."""
+        if phase is not PhaseId.INDEPENDENT_REVIEW:
+            raise InvalidTransition("a review correction may only start from INDEPENDENT_REVIEW")
+        return TransitionDecision(
+            source=PhaseId.INDEPENDENT_REVIEW,
+            target=PhaseId.IMPLEMENTATION,
+            invalidated=(
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
+    def authorize_next_subtask(self, phase: PhaseId) -> TransitionDecision:
+        """Since 1.1 (``planning.decomposition``, #39): a sub-task whose gate passed hands the
+        workspace to the next sub-task's IMPLEMENTATION."""
+        if phase is not PhaseId.VERIFICATION:
+            raise InvalidTransition("the next sub-task may only start after VERIFICATION")
+        return TransitionDecision(
+            source=PhaseId.VERIFICATION,
+            target=PhaseId.IMPLEMENTATION,
+            invalidated=(PhaseId.INDEPENDENT_REVIEW, PhaseId.DECISION, PhaseId.CLOSURE),
+        )
+
+    def authorize_replanning(self, phase: PhaseId) -> TransitionDecision:
+        """Since 1.1 (``planning.granularity: adaptive``, #39): a coarse attempt that failed
+        its corrections returns to PLANNING to be decomposed."""
+        if phase is not PhaseId.VERIFICATION:
+            raise InvalidTransition("replanning may only start after VERIFICATION")
+        return TransitionDecision(
+            source=PhaseId.VERIFICATION,
+            target=PhaseId.PLANNING,
+            invalidated=(
+                PhaseId.IMPLEMENTATION,
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
     @staticmethod
     def approval_is_current(approved_digest: str, current_digest: str) -> bool:
         return approved_digest == current_digest
@@ -74,4 +135,5 @@ class NormativeStateMachine:
             ResultStatus.INCONCLUSIVE,
             ResultStatus.TIMED_OUT,
             ResultStatus.ERROR,
+            ResultStatus.INTERRUPTED,
         }

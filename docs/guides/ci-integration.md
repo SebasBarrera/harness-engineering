@@ -87,12 +87,99 @@ jobs:
           include-hidden-files: true
 ```
 
+## Approval valid for what gets merged
+
+A decision binds the digest of the ChangeSet in the workspace where the run happened; what a team
+merges is a pull request. Since 1.1 three pieces connect them:
+
+1. **The closure commit** (`delivery.closureCommit`, written by `harness init` as `branch`): at
+   `CLOSURE` the approved ChangeSet becomes one commit on `harness/<run id>` with the trailers
+   `Harness-Run`, `Harness-Task`, `Harness-ChangeSet` and `Harness-Decision` (and
+   `Harness-Exception` for an `APPROVE_EXCEPTION`). The harness recomputes the commit's diff before
+   it creates the branch; see [delivery](../reference/configuration.md#delivery).
+2. **The evidence bundle**: `harness export --run <id> --bundle <file>.tar.gz` writes the run's
+   event chain, records and artifacts with a manifest of digests. `harness verify --bundle <file>`
+   checks it without the workspace (exit 0, or 6 with the problems).
+3. **`harness verify-approval`**: recomputes the ChangeSet digest of `--base..--head` from the two
+   revisions and passes (exit 0) only when an unexpired `APPROVE` or `APPROVE_EXCEPTION` in a
+   verified bundle (or in the workspace's own record) is bound to exactly that digest. Any other
+   change in the range (a commit after the closure commit, a file the ChangeSet excluded, a mode
+   change, a symbolic link) gives another digest and the check fails (exit 5). The `Harness-*`
+   trailers of the range are reported, but a trailer alone never approves.
+
+A merge result is checked as it will be merged: if the base branch changed the same files, the
+hunks of the merged diff differ from the approved ones and the check fails until the change is
+run and approved again on the new base. A bundle and a trailer establish consistency, not
+authenticity: anyone who can rewrite the whole bundle can rewrite it consistently.
+
+The decision brief and the findings can be put on the pull request, from the workspace that holds
+the run: `harness pr publish --run <id> --pr <number>` posts one comment per run (updated when
+published again) and uploads the SARIF report to code scanning, through the GitHub CLI (`gh`) or,
+with `--transport api`, HTTPS with the token in `GITHUB_TOKEN` (`delivery.publisher.tokenEnv`).
+Nothing is decided on the pull request.
+
+The workflow below keeps the bundles on a branch `harness-evidence` that is never merged, and
+checks the pull request against the bundle its closure commit names. It has not been run as part
+of this repository's CI; it shows the commands, which are covered by
+`tests/integration/test_delivery.py` and the `delivery` flow of `scripts/demo_flows.py`.
+
+```yaml
+name: approved-change
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-approval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install the harness
+        run: python -m pip install governed-agent-harness  # pin the version you use
+      - name: Verify that the merged tree is an approved ChangeSet
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch --no-tags origin harness-evidence
+          run_id=$(git log --format='%(trailers:key=Harness-Run,valueonly)' "origin/${BASE_REF}..HEAD" | sed -n '/./{p;q}')
+          git show "origin/harness-evidence:${run_id}.tar.gz" > approval.tar.gz
+          harness verify --bundle approval.tar.gz
+          harness verify-approval --base "origin/${BASE_REF}" --head HEAD \
+            --bundle approval.tar.gz --no-workspace
+```
+
+## Evidence only CI can produce
+
+A criterion that only CI, staging or a device lab can verify declares
+`verification: {level: L4, deferred: "CI job e2e"}`. The run leaves a pending item `D-<criterion>`
+bound to the ChangeSet digest and the closure commit; a job closes it with its report:
+
+```bash
+harness evidence attach --run "$RUN" --item D-ac_e2e --file e2e-junit.xml
+```
+
+JUnit, SARIF and a CI status JSON (`state`, `sha`) are read; evidence about another commit is
+refused. See [verification ladder](verification-ladder.md#deferred-verification).
+
 ## Limits to keep in mind
 
-- **State is local to the runner.** `.harness/` (SQLite state, event chain, artifacts) lives in the
-  job workspace. The run stops at `DECISION`; a person can download the `harness-state` artifact and
+- **State is local to the runner.** The SQLite state, the event chain and the artifacts live in
+  the job workspace's `.harness/`, or, under `runtime.stateDir: auto` (written by `harness init`),
+  in `$HARNESS_STATE_DIR` or the runner's data directory: set `HARNESS_STATE_DIR` to a path you
+  upload with the job's artifacts. The run stops at `DECISION`; a person can download the `harness-state` artifact and
   decide locally with `harness gate decide`, or the pattern can run on a persistent (self-hosted)
-  workspace. A hosted runner cannot keep a run open between jobs.
+  workspace. A hosted runner cannot keep a run open between jobs; what it can check without the
+  state is an evidence bundle (`harness verify --bundle`, `harness verify-approval`).
 - **Not a sandbox.** In CI the harness runs the project's commands with the job's permissions and
   network. Keep `permissions` minimal and do not expose secrets to the job.
 - **Human decisions are never automated.** A pipeline must not call `harness gate decide` on

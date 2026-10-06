@@ -1,0 +1,43 @@
+pack: typescript
+title: TypeScript
+extends: [javascript]
+cards:
+  - id: typescript.strict
+    title: Strict compiler settings
+    rule: Keep strict mode on; do not loosen tsconfig compiler options to make a change compile.
+    rationale: Strict checks catch null and implicit-any defects at compile time.
+    appliesTo: ["**/*.ts", "**/*.tsx", "tsconfig*.json"]
+    verifiedBy: ["tsc:TS7006", "tsc:TS2322", "review"]
+  - id: typescript.no-any
+    title: No explicit any
+    rule: Do not use any; use unknown and narrow it, or a precise type.
+    rationale: any switches the type checker off for everything it touches.
+    exceptions:
+      - Typing an untyped third-party boundary, isolated in one adapter.
+    appliesTo: ["**/*.ts", "**/*.tsx"]
+    verifiedBy: ["eslint:@typescript-eslint/no-explicit-any"]
+  - id: typescript.floating-promises
+    title: No floating promises
+    rule: Await or handle every promise returned in a statement.
+    rationale: A rejected promise that nobody awaits loses the error.
+    appliesTo: ["**/*.ts", "**/*.tsx"]
+    verifiedBy: ["eslint:@typescript-eslint/no-floating-promises"]
+  - id: typescript.no-non-null-assertion
+    title: No non-null assertions
+    rule: Do not use the ! non-null assertion; check the value or change its type.
+    rationale: The assertion hides a possible null at run time.
+    appliesTo: ["**/*.ts", "**/*.tsx"]
+    verifiedBy: ["eslint:@typescript-eslint/no-non-null-assertion"]
+  - id: typescript.exported-types
+    title: Explicit types on exported functions
+    rule: Give exported functions and methods explicit parameter and return types.
+    rationale: The public contract must not change when the implementation changes.
+    appliesTo: ["**/*.ts", "**/*.tsx"]
+    verifiedBy: ["eslint:@typescript-eslint/explicit-module-boundary-types"]
+    principle: least-astonishment
+  - id: typescript.discriminated-unions
+    title: Model states with discriminated unions
+    rule: Represent alternative states with a discriminated union and an exhaustive switch, not with optional fields and flags.
+    rationale: The compiler then proves every state is handled.
+    appliesTo: ["**/*.ts", "**/*.tsx"]
+    verifiedBy: ["review"]

@@ -1,18 +1,161 @@
 {
   "$defs": {
+    "AcceptanceTestsConfig": {
+      "additionalProperties": false,
+      "description": "Independent, frozen acceptance tests (#52, N4): written from the criteria by a separate\ncall (``author``), approved by a person, checked to fail before the change and to pass,\nunchanged, after it.",
+      "properties": {
+        "author": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "AcceptanceTestsConfig",
+      "type": "object"
+    },
+    "AgentCallConfig": {
+      "additionalProperties": false,
+      "description": "Which provider, model and effort an agent call of one kind uses.\n\n``provider`` names an entry of ``agentProviders`` (default: the run's provider);\n``model`` and ``effort`` are passed to the provider in the request (``routing``) and take\nprecedence over ``agentRouting``.",
+      "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        }
+      },
+      "title": "AgentCallConfig",
+      "type": "object"
+    },
     "AgentProviderConfiguration": {
       "additionalProperties": false,
+      "description": "An agent provider.\n\nSince 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra\ncommand-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's\nenvironment passed as they are) and ``env`` (variables set for the provider, as a literal\nvalue or ``{fromEnv: NAME}``). Values that come from the environment are redacted from\nevery artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized\nconfiguration.",
       "properties": {
+        "args": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Args"
+        },
         "command": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Command",
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "env": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "$ref": "#/$defs/ProviderEnvReference"
+                  }
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Env"
         },
         "kind": {
-          "const": "command",
           "default": "command",
+          "enum": [
+            "command",
+            "claude-code",
+            "codex",
+            "gemini-cli",
+            "aider"
+          ],
           "title": "Kind",
           "type": "string"
         },
@@ -27,12 +170,538 @@
           ],
           "default": null,
           "title": "Model"
+        },
+        "passEnv": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passenv"
+        }
+      },
+      "title": "AgentProviderConfiguration",
+      "type": "object"
+    },
+    "AgentRoutingConfig": {
+      "additionalProperties": false,
+      "description": "Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,\n``tiered`` chooses from the tables by call kind and task size and escalates on quality\nfailures.",
+      "properties": {
+        "families": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "enum": [
+                  "claude-code",
+                  "codex",
+                  "generic"
+                ],
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Families"
+        },
+        "maxEscalations": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxescalations"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "fixed",
+                "tiered"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "riskPaths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Riskpaths"
+        },
+        "tables": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FamilyTable"
+              },
+              "propertyNames": {
+                "enum": [
+                  "claude-code",
+                  "codex",
+                  "generic"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tables"
+        },
+        "thresholds": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SizeThresholds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "AgentRoutingConfig",
+      "type": "object"
+    },
+    "ApiConfig": {
+      "additionalProperties": false,
+      "description": "``harness api serve`` authentication (#18). ``auth: token`` (the default when the\nsection is present) requires ``Authorization: Bearer TOKEN`` on every route; ``off`` keeps\nthe 1.0.0 behaviour. ``tokenEnv`` names the variable holding the token of the person who\nstarts the server (generated and shown once when it is not set), ``tokenUser`` the actor\nid recorded on that person's decisions and ``tokenRole`` their role. ``users`` declares\nfurther people, each with an id, a role and the variable of their token.",
+      "properties": {
+        "auth": {
+          "anyOf": [
+            {
+              "enum": [
+                "token",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Auth"
+        },
+        "tokenEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenenv"
+        },
+        "tokenRole": {
+          "anyOf": [
+            {
+              "enum": [
+                "viewer",
+                "reviewer",
+                "admin"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenrole"
+        },
+        "tokenUser": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenuser"
+        },
+        "users": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ApiUser"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Users"
+        }
+      },
+      "title": "ApiConfig",
+      "type": "object"
+    },
+    "ApiUser": {
+      "additionalProperties": false,
+      "description": "A person who may use the API: the actor id recorded on their decisions, their role and\nthe NAME of the environment variable that holds their token (never the token itself).",
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "viewer",
+            "reviewer",
+            "admin"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "tokenEnv": {
+          "title": "Tokenenv",
+          "type": "string"
         }
       },
       "required": [
-        "command"
+        "id",
+        "role",
+        "tokenEnv"
       ],
-      "title": "AgentProviderConfiguration",
+      "title": "ApiUser",
+      "type": "object"
+    },
+    "ArchitectureConfig": {
+      "additionalProperties": false,
+      "description": "Engineering limits checked on the Python files of the ChangeSet (#40).",
+      "properties": {
+        "forbiddenImports": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ForbiddenImport"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forbiddenimports"
+        },
+        "maxComplexity": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxcomplexity"
+        },
+        "maxFunctionLines": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxfunctionlines"
+        },
+        "maxModuleLines": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxmodulelines"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "ArchitectureConfig",
+      "type": "object"
+    },
+    "ArchitectureSettings": {
+      "additionalProperties": false,
+      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "allow": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Allow"
+        },
+        "enforce": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enforce"
+        },
+        "layers": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/LayerConfig"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layers"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "refresh": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "manual"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Refresh"
+        },
+        "style": {
+          "anyOf": [
+            {
+              "enum": [
+                "ddd",
+                "hexagonal",
+                "clean",
+                "layered",
+                "modular-monolith",
+                "microservices",
+                "mvvm",
+                "mvi",
+                "custom"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Style"
+        }
+      },
+      "title": "ArchitectureSettings",
+      "type": "object"
+    },
+    "BudgetConfig": {
+      "additionalProperties": false,
+      "description": "Limits per agent call, per task (all its runs) and per run (#42).",
+      "properties": {
+        "perCall": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "perRun": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "perTask": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BudgetLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "warnAt": {
+          "anyOf": [
+            {
+              "exclusiveMaximum": 1,
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Warnat"
+        }
+      },
+      "title": "BudgetConfig",
+      "type": "object"
+    },
+    "BudgetLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "costUsd": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Costusd"
+        },
+        "tokens": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens"
+        },
+        "wallSeconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wallseconds"
+        }
+      },
+      "title": "BudgetLimits",
       "type": "object"
     },
     "CapabilitiesConfig": {
@@ -88,11 +757,2474 @@
       "title": "CapabilityRule",
       "type": "object"
     },
-    "RuntimeConfig": {
+    "ContextConfig": {
+      "additionalProperties": false,
+      "description": "The bounded context manifest sent to the agent (#41) and, since #55, the localisation\ncall that feeds it (``locate``).",
+      "properties": {
+        "locate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LocateConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manifest"
+        },
+        "maxBytes": {
+          "anyOf": [
+            {
+              "minimum": 1024,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxbytes"
+        },
+        "maxFiles": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxfiles"
+        }
+      },
+      "title": "ContextConfig",
+      "type": "object"
+    },
+    "DeliveryConfig": {
+      "additionalProperties": false,
+      "description": "What CLOSURE delivers to version control (since 1.1).\n\n* ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch\n  (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the\n  working tree, the index or the current branch; ``head`` commits it on the current branch\n  (only the ChangeSet paths). The commit carries the trailers ``Harness-Run``,\n  ``Harness-ChangeSet`` and ``Harness-Decision`` (and ``Harness-Exception`` for an\n  ``APPROVE_EXCEPTION``), and is created only if its diff recomputes to the approved\n  ChangeSet digest. ``off`` (or absent): the harness never commits, as in 1.0.0.\n* ``publisher``: defaults of ``harness pr publish``.",
+      "properties": {
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "closureCommit": {
+          "anyOf": [
+            {
+              "enum": [
+                "off",
+                "branch",
+                "head"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Closurecommit"
+        },
+        "comment": {
+          "anyOf": [
+            {
+              "enum": [
+                "notClean",
+                "always",
+                "never"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Comment"
+        },
+        "forge": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ForgeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "publisher": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublisherConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "pullRequest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PullRequestConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "push": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Push"
+        },
+        "stage": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stage"
+        }
+      },
+      "title": "DeliveryConfig",
+      "type": "object"
+    },
+    "EnvironmentConfig": {
+      "additionalProperties": false,
+      "description": "Generic environment preflight in DISCOVERY and ``harness doctor`` (#55, item 10).\n\n* ``tools``: tool versions the project requires;\n* ``variables``: environment variables that must be set (names only, never values);\n* ``gitHooks``: hooks that must be present and executable;\n* ``dirtyTree``: what DISCOVERY does with uncommitted changes (``block``, ``warn``,\n  ``allow``);\n* ``baseline``: run the mandatory validators on the baseline before the change: ``require``\n  blocks DISCOVERY when they do not pass, ``report`` records it.",
+      "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "enum": [
+                "require",
+                "report",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "dirtyTree": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "warn",
+                "block"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dirtytree"
+        },
+        "gitHooks": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/GitHooksConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ToolRequirement"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        },
+        "variables": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variables"
+        }
+      },
+      "title": "EnvironmentConfig",
+      "type": "object"
+    },
+    "FamilyTable": {
+      "additionalProperties": false,
+      "description": "The rung of each call kind and size for one provider family, and its escalation\nladder (effort before model).",
+      "properties": {
+        "clarify": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "implement": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/Rung"
+              },
+              "propertyNames": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Implement"
+        },
+        "ladder": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/Rung"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ladder"
+        },
+        "locate": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "plan": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "review": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Rung"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "FamilyTable",
+      "type": "object"
+    },
+    "FastLaneConfig": {
+      "additionalProperties": false,
+      "description": "Risk-proportional governance (#58, item 1). ``mode: auto`` classifies each task at\nINTENT: size ``S`` by the router (#44) and no risk flag takes the fast lane, everything\nelse the full flow; the lane and why are recorded. ``skip`` lists what the fast lane leaves\nout. A run leaves the fast lane (``lane.escalated``) when its ChangeSet shows a risk factor\nor outgrows ``S``; the human decision and the mandatory validators are never skipped.",
+      "properties": {
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "skip": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "ambiguityReview",
+                  "decomposition",
+                  "agentReview",
+                  "preflight",
+                  "mutation",
+                  "acceptanceTests"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skip"
+        },
+        "verification": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastVerificationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "FastLaneConfig",
+      "type": "object"
+    },
+    "FastVerificationConfig": {
+      "additionalProperties": false,
+      "description": "Faster VERIFICATION in the fast lane (#58, item 5). Nothing here skips a mandatory\nvalidator before the decision: the affected tests run first and stop a failing attempt\nearly, the full suite still runs before the gate, independent validators run side by side,\nand a validator result is reused only for the same validator, ChangeSet, baseline and\nconfiguration.",
+      "properties": {
+        "affectedTestsFirst": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Affectedtestsfirst"
+        },
+        "cache": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "parallel": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallel"
+        }
+      },
+      "title": "FastVerificationConfig",
+      "type": "object"
+    },
+    "FindingSeverity": {
+      "enum": [
+        "INFO",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
+    "ForbiddenImport": {
+      "additionalProperties": false,
+      "description": "Modules under ``source`` must not import modules under ``target`` (dotted prefixes).",
+      "properties": {
+        "from": {
+          "minLength": 1,
+          "title": "From",
+          "type": "string"
+        },
+        "to": {
+          "minLength": 1,
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from",
+        "to"
+      ],
+      "title": "ForbiddenImport",
+      "type": "object"
+    },
+    "ForgeConfig": {
+      "additionalProperties": false,
+      "description": "Where pull or merge requests, comments, statuses and quality reports go.\n\n``kind: auto`` (or absent) detects the forge from the ``origin`` remote: github.com,\ngitlab.com or a host with ``gitlab`` in its name, bitbucket.org, dev.azure.com or\n``*.visualstudio.com``, and a host with ``gitea`` or ``forgejo`` in its name. Tokens are\nread only from the environment variable ``tokenEnv`` (default per forge) and never logged.",
+      "properties": {
+        "apiUrl": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Apiurl"
+        },
+        "baseBranch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Basebranch"
+        },
+        "codeQuality": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Codequality"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        },
+        "kind": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "github",
+                "gitlab",
+                "bitbucket",
+                "azure-devops",
+                "gitea"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Kind"
+        },
+        "labels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Labels"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "template": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template"
+        },
+        "tokenEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokenenv"
+        },
+        "transport": {
+          "anyOf": [
+            {
+              "enum": [
+                "cli",
+                "api"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Transport"
+        }
+      },
+      "title": "ForgeConfig",
+      "type": "object"
+    },
+    "FrictionConfig": {
+      "additionalProperties": false,
+      "description": "Low friction for small changes (#58, items 1, 3, 5, 6 and 7).",
+      "properties": {
+        "changeTypes": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Changetypes"
+        },
+        "fastLane": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FastLaneConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "planApproval": {
+          "anyOf": [
+            {
+              "enum": [
+                "risk",
+                "always",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Planapproval"
+        },
+        "preAuthorization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PreAuthorizationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "targets": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FrictionTarget"
+              },
+              "propertyNames": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Targets"
+        }
+      },
+      "title": "FrictionConfig",
+      "type": "object"
+    },
+    "FrictionTarget": {
+      "additionalProperties": false,
+      "description": "The friction a task of one size should cost: human interactions and wall-clock\nminutes from the first event of its first run to the end of its last.",
+      "properties": {
+        "interactions": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interactions"
+        },
+        "minutes": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "maximum": 525600,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minutes"
+        }
+      },
+      "title": "FrictionTarget",
+      "type": "object"
+    },
+    "GitHooksConfig": {
+      "additionalProperties": false,
+      "description": "Git hooks the repository relies on: each must be present and executable (under\n``core.hooksPath`` when set). ``install`` is the command the project declares to install\nthem; the harness names it, and runs it only when a person asks (``harness doctor\n--install-hooks``). Hooks are never bypassed.",
+      "properties": {
+        "install": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Install"
+        },
+        "required": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required"
+        }
+      },
+      "title": "GitHooksConfig",
+      "type": "object"
+    },
+    "GovernanceConfig": {
+      "additionalProperties": false,
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.",
+      "properties": {
+        "applyNetworkPolicy": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applynetworkpolicy"
+        },
+        "applyProfilePolicies": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applyprofilepolicies"
+        },
+        "applyWorkflowSettings": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Applyworkflowsettings"
+        },
+        "chainAnchor": {
+          "anyOf": [
+            {
+              "enum": [
+                "file",
+                "git-note",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chainanchor"
+        },
+        "confirmDecisionDigest": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmdecisiondigest"
+        },
+        "deciderIdentity": {
+          "anyOf": [
+            {
+              "enum": [
+                "git",
+                "default"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decideridentity"
+        },
+        "decisionExpiryHours": {
+          "anyOf": [
+            {
+              "maximum": 8760,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decisionexpiryhours"
+        },
+        "enforceWorkflow": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Enforceworkflow"
+        },
+        "phasePermissions": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Phasepermissions"
+        },
+        "pinTaskRevision": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pintaskrevision"
+        },
+        "protectExcludedPaths": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protectexcludedpaths"
+        },
+        "stopTheLine": {
+          "anyOf": [
+            {
+              "enum": [
+                "restore",
+                "block",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stoptheline"
+        },
+        "trustedHosts": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Trustedhosts"
+        },
+        "verifyRecords": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verifyrecords"
+        },
+        "workspaceLease": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workspacelease"
+        }
+      },
+      "title": "GovernanceConfig",
+      "type": "object"
+    },
+    "InstructionsConfig": {
+      "additionalProperties": false,
+      "description": "``harness config lint`` (#55, item 14): the agent instruction files to read and their\nprecedence (``harness`` is the project configuration). The first entry wins a conflict.",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "precedence": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Precedence"
+        }
+      },
+      "title": "InstructionsConfig",
+      "type": "object"
+    },
+    "IntakeConfig": {
+      "additionalProperties": false,
+      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.",
+      "properties": {
+        "ambiguityReview": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ambiguityreview"
+        },
+        "clarifyAgent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "criteriaPolicy": {
+          "default": "warn",
+          "enum": [
+            "enforce",
+            "warn",
+            "off"
+          ],
+          "title": "Criteriapolicy",
+          "type": "string"
+        },
+        "interruptions": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InterruptionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operationalContract": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "batch",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Operationalcontract"
+        },
+        "projectSetup": {
+          "anyOf": [
+            {
+              "enum": [
+                "ask",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Projectsetup"
+        },
+        "validateAnswers": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validateanswers"
+        }
+      },
+      "title": "IntakeConfig",
+      "type": "object"
+    },
+    "InterruptionConfig": {
+      "additionalProperties": false,
+      "description": "The interruption budget of a run (#55, item 8): the number of human interactions the\nrun should need and the conditions under which the harness stops and asks a person.\nInteractions are measured and reported; going over the target is reported, never hidden.",
+      "properties": {
+        "stopConditions": {
+          "anyOf": [
+            {
+              "items": {
+                "enum": [
+                  "unresolvable-ambiguity",
+                  "scope-contradiction",
+                  "destructive-collision"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stopconditions"
+        },
+        "target": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target"
+        }
+      },
+      "title": "InterruptionConfig",
+      "type": "object"
+    },
+    "InvariantCheck": {
+      "additionalProperties": false,
+      "description": "A command that must pass on every VERIFICATION, including each sub-task's.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Command",
+          "type": "array"
+        },
+        "id": {
+          "minLength": 1,
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "command"
+      ],
+      "title": "InvariantCheck",
+      "type": "object"
+    },
+    "IsolationConfig": {
+      "additionalProperties": false,
+      "description": "Worktree isolation per run (#55, item 9). ``mode: worktree`` (or ``run start --isolate\nworktree``) creates a Git worktree on a new branch from the updated base branch and runs\nthe phases there; a branch or directory that already exists stops the run (BLOCKED), and\nthe harness never resets or deletes anything it did not create.",
+      "properties": {
+        "base": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base"
+        },
+        "branch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Branch"
+        },
+        "directory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Directory"
+        },
+        "fetch": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fetch"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "none",
+                "worktree"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "remote": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Remote"
+        }
+      },
+      "title": "IsolationConfig",
+      "type": "object"
+    },
+    "LadderConfig": {
+      "additionalProperties": false,
+      "description": "The verification ladder and certification (#55, items 1, 2, 4 and 6).\n\n* ``mode``: ``enforce`` makes a criterion whose declared rung is not reached a ``HIGH``\n  finding (the gate fails until a person decides); ``warn`` makes it ``LOW``; ``off``\n  computes nothing.\n* ``defaultLevel``: the rung a criterion without ``verification.level`` requires for the\n  certification status. Its gap is reported and never blocks: only a declared rung does.\n* ``deferredExpiryDays``: how long a deferred verification may stay pending.\n* ``preflight``: run the probes and the frozen acceptance tests on the baseline in PLANNING\n  and classify the run READY, PARTIAL or UNAVAILABLE before anything changes.\n* ``capabilityDetection``: run the read-only detection commands of the profiles'\n  verification capabilities (a simulator, an emulator, a container engine), never an\n  installation.",
+      "properties": {
+        "capabilityDetection": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capabilitydetection"
+        },
+        "defaultLevel": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VerificationLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deferredExpiryDays": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Deferredexpirydays"
+        },
+        "detectionTimeoutSeconds": {
+          "anyOf": [
+            {
+              "maximum": 120,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detectiontimeoutseconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "preflight": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Preflight"
+        }
+      },
+      "title": "LadderConfig",
+      "type": "object"
+    },
+    "LayerConfig": {
+      "additionalProperties": false,
+      "description": "A layer: the files that belong to it (``paths``, globs relative to the workspace) and/or\nthe module prefixes (``modules``, dotted: ``shop.domain``) imports name it by.",
+      "properties": {
+        "modules": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Modules"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "paths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Paths"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "LayerConfig",
+      "type": "object"
+    },
+    "LocateConfig": {
+      "additionalProperties": false,
+      "description": "Localisation with evidence (#55, item 11): a read-only ``locate`` call that returns\nwhere to intervene (``path:line`` with evidence) before IMPLEMENTATION. It runs only for\ntasks the router classifies M or L, once per task revision (cached by its digest), on the\ncheapest rung of the router; its answer feeds the context manifest.",
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "maxLocations": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxlocations"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "LocateConfig",
+      "type": "object"
+    },
+    "MemoryConfig": {
+      "additionalProperties": false,
+      "description": "Lessons from findings that caused a correction (#43).",
+      "properties": {
+        "autoApproveRecurring": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Autoapproverecurring"
+        },
+        "learnFromFindings": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Learnfromfindings"
+        },
+        "maxLessons": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxlessons"
+        },
+        "recurrenceRuns": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recurrenceruns"
+        }
+      },
+      "title": "MemoryConfig",
+      "type": "object"
+    },
+    "MetricsConfig": {
+      "additionalProperties": false,
+      "description": "``harness metrics`` settings: the price table (by model id, or ``provider/model``) and\nthe narrative command.",
+      "properties": {
+        "narrative": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NarrativeConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "prices": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/ModelPrice"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prices"
+        }
+      },
+      "title": "MetricsConfig",
+      "type": "object"
+    },
+    "ModelPrice": {
+      "additionalProperties": false,
+      "description": "Prices in US dollars per million tokens. Used only to estimate the cost of calls whose\nprovider reported tokens without a cost; the estimate is labelled as such and never stored\non a run or counted against the budget.",
+      "properties": {
+        "cache": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache"
+        },
+        "input": {
+          "minimum": 0,
+          "title": "Input",
+          "type": "number"
+        },
+        "output": {
+          "minimum": 0,
+          "title": "Output",
+          "type": "number"
+        }
+      },
+      "required": [
+        "input",
+        "output"
+      ],
+      "title": "ModelPrice",
+      "type": "object"
+    },
+    "MutationConfig": {
+      "additionalProperties": false,
+      "description": "Discriminating evidence and light mutation (#55, item 5): new tests are classified by\nrunning them on the baseline (fail before and pass after: discriminating; pass before and\nafter: weak; fail after: broken), and each changed hunk of the code is reverted in a scratch\ncopy, one at a time, to see that some test fails. ``enforce`` makes a change no test\nexercises ``HIGH``, ``warn`` ``LOW``.",
+      "properties": {
+        "maxHunks": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhunks"
+        },
+        "maxSeconds": {
+          "anyOf": [
+            {
+              "maximum": 7200,
+              "minimum": 10,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxseconds"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "MutationConfig",
+      "type": "object"
+    },
+    "NarrativeConfig": {
+      "additionalProperties": false,
+      "description": "The optional narrative summary of a period (#58, item 12): one call, on demand only\n(``harness metrics --narrative``), to a command that reads the prompt and the metrics on\nstandard input and prints the summary.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeoutseconds"
+        }
+      },
+      "required": [
+        "command"
+      ],
+      "title": "NarrativeConfig",
+      "type": "object"
+    },
+    "NotificationsConfig": {
+      "additionalProperties": false,
+      "description": "Webhooks notified when a run waits for a human decision or finishes (since 1.1).\nAbsent: nothing is sent, as in 1.0.0.",
+      "properties": {
+        "webhooks": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/WebhookConfig"
+          },
+          "title": "Webhooks",
+          "type": "array"
+        }
+      },
+      "title": "NotificationsConfig",
+      "type": "object"
+    },
+    "PlanningConfig": {
+      "additionalProperties": false,
+      "description": "Decomposition of large tasks into governed sub-tasks (#39).",
+      "properties": {
+        "coarseModels": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Coarsemodels"
+        },
+        "decomposition": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decomposition"
+        },
+        "granularity": {
+          "anyOf": [
+            {
+              "enum": [
+                "fixed",
+                "adaptive"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Granularity"
+        },
+        "maxSubtasks": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 2,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxsubtasks"
+        },
+        "planner": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "maximum": 1000,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Threshold"
+        }
+      },
+      "title": "PlanningConfig",
+      "type": "object"
+    },
+    "PreAuthorizationConfig": {
+      "additionalProperties": false,
+      "description": "Pre-authorised approval (#58, item 3). ``mode: allow`` lets a person, when they confirm\nthe operational contract (``harness task confirm --pre-approve`` or ``harness do\n--pre-approve``), approve in advance under a condition with an expiry. The approval is a\nhuman decision recorded in advance, bound to the contract digest and the condition (gate\npassed, no risk factor, size ``S``); when the condition does not hold at DECISION, the\nperson is asked as usual.",
+      "properties": {
+        "defaultHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Defaulthours"
+        },
+        "maxHours": {
+          "anyOf": [
+            {
+              "maximum": 168,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxhours"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        }
+      },
+      "title": "PreAuthorizationConfig",
+      "type": "object"
+    },
+    "PrinciplesConfig": {
+      "additionalProperties": false,
+      "description": "Engineering principles checked by deterministic proxies in VERIFICATION, with a\nchecklist for the rest inside the existing review call (no extra agent call).\n\n``mode: enforce`` makes the proxies a mandatory check whose HIGH findings block; ``warn``\nrecords them as LOW. ``duplicationWindow`` (lines), ``maxInheritanceDepth``,\n``unusedPublic`` (YAGNI), ``boyScout`` (changes in files outside the task scope) and\n``checklist`` (the review call) may be set one by one.",
+      "properties": {
+        "boyScout": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boyscout"
+        },
+        "checklist": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Checklist"
+        },
+        "duplicationWindow": {
+          "anyOf": [
+            {
+              "maximum": 200,
+              "minimum": 3,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Duplicationwindow"
+        },
+        "maxInheritanceDepth": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxinheritancedepth"
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "unusedPublic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unusedpublic"
+        }
+      },
+      "title": "PrinciplesConfig",
+      "type": "object"
+    },
+    "ProbeAssertion": {
+      "additionalProperties": false,
+      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.",
+      "properties": {
+        "after": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After"
+        },
+        "before": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before"
+        },
+        "contains": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contains"
+        },
+        "equals": {
+          "default": null,
+          "title": "Equals"
+        },
+        "kind": {
+          "enum": [
+            "exitCode",
+            "jsonPath",
+            "differs",
+            "order",
+            "text"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "matches": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Matches"
+        },
+        "order": {
+          "anyOf": [
+            {
+              "enum": [
+                "ascending",
+                "descending"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Order"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "present": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Present"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "kind"
+      ],
+      "title": "ProbeAssertion",
+      "type": "object"
+    },
+    "ProbeDefinition": {
+      "additionalProperties": false,
+      "description": "A command whose observable output shows a behaviour (a CLI, a script, a local server,\na simulator test), with assertions on that output, run once per variant of its matrix:\non the baseline (preflight) and after the change (VERIFICATION). The command runs without\na shell; ``{name}`` placeholders are filled from the variant. A probe that cannot run is\n``BLOCKED``, never ``PASSED``.",
+      "properties": {
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/ProbeAssertion"
+          },
+          "minItems": 1,
+          "title": "Assertions",
+          "type": "array"
+        },
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "criteria": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Criteria",
+          "type": "array"
+        },
+        "cwd": {
+          "default": ".",
+          "title": "Cwd",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,63}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "level": {
+          "$ref": "#/$defs/VerificationLevel",
+          "default": "L3"
+        },
+        "matrix": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "title": "Matrix",
+          "type": "object"
+        },
+        "output": {
+          "default": "text",
+          "enum": [
+            "json",
+            "text"
+          ],
+          "title": "Output",
+          "type": "string"
+        },
+        "passEnv": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Passenv",
+          "type": "array"
+        },
+        "timeoutSeconds": {
+          "default": 60,
+          "maximum": 3600,
+          "minimum": 1,
+          "title": "Timeoutseconds",
+          "type": "integer"
+        },
+        "variants": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ProbeVariant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "command",
+        "assertions"
+      ],
+      "title": "ProbeDefinition",
+      "type": "object"
+    },
+    "ProbeVariant": {
+      "additionalProperties": false,
+      "description": "One combination of the variant matrix: the values of the command's placeholders and\nenvironment variables set for this run of the probe.",
+      "properties": {
+        "env": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Env",
+          "type": "object"
+        },
+        "name": {
+          "maxLength": 200,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "values": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Values",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ProbeVariant",
+      "type": "object"
+    },
+    "ProvenanceConfig": {
+      "additionalProperties": false,
+      "description": "Provenance per component (since 1.1).\n\n* ``agentSnapshots``: after each agent invocation the harness records a manifest of the\n  digests of the files in the ChangeSet scope. A later difference that no invocation\n  produced is attributed, per file, as an out-of-band edit, and the provenance of every\n  ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as\n  evidence.\n* ``selfReport``: the request asks the agent for a structured self-report (assumptions,\n  alternatives discarded, low-confidence areas, unrequested changes); the answer is stored\n  as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "properties": {
+        "agentSnapshots": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentsnapshots"
+        },
+        "selfReport": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Selfreport"
+        }
+      },
+      "title": "ProvenanceConfig",
+      "type": "object"
+    },
+    "ProviderEnvReference": {
+      "additionalProperties": false,
+      "description": "A provider environment variable whose value is read from the harness's environment\nwhen the provider starts: the value never appears in ``project.yaml`` or the snapshot.",
+      "properties": {
+        "fromEnv": {
+          "title": "Fromenv",
+          "type": "string"
+        }
+      },
+      "required": [
+        "fromEnv"
+      ],
+      "title": "ProviderEnvReference",
+      "type": "object"
+    },
+    "PublisherConfig": {
+      "additionalProperties": false,
+      "description": "Where ``harness pr publish`` posts the decision brief and the SARIF report.",
+      "properties": {
+        "apiUrl": {
+          "default": "https://api.github.com",
+          "title": "Apiurl",
+          "type": "string"
+        },
+        "kind": {
+          "const": "github",
+          "default": "github",
+          "title": "Kind",
+          "type": "string"
+        },
+        "repository": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Repository"
+        },
+        "sarif": {
+          "default": true,
+          "title": "Sarif",
+          "type": "boolean"
+        },
+        "tokenEnv": {
+          "default": "GITHUB_TOKEN",
+          "title": "Tokenenv",
+          "type": "string"
+        },
+        "transport": {
+          "default": "gh",
+          "enum": [
+            "gh",
+            "api"
+          ],
+          "title": "Transport",
+          "type": "string"
+        }
+      },
+      "title": "PublisherConfig",
+      "type": "object"
+    },
+    "PullRequestConfig": {
+      "additionalProperties": false,
+      "description": "``delivery.pullRequest``: create the pull or merge request of an approved run's branch\nat CLOSURE (#55, item 13), when the operational contract authorises it. Where and how is\nthe forge's (``delivery.forge``, #56): the forge, the repository, ``baseBranch``, ``labels``\nand ``template``; ``draft`` here takes precedence over ``delivery.forge.draft``.",
+      "properties": {
+        "create": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Create"
+        },
+        "draft": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Draft"
+        }
+      },
+      "title": "PullRequestConfig",
+      "type": "object"
+    },
+    "RetrospectiveConfig": {
+      "additionalProperties": false,
+      "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
+      "properties": {
+        "causal": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Causal"
+        }
+      },
+      "title": "RetrospectiveConfig",
+      "type": "object"
+    },
+    "ReviewConfig": {
+      "additionalProperties": false,
+      "description": "How a person's exceptions are recorded (since 1.1).\n\nWith ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an\nexpiry, a scope (the findings it covers, by rule, path and fingerprint), optional\nalternative evidence and a follow-up. While it is in force, a later run of the project does\nnot block on the findings it covers; once it expires they block again, and a run waiting in\nDECISION on an expired exception is blocked. Absent or false keeps the 1.0.0 behaviour: an\nexception is a decision with a rationale and no expiry.",
+      "properties": {
+        "agentReview": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentreview"
+        },
+        "exceptionDays": {
+          "anyOf": [
+            {
+              "maximum": 365,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exceptiondays"
+        },
+        "exceptions": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exceptions"
+        },
+        "manualChecklist": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Manualchecklist"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AgentCallConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "structuredChanges": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Structuredchanges"
+        }
+      },
+      "title": "ReviewConfig",
+      "type": "object"
+    },
+    "Rung": {
       "additionalProperties": false,
       "properties": {
+        "effort": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Effort"
+        },
+        "model": {
+          "minLength": 1,
+          "title": "Model",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "title": "Rung",
+      "type": "object"
+    },
+    "RuntimeConfig": {
+      "additionalProperties": false,
+      "description": "Process bounds and, since 1.1, the agent sandbox and the feedback loop around the agent\nprovider.\n\nThe sandbox and loop settings are optional: a key that is absent keeps the 1.0.0 behaviour\nand is left out of the serialized configuration, so the snapshot digest of an existing\nproject does not change. ``harness init`` writes them.",
+      "properties": {
+        "agentSandbox": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentsandbox"
+        },
         "allowNetwork": {
           "default": false,
+          "description": "Network access of the agent sandbox: false denies outbound connections under governance.applyNetworkPolicy and runtime.agentSandbox: enforce; otherwise declarative.",
           "title": "Allownetwork",
           "type": "boolean"
         },
@@ -102,6 +3234,30 @@
           "title": "Commandtimeoutseconds",
           "type": "integer"
         },
+        "extendedRedaction": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extendedredaction"
+        },
+        "gateContract": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gatecontract"
+        },
         "maxOutputBytes": {
           "default": 1000000,
           "minimum": 1024,
@@ -110,30 +3266,1174 @@
         },
         "maxParallel": {
           "default": 2,
+          "description": "Under governance.enforceWorkflow, the most validators declared parallelSafe that a parallelizable VERIFICATION runs at once; otherwise phases and validators run one at a time.",
           "maximum": 32,
           "minimum": 1,
           "title": "Maxparallel",
           "type": "integer"
+        },
+        "providerFeedback": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerfeedback"
+        },
+        "providerRetries": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerretries"
+        },
+        "providerRetryDelaySeconds": {
+          "anyOf": [
+            {
+              "maximum": 3600,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providerretrydelayseconds"
+        },
+        "providerTransientPatterns": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Providertransientpatterns"
+        },
+        "reproduceFirst": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reproducefirst"
+        },
+        "sandboxWritePaths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sandboxwritepaths"
+        },
+        "stateDir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Statedir"
+        },
+        "unsupportedClaimSeverity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "verificationCorrections": {
+          "anyOf": [
+            {
+              "maximum": 10,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Verificationcorrections"
         }
       },
       "title": "RuntimeConfig",
       "type": "object"
     },
+    "SarifInput": {
+      "additionalProperties": false,
+      "description": "A SARIF file an external scanner writes into the workspace (path relative to it).",
+      "properties": {
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "required": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required"
+        },
+        "tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "SarifInput",
+      "type": "object"
+    },
+    "SizeThresholds": {
+      "additionalProperties": false,
+      "description": "Upper bounds of ``S`` and ``M`` for each signal; above the ``M`` bound a task is ``L``.",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "loc": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loc"
+        },
+        "requirements": {
+          "anyOf": [
+            {
+              "maxItems": 2,
+              "minItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requirements"
+        }
+      },
+      "title": "SizeThresholds",
+      "type": "object"
+    },
+    "StandardsConfig": {
+      "additionalProperties": false,
+      "description": "Language standards packs shipped with the harness.\n\n* ``packs``: ``[auto]`` (or absent) selects the packs of the detected languages; otherwise\n  pack ids (``python``, ``typescript``, ``java``, ...).\n* ``cards: auto``: the cards that apply to the files a call works on are added, compact, to\n  the implement request; the cards a tool cannot verify become the checklist of the\n  existing review call. Selected deterministically and cached by digest.\n* ``tools: detect``: each pack tool whose configuration file is in the repository becomes\n  an optional validator (parsed output, never installed by the harness).\n* ``path``: repository overrides (``<path>/<pack>/cards.yaml``) take precedence over the\n  pack: a card with the same id replaces the pack's card, ``disabled`` drops cards.",
+      "properties": {
+        "cards": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cards"
+        },
+        "disabled": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disabled"
+        },
+        "maxCards": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxcards"
+        },
+        "packs": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packs"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "enum": [
+                "detect",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        }
+      },
+      "title": "StandardsConfig",
+      "type": "object"
+    },
+    "TestQualityConfig": {
+      "additionalProperties": false,
+      "description": "Test-quality checks on the ChangeSet (#52): assertion-free tests, coverage of changed\nlines, declared interface methods without tests and a second, reordered test run.",
+      "properties": {
+        "assertions": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Assertions"
+        },
+        "diffCoverage": {
+          "anyOf": [
+            {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Diffcoverage"
+        },
+        "flakyReruns": {
+          "anyOf": [
+            {
+              "maximum": 5,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Flakyreruns"
+        },
+        "interfaceTests": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interfacetests"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "TestQualityConfig",
+      "type": "object"
+    },
+    "TestingConfig": {
+      "additionalProperties": false,
+      "description": "How the change is tested.\n\n* ``strategy: auto`` follows what the repository does (feature files or a BDD framework:\n  ``bdd``; tests: ``conventional``) and, when nothing is known, asks in INTENT;\n* ``tdd``: the tests the change adds must fail on the code before it (red), pass after it\n  (green) and stay green with the principles checks clean (refactor); recorded as evidence;\n* ``bdd``: the acceptance call writes the criteria as Gherkin scenarios, a person approves\n  them, the agent writes the step definitions; the scenarios are frozen.\n\n``featuresDirectory``, ``bddCommand`` and ``testCommand`` override the pack defaults.",
+      "properties": {
+        "bddCommand": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bddcommand"
+        },
+        "featuresDirectory": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Featuresdirectory"
+        },
+        "strategy": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "tdd",
+                "bdd",
+                "conventional"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Strategy"
+        },
+        "testCommand": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Testcommand"
+        }
+      },
+      "title": "TestingConfig",
+      "type": "object"
+    },
+    "ToolRequirement": {
+      "additionalProperties": false,
+      "description": "A tool the environment must provide: ``command`` prints its version and ``pattern`` (a\nregular expression) must match the output, for example ``3\\.12``.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "name": {
+          "maxLength": 100,
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "pattern": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pattern"
+        }
+      },
+      "required": [
+        "name",
+        "command"
+      ],
+      "title": "ToolRequirement",
+      "type": "object"
+    },
+    "ToolchainConfig": {
+      "additionalProperties": false,
+      "description": "Project-defined profiles, validators and interpreter (since 1.1).\n\n* ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology\n  profiles in the format of the built-in ones, relative to the workspace root. ``profiles``\n  may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.\n* ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``\n  (several profiles per repository); ``best`` (or absent) selects the best one.\n* ``interpreter: auto`` runs the validators whose command starts with ``python`` with the\n  project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync\n  python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``\n  (or absent) keeps ``python`` from ``PATH``.\n* ``validators``: validators of the project. An entry with the id of a selected validator\n  replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other\n  entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,\n  ``failureSeverity`` and ``passEnv``.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "properties": {
+        "extendedProfiles": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Extendedprofiles"
+        },
+        "interpreter": {
+          "anyOf": [
+            {
+              "enum": [
+                "system",
+                "auto"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interpreter"
+        },
+        "profileDetection": {
+          "anyOf": [
+            {
+              "enum": [
+                "best",
+                "all"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profiledetection"
+        },
+        "profilePaths": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Profilepaths"
+        },
+        "validators": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ValidatorDefinition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Validators"
+        }
+      },
+      "title": "ToolchainConfig",
+      "type": "object"
+    },
+    "ValidatorDefinition": {
+      "additionalProperties": false,
+      "description": "A validator of a profile or, since 1.1, of the project (``toolchain.validators``).\n\nThe keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,\n``parallelSafe``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
+      "properties": {
+        "command": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Command"
+        },
+        "failureSeverity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingSeverity"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mandatory": {
+          "default": true,
+          "title": "Mandatory",
+          "type": "boolean"
+        },
+        "parallelSafe": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parallelsafe"
+        },
+        "parser": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "sarif",
+                "junit",
+                "ruff",
+                "mypy",
+                "eslint",
+                "tsc",
+                "pytest",
+                "checkstyle",
+                "rubocop",
+                "cargo",
+                "msbuild",
+                "none"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parser"
+        },
+        "passEnv": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Passenv"
+        },
+        "script": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Script"
+        },
+        "severity": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/FindingSeverity"
+              },
+              "propertyNames": {
+                "enum": [
+                  "error",
+                  "warning",
+                  "note"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Severity"
+        },
+        "timeoutSeconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Timeoutseconds"
+        },
+        "whenAvailable": {
+          "default": false,
+          "title": "Whenavailable",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "ValidatorDefinition",
+      "type": "object"
+    },
+    "VerificationConfig": {
+      "additionalProperties": false,
+      "description": "What VERIFICATION does with identified requirements that no test names.\n\n``enforce`` records each one as a ``HIGH`` finding, which fails the gate under the default\n``findingBlockSeverities``; ``warn`` records it as a ``LOW`` finding; ``off`` skips the\ncheck.",
+      "properties": {
+        "acceptanceTests": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AcceptanceTestsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "architecture": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArchitectureConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "constraints": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Constraints"
+        },
+        "differential": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Differential"
+        },
+        "interface": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Interface"
+        },
+        "invariants": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/InvariantCheck"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invariants"
+        },
+        "ladder": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LadderConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mutation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MutationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "outputParsers": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputparsers"
+        },
+        "principles": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PrinciplesConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "probes": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/ProbeDefinition"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probes"
+        },
+        "ratchet": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ratchet"
+        },
+        "requirementTraceability": {
+          "default": "off",
+          "enum": [
+            "enforce",
+            "warn",
+            "off"
+          ],
+          "title": "Requirementtraceability",
+          "type": "string"
+        },
+        "riskFactors": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "enum": [
+                  "block",
+                  "acknowledge",
+                  "inform",
+                  "off"
+                ],
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Riskfactors"
+        },
+        "sarif": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/SarifInput"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sarif"
+        },
+        "secrets": {
+          "anyOf": [
+            {
+              "enum": [
+                "context",
+                "pattern"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secrets"
+        },
+        "securityPatterns": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Securitypatterns"
+        },
+        "testQuality": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TestQualityConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "weakenedControls": {
+          "anyOf": [
+            {
+              "enum": [
+                "enforce",
+                "warn",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Weakenedcontrols"
+        }
+      },
+      "title": "VerificationConfig",
+      "type": "object"
+    },
+    "VerificationLevel": {
+      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "title": "VerificationLevel",
+      "type": "string"
+    },
+    "WebhookConfig": {
+      "additionalProperties": false,
+      "description": "A URL that receives a JSON ``POST`` when a run waits for a decision or finishes.\n\n``urlEnv`` names an environment variable that holds the URL, so a URL that carries a token\n(Slack, Teams) stays out of ``project.yaml`` and of the configuration snapshot. The payload\ncarries identifiers, statuses and digests only: no rationale, no output, no secret.",
+      "properties": {
+        "events": {
+          "default": [
+            "decision.pending",
+            "run.finished"
+          ],
+          "items": {
+            "enum": [
+              "decision.pending",
+              "run.finished",
+              "exception.granted"
+            ],
+            "type": "string"
+          },
+          "title": "Events",
+          "type": "array"
+        },
+        "retries": {
+          "default": 2,
+          "maximum": 10,
+          "minimum": 0,
+          "title": "Retries",
+          "type": "integer"
+        },
+        "timeoutSeconds": {
+          "default": 5.0,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Timeoutseconds",
+          "type": "number"
+        },
+        "url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Url"
+        },
+        "urlEnv": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Urlenv"
+        }
+      },
+      "title": "WebhookConfig",
+      "type": "object"
+    },
     "WorkspaceConfig": {
       "additionalProperties": false,
+      "description": "The workspace root and, since 1.1, how the workspace is read for large repositories.\n\n* ``snapshot: git`` lists the files through Git (tracked plus untracked files that\n  ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are\n  neither hashed nor stored; ``walk`` (or absent) walks every file as in 1.0.0.\n* ``baseline: manifest`` stores the baseline as a manifest of digests; the text of a file\n  is stored only when it enters the ChangeSet (taken from Git or from a per-file blob kept\n  for untracked files), instead of the text of every file.\n* ``snapshotCache: true`` reuses the digest of a file whose size and modification time did\n  not change since the last snapshot of the run.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
+        "baseline": {
+          "anyOf": [
+            {
+              "enum": [
+                "text",
+                "manifest"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baseline"
+        },
+        "isolation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IsolationConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "root": {
           "default": "..",
           "title": "Root",
           "type": "string"
         },
+        "snapshot": {
+          "anyOf": [
+            {
+              "enum": [
+                "walk",
+                "git"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshot"
+        },
+        "snapshotCache": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Snapshotcache"
+        },
         "units": {
           "default": [],
+          "description": "Declarative: declared units are not used by the engine.",
           "items": {
             "$ref": "#/$defs/WorkspaceUnitConfig"
           },
           "title": "Units",
-          "type": "array"
+          "type": "array",
+          "x-declarative": true
         }
       },
       "title": "WorkspaceConfig",
@@ -187,6 +4487,50 @@
       "title": "Agentproviders",
       "type": "object"
     },
+    "agentRouting": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentRoutingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "api": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ApiConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "architecture": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ArchitectureSettings"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "budget": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/BudgetConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "capabilities": {
       "$ref": "#/$defs/CapabilitiesConfig"
     },
@@ -194,6 +4538,127 @@
       "const": "1.0",
       "title": "Configversion",
       "type": "string"
+    },
+    "context": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ContextConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "delivery": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/DeliveryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "environment": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EnvironmentConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "friction": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FrictionConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "governance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GovernanceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "instructions": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/InstructionsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "intake": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/IntakeConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "memory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MemoryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "metrics": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MetricsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "notifications": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/NotificationsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "planning": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/PlanningConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "policies": {
       "additionalProperties": true,
@@ -214,13 +4679,80 @@
       "title": "Projectid",
       "type": "string"
     },
+    "provenance": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ProvenanceConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "retention": {
       "additionalProperties": true,
+      "description": "artifactDays and eventDays: what harness gc removes for runs that ended longer ago.",
       "title": "Retention",
       "type": "object"
     },
+    "retrospective": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetrospectiveConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "review": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ReviewConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "runtime": {
       "$ref": "#/$defs/RuntimeConfig"
+    },
+    "standards": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/StandardsConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "testing": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TestingConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "toolchain": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolchainConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "validators": {
       "default": [],
@@ -229,6 +4761,17 @@
       },
       "title": "Validators",
       "type": "array"
+    },
+    "verification": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/VerificationConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "workflow": {
       "default": "default_development",
