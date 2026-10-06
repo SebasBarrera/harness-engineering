@@ -129,19 +129,7 @@ class VerificationChecks:
         engine = self.results.engine
         raw = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         diff = parse_unified_diff(raw)
-        outputs: list[ValidatorOutput] = []
-        owned = self.results.stop_line.owned_paths_output(execution, change_set)
-        if owned is not None:
-            outputs.append(owned)
-        reproduced = self.results.corrections.validation(execution, change_set)
-        if reproduced is not None:
-            outputs.append(reproduced)
-        acceptance = self.results.acceptance.validation(execution, change_set)
-        if acceptance is not None:
-            outputs.append(acceptance)
-        requests = self.results.change_requests(execution)
-        if requests:
-            outputs.append(self._change_requests(execution, change_set, requests, diff))
+        outputs = self._run_outputs(execution, change_set, diff)
         config = self.config
         layers = self.results.architecture.rules() if self.results.engineering.configured else None
         if config is None and layers is None:
@@ -178,10 +166,46 @@ class VerificationChecks:
                 outputs.append(tdd)
         if config is None:
             return outputs
-        friction = engine.friction
-        if config.test_quality is not None and not (
+        return [*outputs, *self._configured(execution, change_set, config, task, diff, files)]
+
+    def _run_outputs(
+        self, execution: Execution, change_set: ChangeSet, diff: list[DiffFile]
+    ) -> list[ValidatorOutput]:
+        """The run's own checks: owned paths, the reproduced correction, the acceptance tests
+        and the structured change requests."""
+        outputs = [
+            item
+            for item in (
+                self.results.stop_line.owned_paths_output(execution, change_set),
+                self.results.corrections.validation(execution, change_set),
+                self.results.acceptance.validation(execution, change_set),
+            )
+            if item is not None
+        ]
+        requests = self.results.change_requests(execution)
+        if requests:
+            outputs.append(self._change_requests(execution, change_set, requests, diff))
+        return outputs
+
+    def _quality_exempt(self, execution: Execution, change_set: ChangeSet) -> bool:
+        """Whether the fast lane exempts the ChangeSet from the test quality check."""
+        friction = self.results.engine.friction
+        return bool(
             friction.active and friction.tests_exempt(execution, change_set, "test quality")
-        ):
+        )
+
+    def _configured(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        config: VerificationConfig,
+        task: Task,
+        diff: list[DiffFile],
+        files: dict[str, str],
+    ) -> list[ValidatorOutput]:
+        """Test quality, invariants, SARIF and risk factors, as ``verification`` asks."""
+        outputs: list[ValidatorOutput] = []
+        if config.test_quality is not None and not self._quality_exempt(execution, change_set):
             outputs.append(self._test_quality(execution, change_set, task, diff, files))
         if config.invariants:
             outputs.extend(self._invariants(execution, change_set, task))
