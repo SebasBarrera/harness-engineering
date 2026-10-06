@@ -1675,14 +1675,16 @@ def gate_decide(
     confirm = terminal and _digest_confirmation_configured(path)
     checked = list(check or ())
     if missing or interactive or confirm:
-        decision, change_set_digest, rationale = _interactive_decision(
+        chosen, digest, reason = _interactive_decision(
             application, path, run_id, decision, change_set_digest, rationale
         )
-        if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
+        if chosen is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
             exception = _interactive_exception(exception)
         checked = _interactive_checklist(application, path, run_id, checked)
-    assert decision is not None and change_set_digest is not None and rationale is not None
-    chosen, digest, reason = decision, change_set_digest, rationale
+    elif decision is None or change_set_digest is None or rationale is None:
+        raise typer.Exit(code=2)  # not reached: missing options were handled above
+    else:
+        chosen, digest, reason = decision, change_set_digest, rationale
     record, execution = _call(
         lambda: application.decide_gate(
             path,

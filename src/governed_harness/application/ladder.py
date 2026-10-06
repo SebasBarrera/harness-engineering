@@ -239,7 +239,8 @@ def attach_evidence(
             raise ConfigurationError("a task takes a person's attachment: use --manual")
         task = engine.get_task(task_id)
         return _attach_manual(services, engine, task, None, file, data, actor, item, note)
-    assert execution_id is not None
+    if execution_id is None:  # not reached: exactly one of run and task is checked above
+        raise ConfigurationError("attach to a run (--run) or to a task (--task)")
     execution = engine.get_execution(execution_id)
     task = engine.run_task(execution)
     if manual:

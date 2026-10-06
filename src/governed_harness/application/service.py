@@ -853,16 +853,15 @@ class HarnessApplication(ReviewCodeCommands):
             run_id = self._run_id(services, execution_id)
             checkpoint = checkpoint_state(services, run_id)
             try:
-                decomposition: dict[str, Any] | None = plan_state(services, run_id)
+                decomposition = plan_state(services, run_id)
             except NotFoundError:
                 if checkpoint is None:
                     raise
-                decomposition = None
+                decomposition = {"executionId": run_id}
             if checkpoint is None:
-                assert decomposition is not None
                 return decomposition
             # The plan-approval checkpoint of #8 (friction.planApproval, #58).
-            return {**(decomposition or {"executionId": run_id}), "approval": checkpoint}
+            return {**decomposition, "approval": checkpoint}
 
     def decide_plan(
         self,

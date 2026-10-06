@@ -185,12 +185,11 @@ def write_reports(
 
 def narrative_settings(settings: dict[str, Any]) -> NarrativeConfig:
     narrative = settings.get("narrative")
-    if narrative is None:
+    if not isinstance(narrative, NarrativeConfig):
         raise ConfigurationError(
             "--narrative needs metrics.narrative.command in project.yaml (a command that reads "
             "the prompt on standard input and prints the summary)"
         )
-    assert isinstance(narrative, NarrativeConfig)
     return narrative
 
 
