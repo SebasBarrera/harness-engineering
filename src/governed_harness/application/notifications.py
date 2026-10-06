@@ -186,6 +186,37 @@ def _waiting_since(execution: Execution) -> datetime:
     return execution.updated_at
 
 
+def _decision_entry(
+    services: EngineServices, execution: Execution, blocking: set[str]
+) -> dict[str, Any]:
+    """What a run waiting in DECISION shows in the inbox: the gate, the digest, the blocking
+    findings and, since #73, the risk factors an APPROVE must acknowledge."""
+    gate = (
+        services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
+        if execution.gate_evaluation_id
+        else None
+    )
+    ids = {
+        ref.removeprefix("record://finding/")
+        for ref in (gate.input_refs if gate else ())
+        if ref.startswith("record://finding/")
+    }
+    blocking_count = sum(
+        1
+        for item in services.state.list("finding", Finding, execution_id=execution.execution_id)
+        if item.finding_id in ids and item.severity.value in blocking
+    )
+    return {
+        "kind": "decision",
+        "gateStatus": gate.status.value if gate else None,
+        "changeSetDigest": execution.change_set_digest,
+        "digest": execution.change_set_digest,
+        "blockingFindings": blocking_count,
+        "acknowledgeRisks": risk_acknowledgements(services, execution),
+        "next": f"harness review --run {execution.execution_id}",
+    }
+
+
 def inbox(services: EngineServices) -> list[dict[str, Any]]:
     """Runs of the project that wait for a person: a decision in DECISION, or answers to
     clarification questions in INTENT. Oldest first."""
@@ -208,36 +239,7 @@ def inbox(services: EngineServices) -> list[dict[str, Any]]:
             "waitingHours": round((now - _waiting_since(execution)).total_seconds() / 3600, 1),
         }
         if awaiting_decision(execution):
-            gate = (
-                services.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
-                if execution.gate_evaluation_id
-                else None
-            )
-            ids = {
-                ref.removeprefix("record://finding/")
-                for ref in (gate.input_refs if gate else ())
-                if ref.startswith("record://finding/")
-            }
-            blocking_count = sum(
-                1
-                for item in services.state.list(
-                    "finding", Finding, execution_id=execution.execution_id
-                )
-                if item.finding_id in ids and item.severity.value in blocking
-            )
-            entries.append(
-                {
-                    **base,
-                    "kind": "decision",
-                    "gateStatus": gate.status.value if gate else None,
-                    "changeSetDigest": execution.change_set_digest,
-                    "digest": execution.change_set_digest,
-                    "blockingFindings": blocking_count,
-                    # Risk factors an APPROVE must acknowledge (--acknowledge-risk, #73).
-                    "acknowledgeRisks": risk_acknowledgements(services, execution),
-                    "next": f"harness review --run {execution.execution_id}",
-                }
-            )
+            entries.append({**base, **_decision_entry(services, execution, blocking)})
         elif execution.current_phase is PhaseId.INTENT and execution.status is ResultStatus.BLOCKED:
             current = task_digest(task)
             open_requests = [
