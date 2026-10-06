@@ -573,6 +573,12 @@ class VerificationConfig(ConfigModel):
     sarif: tuple[SarifInput, ...] | None = None
     risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
     acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")
+    reverify_on_change: bool | None = Field(default=None, alias="reverifyOnChange")
+    """Since 2.0 (#78): ``run continue`` on a run waiting in DECISION whose ChangeSet changed
+    outside the run records the change as evidence and runs VERIFICATION again on the new
+    ChangeSet. Absent or false keeps the earlier behaviour: the gate of the new ChangeSet has
+    no validation of it and is ``INCONCLUSIVE``, so the change needs a new run or a
+    ``REQUEST_CHANGES``."""
     # ----- since #55: the verification ladder ----------------------------------------------
     ladder: LadderConfig | None = None
     probes: tuple[ProbeDefinition, ...] | None = None

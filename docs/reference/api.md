@@ -86,7 +86,7 @@ each is set, never a value).
 | `GET` | `/api/runs` | Runs of the project, newest first | 400 |
 | `GET` | `/api/runs/{run}` | Status projection: execution, phases, validation summary, findings summary, gate, human decision, event count, event-chain check, metrics | 404 |
 | `GET` | `/api/runs/{run}/review?diff=false` | The decision brief (what was asked, what changed, risks, what was verified on which digest and what was not, exceptions, history, delta since the last decision, next commands); `diff=true` adds the redacted diff | 404 |
-| `GET` | `/api/inbox` | What waits for a person, oldest first: a decision, clarification answers and, since #55, a deferred verification waiting for evidence or a preflight waiting for a decision | 400 |
+| `GET` | `/api/inbox` | What waits for a person, oldest first: a decision, clarification answers and, since #55, a deferred verification waiting for evidence or a preflight waiting for a decision and, since #73, every other wait before DECISION (`plan`, `decomposition`, `acceptance`, `architecture`, `contract`, with the digest and the answering command) | 400 |
 | `GET` | `/api/runs/{run}/verification` | The verification plan, preflight, certification, deferred items and checklist of a run (#55) | 404 |
 | `GET` | `/api/registry` | The projects of the run registry outside the workspaces (`runtime.stateDir`) with their latest runs (#55) | 400 |
 | `GET` | `/api/exceptions?status=all\|active\|expired` | The exception ledger (`review.exceptions`) | 400 |

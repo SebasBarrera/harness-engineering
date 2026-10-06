@@ -4704,6 +4704,18 @@
           "title": "Requirementtraceability",
           "type": "string"
         },
+        "reverifyOnChange": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reverifyonchange"
+        },
         "riskFactors": {
           "anyOf": [
             {

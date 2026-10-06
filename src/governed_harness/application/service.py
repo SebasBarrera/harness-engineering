@@ -154,6 +154,7 @@ from .onboarding import (
 from .review import build_brief
 from .review_code import ReviewCodeCommands
 from .task_loader import load_task_file
+from .waits import waiting_entries
 
 
 def _dumped(model: Any) -> dict[str, Any] | None:
@@ -1157,6 +1158,7 @@ class HarnessApplication(ReviewCodeCommands):
                     actor_id=actor_id,
                     rationale=reason,
                     continue_after=continue_after,
+                    acknowledged_risks=item.acknowledged_risks,
                 )
             except HarnessError as error:
                 results.append(
@@ -1209,9 +1211,10 @@ class HarnessApplication(ReviewCodeCommands):
     def inbox(self, path: Path) -> list[dict[str, Any]]:
         """Runs of the project waiting for a person (decision or clarification answers) and,
         since #55, deferred verifications waiting for evidence and preflights waiting for a
-        decision."""
+        decision; since #73 every other wait before DECISION (plan approval, decomposition,
+        acceptance tests, architecture, operational contract)."""
         with self._services(path) as services:
-            entries = inbox(services) + inbox_entries(services)
+            entries = inbox(services) + inbox_entries(services) + waiting_entries(services)
             return sorted(entries, key=lambda item: item["waitingSince"])
 
     def decide_gate(

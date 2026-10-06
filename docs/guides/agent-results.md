@@ -80,7 +80,10 @@ harness acceptance decide --run <runId> --decision APPROVE --digest <digest> --r
 
 Approval writes the files, freezes their digests and runs them once on the workspace before the
 change (passing there is a MEDIUM `acceptance.passes-before` finding). Every later VERIFICATION
-fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass.
+fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass. A proposed
+path where a file already exists, for example the frozen test of an earlier run in the same
+workspace, is never overwritten: the file is written next to it with the run's suffix
+(`test_ac_1_<run>.py`), and `acceptance show` lists the new name under `renamed` (#82).
 
 ## PLANNING: decomposition of large tasks (#39)
 
@@ -99,7 +102,10 @@ VERIFICATION with its own correction budget and its own gate (`subtask-<n>`), re
 A sub-task that does not pass stops the ones after it; the run reaches DECISION when all passed.
 `REJECT` keeps the task whole. Under `planning.granularity: adaptive` a model listed in
 `planning.coarseModels` starts with the whole task, and the run returns to PLANNING to decompose
-only when that attempt fails its corrections.
+only when that attempt fails its corrections. Another model's attempt is not sent back to
+PLANNING: when its corrections are spent the run stops in VERIFICATION (exit 6) with a
+`terminalReason` that names the failing validators and says when the last correction changed
+nothing (`agent.empty-correction`).
 
 ## IMPLEMENTATION: what the agent receives
 
@@ -176,7 +182,10 @@ the findings are MEDIUM at most.
 (rejected, cancelled, or failed in IMPLEMENTATION or VERIFICATION) as a quarantined patch and
 restores the baseline; `block` keeps them and refuses new runs in the workspace until a person
 runs `harness run quarantine --run <runId>`. A task that declares `ownedPaths` gets a HIGH
-finding for every changed path outside them.
+finding for every changed path outside them. The frozen acceptance tests of a run that can still
+be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace when its changes are
+restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
+restored with the rest.
 
 ## Budget (#42)
 
@@ -227,6 +236,7 @@ recorded decisions and suggests a table; nothing is applied.
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
+| `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |
 | `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
 | `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
 | `review.agentReview` | `tests/integration/test_agent_review.py` |

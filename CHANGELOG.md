@@ -2,6 +2,47 @@
 
 ## Unreleased
 
+- Run lifecycle, wave 9 (findings of the 2.0.0 evaluation). Fixes that restore the documented
+  behaviour apply to every project:
+  - `harness plan decide --decision APPROVE --no-continue` exits 0 once the approval is recorded,
+    as `gate decide --no-continue` does; it exited 6 because the run still showed its wait in
+    PLANNING (#83). A `REJECT` still ends the run and exits 6.
+  - `harness run continue` on a run a person rejected reports the closed run (`FAILED`, exit 6)
+    instead of evaluating again the baseline that stop the line restored and asking for a new
+    decision (#83).
+  - `harness inbox` (text and `--json`, and `GET /api/inbox`) lists every wait before DECISION:
+    a plan at the plan-approval checkpoint (`plan`), a proposed decomposition
+    (`decomposition`), proposed acceptance tests (`acceptance`), architecture options or
+    inferred layer rules (`architecture`) and an operational contract to confirm (`contract`),
+    next to the deferred verifications and the preflight, each with its `kind`, the `digest` the
+    answer binds to and the command that answers it; before, `run start` exited 6 on a plan
+    approval while the inbox was empty (#73). A decision entry gains `digest` and
+    `acknowledgeRisks` (the risk factors an `APPROVE` must acknowledge); a batch file accepts
+    `acknowledgeRisks` per decision and `--batch` asks for each factor on the terminal.
+  - Under `planning.granularity: adaptive`, a run whose corrections are spent returns to
+    PLANNING to be decomposed only when the implementing model is in `planning.coarseModels`,
+    as documented; any other model's run went back to PLANNING too, so an agent that repeated
+    its change (`agent.empty-correction`) looped through decomposition (#77). It now stops in
+    VERIFICATION with a `terminalReason` naming the failing validators and the empty
+    correction. A run that moves on after a stop no longer keeps the earlier `terminalReason`.
+  - An approved acceptance test whose proposed path already holds a file (the frozen test of an
+    earlier run in the same workspace, or a file of the project) is written under a run-unique
+    name next to it (`renamed` in `acceptance show` and in `acceptance.tests.decided`) instead
+    of overwriting it; the later run overwrote the earlier frozen file and its agent was blamed
+    with a HIGH `weakened.test-deleted` (#82).
+  - Embedded mode with acceptance tests: the frozen files the harness writes on approval no
+    longer count as the session's edits, so IMPLEMENTATION waits for the session instead of
+    passing at once; stop the line keeps the frozen files of a run that can still be continued
+    (`keptPaths` in the quarantine record) instead of deleting them, so the next verification
+    does not report `acceptance.modified` (#81).
+  - Re-verification after a change outside the run (#78), behind the new key
+    `verification.reverifyOnChange`, which `harness init` writes as `true`. `run continue` on a
+    run waiting in DECISION whose ChangeSet changed after its gate was evaluated records the
+    change as evidence (`out-of-band-change`, event `verification.reverify.authorized`) and runs
+    VERIFICATION and the independent review again on the new ChangeSet, instead of leaving an
+    `INCONCLUSIVE` gate that forced a new run. A `project.yaml` without the key keeps that
+    fail-closed behaviour and its configuration digest.
+
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

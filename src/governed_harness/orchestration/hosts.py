@@ -401,6 +401,9 @@ class AcceptancePort(Protocol):
     def validation(self, execution: Execution, change_set: ChangeSet) -> ValidatorOutput | None:
         """The acceptance tests as a validation of the ChangeSet."""
 
+    def untouched(self, execution: Execution) -> set[str]:
+        """The frozen files still as approved (the harness's, not the agent's edits)."""
+
 
 class AgentReviewPort(Protocol):
     """The single independent reviewer as the review panel uses it."""
