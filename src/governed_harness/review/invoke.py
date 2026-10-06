@@ -61,6 +61,24 @@ def usage_tokens(result: AgentCallResult) -> int | None:
     return sum(known) if known else None
 
 
+def _never_cancelled() -> bool:
+    return False
+
+
+@dataclass(frozen=True)
+class InvokerHooks:
+    """What the caller runs around a batch: ``cancelled`` is polled by the provider processes,
+    ``before`` may block the whole batch with a reason, ``record_request`` records each request
+    and returns its reference, ``after`` sees each answer and ``on_violation`` hears of a batch
+    that changed the workspace (the diff, restored and unrestorable counts)."""
+
+    cancelled: Callable[[], bool] = _never_cancelled
+    before: Callable[[Sequence[ReviewerCall]], str | None] | None = None
+    record_request: Callable[[ReviewerCall], str | None] | None = None
+    after: Callable[[ReviewerCall, AgentCallResult], None] | None = None
+    on_violation: Callable[[WorkspaceDiff, int, int], None] | None = None
+
+
 class ProviderInvoker:
     def __init__(
         self,
@@ -75,14 +93,11 @@ class ProviderInvoker:
         phase_id: PhaseId,
         default_timeout: int,
         max_output_bytes: int,
-        cancelled: Callable[[], bool] = lambda: False,
-        before: Callable[[Sequence[ReviewerCall]], str | None] | None = None,
-        record_request: Callable[[ReviewerCall], str | None] | None = None,
-        after: Callable[[ReviewerCall, AgentCallResult], None] | None = None,
-        on_violation: Callable[[WorkspaceDiff, int, int], None] | None = None,
+        hooks: InvokerHooks | None = None,
         guard_workspace: bool = True,
         mcp_servers: dict[str, Any] | None = None,
     ) -> None:
+        hooks = hooks or InvokerHooks()
         self.workspace = workspace
         self.artifacts = artifacts
         self.runner = runner
@@ -93,11 +108,11 @@ class ProviderInvoker:
         self.phase_id = phase_id
         self.default_timeout = default_timeout
         self.max_output_bytes = max_output_bytes
-        self.cancelled = cancelled
-        self.before = before
-        self.record_request = record_request
-        self.after = after
-        self.on_violation = on_violation
+        self.cancelled = hooks.cancelled
+        self.before = hooks.before
+        self.record_request = hooks.record_request
+        self.after = hooks.after
+        self.on_violation = hooks.on_violation
         self.guard_workspace = guard_workspace
         self.mcp_servers = mcp_servers or {}
         self._built: dict[str, BuiltProvider | str] = {}
@@ -238,4 +253,4 @@ class ProviderInvoker:
         ]
 
 
-__all__ = ["BuiltProvider", "CallingProvider", "ProviderInvoker", "usage_tokens"]
+__all__ = ["BuiltProvider", "CallingProvider", "InvokerHooks", "ProviderInvoker", "usage_tokens"]
