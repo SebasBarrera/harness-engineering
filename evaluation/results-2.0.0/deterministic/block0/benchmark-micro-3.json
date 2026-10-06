@@ -2,64 +2,64 @@
   "benchmarks": {
     "artifactPutDeduplicated": {
       "iterations": 1000.0,
-      "meanMs": 0.026369877,
-      "medianMs": 0.02375,
-      "operationsPerSecond": 37922.05780861246,
-      "p95Ms": 0.029333,
-      "totalMs": 26.369877
+      "meanMs": 0.027213934999999998,
+      "medianMs": 0.024458,
+      "operationsPerSecond": 36745.880373418986,
+      "p95Ms": 0.030333,
+      "totalMs": 27.213935
     },
     "canonicalHash": {
       "iterations": 1000.0,
-      "meanMs": 0.004744512,
-      "medianMs": 0.004667,
-      "operationsPerSecond": 210769.83259816814,
-      "p95Ms": 0.004833,
-      "totalMs": 4.744512
+      "meanMs": 0.00479327,
+      "medianMs": 0.00475,
+      "operationsPerSecond": 208625.84415232192,
+      "p95Ms": 0.004875,
+      "totalMs": 4.79327
     },
     "eventAppend": {
       "iterations": 1000.0,
-      "meanMs": 0.070265807,
-      "medianMs": 0.062229,
-      "operationsPerSecond": 14231.673166437839,
-      "p95Ms": 0.093834,
-      "totalMs": 70.265807
+      "meanMs": 0.082165613,
+      "medianMs": 0.075271,
+      "operationsPerSecond": 12170.541464833957,
+      "p95Ms": 0.121125,
+      "totalMs": 82.165613
     },
     "gateEvaluation": {
       "iterations": 1000.0,
-      "meanMs": 0.00065056,
-      "medianMs": 0.000625,
-      "operationsPerSecond": 1537137.2356123955,
-      "p95Ms": 0.000708,
-      "totalMs": 0.65056
+      "meanMs": 0.000678042,
+      "medianMs": 0.000666,
+      "operationsPerSecond": 1474834.8922338143,
+      "p95Ms": 0.00075,
+      "totalMs": 0.678042
     },
     "processDirect": {
       "iterations": 20.0,
-      "meanMs": 29.0588167,
-      "medianMs": 27.264978999999997,
-      "operationsPerSecond": 34.412963553330094,
-      "p95Ms": 41.592459,
-      "totalMs": 581.176334
+      "meanMs": 26.046881250000002,
+      "medianMs": 24.5043955,
+      "operationsPerSecond": 38.39231232338036,
+      "p95Ms": 41.189542,
+      "totalMs": 520.937625
     },
     "processGovernanceOverhead": {
-      "absoluteMedianMs": 0.07908350000000297,
+      "absoluteMedianMs": 1.4804169999999992,
       "note": "Local process-launch overhead only; excludes validators, agents and human wait.",
-      "relativeMedianPercent": 0.29005523899359176
+      "relativeMedianPercent": 6.041434484682551
     },
     "processGoverned": {
       "iterations": 20.0,
-      "meanMs": 27.8140728,
-      "medianMs": 27.3440625,
-      "operationsPerSecond": 35.95302303228314,
-      "p95Ms": 32.320709,
-      "totalMs": 556.281456
+      "meanMs": 26.551214499999997,
+      "medianMs": 25.9848125,
+      "operationsPerSecond": 37.663060572991874,
+      "p95Ms": 35.501084,
+      "totalMs": 531.02429
     },
     "stateTransition": {
       "iterations": 1000.0,
-      "meanMs": 0.000400369,
-      "medianMs": 0.000375,
-      "operationsPerSecond": 2497695.875554801,
-      "p95Ms": 0.000417,
-      "totalMs": 0.400369
+      "meanMs": 0.000424275,
+      "medianMs": 0.000416,
+      "operationsPerSecond": 2356961.8761416534,
+      "p95Ms": 0.000459,
+      "totalMs": 0.424275
     }
   },
   "environment": {
@@ -67,7 +67,7 @@
     "processor": "arm",
     "python": "3.12.11"
   },
-  "generatedAt": "2026-10-06T05:03:32.406918+00:00",
+  "generatedAt": "2026-10-06T14:39:53.081246+00:00",
   "methodology": {
     "clock": "time.perf_counter_ns",
     "scope": "Microbenchmarks on this execution environment; not general performance claims.",

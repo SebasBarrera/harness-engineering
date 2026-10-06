@@ -3,9 +3,9 @@
     "agentCallSeconds": {
       "comparable": 24,
       "equal": 0,
-      "maxAbsDiff": 0.314,
-      "maxRelDiff": 8.772727,
-      "medianRelDiff": 7.482759,
+      "maxAbsDiff": 0.312,
+      "maxRelDiff": 8.434783,
+      "medianRelDiff": 7.263158,
       "runs": 45
     },
     "agentCalls": {
@@ -51,9 +51,9 @@
     "runWallSeconds": {
       "comparable": 24,
       "equal": 0,
-      "maxAbsDiff": 1.644,
-      "maxRelDiff": 0.291748,
-      "medianRelDiff": 0.102041,
+      "maxAbsDiff": 1.592,
+      "maxRelDiff": 0.29199,
+      "medianRelDiff": 0.076263,
       "runs": 45
     }
   },

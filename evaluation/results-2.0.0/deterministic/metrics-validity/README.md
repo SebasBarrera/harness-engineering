@@ -30,8 +30,8 @@ Command (worktree code, after the friction suite and block 0):
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
 .venv/bin/python evaluation/deterministic/metrics_validity.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/metrics-validity \
-  --runs-glob "$SCRATCH/work/friction-final/friction-*" \
-  --demo-workdir $SCRATCH/work/block0/demo --demo-state $SCRATCH/work/block0/demo-state/
+  --runs-glob "$SCRATCH/work/friction-w9/friction-*" \
+  --demo-workdir $SCRATCH/work/block0-w9/demo --demo-state $SCRATCH/work/block0-w9/demo-state
 ```
 
 Files: `metrics-validity.jsonl` (one record per run directory or demo project),

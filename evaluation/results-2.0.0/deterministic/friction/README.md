@@ -27,13 +27,13 @@ Measures per run: commands typed, human interactions the harness recorded
 whether the change was delivered and whether it was delivered without a person (a false fast
 lane for a risk task).
 
-Command (worktree code). It ran while the fault-probe suite was running in another process, so the
-seconds share the machine with that suite:
+Command (worktree code with wave 9 merged). On 2026-10-06 it ran after the fault-probe suite had
+finished, with no other suite running (the first results shared the machine with the probes):
 
 ```bash
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
-$SCRATCH/venvs/eval/bin/python evaluation/deterministic/friction.py --harness "$PWD/.venv/bin/harness" \
-  --out evaluation/results-2.0.0/deterministic/friction --work $SCRATCH/work/friction-final
+$SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/friction.py --harness "$PWD/.venv/bin/harness" \
+  --out evaluation/results-2.0.0/deterministic/friction --work $SCRATCH/work/friction-w9
 ```
 
 Files: `friction.jsonl` (24 records), `friction-summary.json` (per condition: risk-free medians;

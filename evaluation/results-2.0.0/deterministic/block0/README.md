@@ -25,26 +25,27 @@
   file and whether the `.env` secret was stored. The generator is this script's (the one behind the
   CHANGELOG figures is not in the repository), so its figures are not the CHANGELOG's.
 
-Commands (worktree code; `static` ran first, the other sections later with no other suite running):
+Commands (worktree code; `static` ran first, then the other sections, with no other suite running):
 
 ```bash
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
 .venv/bin/python evaluation/deterministic/block0_technical.py --harness "$PWD/.venv/bin/harness" --repo . \
-  --python "$PWD/.venv/bin/python" --project-python $SCRATCH/venvs/eval/bin/python --ruff "$PWD/.venv/bin/ruff" \
-  --out evaluation/results-2.0.0/deterministic/block0 --work $SCRATCH/work/block0 --only static
+  --python $SCRATCH/venvs/eval-w9/bin/python --project-python $SCRATCH/venvs/eval-w9/bin/python --ruff "<venv>/bin/ruff" \
+  --out evaluation/results-2.0.0/deterministic/block0 --work $SCRATCH/work/block0-w9 --only static
 .venv/bin/python evaluation/deterministic/block0_technical.py ... --only tests,demo,benchmark,large
 ```
 
 Notes on this run:
 
-- `tests` and `demo` ran while the fault-probe suite ran in another process (their seconds share
-  the machine); `benchmark` and `large` ran after it, with no other suite running.
-- The two failures of `tests` (`tests/integration/test_declared_settings.py`,
-  `test_config_validate_reports_declarative_settings` and `test_schema_marks_declarative_fields`)
-  come from the wave-7 snapshot merged into this branch (`11c05bb`): the tests still expect
-  `allowedCapabilities` to be declarative, which wave 7 (#4) changed; the wave-7 branch fixed the
-  tests later (`3d6cbe5`, "expect allowedCapabilities to be applied, not declarative"), after this
-  branch was created. The re-run on the v2.0.0 wheel and its tag settles it.
+- Re-run on 2026-10-06 on the code with wave 9 merged (`6158cc6`; wave 9 at `de84849`), every
+  section with no other suite running, with the repository's development tools (`--python` a
+  virtual environment with the worktree's `src` first and the local development packages: pytest
+  9.1.1, mypy 1.20.2, Ruff 0.16.7). Result: 1189 tests, 0 failed (the first run had 1095 tests and
+  2 failures from a stale wave-7 snapshot, fixed by the later merges); mypy no issues in 244
+  source files; Ruff clean; `demo_flows.py all`: 21 flows, 204 steps, 0 mismatches, 50 output
+  checks ok. Not part of the result: the same `mypy` run with mypy 2.3.1 (also allowed by
+  `pyproject.toml`, `mypy>=1.11,<3`) from another local environment reported 34 errors in 12 files;
+  the cause was not investigated.
 - Local absolute paths in the result files were replaced by `<repo>`, `<work>`, `<tmp>` and `~`
   with `evaluation/deterministic/sanitize_paths.py`.
 - In all six `large` runs `run start` stopped in VERIFICATION (exit 6, `BLOCKED`) under the full

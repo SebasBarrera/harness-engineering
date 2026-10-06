@@ -22,21 +22,21 @@
   },
   {
     "flow": "quickstart",
-    "command": "harness status --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "command": "harness status --run run_d06004a4f6ea44bc8c9f27fc96107258",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness gate decide --run run_ffbbb71bd5284b4c86bfe820854530a5 --decision APPROVE --change-set-digest sha256:a31ab30d5d80330efbf4d6a15e108d068e2196d892a65e1eb48190832fca10b3 --actor you --rationale Criteria covered by tests",
+    "command": "harness gate decide --run run_d06004a4f6ea44bc8c9f27fc96107258 --decision APPROVE --change-set-digest sha256:a31ab30d5d80330efbf4d6a15e108d068e2196d892a65e1eb48190832fca10b3 --actor you --rationale Criteria covered by tests",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format markdown --output trace.md",
+    "command": "harness trace --run run_d06004a4f6ea44bc8c9f27fc96107258 --format markdown --output trace.md",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -64,42 +64,42 @@
   },
   {
     "flow": "quickstart",
-    "command": "harness findings list --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "command": "harness findings list --run run_d06004a4f6ea44bc8c9f27fc96107258",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness evidence list --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "command": "harness evidence list --run run_d06004a4f6ea44bc8c9f27fc96107258",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format json --output trace.json",
+    "command": "harness trace --run run_d06004a4f6ea44bc8c9f27fc96107258 --format json --output trace.json",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format jsonl --output trace.jsonl",
+    "command": "harness trace --run run_d06004a4f6ea44bc8c9f27fc96107258 --format jsonl --output trace.jsonl",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format sarif --output trace.sarif",
+    "command": "harness trace --run run_d06004a4f6ea44bc8c9f27fc96107258 --format sarif --output trace.sarif",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "quickstart",
-    "command": "harness retrospect --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "command": "harness retrospect --run run_d06004a4f6ea44bc8c9f27fc96107258",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -127,56 +127,56 @@
   },
   {
     "flow": "later-change",
-    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "command": "harness status --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Stale approval attempt",
+    "command": "harness gate decide --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0 --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Stale approval attempt",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness run continue --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "command": "harness run continue --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0",
     "expected": 4,
     "actual": 4,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "command": "harness status --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision REQUEST_CHANGES --change-set-digest sha256:f74ca19b047b5146b1d2fd8217ff7adf9c711e065c47562d8b592de3712e037e --actor human.reviewer --rationale Manual edit after review; verify again",
+    "command": "harness gate decide --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0 --decision REQUEST_CHANGES --change-set-digest sha256:f74ca19b047b5146b1d2fd8217ff7adf9c711e065c47562d8b592de3712e037e --actor human.reviewer --rationale Manual edit after review; verify again",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness run continue --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "command": "harness run continue --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0",
     "expected": 4,
     "actual": 4,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "command": "harness status --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "later-change",
-    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision APPROVE --change-set-digest sha256:7c24bc327c39a34092133c6d05c92aed78ee6515f7c4ca82b563d83f0a478329 --actor human.reviewer --rationale Verified again after the correction",
+    "command": "harness gate decide --path . --run run_b17a7c733f5b4e168da305e9bd3e76b0 --decision APPROVE --change-set-digest sha256:7c24bc327c39a34092133c6d05c92aed78ee6515f7c4ca82b563d83f0a478329 --actor human.reviewer --rationale Verified again after the correction",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -204,35 +204,35 @@
   },
   {
     "flow": "broken-baseline",
-    "command": "harness findings list --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "command": "harness findings list --path . --run run_2e202d40e14a4fbbac79406715c334b8",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "broken-baseline",
-    "command": "harness status --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "command": "harness status --path . --run run_2e202d40e14a4fbbac79406715c334b8",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "broken-baseline",
-    "command": "harness run continue --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "command": "harness run continue --path . --run run_2e202d40e14a4fbbac79406715c334b8",
     "expected": 4,
     "actual": 4,
     "ok": true
   },
   {
     "flow": "broken-baseline",
-    "command": "harness status --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "command": "harness status --path . --run run_2e202d40e14a4fbbac79406715c334b8",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "broken-baseline",
-    "command": "harness gate decide --path . --run run_73a2035b2c604cd899a68ba39654a49d --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Baseline repaired outside the ChangeSet; the retry passed",
+    "command": "harness gate decide --path . --run run_2e202d40e14a4fbbac79406715c334b8 --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Baseline repaired outside the ChangeSet; the retry passed",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -260,21 +260,21 @@
   },
   {
     "flow": "review-exception",
-    "command": "harness status --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f",
+    "command": "harness status --path . --run run_1548f4db44be46cc901ccfbd6f4be255",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "review-exception",
-    "command": "harness gate decide --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f --decision APPROVE --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.reviewer --rationale Plain approval over a failed gate",
+    "command": "harness gate decide --path . --run run_1548f4db44be46cc901ccfbd6f4be255 --decision APPROVE --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.reviewer --rationale Plain approval over a failed gate",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "review-exception",
-    "command": "harness gate decide --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f --decision APPROVE_EXCEPTION --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.security --rationale Demonstration fixture: the value is not a real credential",
+    "command": "harness gate decide --path . --run run_1548f4db44be46cc901ccfbd6f4be255 --decision APPROVE_EXCEPTION --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.security --rationale Demonstration fixture: the value is not a real credential",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -309,14 +309,14 @@
   },
   {
     "flow": "node",
-    "command": "harness status --path . --run run_343da1903ff34c29b542c8a9b6359d3d",
+    "command": "harness status --path . --run run_a6769d86ed294407836efe28eaeb6e11",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "node",
-    "command": "harness gate decide --path . --run run_343da1903ff34c29b542c8a9b6359d3d --decision APPROVE --change-set-digest sha256:b4602ee931a6a496de9048acc7830038ee39599235e2660e55a675cfb55e7f7e --actor human.reviewer --rationale Precedence fixed and tested",
+    "command": "harness gate decide --path . --run run_a6769d86ed294407836efe28eaeb6e11 --decision APPROVE --change-set-digest sha256:b4602ee931a6a496de9048acc7830038ee39599235e2660e55a675cfb55e7f7e --actor human.reviewer --rationale Precedence fixed and tested",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -351,14 +351,14 @@
   },
   {
     "flow": "memory",
-    "command": "harness memory approve --path . --memory mem_f1c4c1e2d164471ead43de8b76865aa8 --actor human.lead",
+    "command": "harness memory approve --path . --memory mem_6d7bb1be589b40458caa54cb1b0b1522 --actor human.lead",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness memory approve --path . --memory mem_aa627cb1093e43de92ae863fcc91031c",
+    "command": "harness memory approve --path . --memory mem_7fb341282ea54f42b62d69992362dda9",
     "expected": 5,
     "actual": 5,
     "ok": true
@@ -379,42 +379,42 @@
   },
   {
     "flow": "memory",
-    "command": "harness memory manifest --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "command": "harness memory manifest --path . --run run_ca8bd43b3c924083b73fc209e6e58224",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness status --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "command": "harness status --path . --run run_ca8bd43b3c924083b73fc209e6e58224",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness gate decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Validators passed",
+    "command": "harness gate decide --path . --run run_ca8bd43b3c924083b73fc209e6e58224 --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Validators passed",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness recommendation list --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "command": "harness recommendation list --path . --run run_ca8bd43b3c924083b73fc209e6e58224",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness recommendation decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --recommendation recommendation_730fe17328194b21b1eb04ec6ca998fa --decision ACCEPT --actor human.lead --rationale No findings in this run; keep the controls as they are.",
+    "command": "harness recommendation decide --path . --run run_ca8bd43b3c924083b73fc209e6e58224 --recommendation recommendation_f157dbc072af4eb9a1f986b75a0923fa --decision ACCEPT --actor human.lead --rationale No findings in this run; keep the controls as they are.",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness recommendation decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --recommendation recommendation_730fe17328194b21b1eb04ec6ca998fa --decision REJECT --rationale Changed my mind",
+    "command": "harness recommendation decide --path . --run run_ca8bd43b3c924083b73fc209e6e58224 --recommendation recommendation_f157dbc072af4eb9a1f986b75a0923fa --decision REJECT --rationale Changed my mind",
     "expected": 5,
     "actual": 5,
     "ok": true
@@ -435,28 +435,28 @@
   },
   {
     "flow": "memory",
-    "command": "harness memory manifest --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca",
+    "command": "harness memory manifest --path . --run run_2982ffc987b1464681e8aacb89b1c3e8",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness status --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca",
+    "command": "harness status --path . --run run_2982ffc987b1464681e8aacb89b1c3e8",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness gate decide --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca --decision APPROVE --change-set-digest sha256:573977f835edcc50c520db8221a63d0fb706352ce82fd48fed5cb8ad421e94ff --actor human.reviewer --rationale Validators passed",
+    "command": "harness gate decide --path . --run run_2982ffc987b1464681e8aacb89b1c3e8 --decision APPROVE --change-set-digest sha256:573977f835edcc50c520db8221a63d0fb706352ce82fd48fed5cb8ad421e94ff --actor human.reviewer --rationale Validators passed",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness memory invalidate --path . --memory mem_aa627cb1093e43de92ae863fcc91031c --reason Rounding moved to the billing service. --actor human.lead",
+    "command": "harness memory invalidate --path . --memory mem_7fb341282ea54f42b62d69992362dda9 --reason Rounding moved to the billing service. --actor human.lead",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -484,21 +484,21 @@
   },
   {
     "flow": "memory",
-    "command": "harness status --path . --run run_a3b64bd7241047268c1b6992faea013e",
+    "command": "harness status --path . --run run_421ef375af954073baf40197d1b7d69c",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness status --path . --run run_a3b64bd7241047268c1b6992faea013e",
+    "command": "harness status --path . --run run_421ef375af954073baf40197d1b7d69c",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "memory",
-    "command": "harness gate decide --path . --run run_a3b64bd7241047268c1b6992faea013e --decision APPROVE --change-set-digest sha256:9c44c749ea3ac17bd36e211179fddf899da451658674239093b11e7a99c49619 --actor human.reviewer --rationale Validators passed",
+    "command": "harness gate decide --path . --run run_421ef375af954073baf40197d1b7d69c --decision APPROVE --change-set-digest sha256:9c44c749ea3ac17bd36e211179fddf899da451658674239093b11e7a99c49619 --actor human.reviewer --rationale Validators passed",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -547,21 +547,21 @@
   },
   {
     "flow": "clarification",
-    "command": "harness run continue --path . --run run_c52bdaed8ed84277b5ed41805b702ceb",
+    "command": "harness run continue --path . --run run_0b0f205568bb4e5dab3feefd2fa88f07",
     "expected": 4,
     "actual": 4,
     "ok": true
   },
   {
     "flow": "clarification",
-    "command": "harness status --path . --run run_c52bdaed8ed84277b5ed41805b702ceb",
+    "command": "harness status --path . --run run_0b0f205568bb4e5dab3feefd2fa88f07",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "clarification",
-    "command": "harness gate decide --path . --run run_c52bdaed8ed84277b5ed41805b702ceb --decision APPROVE --change-set-digest sha256:4278f4a4e00d82aef9bc2cc14ecddc9cb3d381d9753a986b43c11ce7bf6e0dad --actor human.reviewer --rationale Clarified criteria covered by the validators",
+    "command": "harness gate decide --path . --run run_0b0f205568bb4e5dab3feefd2fa88f07 --decision APPROVE --change-set-digest sha256:4278f4a4e00d82aef9bc2cc14ecddc9cb3d381d9753a986b43c11ce7bf6e0dad --actor human.reviewer --rationale Clarified criteria covered by the validators",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -603,21 +603,21 @@
   },
   {
     "flow": "clarification",
-    "command": "harness run continue --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1",
+    "command": "harness run continue --path . --run run_890394abcc5e4a3a86edc9ad757773c5",
     "expected": 4,
     "actual": 4,
     "ok": true
   },
   {
     "flow": "clarification",
-    "command": "harness status --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1",
+    "command": "harness status --path . --run run_890394abcc5e4a3a86edc9ad757773c5",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "clarification",
-    "command": "harness gate decide --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1 --decision APPROVE --change-set-digest sha256:d510e32e55650257125ef77e11827c7048784827c4e06e5dd3cb7dc3b70e4a40 --actor human.reviewer --rationale Elicited criteria covered by the validators",
+    "command": "harness gate decide --path . --run run_890394abcc5e4a3a86edc9ad757773c5 --decision APPROVE --change-set-digest sha256:d510e32e55650257125ef77e11827c7048784827c4e06e5dd3cb7dc3b70e4a40 --actor human.reviewer --rationale Elicited criteria covered by the validators",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -645,35 +645,35 @@
   },
   {
     "flow": "traceability",
-    "command": "harness status --path . --run run_7950329799a2480d9e327370f28fd651",
+    "command": "harness status --path . --run run_5071ca5dc3ae43f990eb8821ce3a823e",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "traceability",
-    "command": "harness findings list --path . --run run_7950329799a2480d9e327370f28fd651",
+    "command": "harness findings list --path . --run run_5071ca5dc3ae43f990eb8821ce3a823e",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "traceability",
-    "command": "harness status --path . --run run_7950329799a2480d9e327370f28fd651",
+    "command": "harness status --path . --run run_5071ca5dc3ae43f990eb8821ce3a823e",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "traceability",
-    "command": "harness gate decide --path . --run run_7950329799a2480d9e327370f28fd651 --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision APPROVE --rationale Tests pass",
+    "command": "harness gate decide --path . --run run_5071ca5dc3ae43f990eb8821ce3a823e --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision APPROVE --rationale Tests pass",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "traceability",
-    "command": "harness gate decide --path . --run run_7950329799a2480d9e327370f28fd651 --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision REJECT --rationale A2 has no test",
+    "command": "harness gate decide --path . --run run_5071ca5dc3ae43f990eb8821ce3a823e --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision REJECT --rationale A2 has no test",
     "expected": 6,
     "actual": 6,
     "ok": true
@@ -701,21 +701,21 @@
   },
   {
     "flow": "corrections",
-    "command": "harness status --path . --run run_553164f784e44b82816d73ac737fa8f2",
+    "command": "harness status --path . --run run_35a20f8cea9a478986a4ce08efc9ea9c",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "corrections",
-    "command": "harness status --path . --run run_553164f784e44b82816d73ac737fa8f2",
+    "command": "harness status --path . --run run_35a20f8cea9a478986a4ce08efc9ea9c",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "corrections",
-    "command": "harness gate decide --path . --run run_553164f784e44b82816d73ac737fa8f2 --decision APPROVE --change-set-digest sha256:9c529cc01a99e9de7abf724aac96e18358d02495e2669aad7cc8f308d33f3884 --actor human.reviewer --rationale Corrected change passed verification",
+    "command": "harness gate decide --path . --run run_35a20f8cea9a478986a4ce08efc9ea9c --decision APPROVE --change-set-digest sha256:9c529cc01a99e9de7abf724aac96e18358d02495e2669aad7cc8f308d33f3884 --actor human.reviewer --rationale Corrected change passed verification",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -736,7 +736,7 @@
   },
   {
     "flow": "corrections",
-    "command": "harness status --path . --run run_43c557522c774194a06b8101c2c86067",
+    "command": "harness status --path . --run run_22daa8045ce54d02980133cc002e280d",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -757,7 +757,7 @@
   },
   {
     "flow": "corrections",
-    "command": "harness status --path . --run run_48f2b4141db84c11907f60f9aa3a115f",
+    "command": "harness status --path . --run run_c60b5b77c40746a085f2c5585d65b0d1",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -792,21 +792,21 @@
   },
   {
     "flow": "integrity",
-    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness status --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness gate decide --path . --run run_54b269f1b8274286b525ad5578f5a86c --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --decision APPROVE_EXCEPTION --actor agent.claude-code --rationale self-approval",
+    "command": "harness gate decide --path . --run run_18fd88e46b4647539d1d4d4c28af80ef --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --decision APPROVE_EXCEPTION --actor agent.claude-code --rationale self-approval",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness status --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -820,21 +820,21 @@
   },
   {
     "flow": "integrity",
-    "command": "harness verify --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness verify --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness status --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness gate decide --path . --run run_54b269f1b8274286b525ad5578f5a86c --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Discount rule reviewed",
+    "command": "harness gate decide --path . --run run_18fd88e46b4647539d1d4d4c28af80ef --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Discount rule reviewed",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -848,21 +848,21 @@
   },
   {
     "flow": "integrity",
-    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness status --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness verify --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "command": "harness verify --path . --run run_18fd88e46b4647539d1d4d4c28af80ef",
     "expected": 6,
     "actual": 6,
     "ok": true
   },
   {
     "flow": "integrity",
-    "command": "harness trace --path . --run run_54b269f1b8274286b525ad5578f5a86c --format json",
+    "command": "harness trace --path . --run run_18fd88e46b4647539d1d4d4c28af80ef --format json",
     "expected": 6,
     "actual": 6,
     "ok": true
@@ -890,21 +890,21 @@
   },
   {
     "flow": "delivery",
-    "command": "harness status --path . --run run_4effffd9aa2346aa80f3c48fe116939b",
+    "command": "harness status --path . --run run_4269dfc284304600837f7a69041b8500",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "delivery",
-    "command": "harness gate decide --path . --run run_4effffd9aa2346aa80f3c48fe116939b --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor you --rationale Criteria covered by tests",
+    "command": "harness gate decide --path . --run run_4269dfc284304600837f7a69041b8500 --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor you --rationale Criteria covered by tests",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "delivery",
-    "command": "harness export --path . --run run_4effffd9aa2346aa80f3c48fe116939b --bundle evidence.tar.gz",
+    "command": "harness export --path . --run run_4269dfc284304600837f7a69041b8500 --bundle evidence.tar.gz",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -918,21 +918,21 @@
   },
   {
     "flow": "delivery",
-    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head harness/run_4effffd9aa2346aa80f3c48fe116939b --bundle evidence.tar.gz",
+    "command": "harness verify-approval --path . --base 79d27ad78721fb422cbc8105474231983007f725 --no-workspace --head harness/run_4269dfc284304600837f7a69041b8500 --bundle evidence.tar.gz",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "delivery",
-    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head harness/run_4effffd9aa2346aa80f3c48fe116939b",
+    "command": "harness verify-approval --path . --base 79d27ad78721fb422cbc8105474231983007f725 --no-workspace --head harness/run_4269dfc284304600837f7a69041b8500",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "delivery",
-    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head HEAD --bundle evidence.tar.gz",
+    "command": "harness verify-approval --path . --base 79d27ad78721fb422cbc8105474231983007f725 --no-workspace --head HEAD --bundle evidence.tar.gz",
     "expected": 5,
     "actual": 5,
     "ok": true
@@ -967,28 +967,28 @@
   },
   {
     "flow": "agent-results",
-    "command": "harness status --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "command": "harness status --path . --run run_817efda86a394e4a9c907488e318809e",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "agent-results",
-    "command": "harness check --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "command": "harness check --path . --run run_817efda86a394e4a9c907488e318809e",
     "expected": 6,
     "actual": 6,
     "ok": true
   },
   {
     "flow": "agent-results",
-    "command": "harness status --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "command": "harness status --path . --run run_817efda86a394e4a9c907488e318809e",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "agent-results",
-    "command": "harness gate decide --path . --run run_0e7c7366ca874d6484eb137d983b0346 --decision REJECT --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Not this change",
+    "command": "harness gate decide --path . --run run_817efda86a394e4a9c907488e318809e --decision REJECT --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Not this change",
     "expected": 6,
     "actual": 6,
     "ok": true
@@ -1016,42 +1016,42 @@
   },
   {
     "flow": "ladder",
-    "command": "harness verification show --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "command": "harness verification show --path . --run run_270a5ae4ee8a4566a4698cafd769e87f",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "ladder",
-    "command": "harness status --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "command": "harness status --path . --run run_270a5ae4ee8a4566a4698cafd769e87f",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "ladder",
-    "command": "harness gate decide --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked",
+    "command": "harness gate decide --path . --run run_270a5ae4ee8a4566a4698cafd769e87f --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked",
     "expected": 5,
     "actual": 5,
     "ok": true
   },
   {
     "flow": "ladder",
-    "command": "harness gate decide --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked --check ac_look",
+    "command": "harness gate decide --path . --run run_270a5ae4ee8a4566a4698cafd769e87f --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked --check ac_look",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "ladder",
-    "command": "harness evidence attach --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --item D-ac_e2e --file e2e.xml --actor human.ci",
+    "command": "harness evidence attach --path . --run run_270a5ae4ee8a4566a4698cafd769e87f --item D-ac_e2e --file e2e.xml --actor human.ci",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "ladder",
-    "command": "harness verification show --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "command": "harness verification show --path . --run run_270a5ae4ee8a4566a4698cafd769e87f",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -1072,7 +1072,7 @@
   },
   {
     "flow": "ladder",
-    "command": "harness verification show --path . --run run_262317304cfe4d6b809987e17dc1aa3f",
+    "command": "harness verification show --path . --run run_917ca63973da4f77b89dfefafff8bf93",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -1093,7 +1093,7 @@
   },
   {
     "flow": "ladder",
-    "command": "harness verification decide --path . --run run_8ba22a95a9cb44e9b6414927d100c484 --continue-uncertified --actor human.lead --rationale No device here; the device lab verifies it",
+    "command": "harness verification decide --path . --run run_84291963ce644a23a68a0611b6430d59 --continue-uncertified --actor human.lead --rationale No device here; the device lab verifies it",
     "expected": 4,
     "actual": 4,
     "ok": true
@@ -1142,14 +1142,14 @@
   },
   {
     "flow": "gitlab",
-    "command": "harness pr create --path . --run run_65369f1154b14cee9d061242aff14ad8",
+    "command": "harness pr create --path . --run run_6bb6fbb56fec460d9e3897f0e29c0d6d",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "gitlab",
-    "command": "harness pr status --path . --commit c887ecd03c9ee3b055c6e4941e895f33852b5933",
+    "command": "harness pr status --path . --commit e8a876d0cb5905b9ff816c24f726e7d04de98a16",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -1198,21 +1198,21 @@
   },
   {
     "flow": "tdd",
-    "command": "harness trace --path . --run run_5539c3daceae43ba8a4617ddc479c349 --format json",
+    "command": "harness trace --path . --run run_57e547d2bab94f93802e18950baab7cf --format json",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "tdd",
-    "command": "harness status --path . --run run_5539c3daceae43ba8a4617ddc479c349",
+    "command": "harness status --path . --run run_57e547d2bab94f93802e18950baab7cf",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "tdd",
-    "command": "harness gate decide --path . --run run_5539c3daceae43ba8a4617ddc479c349 --decision APPROVE --change-set-digest sha256:aa12d9d4693500b9f6eb800a38f335f3963a87361742920140221d3438f162b9 --actor human.reviewer --rationale Test written first",
+    "command": "harness gate decide --path . --run run_57e547d2bab94f93802e18950baab7cf --decision APPROVE --change-set-digest sha256:aa12d9d4693500b9f6eb800a38f335f3963a87361742920140221d3438f162b9 --actor human.reviewer --rationale Test written first",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -1233,7 +1233,7 @@
   },
   {
     "flow": "tdd",
-    "command": "harness findings list --path . --run run_d9a6935228dd488396a9213ce54fc23d",
+    "command": "harness findings list --path . --run run_4031afa03c394369b4c36c05a957227a",
     "expected": 0,
     "actual": 0,
     "ok": true
@@ -1261,14 +1261,14 @@
   },
   {
     "flow": "bdd",
-    "command": "harness acceptance show --path . --run run_2a0b879222cb4e53a0e1128180fc60ee",
+    "command": "harness acceptance show --path . --run run_f7b263c949d246fc92308244a8a6a61d",
     "expected": 0,
     "actual": 0,
     "ok": true
   },
   {
     "flow": "bdd",
-    "command": "harness acceptance decide --path . --run run_2a0b879222cb4e53a0e1128180fc60ee --decision APPROVE --digest sha256:7902bc2f108820eae76ca51d95a8adb8eed872b6d268e0c5ac67c144e1719e03 --actor human.reviewer --rationale The scenario states the criterion",
+    "command": "harness acceptance decide --path . --run run_f7b263c949d246fc92308244a8a6a61d --decision APPROVE --digest sha256:7902bc2f108820eae76ca51d95a8adb8eed872b6d268e0c5ac67c144e1719e03 --actor human.reviewer --rationale The scenario states the criterion",
     "expected": 4,
     "actual": 4,
     "ok": true
@@ -1408,7 +1408,7 @@
   },
   {
     "flow": "friction",
-    "command": "harness inbox --path . --approve run_af459b2769da4fac8cd0deaeeec6c979=sha256:b54694c02a505149a99f7020a63d15e0ea9ec18486ff2ad48f54a1f5ad1532ab --rationale Documentation only --actor you --json",
+    "command": "harness inbox --path . --approve run_fe1a0de7ccc342288e4f4486ceeb1ac9=sha256:b54694c02a505149a99f7020a63d15e0ea9ec18486ff2ad48f54a1f5ad1532ab --rationale Documentation only --actor you --json",
     "expected": 0,
     "actual": 0,
     "ok": true
