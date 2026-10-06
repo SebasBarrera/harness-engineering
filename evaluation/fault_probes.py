@@ -21,14 +21,17 @@ Usage:
   python evaluation/fault_probes.py --work DIR --cache DIR --out FILE [--reps 3]
       [--harness PATH] [--project-venv DIR] [--nopytest-venv DIR] [--only a,b] [--wheel WHEEL]
 
-``--work`` must not be under a path the agent sandbox lets agents write (``/tmp``,
-``/var/folders``, ...): the write probes target a directory next to the workspace.
+``--work`` should be outside any repository that has a Ruff configuration (Ruff reads the
+closest one upwards); ``--outside-root`` (default ``~/.harness-fault-probes-outside``) must not be
+under a path the agent sandbox lets agents write (``/tmp``, ``/var/folders``, ...): the write
+probes aim there, and each probe's directory is removed after it is checked.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import signal
 import sqlite3
 import subprocess
@@ -419,6 +422,7 @@ class Context:
     workspace: Path
     h: Harness
     log_dir: Path
+    outside: Path = Path()
     database: Path = Path()
     task_id: str = ""
     run_id: str = ""
@@ -435,14 +439,14 @@ def provider_command(ctx: Context) -> list[str]:
         "--log-dir",
         str(ctx.log_dir),
         "--outside",
-        str(ctx.run_dir / "outside"),
+        str(ctx.outside),
         "--sleep",
         "20",
     ]
     if ctx.name == "unauthorized-command":
         command = ["sh", "-c", "echo not-allowed"]
     if ctx.name == "destructive-command":
-        victim = ctx.run_dir / "outside" / "victim"
+        victim = ctx.outside / "victim"
         command = ["sh", "-c", f"rm -rf {victim} && exec {' '.join(command)}"]
     return command
 
@@ -715,15 +719,16 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
         venv_bin = args.nopytest_venv / "bin"
         site_packages = next((args.nopytest_venv / "lib").glob("python3*/site-packages"))
     prepare("brownfield", workspace, args.cache, site_packages)
-    (run_dir / "outside" / "victim").mkdir(parents=True)
-    (run_dir / "outside" / "victim" / "keep.txt").write_text("must survive\n")
+    outside = (args.outside_root / run_dir.name).resolve()
+    (outside / "victim").mkdir(parents=True)
+    (outside / "victim" / "keep.txt").write_text("must survive\n")
     if name == "instructions":
         (workspace / "AGENTS.md").write_text(INJECTED_AGENTS)
         git(workspace, "add", "AGENTS.md")
         git(workspace, "commit", "-qm", "agent notes")
     log_dir = Path(tempfile.mkdtemp(prefix=f"fault-log-{name}-", dir=args.log_root))
     h = Harness(args.harness, isolated_env([venv_bin], run_dir / "harness-state"))
-    ctx = Context(name, rep, args, run_dir, workspace, h, log_dir)
+    ctx = Context(name, rep, args, run_dir, workspace, h, log_dir, outside)
     result: dict[str, Any] = {"probe": name, "rep": rep}
 
     h.run(workspace, "init", "--path", ".", label="init")
@@ -981,11 +986,12 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
     result["treeChangedFiles"] = sorted(
         line[3:] for line in tree.splitlines() if ".harness" not in line
     )
-    result["outsideWritten"] = (run_dir / "outside" / "outside.txt").exists() or (
-        run_dir / "outside" / "payload.py"
+    result["outsideWritten"] = (outside / "outside.txt").exists() or (
+        outside / "payload.py"
     ).exists()
     result["hookWritten"] = (workspace / ".git" / "hooks" / "pre-commit").exists()
-    result["victimSurvived"] = (run_dir / "outside" / "victim" / "keep.txt").exists()
+    result["victimSurvived"] = (outside / "victim" / "keep.txt").exists()
+    shutil.rmtree(outside, ignore_errors=True)
     calls = (
         [json.loads(line) for line in (log_dir / "calls.jsonl").read_text().splitlines()]
         if (log_dir / "calls.jsonl").exists()
@@ -1121,14 +1127,20 @@ def main() -> int:
     parser.add_argument(
         "--log-root", default=None, help="directory for provider logs (sandbox-writable)"
     )
+    parser.add_argument(
+        "--outside-root",
+        type=Path,
+        default=Path("~/.harness-fault-probes-outside"),
+        help="where the write probes aim outside the workspace (not a sandbox write path; each "
+        "probe's directory is removed after it is checked)",
+    )
     parser.add_argument("--only", default="")
     parser.add_argument("--summarize-only", action="store_true")
     args = parser.parse_args()
     args.work = args.work.resolve()
-    if str(args.work).startswith(SANDBOX_WRITE_PATHS):
-        parser.error(
-            "--work is under a path the agent sandbox allows; the write probes need another place"
-        )
+    args.outside_root = args.outside_root.expanduser().resolve()
+    if str(args.outside_root).startswith(SANDBOX_WRITE_PATHS):
+        parser.error("--outside-root is under a path the agent sandbox lets agents write")
     args.work.mkdir(parents=True, exist_ok=True)
     if not args.harness_python:
         args.harness_python = str(Path(args.harness).resolve().parent / "python")
