@@ -1967,7 +1967,8 @@ def test_u2_schema_version_has_one_row(tmp_path):
         assert versions == 1
     finally:
         con.close()
-    assert Platform.open(path).now() == START
+    reopened_at = Platform.open(path).now()
+    assert reopened_at == START
 
 
 def test_u2_unknown_version_rejected(tmp_path):
