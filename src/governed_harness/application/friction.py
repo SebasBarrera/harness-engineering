@@ -31,25 +31,32 @@ if TYPE_CHECKING:
 MAX_TEXT = 16000
 
 
+def _fast_lane_summary(lane: Any) -> dict[str, Any]:
+    verification = lane.verification if lane else None
+    return {
+        "mode": (lane.mode if lane else None) or "off",
+        "skip": list(lane.skipped) if lane and lane.enabled else [],
+        "affectedTestsFirst": bool(verification and verification.affected_tests_first),
+        "parallel": bool(verification and verification.parallel),
+        "cache": bool(verification and verification.cache),
+    }
+
+
+def _pre_authorization_summary(pre: Any) -> dict[str, Any]:
+    enabled = bool(pre and pre.enabled)
+    return {
+        "mode": (pre.mode if pre else None) or "off",
+        "defaultHours": pre.hours if enabled else None,
+        "maxHours": pre.limit_hours if enabled else None,
+    }
+
+
 def friction_summary(project: ProjectConfiguration) -> dict[str, Any]:
     """The effective friction settings (absent keys resolve to the 1.0.0 behaviour)."""
     config = project.friction or FrictionConfig()
-    lane = config.fast_lane
-    verification = lane.verification if lane else None
-    pre = config.pre_authorization
     return {
-        "fastLane": {
-            "mode": (lane.mode if lane else None) or "off",
-            "skip": list(lane.skipped) if lane and lane.enabled else [],
-            "affectedTestsFirst": bool(verification and verification.affected_tests_first),
-            "parallel": bool(verification and verification.parallel),
-            "cache": bool(verification and verification.cache),
-        },
-        "preAuthorization": {
-            "mode": (pre.mode if pre else None) or "off",
-            "defaultHours": pre.hours if pre and pre.enabled else None,
-            "maxHours": pre.limit_hours if pre and pre.enabled else None,
-        },
+        "fastLane": _fast_lane_summary(config.fast_lane),
+        "preAuthorization": _pre_authorization_summary(config.pre_authorization),
         "changeTypes": bool(config.change_types),
         "planApproval": config.plan_approval or "off",
         "targets": {

@@ -67,13 +67,8 @@ def _list(raw: dict[str, Any], name: str) -> list[Any]:
     return value
 
 
-def load_clarification_file(path: Path) -> ClarificationInput:
-    """Read an answers file (YAML or JSON).
-
-    ``answers`` maps question ids to answer text. Optional task changes:
-    ``replaceCriteria`` (objects with the ``criterionId`` they replace), ``addCriteria`` and
-    ``addRequirements`` (strings or objects; added requirements get source
-    ``clarification``)."""
+def _read_answers(path: Path) -> dict[str, Any]:
+    """The answers file as an object of known fields."""
     try:
         if path.suffix.lower() == ".json":
             raw = json.loads(path.read_text(encoding="utf-8"))
@@ -86,6 +81,11 @@ def load_clarification_file(path: Path) -> ClarificationInput:
     unknown = sorted(set(raw) - _KNOWN_FIELDS)
     if unknown:
         raise ConfigurationError(f"unknown answers-file field(s): {', '.join(unknown)}")
+    return raw
+
+
+def _answer_texts(raw: dict[str, Any]) -> dict[str, str]:
+    """The answers by question id (a file with only contract values has none)."""
     answers = raw.get("answers")
     contract = raw.get("contract")
     if contract is not None and not isinstance(contract, dict):
@@ -99,6 +99,19 @@ def load_clarification_file(path: Path) -> ClarificationInput:
         if text is None or not isinstance(text, str | int | float):
             raise ConfigurationError(f"empty answer(s): {question_id}")
         texts[str(question_id)] = str(text)
+    return texts
+
+
+def load_clarification_file(path: Path) -> ClarificationInput:
+    """Read an answers file (YAML or JSON).
+
+    ``answers`` maps question ids to answer text. Optional task changes:
+    ``replaceCriteria`` (objects with the ``criterionId`` they replace), ``addCriteria`` and
+    ``addRequirements`` (strings or objects; added requirements get source
+    ``clarification``)."""
+    raw = _read_answers(path)
+    texts = _answer_texts(raw)
+    contract = raw.get("contract")
     return ClarificationInput(
         answers=texts,
         replace_criteria=tuple(

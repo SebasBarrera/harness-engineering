@@ -5,7 +5,7 @@ do, and the sections the decision brief and the inbox add."""
 from __future__ import annotations
 
 import mimetypes
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -559,55 +559,64 @@ def inbox_entries(services: EngineServices) -> list[dict[str, Any]]:
     ):
         if item.status != "PENDING":
             continue
-        expired = item.expires_at <= now
         execution = services.state.get("execution", item.execution_id, Execution)
-        if item.change_set_digest != execution.change_set_digest:
-            continue
-        entries.append(
-            {
-                "executionId": item.execution_id,
-                "taskId": item.task_id,
-                "taskTitle": services.state.get("task", item.task_id, Task).title,
-                "kind": "deferred",
-                "itemId": item.item_id,
-                "where": item.where,
-                "status": "EXPIRED" if expired else "PENDING",
-                "warning": f"expired at {item.expires_at.isoformat()}"
-                if expired
-                else (
-                    f"expires within {(item.expires_at - now).days + 1} day(s)"
-                    if item.expires_at - now <= timedelta(days=2)
-                    else None
-                ),
-                "waitingSince": item.created_at.isoformat(),
-                "waitingHours": round((now - item.created_at).total_seconds() / 3600, 1),
-                "next": f"harness evidence attach --run {item.execution_id} --item {item.item_id} "
-                "--file REPORT",
-            }
-        )
+        if item.change_set_digest == execution.change_set_digest:
+            entries.append(_deferred_entry(services, item, now))
     for execution in services.state.list("execution", Execution, project_id=project_id):
-        if (
-            execution.current_phase is not PhaseId.PLANNING
-            or execution.status is not ResultStatus.BLOCKED
-        ):
-            continue
-        raw = services.state.get_flag(f"preflight:{execution.execution_id}")
-        if not raw or '"UNAVAILABLE"' not in raw:
-            continue
-        if services.state.get_flag(f"preflightdecision:{execution.execution_id}"):
-            continue
-        entries.append(
-            {
-                "executionId": execution.execution_id,
-                "taskId": execution.task_id,
-                "taskTitle": services.state.get("task", execution.task_id, Task).title,
-                "kind": "preflight",
-                "waitingSince": execution.updated_at.isoformat(),
-                "waitingHours": round((now - execution.updated_at).total_seconds() / 3600, 1),
-                "next": f"harness verification show --run {execution.execution_id}",
-            }
-        )
+        if _preflight_waits(services, execution):
+            entries.append(
+                {
+                    "executionId": execution.execution_id,
+                    "taskId": execution.task_id,
+                    "taskTitle": services.state.get("task", execution.task_id, Task).title,
+                    "kind": "preflight",
+                    "waitingSince": execution.updated_at.isoformat(),
+                    "waitingHours": round((now - execution.updated_at).total_seconds() / 3600, 1),
+                    "next": f"harness verification show --run {execution.execution_id}",
+                }
+            )
     return entries
+
+
+def _expiry_warning(item: DeferredVerification, now: datetime) -> str | None:
+    """Expired, expiring within two days, or nothing to warn about."""
+    if item.expires_at <= now:
+        return f"expired at {item.expires_at.isoformat()}"
+    if item.expires_at - now <= timedelta(days=2):
+        return f"expires within {(item.expires_at - now).days + 1} day(s)"
+    return None
+
+
+def _deferred_entry(
+    services: EngineServices, item: DeferredVerification, now: datetime
+) -> dict[str, Any]:
+    return {
+        "executionId": item.execution_id,
+        "taskId": item.task_id,
+        "taskTitle": services.state.get("task", item.task_id, Task).title,
+        "kind": "deferred",
+        "itemId": item.item_id,
+        "where": item.where,
+        "status": "EXPIRED" if item.expires_at <= now else "PENDING",
+        "warning": _expiry_warning(item, now),
+        "waitingSince": item.created_at.isoformat(),
+        "waitingHours": round((now - item.created_at).total_seconds() / 3600, 1),
+        "next": f"harness evidence attach --run {item.execution_id} --item {item.item_id} "
+        "--file REPORT",
+    }
+
+
+def _preflight_waits(services: EngineServices, execution: Execution) -> bool:
+    """The run is blocked in PLANNING on an unavailable preflight nobody decided yet."""
+    if (
+        execution.current_phase is not PhaseId.PLANNING
+        or execution.status is not ResultStatus.BLOCKED
+    ):
+        return False
+    raw = services.state.get_flag(f"preflight:{execution.execution_id}")
+    if not raw or '"UNAVAILABLE"' not in raw:
+        return False
+    return not services.state.get_flag(f"preflightdecision:{execution.execution_id}")
 
 
 def open_contract_requests(services: EngineServices, task: Task) -> list[ClarificationRequest]:
