@@ -18,7 +18,6 @@ every changed path outside them, so an out-of-scope write is no longer silent.""
 from __future__ import annotations
 
 import fnmatch
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.domain.enums import (
@@ -31,6 +30,7 @@ from governed_harness.domain.errors import PolicyViolationError
 from governed_harness.domain.models import ChangeSet, Execution
 from governed_harness.orchestration.workspace_ops import restore_changes
 from governed_harness.runtime.guard import IGNORED_PATTERNS
+from governed_harness.runtime.workspace import WorkspaceDiff
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
@@ -143,8 +143,10 @@ class StopLine:
             restored, unrestorable = restore_changes(
                 workspace,
                 contents,
-                replace(
-                    diff, changes=tuple(item for item in diff.changes if item.path not in kept)
+                WorkspaceDiff(
+                    changes=tuple(item for item in diff.changes if item.path not in kept),
+                    unified_diff=diff.unified_diff,
+                    digest=diff.digest,
                 ),
             )
         record: dict[str, Any] = {

@@ -64,8 +64,22 @@ class IgnoreFile(StrEnum):
 _HARNESS_ENTRIES = {".harness", ".harness/", "/.harness", "/.harness/", ".harness/*"}
 
 
-def _add_entry(path: Path) -> str:
-    """Add ``.harness/`` to an ignore file; returns added, present or created."""
+_IGNORE_FILE_NAMES = frozenset({GITIGNORE_FILE, "exclude"})
+
+
+def _contained(path: Path, root: Path) -> Path:
+    """The resolved ignore file, refused unless it is a known ignore file inside ``root`` (the
+    workspace for ``.gitignore``, the repository's Git directory for ``info/exclude``): the
+    location comes from the command line and from Git, so it is checked before it is written."""
+    resolved = path.resolve()
+    if resolved.name not in _IGNORE_FILE_NAMES or not resolved.is_relative_to(root.resolve()):
+        raise ValueError(f"Refusing to write an ignore file outside {root}: {path}")
+    return resolved
+
+
+def _add_entry(path: Path, root: Path) -> str:
+    """Add ``.harness/`` to an ignore file inside ``root``; returns added, present or created."""
+    path = _contained(path, root)
     if not path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{GITIGNORE_ENTRY}\n", encoding="utf-8")
@@ -80,20 +94,30 @@ def _add_entry(path: Path) -> str:
 
 def ensure_gitignore(workspace: Path) -> str:
     """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
-    return _add_entry(workspace / GITIGNORE_FILE)
+    return _add_entry(workspace / GITIGNORE_FILE, workspace)
 
 
-def _exclude_path(workspace: Path) -> Path | None:
-    """The ``info/exclude`` file of the repository the workspace is in (``None`` outside a Git
-    repository or without Git); a linked worktree shares its repository's file."""
-    if not shutil.which("git"):
-        return None
-    result = _run(["git", "rev-parse", "--git-path", "info/exclude"], workspace)
+def _git_location(workspace: Path, *args: str) -> Path | None:
+    """A path Git reports for the workspace's repository, absolute (``None`` on failure)."""
+    result = _run(["git", "rev-parse", *args], workspace)
     location = result.stdout.strip()
     if result.returncode != 0 or not location:
         return None
     path = Path(location)
     return path if path.is_absolute() else workspace / path
+
+
+def _exclude_path(workspace: Path) -> tuple[Path, Path] | None:
+    """The ``info/exclude`` file of the repository the workspace is in and the repository's
+    common Git directory that holds it (``None`` outside a Git repository or without Git); a
+    linked worktree shares its repository's file."""
+    if not shutil.which("git"):
+        return None
+    exclude = _git_location(workspace, "--git-path", "info/exclude")
+    common = _git_location(workspace, "--git-common-dir")
+    if exclude is None or common is None:
+        return None
+    return exclude, common
 
 
 def _shown(path: Path, workspace: Path) -> str:
@@ -115,11 +139,13 @@ def ensure_ignored(workspace: Path, target: IgnoreFile = IgnoreFile.EXCLUDE) -> 
     gitignore = workspace / GITIGNORE_FILE
     exclude = _exclude_path(workspace) if target is IgnoreFile.EXCLUDE else None
     if exclude is None or _add_entry_present(gitignore):
-        return {"file": GITIGNORE_FILE, "entry": GITIGNORE_ENTRY, "status": _add_entry(gitignore)}
+        status = _add_entry(gitignore, workspace)
+        return {"file": GITIGNORE_FILE, "entry": GITIGNORE_ENTRY, "status": status}
+    path, common = exclude
     return {
-        "file": _shown(exclude, workspace),
+        "file": _shown(path, workspace),
         "entry": GITIGNORE_ENTRY,
-        "status": _add_entry(exclude),
+        "status": _add_entry(path, common),
     }
 
 

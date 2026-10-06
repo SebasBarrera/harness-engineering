@@ -169,6 +169,8 @@ from governed_harness.validators import (
 from governed_harness.validators.base import ValidatorOutput
 from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
 
+CANCELLATION_REQUESTED = "Cancellation requested"
+
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
         ResultStatus.FAILED,
@@ -908,7 +910,7 @@ class RunEngine:
         execution_id = running.execution_id
         try:
             if self.is_cancelled(execution_id):
-                return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+                return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
             with (
                 phase_scope(self._phase_policy(running, phase)),
                 destructive_scope(self._destructive_policy(running)),
@@ -1464,7 +1466,7 @@ class RunEngine:
                     self._record_denied_writes(execution, result.tool_invocations)
                 self._record_provider_retry(execution, phase, result, cause, retries)
                 if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                    return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
         finally:
             if guard is not None and guard_before is not None:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
@@ -3781,7 +3783,7 @@ class RunEngine:
         updated = execution.model_copy(
             update={
                 "status": ResultStatus.CANCELLED,
-                "terminal_reason": "Cancellation requested",
+                "terminal_reason": CANCELLATION_REQUESTED,
                 "updated_at": utc_now(),
             }
         )
