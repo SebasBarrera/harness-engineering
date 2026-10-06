@@ -9,7 +9,7 @@ the evaluation code.
 
 | Suite | Test ids | Script | Results |
 |---|---|---|---|
-| Fault probes (13 of the thesis + 10 integrity + 5 confinement, 3 repetitions) | P08, N13, N12 | `evaluation/fault_probes.py` | `fault-probes/` |
+| Fault probes (13 of the thesis + 11 integrity + 5 confinement, 3 repetitions) | P08, N13, N12 | `evaluation/fault_probes.py` | `fault-probes/` |
 | Verification-ladder corpus | N01-a | `evaluation/deterministic/ladder_corpus.py` | `ladder/` |
 | Review-panel corpus | N02-a (hook for N02-b) | `evaluation/deterministic/review_corpus.py` | `review/` |
 | Friction with the fixture provider | N03-a | `evaluation/deterministic/friction.py` | `friction/` |
@@ -26,15 +26,26 @@ Waits for a person before DECISION (INTENT questions, acceptance tests, a plan a
 decomposition, an unavailable preflight) are answered by a simulated person,
 `human.reviewer-simulated` (`evaluation/deterministic/common.py`, `simulated_person`): it answers
 questions with "keep the behaviour the task describes", approves acceptance tests and plans, and
-continues an unavailable preflight uncertified. At DECISION each suite applies its own declared
-rule (see its README). This is a simulation of a person, not a person.
+continues an unavailable preflight uncertified. It reads the wait from `harness inbox --json`,
+which since wave 9 (#73) lists every wait before DECISION with its kind and digest (a `plan show`
+fallback is kept for a harness without it). At DECISION each suite applies its own declared rule
+(see its README). This is a simulation of a person, not a person.
 
 ## Environment of these results
 
-Run on the worktree code of the branch `test/evaluation-2-0-0-deterministic` (origin/develop plus
-the wave-7 branch), whose package still declares version `1.0.0` (`harness --version` prints
-`harness 1.0.0`); 2.0.0 is not tagged yet. Python 3.12.11 on macOS arm64; the projects' validators
-ran with pytest 9.1.1, Ruff 0.16.7, mypy and freezegun 1.4.0 from a local virtual environment.
+Run on the worktree code of the branch `test/evaluation-2-0-0-deterministic` with wave 9 merged
+(origin/develop, the wave-7 branch and `fix/wave9-hardening` at `de84849`, PR #89), whose package
+still declares version `1.0.0` (`harness --version` prints `harness 1.0.0`); 2.0.0 is not tagged
+yet. Python 3.12.11 on macOS arm64; the projects' validators ran with pytest 9.1.1, Ruff 0.16.7,
+mypy and freezegun 1.4.0 from a local virtual environment. Every suite was re-run on that code on
+2026-10-06 (the first results, on the code before wave 9, are in the history of this branch).
+
+What wave 9 changed in these results (each subdirectory's README has the detail): the fault
+probes `unauthorized-command` (refused before it starts, #87) and `destructive-command` (BLOCKED,
+exit 6, #76), the new probe `reverify-continue` and the re-verification expected of
+`later-change` (#78); no probe leaves `.gitignore` changed any more (#86, init writes
+`.git/info/exclude`); the review corpus's identical re-review reports 0 model calls on a global
+cache hit (#75); the ladder corpus's command-line probe has its second variant back (#74).
 
 ## Re-running on the v2.0.0 wheel
 

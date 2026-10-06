@@ -19,7 +19,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -57,7 +56,6 @@
         "findings": [
           "HIGH:budget.exceeded",
           "HIGH:review.panel.unknown",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -93,7 +91,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -129,7 +126,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -165,7 +161,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -201,7 +196,6 @@
           "status": "BLOCKED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -219,8 +213,8 @@
       "why": "CHANGELOG #51: 'an expired decision leaves DECISION BLOCKED'."
     },
     "destructive-command": {
-      "expectationRevisedAfterDevelopmentRun": true,
-      "expected": "A granted provider command that deletes recursively outside the workspace is refused before it runs (the directory survives), recorded as a HIGH capabilities.destructive-denied finding; the run does not reach DECISION.",
+      "expectationRevisedAfterDevelopmentRun": false,
+      "expected": "A granted provider command that deletes recursively outside the workspace is refused before it runs (the directory survives), recorded as a HIGH capabilities.destructive-denied finding; the run is BLOCKED before DECISION (exit 6).",
       "identical": true,
       "matchesExpectation": [
         true,
@@ -234,19 +228,19 @@
           "eventChainValid": true,
           "gate": null,
           "phase": "INTENT",
-          "status": "ERROR"
+          "status": "BLOCKED"
         },
         "findings": [
           "HIGH:capabilities.destructive-denied"
         ],
-        "runExitCodeAfterWaits": 1,
-        "runStartExitCode": 1,
+        "runExitCodeAfterWaits": 6,
+        "runStartExitCode": 6,
         "verifyExitCode": 0,
         "waits": []
       },
       "origin": "N12",
       "repetitions": 3,
-      "why": "CHANGELOG #5 (destructiveActionsDefault: deny under applyRepositoryPolicies); src/governed_harness/capabilities/repository.py. Revised after the first development run: the exit code is not required (the refusal ends the run as ERROR, exit 1, documented for a run whose status is ERROR in docs/reference/exit-codes.md)."
+      "why": "CHANGELOG #5 (destructiveActionsDefault: deny under applyRepositoryPolicies); src/governed_harness/capabilities/repository.py. Revised for wave 9 (#76): the refusal blocks the run (exit 6, the code of a run stopped by a policy); before it the refusal ended the run as ERROR (exit 1) and the first development run did not require an exit code."
     },
     "dynamic-eval": {
       "expectationRevisedAfterDevelopmentRun": false,
@@ -268,7 +262,6 @@
         },
         "findings": [
           "HIGH:review.dynamic-eval",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -305,7 +298,6 @@
         },
         "findings": [
           "HIGH:review.dynamic-eval",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -338,13 +330,12 @@
           "eventChainValid": true,
           "gate": null,
           "phase": "VERIFICATION",
-          "status": "BLOCKED"
+          "status": "FAILED"
         },
         "findings": [
           "HIGH:differential.introduced",
           "HIGH:python.pytest.failed",
           "HIGH:python.pytest.test-failed",
-          "LOW:environment.dirty-tree",
           "MEDIUM:agent.empty-correction",
           "MEDIUM:agent.unsupported-claim",
           "MEDIUM:python.mypy.error",
@@ -354,8 +345,6 @@
         "runStartExitCode": 6,
         "verifyExitCode": 0,
         "waits": [
-          "PLANNING:plan",
-          "PLANNING:decomposition",
           "PLANNING:plan"
         ]
       },
@@ -383,7 +372,6 @@
         },
         "findings": [
           "HIGH:review.panel.pipeline-security.embedded-instructions",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:agent.empty-correction",
@@ -403,12 +391,12 @@
     },
     "later-change": {
       "expectationRevisedAfterDevelopmentRun": false,
-      "expected": "The approval bound to the evaluated digest is refused (exit 5) after the file changed.",
+      "expected": "The approval bound to the evaluated digest is refused (exit 5) after the file changed; the run continue that follows re-verifies the new ChangeSet (a verification.reverify.authorized event) instead of leaving an INCONCLUSIVE gate.",
       "identical": true,
       "matchesExpectation": [
-        true,
-        true,
-        true
+        false,
+        false,
+        false
       ],
       "observed": {
         "delivered": false,
@@ -420,7 +408,6 @@
           "status": "BLOCKED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -435,7 +422,7 @@
       },
       "origin": "P08",
       "repetitions": 3,
-      "why": "Digest-bound decisions (0.8.0 design, RD-09)."
+      "why": "Digest-bound decisions (0.8.0 design, RD-09). Revised for wave 9: verification.reverifyOnChange (#78, written by init) says run continue on a run in DECISION whose ChangeSet changed after its gate was evaluated runs VERIFICATION and the review again."
     },
     "lease-sigterm": {
       "expectationRevisedAfterDevelopmentRun": false,
@@ -456,7 +443,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -493,8 +479,7 @@
         },
         "findings": [
           "INFO:tests.coverage-unavailable",
-          "LOW:environment.baseline-failing",
-          "LOW:environment.dirty-tree"
+          "LOW:environment.baseline-failing"
         ],
         "runExitCodeAfterWaits": 6,
         "runStartExitCode": 6,
@@ -523,11 +508,10 @@
           "eventChainValid": true,
           "gate": null,
           "phase": "VERIFICATION",
-          "status": "BLOCKED"
+          "status": "FAILED"
         },
         "findings": [
           "HIGH:workspace.outside-owned-paths",
-          "LOW:environment.dirty-tree",
           "MEDIUM:agent.empty-correction",
           "MEDIUM:agent.unsupported-claim",
           "MEDIUM:python.mypy.error",
@@ -537,8 +521,6 @@
         "runStartExitCode": 6,
         "verifyExitCode": 0,
         "waits": [
-          "PLANNING:plan",
-          "PLANNING:decomposition",
           "PLANNING:plan"
         ]
       },
@@ -565,7 +547,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -628,13 +609,12 @@
           "eventChainValid": true,
           "gate": null,
           "phase": "VERIFICATION",
-          "status": "BLOCKED"
+          "status": "FAILED"
         },
         "findings": [
           "HIGH:differential.introduced",
           "HIGH:python.pytest.failed",
           "HIGH:python.pytest.test-failed",
-          "LOW:environment.dirty-tree",
           "MEDIUM:agent.empty-correction",
           "MEDIUM:agent.unsupported-claim",
           "MEDIUM:python.mypy.error",
@@ -644,14 +624,47 @@
         "runStartExitCode": 6,
         "verifyExitCode": 0,
         "waits": [
-          "PLANNING:plan",
-          "PLANNING:decomposition",
           "PLANNING:plan"
         ]
       },
       "origin": "P08",
       "repetitions": 3,
       "why": "CHANGELOG #36 (verificationCorrections, correction.exhausted), #7 differential (INTRODUCED_ERROR blocks). Revised after the first development run: the tree-restored condition was dropped because stop the line applies to a run that ends unapproved."
+    },
+    "reverify-continue": {
+      "expectationRevisedAfterDevelopmentRun": false,
+      "expected": "A file of the ChangeSet changes while the run waits in DECISION and run continue follows at once (no decision attempted): the run re-verifies the new ChangeSet (verification.reverify.authorized) and waits in DECISION again with a gate evaluated on it (exit 4, gate not INCONCLUSIVE).",
+      "identical": true,
+      "matchesExpectation": [
+        true,
+        true,
+        true
+      ],
+      "observed": {
+        "delivered": false,
+        "final": {
+          "certification": null,
+          "eventChainValid": true,
+          "gate": "PASSED",
+          "phase": "DECISION",
+          "status": "BLOCKED"
+        },
+        "findings": [
+          "LOW:tests.change-not-exercised",
+          "LOW:tests.weak",
+          "MEDIUM:python.mypy.error",
+          "MEDIUM:python.mypy.failed"
+        ],
+        "runExitCodeAfterWaits": 4,
+        "runStartExitCode": 6,
+        "verifyExitCode": 0,
+        "waits": [
+          "PLANNING:plan"
+        ]
+      },
+      "origin": "N13",
+      "repetitions": 3,
+      "why": "Wave 9, verification.reverifyOnChange (#78, written by init). Added for wave 9 next to later-change, which attempts the stale approval before continuing."
     },
     "secret": {
       "expectationRevisedAfterDevelopmentRun": false,
@@ -669,11 +682,10 @@
           "eventChainValid": true,
           "gate": null,
           "phase": "VERIFICATION",
-          "status": "BLOCKED"
+          "status": "FAILED"
         },
         "findings": [
           "CRITICAL:secrets.credential",
-          "LOW:environment.dirty-tree",
           "MEDIUM:agent.empty-correction",
           "MEDIUM:agent.unsupported-claim",
           "MEDIUM:python.mypy.error",
@@ -684,8 +696,6 @@
         "runStartExitCode": 6,
         "verifyExitCode": 0,
         "waits": [
-          "PLANNING:plan",
-          "PLANNING:decomposition",
           "PLANNING:plan"
         ]
       },
@@ -712,7 +722,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -748,7 +757,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -783,9 +791,7 @@
           "phase": "IMPLEMENTATION",
           "status": "TIMED_OUT"
         },
-        "findings": [
-          "LOW:environment.dirty-tree"
-        ],
+        "findings": [],
         "runExitCodeAfterWaits": 6,
         "runStartExitCode": 6,
         "verifyExitCode": 0,
@@ -816,7 +822,6 @@
           "status": "PASSED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -835,8 +840,8 @@
       "why": "As in 0.9.0: a TODO is reported, not blocking (no 2.0.0 setting makes it blocking)."
     },
     "unauthorized-command": {
-      "expectationRevisedAfterDevelopmentRun": true,
-      "expected": "The configured provider command `sh -c 'echo not-allowed'` is started (2.0.0 grants every configured provider its own command), its output is not the protocol's JSON, so the first agent call (clarify, INTENT) is a PROTOCOL_ERROR and the run stops before DECISION (exit 6).",
+      "expectationRevisedAfterDevelopmentRun": false,
+      "expected": "The configured provider command `sh -c '...; echo not-allowed'`, which no process.execute grant allows, is refused before it starts: a HIGH capabilities.command-denied finding, the run BLOCKED before DECISION (exit 6), the provider never started (its marker file is absent, no agent invocation and no protocol error recorded).",
       "identical": true,
       "matchesExpectation": [
         true,
@@ -852,7 +857,9 @@
           "phase": "INTENT",
           "status": "BLOCKED"
         },
-        "findings": [],
+        "findings": [
+          "HIGH:capabilities.command-denied"
+        ],
         "runExitCodeAfterWaits": 6,
         "runStartExitCode": 6,
         "verifyExitCode": 0,
@@ -860,7 +867,7 @@
       },
       "origin": "P08",
       "repetitions": 3,
-      "why": "Revised after the first development run (0.9.0 refused it with CapabilityDenied): under governance.phaseCapabilities the phase policy adds a process.execute grant for each configured provider's own command (src/governed_harness/orchestration/engine.py, _phase_policy 'launch'; capabilities/phase.py PhasePolicy.apply)."
+      "why": "Wave 9 (#87): a provider command outside the grants is refused again under governance.phaseCapabilities, as 0.9.0 refused it. Revised for wave 9: before it, 2.0.0 granted every configured provider its own command, so the command started and the first call was a PROTOCOL_ERROR (the expectation of the first development run)."
     },
     "write-git-hooks": {
       "expectationRevisedAfterDevelopmentRun": false,
@@ -881,7 +888,6 @@
           "status": "FAILED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "MEDIUM:sandbox.write-denied"
         ],
         "runExitCodeAfterWaits": 6,
@@ -914,7 +920,6 @@
           "status": "FAILED"
         },
         "findings": [
-          "LOW:environment.dirty-tree",
           "MEDIUM:sandbox.write-denied"
         ],
         "runExitCodeAfterWaits": 6,
@@ -948,7 +953,6 @@
         },
         "findings": [
           "CRITICAL:workspace.out-of-changeset-write",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -985,7 +989,6 @@
         },
         "findings": [
           "CRITICAL:workspace.out-of-changeset-write",
-          "LOW:environment.dirty-tree",
           "LOW:tests.change-not-exercised",
           "LOW:tests.weak",
           "MEDIUM:python.mypy.error",
@@ -1004,9 +1007,9 @@
     }
   },
   "totals": {
-    "identicalAcrossRepetitions": 28,
+    "identicalAcrossRepetitions": 29,
     "matchingExpectationAllRepetitions": 28,
-    "probes": 28,
-    "records": 84
+    "probes": 29,
+    "records": 87
   }
 }
