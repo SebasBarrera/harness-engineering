@@ -1,0 +1,77 @@
+{
+  "benchmarks": {
+    "artifactPutDeduplicated": {
+      "iterations": 1000.0,
+      "meanMs": 0.026047661000000003,
+      "medianMs": 0.023375,
+      "operationsPerSecond": 38391.16302995497,
+      "p95Ms": 0.027875,
+      "totalMs": 26.047661
+    },
+    "canonicalHash": {
+      "iterations": 1000.0,
+      "meanMs": 0.004634893,
+      "medianMs": 0.004583,
+      "operationsPerSecond": 215754.7110580546,
+      "p95Ms": 0.004708,
+      "totalMs": 4.634893
+    },
+    "eventAppend": {
+      "iterations": 1000.0,
+      "meanMs": 0.07105505100000001,
+      "medianMs": 0.061542,
+      "operationsPerSecond": 14073.594852532016,
+      "p95Ms": 0.095459,
+      "totalMs": 71.055051
+    },
+    "gateEvaluation": {
+      "iterations": 1000.0,
+      "meanMs": 0.00062173,
+      "medianMs": 0.000625,
+      "operationsPerSecond": 1608415.2284753833,
+      "p95Ms": 0.000708,
+      "totalMs": 0.62173
+    },
+    "processDirect": {
+      "iterations": 20.0,
+      "meanMs": 28.3840374,
+      "medianMs": 27.689521,
+      "operationsPerSecond": 35.23106969976019,
+      "p95Ms": 35.251166,
+      "totalMs": 567.680748
+    },
+    "processGovernanceOverhead": {
+      "absoluteMedianMs": 0.6333125000000024,
+      "note": "Local process-launch overhead only; excludes validators, agents and human wait.",
+      "relativeMedianPercent": 2.287191966953861
+    },
+    "processGoverned": {
+      "iterations": 20.0,
+      "meanMs": 28.505270799999998,
+      "medianMs": 28.3228335,
+      "operationsPerSecond": 35.081231363008136,
+      "p95Ms": 38.187875,
+      "totalMs": 570.105416
+    },
+    "stateTransition": {
+      "iterations": 1000.0,
+      "meanMs": 0.00040673399999999996,
+      "medianMs": 0.000416,
+      "operationsPerSecond": 2458609.312228631,
+      "p95Ms": 0.000417,
+      "totalMs": 0.406734
+    }
+  },
+  "environment": {
+    "platform": "macOS-15.8.1-arm64-arm-64bit",
+    "processor": "arm",
+    "python": "3.12.11"
+  },
+  "generatedAt": "2026-10-06T05:03:30.797449+00:00",
+  "methodology": {
+    "clock": "time.perf_counter_ns",
+    "scope": "Microbenchmarks on this execution environment; not general performance claims.",
+    "warmup": "No explicit warmup; every sample is reported in the aggregate."
+  },
+  "schemaVersion": "1.0"
+}

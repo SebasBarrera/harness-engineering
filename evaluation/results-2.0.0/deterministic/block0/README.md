@@ -47,3 +47,7 @@ Notes on this run:
   branch was created. The re-run on the v2.0.0 wheel and its tag settles it.
 - Local absolute paths in the result files were replaced by `<repo>`, `<work>`, `<tmp>` and `~`
   with `evaluation/deterministic/sanitize_paths.py`.
+- In all six `large` runs `run start` stopped in VERIFICATION (exit 6, `BLOCKED`) under the full
+  `init` configuration; the script deleted each workspace after measuring it and did not record
+  the blocking reason, so the seconds and the resident set cover INTENT to VERIFICATION, not a run
+  that reached DECISION as in the CHANGELOG measurement.

@@ -1,4 +1,49 @@
 {
+  "benchmark": {
+    "micro": [
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-1.json",
+        "run": 1,
+        "seconds": 1.55,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-2.json",
+        "run": 2,
+        "seconds": 1.6,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-3.json",
+        "run": 3,
+        "seconds": 1.61,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-4.json",
+        "run": 4,
+        "seconds": 1.6,
+        "stderr": ""
+      },
+      {
+        "exitCode": 0,
+        "file": "benchmark-micro-5.json",
+        "run": 5,
+        "seconds": 1.58,
+        "stderr": ""
+      }
+    ],
+    "scenarios": {
+      "exitCode": 0,
+      "file": "benchmark-scenarios.json",
+      "seconds": 19.03,
+      "stderr": ""
+    }
+  },
   "demo": {
     "byFlow": {
       "agent-results": {
@@ -98,7 +143,7 @@
     "workdir": "<work>/work/block0/demo"
   },
   "environment": {
-    "evaluationCodeDigest": "25d3ba1c812cc7e7",
+    "evaluationCodeDigest": "878a07d49fd16db6",
     "git": "git version 2.56.0",
     "harnessExecutable": "<repo>/.venv/bin/harness",
     "harnessVersion": "harness 1.0.0",
@@ -106,12 +151,107 @@
     "modelCalls": 0,
     "platform": "macOS-15.8.1-arm64-arm-64bit",
     "python": "3.12.11",
-    "recordedAt": "2026-10-06T04:47:36Z",
+    "recordedAt": "2026-10-06T05:03:27Z",
     "repo": "<repo>",
-    "repositoryHead": "88b73973c387da4ad2f28ea57b20b61a5993fe20+dirty",
+    "repositoryHead": "2a5e5ac023ad9ad193fafe7df6798423ca438cae+dirty",
     "suite": "block0",
     "wheel": null,
     "wheelSha256": null
+  },
+  "large": {
+    "configuration": "harness init with validators [python.pytest]; 'without-workspace-keys' removes workspace.snapshot, baseline and snapshotCache",
+    "runs": [
+      {
+        "envSecretStored": true,
+        "generationSeconds": 8.3,
+        "harnessDirBytes": 8182,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 854196224,
+        "rep": 1,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 52.88,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497065,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": true,
+        "generationSeconds": 8.5,
+        "harnessDirBytes": 8182,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 853082112,
+        "rep": 2,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 50.67,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497065,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": true,
+        "generationSeconds": 8.3,
+        "harnessDirBytes": 8182,
+        "largestStoredFileBytes": 126141290,
+        "maxResidentSetBytes": 856784896,
+        "rep": 3,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 50.9,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 126497064,
+        "trackedFiles": 10001,
+        "variant": "without-workspace-keys"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 8.4,
+        "harnessDirBytes": 1558053,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 339230720,
+        "rep": 1,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 21.41,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2265948,
+        "trackedFiles": 10001,
+        "variant": "init"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 6.7,
+        "harnessDirBytes": 1558053,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 342196224,
+        "rep": 2,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 21.62,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2265948,
+        "trackedFiles": 10001,
+        "variant": "init"
+      },
+      {
+        "envSecretStored": false,
+        "generationSeconds": 7.2,
+        "harnessDirBytes": 1558053,
+        "largestStoredFileBytes": 1910343,
+        "maxResidentSetBytes": 346161152,
+        "rep": 3,
+        "runPhase": "VERIFICATION",
+        "runStartExitCode": 6,
+        "runStartSeconds": 21.37,
+        "runStatus": "BLOCKED",
+        "stateDirBytes": 2265948,
+        "trackedFiles": 10001,
+        "variant": "init"
+      }
+    ]
   },
   "security": {
     "family": {
