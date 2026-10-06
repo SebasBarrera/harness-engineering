@@ -1,19 +1,144 @@
 {
+  "demo": {
+    "byFlow": {
+      "agent-results": {
+        "mismatches": 0,
+        "steps": 8
+      },
+      "bdd": {
+        "mismatches": 0,
+        "steps": 5
+      },
+      "broken-baseline": {
+        "mismatches": 0,
+        "steps": 8
+      },
+      "clarification": {
+        "mismatches": 0,
+        "steps": 17
+      },
+      "corrections": {
+        "mismatches": 0,
+        "steps": 12
+      },
+      "delivery": {
+        "mismatches": 0,
+        "steps": 10
+      },
+      "friction": {
+        "mismatches": 0,
+        "steps": 7
+      },
+      "gitlab": {
+        "mismatches": 0,
+        "steps": 9
+      },
+      "integrity": {
+        "mismatches": 0,
+        "steps": 15
+      },
+      "ladder": {
+        "mismatches": 0,
+        "steps": 16
+      },
+      "later-change": {
+        "mismatches": 0,
+        "steps": 11
+      },
+      "memory": {
+        "mismatches": 0,
+        "steps": 26
+      },
+      "node": {
+        "mismatches": 0,
+        "steps": 6
+      },
+      "quickstart": {
+        "mismatches": 0,
+        "steps": 15
+      },
+      "review-cache": {
+        "mismatches": 0,
+        "steps": 3
+      },
+      "review-exception": {
+        "mismatches": 0,
+        "steps": 6
+      },
+      "review-hook": {
+        "mismatches": 0,
+        "steps": 4
+      },
+      "review-panel": {
+        "mismatches": 0,
+        "steps": 5
+      },
+      "review-unknown": {
+        "mismatches": 0,
+        "steps": 3
+      },
+      "tdd": {
+        "mismatches": 0,
+        "steps": 10
+      },
+      "traceability": {
+        "mismatches": 0,
+        "steps": 8
+      }
+    },
+    "checksBad": 0,
+    "checksOk": 50,
+    "command": "python scripts/demo_flows.py all --workdir DIR --transcript FILE",
+    "exitCode": 0,
+    "flows": 21,
+    "mismatches": 0,
+    "seconds": 171.5,
+    "stateDir": "<work>/work/block0/demo-state",
+    "steps": 204,
+    "workdir": "<work>/work/block0/demo"
+  },
   "environment": {
     "evaluationCodeDigest": "25d3ba1c812cc7e7",
     "git": "git version 2.56.0",
-    "harnessExecutable": "/Users/jbarrerapuli/Documents/Repos/Proyecto de grado/.claude/worktrees/agent-ae8f0f00edfc9653f/.venv/bin/harness",
+    "harnessExecutable": "<repo>/.venv/bin/harness",
     "harnessVersion": "harness 1.0.0",
     "machine": "arm64",
     "modelCalls": 0,
     "platform": "macOS-15.8.1-arm64-arm-64bit",
     "python": "3.12.11",
-    "recordedAt": "2026-10-06T04:40:11Z",
-    "repo": "/Users/jbarrerapuli/Documents/Repos/Proyecto de grado/.claude/worktrees/agent-ae8f0f00edfc9653f",
-    "repositoryHead": "d9cd085d8c0bd59f8dd5a84af4a52b5164f27ba8+dirty",
+    "recordedAt": "2026-10-06T04:47:36Z",
+    "repo": "<repo>",
+    "repositoryHead": "88b73973c387da4ad2f28ea57b20b61a5993fe20+dirty",
     "suite": "block0",
     "wheel": null,
     "wheelSha256": null
+  },
+  "security": {
+    "family": {
+      "errors": 0,
+      "failed": 0,
+      "passed": 4,
+      "skipped": 0,
+      "tests": 4
+    },
+    "tests": [
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_path_inside_workspace"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_path_traversal_is_denied"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_absolute_path_under_a_symlinked_ancestor_is_contained"
+      },
+      {
+        "outcome": "passed",
+        "test": "tests.security.test_path_containment::test_symlink_inside_the_workspace_is_still_rejected_through_an_alias"
+      }
+    ]
   },
   "static": {
     "mypy": {
@@ -34,6 +159,72 @@
     "versions": {
       "mypy": "mypy 1.20.2 (compiled: yes)",
       "ruff": "ruff 0.16.7"
+    }
+  },
+  "tests": {
+    "byFamily": {
+      "contract": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 15,
+        "skipped": 0,
+        "tests": 15
+      },
+      "e2e": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 8,
+        "skipped": 0,
+        "tests": 8
+      },
+      "integration": {
+        "errors": 0,
+        "failed": 2,
+        "passed": 384,
+        "skipped": 0,
+        "tests": 386
+      },
+      "performance": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 3,
+        "skipped": 0,
+        "tests": 3
+      },
+      "security": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 4,
+        "skipped": 0,
+        "tests": 4
+      },
+      "unit": {
+        "errors": 0,
+        "failed": 0,
+        "passed": 679,
+        "skipped": 0,
+        "tests": 679
+      }
+    },
+    "command": "<repo>/.venv/bin/python -m pytest -W error::ResourceWarning --cov=governed_harness --cov-branch",
+    "coverage": {
+      "branchPercent": 79.71,
+      "branches": 8048,
+      "combinedPercent": 88.36,
+      "coveredBranches": 6415,
+      "coveredLines": 23851,
+      "linePercent": 91.02,
+      "statements": 26204
+    },
+    "exitCode": 1,
+    "pytestSummary": "2 failed, 1093 passed, 2 warnings in 587.60s (0:09:47)",
+    "seconds": 588.59,
+    "totals": {
+      "errors": 0,
+      "failed": 2,
+      "passed": 1093,
+      "skipped": 0,
+      "tests": 1095
     }
   }
 }

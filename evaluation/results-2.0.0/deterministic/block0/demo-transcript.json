@@ -1,0 +1,1430 @@
+[
+  {
+    "flow": "quickstart",
+    "command": "harness init",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness task create --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness run start --task task_discount_rule",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness status --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness gate decide --run run_ffbbb71bd5284b4c86bfe820854530a5 --decision APPROVE --change-set-digest sha256:a31ab30d5d80330efbf4d6a15e108d068e2196d892a65e1eb48190832fca10b3 --actor you --rationale Criteria covered by tests",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format markdown --output trace.md",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness inspect",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness doctor --path . --json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness config validate",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness findings list --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness evidence list --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format json --output trace.json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format jsonl --output trace.jsonl",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness trace --run run_ffbbb71bd5284b4c86bfe820854530a5 --format sarif --output trace.sarif",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "quickstart",
+    "command": "harness retrospect --run run_ffbbb71bd5284b4c86bfe820854530a5",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Stale approval attempt",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness run continue --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision REQUEST_CHANGES --change-set-digest sha256:f74ca19b047b5146b1d2fd8217ff7adf9c711e065c47562d8b592de3712e037e --actor human.reviewer --rationale Manual edit after review; verify again",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness run continue --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness status --path . --run run_0f830e3fc6284764b0a9d96b53b1899e",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "later-change",
+    "command": "harness gate decide --path . --run run_0f830e3fc6284764b0a9d96b53b1899e --decision APPROVE --change-set-digest sha256:7c24bc327c39a34092133c6d05c92aed78ee6515f7c4ca82b563d83f0a478329 --actor human.reviewer --rationale Verified again after the correction",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness findings list --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness status --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness run continue --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness status --path . --run run_73a2035b2c604cd899a68ba39654a49d",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "broken-baseline",
+    "command": "harness gate decide --path . --run run_73a2035b2c604cd899a68ba39654a49d --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Baseline repaired outside the ChangeSet; the retry passed",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness run start --path . --task task_python_secret",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness status --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness gate decide --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f --decision APPROVE --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.reviewer --rationale Plain approval over a failed gate",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "review-exception",
+    "command": "harness gate decide --path . --run run_0f27cddf3ac64231a8fd2a66f0f9dd1f --decision APPROVE_EXCEPTION --change-set-digest sha256:032310757650a02ceb97009710b90c1346da6724186f084d14eae9ddae185e47 --actor human.security --rationale Demonstration fixture: the value is not a real credential",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness inspect --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness run start --path . --task task_node_config_precedence",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness status --path . --run run_343da1903ff34c29b542c8a9b6359d3d",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "node",
+    "command": "harness gate decide --path . --run run_343da1903ff34c29b542c8a9b6359d3d --decision APPROVE --change-set-digest sha256:b4602ee931a6a496de9048acc7830038ee39599235e2660e55a675cfb55e7f7e --actor human.reviewer --rationale Precedence fixed and tested",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory add --path . --level project --key money.rounding --value Round money half up to two places. --actor human.author",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory add --path . --level normative --key release.freeze --value No dependency upgrades during the freeze. --valid-until 2020-01-01T00:00:00+00:00 --approve --actor human.lead",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory add --path . --level task --key k --value v",
+    "expected": 2,
+    "actual": 2,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory approve --path . --memory mem_f1c4c1e2d164471ead43de8b76865aa8 --actor human.lead",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory approve --path . --memory mem_aa627cb1093e43de92ae863fcc91031c",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory manifest --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness status --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness gate decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Validators passed",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness recommendation list --path . --run run_da41a98c3c0247b9bc22b53f2dee316a",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness recommendation decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --recommendation recommendation_730fe17328194b21b1eb04ec6ca998fa --decision ACCEPT --actor human.lead --rationale No findings in this run; keep the controls as they are.",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness recommendation decide --path . --run run_da41a98c3c0247b9bc22b53f2dee316a --recommendation recommendation_730fe17328194b21b1eb04ec6ca998fa --decision REJECT --rationale Changed my mind",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness task create --path . --file task-2.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness run start --path . --task task_python_above_threshold",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory manifest --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness status --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness gate decide --path . --run run_0ba24d9ce86f45c0b426b4625d1145ca --decision APPROVE --change-set-digest sha256:573977f835edcc50c520db8221a63d0fb706352ce82fd48fed5cb8ad421e94ff --actor human.reviewer --rationale Validators passed",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory invalidate --path . --memory mem_aa627cb1093e43de92ae863fcc91031c --reason Rounding moved to the billing service. --actor human.lead",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness memory list --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness task create --path . --file task-3.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness run start --path . --task task_python_zero --provider usage_fixture",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness status --path . --run run_a3b64bd7241047268c1b6992faea013e",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness status --path . --run run_a3b64bd7241047268c1b6992faea013e",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "memory",
+    "command": "harness gate decide --path . --run run_a3b64bd7241047268c1b6992faea013e --decision APPROVE --change-set-digest sha256:9c44c749ea3ac17bd36e211179fddf899da451658674239093b11e7a99c49619 --actor human.reviewer --rationale Validators passed",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness run start --path . --task task_python_vague",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task questions --path . --task task_python_vague",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task clarify --path . --task task_python_vague --actor human.author --file unknown.yaml",
+    "expected": 2,
+    "actual": 2,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task clarify --path . --task task_python_vague --actor human.author --file answers.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness run continue --path . --run run_c52bdaed8ed84277b5ed41805b702ceb",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness status --path . --run run_c52bdaed8ed84277b5ed41805b702ceb",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness gate decide --path . --run run_c52bdaed8ed84277b5ed41805b702ceb --decision APPROVE --change-set-digest sha256:4278f4a4e00d82aef9bc2cc14ecddc9cb3d381d9753a986b43c11ce7bf6e0dad --actor human.reviewer --rationale Clarified criteria covered by the validators",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task clarify --path . --task task_python_vague --actor human.author --file answers.yaml",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task create --path . --file one-sentence.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness run start --path . --task task_python_one_sentence",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task questions --path . --task task_python_one_sentence",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness task clarify --path . --task task_python_one_sentence --actor human.author --file elicitation.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness run continue --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness status --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "clarification",
+    "command": "harness gate decide --path . --run run_6e7084b017af4f0cbaf8f701e3b7dbc1 --decision APPROVE --change-set-digest sha256:d510e32e55650257125ef77e11827c7048784827c4e06e5dd3cb7dc3b70e4a40 --actor human.reviewer --rationale Elicited criteria covered by the validators",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness run start --path . --task task_python_untraced",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness status --path . --run run_7950329799a2480d9e327370f28fd651",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness findings list --path . --run run_7950329799a2480d9e327370f28fd651",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness status --path . --run run_7950329799a2480d9e327370f28fd651",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness gate decide --path . --run run_7950329799a2480d9e327370f28fd651 --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision APPROVE --rationale Tests pass",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "traceability",
+    "command": "harness gate decide --path . --run run_7950329799a2480d9e327370f28fd651 --change-set-digest sha256:0c22b1e7b3d62df23e16556e7bd3e3e0fa38d132e771051fda809ae860a35ff3 --actor human.reviewer --decision REJECT --rationale A2 has no test",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness task create --path . --file task_corrected.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness run start --path . --task task_corrected --provider fix",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness status --path . --run run_553164f784e44b82816d73ac737fa8f2",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness status --path . --run run_553164f784e44b82816d73ac737fa8f2",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness gate decide --path . --run run_553164f784e44b82816d73ac737fa8f2 --decision APPROVE --change-set-digest sha256:9c529cc01a99e9de7abf724aac96e18358d02495e2669aad7cc8f308d33f3884 --actor human.reviewer --rationale Corrected change passed verification",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness task create --path . --file task_stubborn.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness run start --path . --task task_stubborn --provider stubborn",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness status --path . --run run_43c557522c774194a06b8101c2c86067",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness task create --path . --file task_flaky.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness run start --path . --task task_flaky --provider flaky",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "corrections",
+    "command": "harness status --path . --run run_48f2b4141db84c11907f60f9aa3a115f",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness config validate --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness gate decide --path . --run run_54b269f1b8274286b525ad5578f5a86c --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --decision APPROVE_EXCEPTION --actor agent.claude-code --rationale self-approval",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness verify --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness gate decide --path . --run run_54b269f1b8274286b525ad5578f5a86c --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Discount rule reviewed",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness verify --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness status --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness verify --path . --run run_54b269f1b8274286b525ad5578f5a86c",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "integrity",
+    "command": "harness trace --path . --run run_54b269f1b8274286b525ad5578f5a86c --format json",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness status --path . --run run_4effffd9aa2346aa80f3c48fe116939b",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness gate decide --path . --run run_4effffd9aa2346aa80f3c48fe116939b --decision APPROVE --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor you --rationale Criteria covered by tests",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness export --path . --run run_4effffd9aa2346aa80f3c48fe116939b --bundle evidence.tar.gz",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness verify --bundle evidence.tar.gz",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head harness/run_4effffd9aa2346aa80f3c48fe116939b --bundle evidence.tar.gz",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head harness/run_4effffd9aa2346aa80f3c48fe116939b",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "delivery",
+    "command": "harness verify-approval --path . --base d41b9e8806abe9d5586d0b3bbce41566d35533b0 --no-workspace --head HEAD --bundle evidence.tar.gz",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness config validate --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness status --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness check --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness status --path . --run run_0e7c7366ca874d6484eb137d983b0346",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "agent-results",
+    "command": "harness gate decide --path . --run run_0e7c7366ca874d6484eb137d983b0346 --decision REJECT --change-set-digest sha256:192a41b779ddf443d402a4a42a65d31a8b6cd3372e2af6618445c24f45b750bc --actor human.reviewer --rationale Not this change",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness run start --path . --task task_ladder",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness verification show --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness status --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness gate decide --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked",
+    "expected": 5,
+    "actual": 5,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness gate decide --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --change-set-digest sha256:3b8568a6ea6794f2d94b53cdd79ce5b2deb0711721543d53fc04eb1bf7a5b89e --actor human.reviewer --decision APPROVE --rationale Checked --check ac_look",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness evidence attach --path . --run run_ee0fdc37661c41e0b90e1ab96b129565 --item D-ac_e2e --file e2e.xml --actor human.ci",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness verification show --path . --run run_ee0fdc37661c41e0b90e1ab96b129565",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness task create --path . --file unreached.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness run start --path . --task task_unreached",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness verification show --path . --run run_262317304cfe4d6b809987e17dc1aa3f",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness task create --path . --file device.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness run start --path . --task task_device",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness verification decide --path . --run run_8ba22a95a9cb44e9b6414927d100c484 --continue-uncertified --actor human.lead --rationale No device here; the device lab verifies it",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "ladder",
+    "command": "harness config lint --path .",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness run start --path . --task task_python_add_discount",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness pr forge --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness pr publish --path . --pr 7",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness pr create --path . --run run_65369f1154b14cee9d061242aff14ad8",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness pr status --path . --commit c887ecd03c9ee3b055c6e4941e895f33852b5933",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness trace --path . --format codequality --output gl-code-quality-report.json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "gitlab",
+    "command": "harness pr publish --path . --pr 7",
+    "expected": 2,
+    "actual": 2,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness standards show --path . --file src/sample/pricing.py",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness task create --path . --file red.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness run start --path . --task task_red",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness trace --path . --run run_5539c3daceae43ba8a4617ddc479c349 --format json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness status --path . --run run_5539c3daceae43ba8a4617ddc479c349",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness gate decide --path . --run run_5539c3daceae43ba8a4617ddc479c349 --decision APPROVE --change-set-digest sha256:aa12d9d4693500b9f6eb800a38f335f3963a87361742920140221d3438f162b9 --actor human.reviewer --rationale Test written first",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness task create --path . --file green.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness run start --path . --task task_after",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "tdd",
+    "command": "harness findings list --path . --run run_d9a6935228dd488396a9213ce54fc23d",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "bdd",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "bdd",
+    "command": "harness task create --path . --file task.yaml",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "bdd",
+    "command": "harness run start --path . --task task_bdd",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "bdd",
+    "command": "harness acceptance show --path . --run run_2a0b879222cb4e53a0e1128180fc60ee",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "bdd",
+    "command": "harness acceptance decide --path . --run run_2a0b879222cb4e53a0e1128180fc60ee --decision APPROVE --digest sha256:7902bc2f108820eae76ca51d95a8adb8eed872b6d268e0c5ac67c144e1719e03 --actor human.reviewer --rationale The scenario states the criterion",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "review-panel",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-panel",
+    "command": "harness review rules show --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-panel",
+    "command": "harness review-code --path . --provider reviewer",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "review-panel",
+    "command": "harness review-code --path . --provider reviewer",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-panel",
+    "command": "harness review verify --path . --sha HEAD",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-cache",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-cache",
+    "command": "harness review-code --path . --provider reviewer",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-cache",
+    "command": "harness review-code --path . --provider reviewer",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-unknown",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-unknown",
+    "command": "harness review-code --path . --provider reviewer --fallback-provider simulated",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-unknown",
+    "command": "harness review-code --path . --provider reviewer --fallback-provider reviewer --no-cache",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "review-hook",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-hook",
+    "command": "harness review hook install --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-hook",
+    "command": "harness review-code --path . --mode hook --base main --provider simulated",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "review-hook",
+    "command": "harness review-code --path . --mode hook --base main",
+    "expected": 6,
+    "actual": 6,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness init --path .",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness do The discount applies at or above the threshold. --path . --criterion README.md states that the discount applies at or above the threshold --pre-approve --actor you --no-interactive --json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness do Amounts are rounded to two decimals. --path . --criterion README.md states that amounts are rounded to two decimals --no-interactive --json",
+    "expected": 4,
+    "actual": 4,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness inbox --path . --json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness inbox --path . --approve run_af459b2769da4fac8cd0deaeeec6c979=sha256:b54694c02a505149a99f7020a63d15e0ea9ec18486ff2ad48f54a1f5ad1532ab --rationale Documentation only --actor you --json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness metrics --path . --format html --output metrics.html",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  },
+  {
+    "flow": "friction",
+    "command": "harness metrics --path . --format json",
+    "expected": 0,
+    "actual": 0,
+    "ok": true
+  }
+]

@@ -1,0 +1,72 @@
+{
+  "byMetric": {
+    "agentCallSeconds": {
+      "comparable": 24,
+      "equal": 0,
+      "maxAbsDiff": 0.314,
+      "maxRelDiff": 8.772727,
+      "medianRelDiff": 7.482759,
+      "runs": 45
+    },
+    "agentCalls": {
+      "comparable": 24,
+      "equal": 24,
+      "maxAbsDiff": 0.0,
+      "maxRelDiff": 0.0,
+      "medianRelDiff": 0.0,
+      "runs": 45
+    },
+    "cacheTokens": {
+      "comparable": 24,
+      "equal": 24,
+      "maxAbsDiff": 0.0,
+      "maxRelDiff": 0.0,
+      "medianRelDiff": 0.0,
+      "runs": 45
+    },
+    "costUsd": {
+      "comparable": 0,
+      "equal": 0,
+      "maxAbsDiff": 0.0,
+      "maxRelDiff": null,
+      "medianRelDiff": null,
+      "runs": 45
+    },
+    "inputTokens": {
+      "comparable": 24,
+      "equal": 24,
+      "maxAbsDiff": 0.0,
+      "maxRelDiff": 0.0,
+      "medianRelDiff": 0.0,
+      "runs": 45
+    },
+    "outputTokens": {
+      "comparable": 24,
+      "equal": 24,
+      "maxAbsDiff": 0.0,
+      "maxRelDiff": 0.0,
+      "medianRelDiff": 0.0,
+      "runs": 45
+    },
+    "runWallSeconds": {
+      "comparable": 24,
+      "equal": 0,
+      "maxAbsDiff": 1.644,
+      "maxRelDiff": 0.291748,
+      "medianRelDiff": 0.102041,
+      "runs": 45
+    }
+  },
+  "callsByKindMatches": 24,
+  "costEstimatedKeptApart": 45,
+  "demo": 21,
+  "errors": [],
+  "internalConsistency": {
+    "callsByKindSumEqualsTotal": 45,
+    "perRunCallsSumEqualsTotal": 45,
+    "perRunTokensSumEqualsTotal": 45
+  },
+  "measured": 24,
+  "noPerPersonIndicator": 45,
+  "runDirs": 45
+}

@@ -34,3 +34,16 @@ SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-
   --out evaluation/results-2.0.0/deterministic/block0 --work $SCRATCH/work/block0 --only static
 .venv/bin/python evaluation/deterministic/block0_technical.py ... --only tests,demo,benchmark,large
 ```
+
+Notes on this run:
+
+- `tests` and `demo` ran while the fault-probe suite ran in another process (their seconds share
+  the machine); `benchmark` and `large` ran after it, with no other suite running.
+- The two failures of `tests` (`tests/integration/test_declared_settings.py`,
+  `test_config_validate_reports_declarative_settings` and `test_schema_marks_declarative_fields`)
+  come from the wave-7 snapshot merged into this branch (`11c05bb`): the tests still expect
+  `allowedCapabilities` to be declarative, which wave 7 (#4) changed; the wave-7 branch fixed the
+  tests later (`3d6cbe5`, "expect allowedCapabilities to be applied, not declarative"), after this
+  branch was created. The re-run on the v2.0.0 wheel and its tag settles it.
+- Local absolute paths in the result files were replaced by `<repo>`, `<work>`, `<tmp>` and `~`
+  with `evaluation/deterministic/sanitize_paths.py`.

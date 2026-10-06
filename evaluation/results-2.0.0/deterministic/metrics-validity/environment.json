@@ -1,17 +1,17 @@
 {
-  "assessedWith": "<repo>/.venv/bin/python",
+  "demoWorkdir": "<work>/work/block0/demo",
   "evaluationCodeDigest": "25d3ba1c812cc7e7",
   "git": "git version 2.56.0",
-  "governedHarnessVersion": "1.0.0",
   "harnessExecutable": "<repo>/.venv/bin/harness",
   "harnessVersion": "harness 1.0.0",
   "machine": "arm64",
   "modelCalls": 0,
   "platform": "macOS-15.8.1-arm64-arm-64bit",
   "python": "3.12.11",
-  "recordedAt": "2026-10-06T04:37:21Z",
-  "repositoryHead": "397b3f2bc48734a2dc3560b47b3b6b592082c388+dirty",
-  "suite": "P24 INTENT equivalence",
+  "recordedAt": "2026-10-06T05:01:02Z",
+  "repositoryHead": "88b73973c387da4ad2f28ea57b20b61a5993fe20+dirty",
+  "runDirs": 24,
+  "suite": "N04 metrics validity",
   "wheel": null,
   "wheelSha256": null
 }
