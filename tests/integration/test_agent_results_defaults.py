@@ -54,7 +54,10 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
     assert {"planning", "context", "budget", "memory", "agentRouting"} <= set(config)
     # #85: the invoking model is the ceiling of the routing tables.
     assert config["agentRouting"]["mode"] == "anchored"
+    # #80: a broken read-only answer gets a second attempt.
+    assert config["runtime"]["contractRetry"] == {"mode": "once"}
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
+    assert summary["contractRetry"] == {"mode": "once"}
     assert summary["agentReview"] == "enforce"
     assert summary["checks"]["differential"] is True
 

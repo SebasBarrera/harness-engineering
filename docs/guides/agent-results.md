@@ -38,6 +38,33 @@ model and effort (`intake.clarifyAgent`, `verification.acceptanceTests.author`,
 `routing`. Without one, `locate` takes the router's `locate` rung, else the bottom rung of the
 family's escalation ladder: the cheapest adequate model.
 
+### A second attempt for a broken answer (#80)
+
+In the 2.0.0 pilot an `acceptance` call answered with something that was not JSON and
+SPECIFICATION blocked at once, while the review panel already retries an invalid answer once on
+its fallback provider. `runtime.contractRetry`, which `harness init` writes as `{mode: once}`
+since #80, gives every read-only kind that second attempt:
+
+```yaml
+runtime:
+  contractRetry:
+    mode: once                  # once, or off
+    fallbackProvider: second    # optional: an agentProviders entry (or simulated)
+```
+
+An answer breaks its contract when it is a protocol error (no JSON object, no `result` object)
+or when the phase rejects its `result` (the checks behind `intake.agent-review-malformed`,
+`acceptance.malformed`, `planning.plan-malformed`, `locate.malformed`, `architecture.malformed`
+and `review.agent-malformed`). The call is then sent once more, to `fallbackProvider`
+when it is set, else to the same provider; the first attempt stays recorded (its request,
+output and invocation) and an `agent-contract-retry` evidence and an `agent.call.contract-retry`
+event say why and where the second went. The phase uses the second answer: a valid one continues
+as a valid first answer would, a broken one blocks as before, with one finding. A provider that
+did not answer, a budget block or a call that changed the workspace is not retried. A
+`fallbackProvider` that is not `simulated` or an entry of `agentProviders` is a configuration
+error. Without the key the first broken answer blocks, as in 1.1. Transient failures of a command
+provider keep their own retries (`runtime.providerRetries`).
+
 A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
 request as a prompt (the instructions, then the request as JSON) and reads the `result` object
 from the last JSON object with a `result` key in the agent's answer. The router's model and
@@ -304,6 +331,7 @@ same model once.
 |---|---|
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
+| `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
 | `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |

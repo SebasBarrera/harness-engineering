@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A second attempt for a read-only answer that breaks its contract (#80). In the 2.0.0 pilot an
+  acceptance call answered with invalid JSON and SPECIFICATION blocked at once, while the review
+  panel retries an invalid answer on its fallback provider. Under `runtime.contractRetry`
+  (`mode: once`, optional `fallbackProvider`; `harness init` writes `{mode: once}`) a `clarify`,
+  `plan`, `acceptance`, `locate`, `architecture` or single-reviewer `review` answer that is a
+  protocol error or that its phase rejects is sent once more, to the fallback provider when one
+  is configured; both attempts stay recorded, with `agent-contract-retry` evidence and an
+  `agent.call.contract-retry` event, and the phase blocks only if the second answer breaks the
+  contract too. A `fallbackProvider` outside `agentProviders` (and not `simulated`) is a
+  configuration error. Without the key the first broken answer blocks, as before.
 - A converging agent ambiguity review (#79). In the 2.0.0 pilot two of four governed Haiku runs
   never reached IMPLEMENTATION: every answered revision got a new review that raised new
   questions (10, 8 and 8 in three rounds). `intake.ambiguityReview` now also takes an object
