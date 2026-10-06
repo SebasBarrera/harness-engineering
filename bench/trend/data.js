@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791262221074,
+  "lastUpdate": 1791289454660,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -3259,6 +3259,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 6.431,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "502aeefd5f728bb45c6b5244b3ba0b77cc9ce25f",
+          "message": "Merge pull request #88 from fix/sonar-pr66-findings\n\nThe SonarCloud findings of the wave 7 pull request (#66), fixed after its merge.\n\n- Bug (S5863): the per-reviewer cache-key test compared an expression with itself; it now checks that the key leaves the mode out and changes with the message hash.\n- Regular expressions with super-linear backtracking in the diff reader, the rule parser and the destructive-command check replaced by linear readers. Old and new readers were compared on millions of generated lines.\n- Cognitive complexity split into helpers: destructive_reason, review-code base resolution and evidence lookup, the read-only retry loop, routing tier choice.\n- Constants for repeated literals; the field of Strategy named name with a read-only strategy property; ProviderInvoker batch hooks grouped in InvokerHooks; unused parameters removed or documented; composite assertions split; redundant exception classes removed.\n\nBehaviour and public names are unchanged.\n\nRefs #69\n\nVerification on the PR head 3e4d82f7a5ed: 54 check(s) passed, no blocking check failed.",
+          "timestamp": "2026-10-06T07:23:09-05:00",
+          "tree_id": "72471dd968c14a240d4b794a06dab767dab34a53",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/502aeefd5f728bb45c6b5244b3ba0b77cc9ce25f"
+        },
+        "date": 1791289453818,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.00078,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001262,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.007699,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.03406,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.21733,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 7.876219,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 8.407276,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 7.147,
             "unit": "%"
           }
         ]
