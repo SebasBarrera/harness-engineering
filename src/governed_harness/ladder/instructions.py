@@ -23,7 +23,7 @@ from __future__ import annotations
 import json
 import re
 import tomllib
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -50,13 +50,16 @@ _VERSION = re.compile(
     r"\s*(?:version\s*)?(?:>=|==|~=|\^|v)?\s*(\d+(?:\.\d+){0,2})\b",
     re.IGNORECASE,
 )
-_COVERAGE = re.compile(
-    r"\bcoverage\b[^.\n]{0,60}?(\d{1,3}(?:\.\d+)?)\s*%|(\d{1,3}(?:\.\d+)?)\s*%\s*(?:test\s+|line\s+|code\s+)?coverage\b",
-    re.IGNORECASE,
+# A threshold after the word (``coverage of at least 80%``) or before it (``80% line
+# coverage``); _coverage_values scans with both as one alternation would, the first first.
+_COVERAGE_AFTER = re.compile(r"\bcoverage\b[^.\n]{0,60}?(\d{1,3}(?:\.\d+)?)\s*%", re.IGNORECASE)
+_COVERAGE_BEFORE = re.compile(
+    r"(\d{1,3}(?:\.\d+)?)\s*%\s*(?:test\s+|line\s+|code\s+)?coverage\b", re.IGNORECASE
 )
-_TESTS_REQUIRED = re.compile(
-    r"\b(tests?\s+must\s+pass|run\s+(?:the\s+|all\s+)?tests\s+before|all\s+tests\s+(?:must\s+)?pass)",
-    re.IGNORECASE,
+_TESTS_REQUIRED = (
+    re.compile(r"\btests?\s+must\s+pass", re.IGNORECASE),
+    re.compile(r"\brun\s+(?:the\s+|all\s+)?tests\s+before", re.IGNORECASE),
+    re.compile(r"\ball\s+tests\s+(?:must\s+)?pass", re.IGNORECASE),
 )
 _TESTS_SKIPPED = re.compile(
     r"\b(skip(?:ping)?\s+(?:the\s+)?tests|do\s+not\s+run\s+(?:the\s+)?tests|don't\s+run\s+(?:the\s+)?tests|"
@@ -146,55 +149,79 @@ def repository_versions(workspace: Path) -> list[tuple[str, Statement]]:
     """Versions the repository itself pins: ``.python-version``, ``requires-python``,
     ``.nvmrc``, ``engines.node``, the ``go`` directive of ``go.mod``."""
     found: list[tuple[str, Statement]] = []
-    pinned = workspace / ".python-version"
-    if pinned.is_file():
-        value = pinned.read_text(encoding="utf-8", errors="replace").strip().split()[0:1]
-        if value and re.match(r"\d", value[0]):
-            found.append(("python", Statement(".python-version", 1, value[0], value[0])))
-    pyproject = workspace / "pyproject.toml"
-    if pyproject.is_file():
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8", errors="replace"))
-        except tomllib.TOMLDecodeError:
-            data = {}
-        requires = str((data.get("project") or {}).get("requires-python") or "")
-        match = re.search(r"(\d+(?:\.\d+){0,2})", requires)
-        if match:
-            found.append(
-                (
-                    "python",
-                    Statement("pyproject.toml", 1, f"requires-python {requires}", match.group(1)),
-                )
-            )
-    nvmrc = workspace / ".nvmrc"
-    if nvmrc.is_file():
-        match = re.search(
-            r"(\d+(?:\.\d+){0,2})", nvmrc.read_text(encoding="utf-8", errors="replace")
-        )
-        if match:
-            found.append(("node", Statement(".nvmrc", 1, match.group(0), match.group(1))))
-    package = workspace / "package.json"
-    if package.is_file():
-        try:
-            engines = (json.loads(package.read_text(encoding="utf-8")) or {}).get("engines") or {}
-        except ValueError:
-            engines = {}
-        node = str(engines.get("node") or "") if isinstance(engines, dict) else ""
-        match = re.search(r"(\d+(?:\.\d+){0,2})", node)
-        if match:
-            found.append(
-                ("node", Statement("package.json", 1, f"engines.node {node}", match.group(1)))
-            )
-    gomod = workspace / "go.mod"
-    if gomod.is_file():
-        match = re.search(
-            r"^go\s+(\d+(?:\.\d+){0,2})",
-            gomod.read_text(encoding="utf-8", errors="replace"),
-            re.MULTILINE,
-        )
-        if match:
-            found.append(("go", Statement("go.mod", 1, match.group(0), match.group(1))))
+    for name, reader in _VERSION_READERS:
+        path = workspace / name
+        if path.is_file():
+            found.extend(reader(path))
     return found
+
+
+_PYTHON_VERSION_FILE = ".python-version"
+_PYPROJECT = "pyproject.toml"
+_NVMRC = ".nvmrc"
+_PACKAGE_JSON = "package.json"
+_GO_MOD = "go.mod"
+_VERSION_NUMBER = re.compile(r"(\d+(?:\.\d+){0,2})")
+_GO_DIRECTIVE = re.compile(r"^go\s+(\d+(?:\.\d+){0,2})", re.MULTILINE)
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _python_version_file(path: Path) -> list[tuple[str, Statement]]:
+    value = _read(path).strip().split()[0:1]
+    if value and re.match(r"\d", value[0]):
+        return [("python", Statement(_PYTHON_VERSION_FILE, 1, value[0], value[0]))]
+    return []
+
+
+def _requires_python(path: Path) -> list[tuple[str, Statement]]:
+    try:
+        data = tomllib.loads(_read(path))
+    except tomllib.TOMLDecodeError:
+        data = {}
+    requires = str((data.get("project") or {}).get("requires-python") or "")
+    match = _VERSION_NUMBER.search(requires)
+    if match:
+        return [("python", Statement(_PYPROJECT, 1, f"requires-python {requires}", match[1]))]
+    return []
+
+
+def _nvmrc(path: Path) -> list[tuple[str, Statement]]:
+    match = _VERSION_NUMBER.search(_read(path))
+    if match:
+        return [("node", Statement(_NVMRC, 1, match[0], match[1]))]
+    return []
+
+
+def _engines_node(path: Path) -> list[tuple[str, Statement]]:
+    try:
+        engines = (json.loads(path.read_text(encoding="utf-8")) or {}).get("engines") or {}
+    except ValueError:
+        engines = {}
+    node = str(engines.get("node") or "") if isinstance(engines, dict) else ""
+    match = _VERSION_NUMBER.search(node)
+    if match:
+        return [("node", Statement(_PACKAGE_JSON, 1, f"engines.node {node}", match[1]))]
+    return []
+
+
+def _go_directive(path: Path) -> list[tuple[str, Statement]]:
+    match = _GO_DIRECTIVE.search(_read(path))
+    if match:
+        return [("go", Statement(_GO_MOD, 1, match[0], match[1]))]
+    return []
+
+
+_VERSION_READERS: tuple[tuple[str, Callable[[Path], list[tuple[str, Statement]]]], ...] = (
+    (_PYTHON_VERSION_FILE, _python_version_file),
+    (_PYPROJECT, _requires_python),
+    (_NVMRC, _nvmrc),
+    (_PACKAGE_JSON, _engines_node),
+    (_GO_MOD, _go_directive),
+)
+"""The repository's own version files, in the order they are read."""
 
 
 def _compatible(left: str, right: str) -> bool:
@@ -218,27 +245,19 @@ def _winner(sources: Iterable[str], precedence: list[str]) -> str | None:
 def _base(source: str) -> str:
     if source.startswith(".cursor/rules/"):
         return ".cursor/rules"
-    if source in {".python-version", "pyproject.toml", ".nvmrc", "package.json", "go.mod"}:
+    if source in {name for name, _reader in _VERSION_READERS}:
         return HARNESS_SOURCE
     return source
 
 
-def lint_instructions(
-    workspace: Path,
-    files: Iterable[str],
-    precedence: list[str],
-    *,
-    coverage_threshold: float | None = None,
-) -> dict[str, Any]:
-    """The lint report: the files read, the precedence and every issue."""
-    texts = instruction_files(workspace, files)
-    issues: list[LintIssue] = []
-    versions = repository_versions(workspace)
-    for source, text in texts:
-        versions.extend(_versions(source, text))
+def _version_issues(
+    versions: list[tuple[str, Statement]], precedence: list[str]
+) -> list[LintIssue]:
+    """One issue per tool whose versions are not prefixes of each other."""
     by_tool: dict[str, list[Statement]] = {}
     for tool, statement in versions:
         by_tool.setdefault(tool, []).append(statement)
+    issues: list[LintIssue] = []
     for tool, statements in sorted(by_tool.items()):
         values = sorted({item.value for item in statements})
         conflict = any(
@@ -255,32 +274,53 @@ def lint_instructions(
                     winner,
                 )
             )
+    return issues
+
+
+def _coverage_values(line: str) -> Iterator[str]:
+    """The thresholds of a line, leftmost first; at the same position the threshold after the
+    word wins, as in one alternation of both patterns."""
+    position = 0
+    while True:
+        after = _COVERAGE_AFTER.search(line, position)
+        before = _COVERAGE_BEFORE.search(line, position)
+        found = after if before is None or (after and after.start() <= before.start()) else before
+        if found is None:
+            return
+        yield found[1]
+        position = found.end()
+
+
+def _coverage_issues(
+    texts: list[tuple[str, str]], threshold: float | None, precedence: list[str]
+) -> list[LintIssue]:
     coverage: list[Statement] = []
-    if coverage_threshold is not None:
+    if threshold is not None:
         coverage.append(
-            Statement(
-                HARNESS_SOURCE,
-                0,
-                "verification.testQuality.diffCoverage",
-                f"{coverage_threshold:g}",
-            )
+            Statement(HARNESS_SOURCE, 0, "verification.testQuality.diffCoverage", f"{threshold:g}")
         )
     for source, text in texts:
         for number, line in _lines(text):
-            for match in _COVERAGE.finditer(line):
-                value = match.group(1) or match.group(2)
-                coverage.append(Statement(source, number, line.strip()[:200], f"{float(value):g}"))
-    if len({item.value for item in coverage}) > 1:
-        issues.append(
-            LintIssue(
-                "coverage",
-                "MEDIUM",
-                "coverage thresholds disagree: "
-                + ", ".join(sorted({item.value + "%" for item in coverage})),
-                tuple(coverage),
-                _winner((item.source for item in coverage), precedence),
+            coverage.extend(
+                Statement(source, number, line.strip()[:200], f"{float(value):g}")
+                for value in _coverage_values(line)
             )
+    if len({item.value for item in coverage}) <= 1:
+        return []
+    return [
+        LintIssue(
+            "coverage",
+            "MEDIUM",
+            "coverage thresholds disagree: "
+            + ", ".join(sorted({item.value + "%" for item in coverage})),
+            tuple(coverage),
+            _winner((item.source for item in coverage), precedence),
         )
+    ]
+
+
+def _test_issues(texts: list[tuple[str, str]], precedence: list[str]) -> list[LintIssue]:
+    """An issue when a file says to skip the tests (not "never skip the tests")."""
     required: list[Statement] = []
     skipped: list[Statement] = []
     for source, text in texts:
@@ -288,42 +328,71 @@ def lint_instructions(
             skip = _TESTS_SKIPPED.search(line)
             if skip is not None and not _NEGATION.search(line[: skip.start()]):
                 skipped.append(Statement(source, number, line.strip()[:200], "skip tests"))
-            elif _TESTS_REQUIRED.search(line) or skip is not None:
+            elif skip is not None or any(item.search(line) for item in _TESTS_REQUIRED):
                 required.append(Statement(source, number, line.strip()[:200], "tests must pass"))
-    if skipped:
-        test_statements = (
-            Statement(HARNESS_SOURCE, 0, "mandatory test validators", "tests must pass"),
-            *required,
-            *skipped,
+    if not skipped:
+        return []
+    test_statements = (
+        Statement(HARNESS_SOURCE, 0, "mandatory test validators", "tests must pass"),
+        *required,
+        *skipped,
+    )
+    return [
+        LintIssue(
+            "tests",
+            "HIGH",
+            "an instruction file tells the agent to skip the tests the gate runs",
+            test_statements,
+            _winner((item.source for item in test_statements), precedence),
         )
-        issues.append(
-            LintIssue(
-                "tests",
-                "HIGH",
-                "an instruction file tells the agent to skip the tests the gate runs",
-                test_statements,
-                _winner((item.source for item in test_statements), precedence),
-            )
-        )
+    ]
+
+
+def _forbidden_flag_issues(texts: list[tuple[str, str]]) -> list[LintIssue]:
+    issues: list[LintIssue] = []
     for source, text in texts:
         for number, line in _lines(text):
-            for name, pattern, why in _FORBIDDEN:
-                flag = pattern.search(line)
-                if flag is None:
-                    continue
-                before = line[: flag.start()]
-                if _NEGATION.search(before):
-                    continue  # "never use --no-verify" agrees with the harness
-                issues.append(
-                    LintIssue(
-                        "forbidden-flag",
-                        "HIGH",
-                        f"{source}:{number} tells the agent to use {name}, which {why}; the "
-                        "harness never does",
-                        (Statement(source, number, line.strip()[:200], name),),
-                        HARNESS_SOURCE,
-                    )
+            issues.extend(
+                LintIssue(
+                    "forbidden-flag",
+                    "HIGH",
+                    f"{source}:{number} tells the agent to use {name}, which {why}; the "
+                    "harness never does",
+                    (Statement(source, number, line.strip()[:200], name),),
+                    HARNESS_SOURCE,
                 )
+                for name, why in _forbidden_flags(line)
+            )
+    return issues
+
+
+def _forbidden_flags(line: str) -> Iterator[tuple[str, str]]:
+    """``(flag, why)`` of each control the line tells the agent to bypass; "never use
+    --no-verify" agrees with the harness."""
+    for name, pattern, why in _FORBIDDEN:
+        flag = pattern.search(line)
+        if flag is not None and not _NEGATION.search(line[: flag.start()]):
+            yield name, why
+
+
+def lint_instructions(
+    workspace: Path,
+    files: Iterable[str],
+    precedence: list[str],
+    *,
+    coverage_threshold: float | None = None,
+) -> dict[str, Any]:
+    """The lint report: the files read, the precedence and every issue."""
+    texts = instruction_files(workspace, files)
+    versions = repository_versions(workspace)
+    for source, text in texts:
+        versions.extend(_versions(source, text))
+    issues = [
+        *_version_issues(versions, precedence),
+        *_coverage_issues(texts, coverage_threshold, precedence),
+        *_test_issues(texts, precedence),
+        *_forbidden_flag_issues(texts),
+    ]
     return {
         "status": "FAILED" if issues else "PASSED",
         "files": [source for source, _ in texts],
