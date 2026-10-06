@@ -99,7 +99,10 @@ VERIFICATION with its own correction budget and its own gate (`subtask-<n>`), re
 A sub-task that does not pass stops the ones after it; the run reaches DECISION when all passed.
 `REJECT` keeps the task whole. Under `planning.granularity: adaptive` a model listed in
 `planning.coarseModels` starts with the whole task, and the run returns to PLANNING to decompose
-only when that attempt fails its corrections.
+only when that attempt fails its corrections. Another model's attempt is not sent back to
+PLANNING: when its corrections are spent the run stops in VERIFICATION (exit 6) with a
+`terminalReason` that names the failing validators and says when the last correction changed
+nothing (`agent.empty-correction`).
 
 ## IMPLEMENTATION: what the agent receives
 

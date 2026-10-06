@@ -1,15 +1,19 @@
 """The run lifecycle around the waits for a person (wave 9): the exit code of a decision
-recorded without continuing and a rejected run on ``run continue`` (#83)."""
+recorded without continuing and a rejected run on ``run continue`` (#83), and a run whose
+corrections are spent by an agent that repeats its change (#77)."""
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
 
+import yaml
 from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
 from governed_harness.cli.main import app
+from governed_harness.domain.enums import PhaseId, ResultStatus
+from tests.integration import test_decomposition as decomposition
 from tests.integration.test_friction import configure, risky_task
 from tests.integration.test_friction import start as start_task
 from tests.integration.test_stop_line_and_contract import (
@@ -117,3 +121,59 @@ def test_run_continue_reports_a_rejected_run(python_workspace: Path, tmp_path: P
     assert reported["terminalReason"] == "Rejected by human decision"
     assert reported["gateEvaluationId"] == before["gateEvaluationId"]
     assert len(events(application, python_workspace, run, "phase.started")) == phases
+
+
+# ----- #77: a repeated change after the correction budget ----------------------------------------
+REPEATING_AGENT = """\
+import json, sys
+from pathlib import Path
+
+request = json.load(sys.stdin)
+for item in request["task"]["requirements"]:
+    number = item["requirement_id"][1:]
+    Path(f"src/sample/f{number}.py").write_text(f"def f{number}() -> int:\\n    return 0\\n")
+    Path(f"tests/test_req_{number}.py").write_text(
+        f"from sample.f{number} import f{number}\\n\\n"
+        f"def test_r{number}() -> None:\\n    assert f{number}() == {number}\\n"
+    )
+print(json.dumps({"status": "PASSED", "summary": "implemented"}))
+"""
+
+
+def repeating(workspace: Path, tmp_path: Path, model: str) -> None:
+    """An agent that writes the same wrong change on every attempt, under adaptive granularity
+    with a threshold the task stays under, one correction and reproduce-first."""
+    decomposition.configure(
+        workspace,
+        tmp_path,
+        "repeat",
+        planning={"decomposition": "agent", "threshold": 10, "granularity": "adaptive"},
+    )
+    (workspace / "agent.py").write_text(REPEATING_AGENT, encoding="utf-8")
+    path = workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["agentProviders"]["fixture_agent"]["model"] = model
+    config["runtime"].update({"verificationCorrections": 1, "reproduceFirst": True})
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+
+def test_a_repeated_change_of_another_model_stops_with_a_reason(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    repeating(python_workspace, tmp_path, "small-model")
+    application, run = decomposition.start(python_workspace, tmp_path)
+    execution = application.status(python_workspace, run)["execution"]
+    assert execution["currentPhase"] == PhaseId.VERIFICATION
+    assert execution["status"] == ResultStatus.FAILED
+    assert "after 1 correction cycle(s)" in execution["terminalReason"]
+    assert "agent.empty-correction" in execution["terminalReason"]
+    assert not decomposition.events(application, python_workspace, run, "planning.split-on-failure")
+
+
+def test_a_coarse_model_still_returns_to_planning(python_workspace: Path, tmp_path: Path) -> None:
+    repeating(python_workspace, tmp_path, "claude-sonnet-5-5")
+    application, run = decomposition.start(python_workspace, tmp_path)
+    assert decomposition.events(application, python_workspace, run, "planning.split-on-failure")
+    execution = application.status(python_workspace, run)["execution"]
+    assert execution["currentPhase"] == PhaseId.PLANNING
+    assert execution["terminalReason"] is None

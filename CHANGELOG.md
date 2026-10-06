@@ -19,6 +19,12 @@
     approval while the inbox was empty (#73). A decision entry gains `digest` and
     `acknowledgeRisks` (the risk factors an `APPROVE` must acknowledge); a batch file accepts
     `acknowledgeRisks` per decision and `--batch` asks for each factor on the terminal.
+  - Under `planning.granularity: adaptive`, a run whose corrections are spent returns to
+    PLANNING to be decomposed only when the implementing model is in `planning.coarseModels`,
+    as documented; any other model's run went back to PLANNING too, so an agent that repeated
+    its change (`agent.empty-correction`) looped through decomposition (#77). It now stops in
+    VERIFICATION with a `terminalReason` naming the failing validators and the empty
+    correction. A run that moves on after a stop no longer keeps the earlier `terminalReason`.
 
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without

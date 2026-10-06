@@ -488,14 +488,16 @@ class Decomposition:
 
     def replan_after_failure(self, execution: Execution) -> bool:
         """Adaptive granularity: a coarse attempt whose corrections are exhausted returns to
-        PLANNING to be decomposed (once)."""
+        PLANNING to be decomposed (once). Only the attempt of a model listed in
+        ``planning.coarseModels`` is coarse (#77): another model's failure stops the run, it is
+        not sent back to PLANNING."""
         if not self.enabled or self.config.granularity != "adaptive":
             return False
         results = self.results
         if results.s.state.get_flag(f"replan:{execution.execution_id}") or self.approved(execution):
             return False
         task = results.engine.run_task(execution)
-        if len(task.requirements) < 2:
+        if len(task.requirements) < 2 or not self._coarse(execution, task):
             return False
         results.s.state.set_flag(f"replan:{execution.execution_id}", "1")
         results.s.state.set_flag(self._key(execution), "")

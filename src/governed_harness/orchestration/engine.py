@@ -109,6 +109,7 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.corrections import EMPTY_RULE as EMPTY_CORRECTION_RULE
 from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths
 from governed_harness.orchestration.engine_types import EngineServices as EngineServices
 from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
@@ -919,6 +920,9 @@ class RunEngine:
                     update={
                         "status": ResultStatus.PENDING,
                         "current_phase": self._next_phase(phase_id, transition.target),
+                        # A run that moves on has no reason to have stopped (#77): the reason
+                        # of an earlier stop it was resumed from does not stay on it.
+                        "terminal_reason": None,
                         "updated_at": utc_now(),
                     }
                 )
@@ -2923,7 +2927,11 @@ class RunEngine:
                     },
                 )
             # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
-            return self.results.active and self.results.replan_after_failure(execution)
+            if self.results.active and self.results.replan_after_failure(execution):
+                return True
+            if limit > 0:
+                self._stop_after_corrections(execution, used, failed_ids, validations)
+            return False
         feedback_ref: str | None = None
         if self._feedback_applies(execution.execution_id):
             findings = [
@@ -2976,6 +2984,31 @@ class RunEngine:
             # agentRouting (#44): a quality failure climbs the escalation ladder.
             self.results.escalate(execution, "VERIFICATION_FAILED")
         return True
+
+    def _stop_after_corrections(
+        self,
+        execution: Execution,
+        used: int,
+        failed_ids: list[str],
+        validations: list[ValidationResult],
+    ) -> None:
+        """The run stops in VERIFICATION with the correction budget spent: the reason says so,
+        and says when the agent's last correction changed nothing (``agent.empty-correction``),
+        so a person sees why the run did not go on (#77)."""
+        reason = (
+            f"VERIFICATION still fails after {used} correction cycle(s) "
+            f"(runtime.verificationCorrections): {', '.join(failed_ids)}"
+        )
+        finding_ids = {item for validation in validations for item in validation.finding_ids}
+        if any(
+            item.rule_id == EMPTY_CORRECTION_RULE and item.finding_id in finding_ids
+            for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
+        ):
+            reason += "; the agent's last correction changed nothing (agent.empty-correction)"
+        latest = self.get_execution(execution.execution_id)
+        self._save_execution(
+            latest.model_copy(update={"terminal_reason": reason, "updated_at": utc_now()})
+        )
 
     def _record_unsupported_claim(
         self, execution: Execution, failing: list[ValidationResult]
