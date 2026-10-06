@@ -233,8 +233,7 @@ def pack_rules(packs: Iterable[Any]) -> list[Rule]:
 
 
 # ----- layer C ----------------------------------------------------------------------------------
-_HEADING = re.compile(r"^##\s+([^:]+?)\s*(?::\s*(.*))?$")
-_FIELD = re.compile(r"^[-*]\s+([A-Za-z_]+)\s*:\s*(.*)$")
+_FIELD = re.compile(r"^[-*]\s+([A-Za-z_]+)\s*:(.*)$")  # the value is stripped by the reader
 _LIST_FIELDS = {"exceptions", "appliesTo", "applies_to", "supersedes", "requires", "verifiedBy"}
 _ALIASES = {
     "verified_by": "verifiedBy",
@@ -331,6 +330,25 @@ class _Section:
         }
 
 
+def _heading(line: str) -> tuple[str, str | None] | None:
+    """A ``## rule-id: Title`` line as ``(rule id, title or None)``, read in one pass: what
+    ``^##\\s+([^:]+?)\\s*(?::\\s*(.*))?$`` captures on a line without line breaks. The id runs to
+    the first colon without its trailing whitespace; an id made only of whitespace is the last
+    space after ``##`` when there are at least two."""
+    rest = line[2:] if line.startswith("##") else ""
+    name = rest.lstrip()
+    spaces = len(rest) - len(name)
+    if not spaces:
+        return None
+    rule_id, colon, title = name.partition(":")
+    rule_id = rule_id.rstrip()
+    if not rule_id:
+        if spaces < 2:
+            return None
+        rule_id = rest[spaces - 1]
+    return rule_id, (title.lstrip() if colon else None)
+
+
 def parse_rules_markdown(text: str, *, domain: str, source: str) -> list[Rule]:
     """The rules of one project file: a ``## rule-id: Title`` section per rule, ``- key: value``
     fields (severity, priority, when, exceptions, appliesTo, verifiedBy, supersedes, requires,
@@ -339,9 +357,9 @@ def parse_rules_markdown(text: str, *, domain: str, source: str) -> list[Rule]:
     domain = str(head.get("domain") or domain)
     sections: list[tuple[str, str, list[str]]] = []
     for line in body.split("\n"):
-        heading = _HEADING.match(line)
+        heading = _heading(line)
         if heading:
-            sections.append((heading.group(1), (heading.group(2) or "").strip(), []))
+            sections.append((heading[0], (heading[1] or "").strip(), []))
         elif sections:
             sections[-1][2].append(line)
     rules: list[Rule] = []

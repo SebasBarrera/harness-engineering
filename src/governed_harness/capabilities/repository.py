@@ -133,6 +133,66 @@ def _outside(path: str, workspace: Path, cwd: Path) -> bool:
     return resolved == root or root not in resolved.parents
 
 
+def _shell_reason(script: str, workspace: Path, cwd: Path) -> str | None:
+    """The first destructive command of a ``sh -c`` script, split on its command separators."""
+    for part in re.split(r"&&|\|\||;|\||\n", script):
+        try:
+            words = shlex.split(part)
+        except ValueError:
+            words = part.split()
+        reason = destructive_reason(words, workspace, cwd)
+        if reason:
+            return reason
+    return None
+
+
+def _recursive_flag(item: str) -> bool:
+    return item in {"-r", "-R", "--recursive"} or (
+        item.startswith("-") and not item.startswith("--") and ("r" in item or "R" in item)
+    )
+
+
+def _rm_reason(args: list[str], workspace: Path, cwd: Path) -> str | None:
+    if not any(_recursive_flag(item) for item in args):
+        return None
+    targets = [item for item in args if not item.startswith("-")]
+    if any(_outside(item, workspace, cwd) for item in targets):
+        return "deletes recursively outside the workspace"
+    return None
+
+
+def _ownership_reason(name: str, args: list[str], workspace: Path, cwd: Path) -> str | None:
+    """``chmod``, ``chown`` and ``chgrp``: their first operand is the mode or the owner."""
+    targets = [item for item in args if not item.startswith("-")]
+    if name == "chmod" or targets:
+        targets = targets[1:]
+    if any(_outside(item, workspace, cwd) for item in targets):
+        return f"{name} outside the workspace"
+    return None
+
+
+def _force_push_flag(item: str) -> bool:
+    return (
+        item in {"-f", "--force", "--force-with-lease", "--mirror", "--delete", "-d"}
+        or item.startswith("--force")
+        or (item.startswith("+") and len(item) > 1)
+    )
+
+
+def _git_reason(args: list[str]) -> str | None:
+    sub = args[0]
+    rest = args[1:]
+    if sub == "push" and any(_force_push_flag(item) for item in rest):
+        return "force-pushes or deletes a remote ref"
+    if sub in {"filter-branch", "filter-repo", "rebase"}:
+        return "rewrites history"
+    if sub == "commit" and "--amend" in rest:
+        return "rewrites history"
+    if sub == "reset" and "--hard" in rest:
+        return "discards commits and changes (reset --hard)"
+    return None
+
+
 def destructive_reason(argv: Sequence[str], workspace: Path, cwd: Path | None = None) -> str | None:
     """Why a command is destructive, or ``None``."""
     if not argv:
@@ -141,48 +201,15 @@ def destructive_reason(argv: Sequence[str], workspace: Path, cwd: Path | None = 
     name = Path(argv[0]).name
     args = list(argv[1:])
     if name in _SHELLS and len(args) >= 2 and args[0] == "-c":
-        for part in re.split(r"&&|\|\||;|\||\n", args[1]):
-            try:
-                words = shlex.split(part)
-            except ValueError:
-                words = part.split()
-            reason = destructive_reason(words, workspace, cwd)
-            if reason:
-                return reason
-        return None
-    joined = " ".join(argv)
-    if _DROP.search(joined) or name == "dropdb":
+        return _shell_reason(args[1], workspace, cwd)
+    if _DROP.search(" ".join(argv)) or name == "dropdb":
         return "drops data"
-    if name == "rm" and any(
-        item in {"-r", "-R", "--recursive"}
-        or (item.startswith("-") and not item.startswith("--") and ("r" in item or "R" in item))
-        for item in args
-    ):
-        targets = [item for item in args if not item.startswith("-")]
-        if any(_outside(item, workspace, cwd) for item in targets):
-            return "deletes recursively outside the workspace"
+    if name == "rm":
+        return _rm_reason(args, workspace, cwd)
     if name in {"chmod", "chown", "chgrp"}:
-        targets = [item for item in args if not item.startswith("-")]
-        if name == "chmod" or targets:
-            targets = targets[1:]
-        if any(_outside(item, workspace, cwd) for item in targets):
-            return f"{name} outside the workspace"
+        return _ownership_reason(name, args, workspace, cwd)
     if name == "git" and args:
-        sub = args[0]
-        rest = args[1:]
-        if sub == "push" and any(
-            item in {"-f", "--force", "--force-with-lease", "--mirror", "--delete", "-d"}
-            or item.startswith("--force")
-            or (item.startswith("+") and len(item) > 1)
-            for item in rest
-        ):
-            return "force-pushes or deletes a remote ref"
-        if sub in {"filter-branch", "filter-repo", "rebase"}:
-            return "rewrites history"
-        if sub == "commit" and "--amend" in rest:
-            return "rewrites history"
-        if sub == "reset" and "--hard" in rest:
-            return "discards commits and changes (reset --hard)"
+        return _git_reason(args)
     return None
 
 

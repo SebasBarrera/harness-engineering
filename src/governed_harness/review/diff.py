@@ -29,9 +29,66 @@ Side = Literal["new", "old"]
 SIDES: tuple[Side, ...] = ("new", "old")
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_GIT_HEADER = re.compile(r"^diff --git (?:\"?a/)?(.+?)\"? (?:\"?b/)?(.+?)\"?$")
-_GIT_BINARY = re.compile(r"^Binary files (?:a/)?(.+?) and (?:b/)?(.+?) differ$")
 _HARNESS_BINARY = re.compile(r"^Binary files differ: (.+)$")
+_DEV_NULL = "/dev/null"
+_GIT_HEADER_PREFIX = "diff --git "
+_GIT_BINARY_PREFIX = "Binary files "
+_GIT_BINARY_SEPARATOR = " and "
+_GIT_BINARY_SUFFIX = " differ"
+
+
+# The two paths of a Git header are read by scanning the line once: a path may hold spaces, and a
+# single pattern with two lazy groups backtracks over every space. Each reader returns what
+# ``^diff --git (?:"?a/)?(.+?)"? (?:"?b/)?(.+?)"?$`` and
+# ``^Binary files (?:a/)?(.+?) and (?:b/)?(.+?) differ$`` capture on a line without line breaks
+# (the parser reads ``str.splitlines()``), or ``None`` where they do not match.
+def _side_starts(text: str, prefix: str, *, quoted: bool) -> tuple[int, ...]:
+    """Where a path may start after its optional ``a/``/``b/`` prefix (``"``-quoted when
+    ``quoted``): past the prefix first, then at the very start."""
+    if quoted and text.startswith('"' + prefix):
+        return (len(prefix) + 1, 0)
+    if text.startswith(prefix):
+        return (len(prefix), 0)
+    return (0,)
+
+
+def _new_side(value: str, *, quoted: bool) -> str:
+    """The second path: its prefix dropped unless nothing would be left, then (when ``quoted``)
+    its closing quote."""
+    start = next(start for start in _side_starts(value, "b/", quoted=quoted) if start < len(value))
+    path = value[start:]
+    return path[:-1] if quoted and len(path) > 1 and path.endswith('"') else path
+
+
+def _git_header_paths(line: str) -> tuple[str, str] | None:
+    """``diff --git a/OLD b/NEW``: the old path ends at the first space (with the closing quote
+    before it, if any) that still leaves a new path."""
+    if not line.startswith(_GIT_HEADER_PREFIX):
+        return None
+    rest = line[len(_GIT_HEADER_PREFIX) :]
+    for start in _side_starts(rest, "a/", quoted=True):
+        space = rest.find(" ", start + 1)
+        if space == -1 or space + 1 >= len(rest):
+            continue
+        end = space - 1 if space - 1 > start and rest[space - 1] == '"' else space
+        return rest[start:end], _new_side(rest[space + 1 :], quoted=True)
+    return None
+
+
+def _git_binary_paths(line: str) -> tuple[str, str] | None:
+    """``Binary files a/OLD and b/NEW differ``: the old path ends at the first `` and `` that
+    still leaves a new path."""
+    rest = line[len(_GIT_BINARY_PREFIX) :]
+    if not (line.startswith(_GIT_BINARY_PREFIX) and rest.endswith(_GIT_BINARY_SUFFIX)):
+        return None
+    body = rest[: -len(_GIT_BINARY_SUFFIX)]
+    for start in _side_starts(body, "a/", quoted=False):
+        separator = body.find(_GIT_BINARY_SEPARATOR, start + 1)
+        new_start = separator + len(_GIT_BINARY_SEPARATOR)
+        if separator == -1 or new_start >= len(body):
+            continue
+        return body[start:separator], _new_side(body[new_start:], quoted=False)
+    return None
 
 
 @dataclass
@@ -75,7 +132,7 @@ def _side_path(value: str, prefix: str) -> str | None:
     value = value.split("\t", 1)[0].strip()
     if value.startswith('"') and value.endswith('"'):
         value = value[1:-1]
-    if value == "/dev/null":
+    if value == _DEV_NULL:
         return None
     return value[len(prefix) :] if value.startswith(prefix) else value
 
@@ -135,10 +192,10 @@ class _DiffParser:
 
     def _git_header(self, index: int) -> int:
         line = self.lines[index]
-        git_header = _GIT_HEADER.match(line)
-        if not git_header:
+        paths = _git_header_paths(line)
+        if paths is None:
             return 0
-        self.current = FileChange(git_header.group(1), git_header.group(2), lines=[line])
+        self.current = FileChange(*paths, lines=[line])
         self.files.append(self.current)
         self.open_header = True
         return 1
@@ -176,19 +233,21 @@ class _DiffParser:
     def _binary(self, index: int) -> int:
         line = self.lines[index]
         harness = _HARNESS_BINARY.match(line)
-        binary = _GIT_BINARY.match(line) or harness
-        if not binary:
+        git = _git_binary_paths(line)
+        if harness is None and git is None:
             return 0
         self.open_header = False
         if harness:
-            self.current = FileChange(binary.group(1), binary.group(1), binary=True, lines=[line])
+            # A line both forms read keeps the Git reading of its first path.
+            path = git[0] if git else harness.group(1)
+            self.current = FileChange(path, path, binary=True, lines=[line])
             self.files.append(self.current)
-        elif self.current is not None:
+        elif self.current is not None and git is not None:
             self.current.binary = True
             self.current.lines.append(line)
-            if binary.group(1) == "/dev/null":
+            if git[0] == _DEV_NULL:
                 self.current.old_path = None
-            if binary.group(2) == "/dev/null":
+            if git[1] == _DEV_NULL:
                 self.current.new_path = None
         return 1
 
@@ -220,7 +279,7 @@ class Locations:
         return False
 
     def paths(self) -> list[str]:
-        return sorted({path for path, _side in self.lines})
+        return sorted({key[0] for key in self.lines})
 
     def as_ranges(self) -> dict[str, dict[str, list[list[int]]]]:
         """``{path: {side: [[first, last], ...]}}``: what the request shows the reviewer."""

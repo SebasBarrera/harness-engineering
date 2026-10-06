@@ -46,7 +46,7 @@ from governed_harness.orchestration.agent_review import AGENT_REVIEW_ID
 from governed_harness.orchestration.engine_types import READ_ONLY_RULE, ReviewOutcome
 from governed_harness.review.cache import ReviewCache
 from governed_harness.review.contract import ReviewFinding
-from governed_harness.review.invoke import BuiltProvider, ProviderInvoker
+from governed_harness.review.invoke import BuiltProvider, InvokerHooks, ProviderInvoker
 from governed_harness.review.panel import PanelInputs, PanelReport, ReviewerCall, run_panel
 from governed_harness.review.project import (
     consistency_runner,
@@ -196,11 +196,13 @@ class PanelReview:
             phase_id=PhaseId.INDEPENDENT_REVIEW,
             default_timeout=engine._bounded_timeout(runtime.command_timeout_seconds),
             max_output_bytes=runtime.max_output_bytes,
-            cancelled=lambda: engine.is_cancelled(execution.execution_id),
-            before=before,
-            record_request=record_request,
-            after=after,
-            on_violation=on_violation,
+            hooks=InvokerHooks(
+                cancelled=lambda: engine.is_cancelled(execution.execution_id),
+                before=before,
+                record_request=record_request,
+                after=after,
+                on_violation=on_violation,
+            ),
             mcp_servers=servers,
         )
 

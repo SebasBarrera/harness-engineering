@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Any
 from governed_harness.agents import (
     AgentCallResult,
     AgentExecutionResult,
+    AgentProvider,
     CommandAgentProvider,
     SimulatedAgentContext,
     render_instructions,
@@ -675,23 +676,11 @@ class AgentResults:
             max_output_bytes=runtime.max_output_bytes,
             cancellation=CancellationToken(lambda: engine.is_cancelled(execution.execution_id)),
         )
-        retries = 0
-        while True:
-            answer: AgentCallResult = provider.call(kind, request, context, phase_id=phase.phase_id)
-            engine._save_agent_result(execution, phase, answer.execution)
-            cause = (
-                engine._transient_cause(answer.execution)
-                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                else None
+        answer = self._call_with_retries(execution, phase, provider, kind, request, context)
+        if answer is None:
+            return AgentCallOutcome(
+                ResultStatus.CANCELLED, "Cancellation requested", None, None, ()
             )
-            if cause is None:
-                break
-            retries += 1
-            engine._record_provider_retry(execution, phase, answer.execution, cause, retries)
-            if not engine._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                return AgentCallOutcome(
-                    ResultStatus.CANCELLED, "Cancellation requested", None, None, ()
-                )
         self.after_agent_call(execution, phase, answer.execution)
         refs = (request_ref, *sandbox_refs) + (
             (answer.execution.output_ref,) if answer.execution.output_ref else ()
@@ -730,6 +719,35 @@ class AgentResults:
             answer.execution.invocation.invocation_id,
             refs,
         )
+
+    def _call_with_retries(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider: AgentProvider,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: SimulatedAgentContext,
+    ) -> AgentCallResult | None:
+        """The provider's answer, each one saved; a transient failure of a command provider is
+        retried up to ``runtime.retryLimit`` times. ``None``: cancelled while waiting to retry."""
+        engine = self.engine
+        runtime = self.project.runtime
+        retries = 0
+        while True:
+            answer: AgentCallResult = provider.call(kind, request, context, phase_id=phase.phase_id)
+            engine._save_agent_result(execution, phase, answer.execution)
+            cause = (
+                engine._transient_cause(answer.execution)
+                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+                else None
+            )
+            if cause is None:
+                return answer
+            retries += 1
+            engine._record_provider_retry(execution, phase, answer.execution, cause, retries)
+            if not engine._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                return None
 
     def request_common(
         self,

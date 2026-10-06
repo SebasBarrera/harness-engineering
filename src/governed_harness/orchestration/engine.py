@@ -2471,7 +2471,7 @@ class RunEngine:
             outputs = self.results.after_verification(execution, phase, change_set, outputs)
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
-            outputs.extend(self.ladder.verification(execution, phase, change_set, outputs))
+            outputs.extend(self.ladder.verification(execution, change_set, outputs))
         mandatory_non_passed = [
             output.result
             for output in outputs

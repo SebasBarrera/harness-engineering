@@ -151,14 +151,16 @@ def test_panel_reviews_by_domain_and_records_its_report(
         for item in events(application, python_workspace, run)
         if item.event_type == "review.panel.completed"
     ]
-    assert completed and completed[-1].payload["verdict"] == "PASS"
+    assert completed
+    assert completed[-1].payload["verdict"] == "PASS"
     with application._services(python_workspace) as services:
         validation = [
             item
             for item in services.state.list("validation", ValidationResult, execution_id=run)
             if item.validator_id == "review.agent"
         ][-1]
-        assert validation.status is ResultStatus.PASSED and validation.mandatory
+        assert validation.status is ResultStatus.PASSED
+        assert validation.mandatory
 
 
 def test_errors_on_agent_lines_go_back_scoped(python_workspace: Path, tmp_path: Path) -> None:
@@ -166,11 +168,13 @@ def test_errors_on_agent_lines_go_back_scoped(python_workspace: Path, tmp_path: 
     application, run = start(python_workspace, tmp_path)
     recorded = events(application, python_workspace, run)
     requested = [item for item in recorded if item.event_type == "review.autofix.requested"]
-    assert len(requested) == 1 and requested[0].payload["fixable"]
+    assert len(requested) == 1
+    assert requested[0].payload["fixable"]
     corrections = [item for item in recorded if item.event_type == "correction.authorized"]
     assert [item.payload["trigger"] for item in corrections] == ["REVIEW_FINDINGS"]
     implements = requests(log, "implement")
-    assert len(implements) == 2 and "feedback" in implements[1]
+    assert len(implements) == 2
+    assert "feedback" in implements[1]
     feedback = json.dumps(implements[1]["feedback"])
     assert "quality.wrong-logic" in feedback
     assert (
@@ -186,7 +190,8 @@ def test_errors_on_lines_the_agent_did_not_write_stay_for_a_person(
     recorded = events(application, python_workspace, run)
     assert not [item for item in recorded if item.event_type == "review.autofix.requested"]
     declined = [item for item in recorded if item.event_type == "review.autofix.declined"]
-    assert declined and declined[0].payload["reason"] == "no error on a line the agent wrote"
+    assert declined
+    assert declined[0].payload["reason"] == "no error on a line the agent wrote"
     assert len(requests(log, "implement")) == 1
     status = application.status(python_workspace, run)
     assert status["execution"]["currentPhase"] == PhaseId.DECISION
@@ -196,7 +201,8 @@ def test_errors_on_lines_the_agent_did_not_write_stay_for_a_person(
             for item in services.state.list("finding", Finding, execution_id=run)
             if item.rule_id == "review.panel.quality.wrong-logic"
         ]
-    assert findings and findings[0].severity is FindingSeverity.HIGH
+    assert findings
+    assert findings[0].severity is FindingSeverity.HIGH
     assert "(a removed line)" in findings[0].message
 
 
