@@ -67,9 +67,9 @@ def test_dependencies_decide_the_order_and_a_cycle_is_refused() -> None:
     moved = with_phase(moved, PhaseId.SPECIFICATION, depends_on=(PhaseId.INTENT,))
     order = WorkflowGraph(moved).order()
     assert order.index(PhaseId.SPECIFICATION) < order.index(PhaseId.DISCOVERY)
-    cycle = with_phase(default(), PhaseId.INTENT, depends_on=(PhaseId.DISCOVERY,))
+    cycle = WorkflowGraph(with_phase(default(), PhaseId.INTENT, depends_on=(PhaseId.DISCOVERY,)))
     with pytest.raises(ValueError, match="cycle"):
-        WorkflowGraph(cycle).order()
+        cycle.order()
 
 
 def test_exit_conditions_reconcile_the_decision_gate() -> None:

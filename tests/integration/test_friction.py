@@ -365,19 +365,17 @@ def test_an_expired_pre_authorisation_asks_the_person(
 def test_pre_authorisation_needs_the_setting(python_workspace: Path) -> None:
     configure(python_workspace, friction={"fastLane": {"mode": "auto"}})
     command_agent(python_workspace, {"README.md": "# Sample\n\nMore.\n"})
+    application = HarnessApplication()
     with pytest.raises(PolicyViolationError, match="preAuthorization"):
-        HarnessApplication().do(
-            python_workspace, "Document more", pre_approve=True, actor_id="human.tester"
-        )
+        application.do(python_workspace, "Document more", pre_approve=True, actor_id="human.tester")
 
 
 def test_an_agent_cannot_pre_authorise(python_workspace: Path) -> None:
     configure(python_workspace)
     command_agent(python_workspace, {"README.md": "# Sample\n\nMore.\n"})
+    application = HarnessApplication()
     with pytest.raises(PolicyViolationError):
-        HarnessApplication().do(
-            python_workspace, "Document more", pre_approve=True, actor_id="agent.codex"
-        )
+        application.do(python_workspace, "Document more", pre_approve=True, actor_id="agent.codex")
 
 
 # ----- the plan-approval checkpoint (#8) ------------------------------------------------------------

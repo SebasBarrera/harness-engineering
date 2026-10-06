@@ -201,8 +201,9 @@ def test_external_evidence_formats() -> None:
     verdict = read_evidence(status)
     assert verdict.passed
     assert verdict.commit == "abc123"
+    pending = json.dumps({"state": "pending"}).encode()
     with pytest.raises(EvidenceFormatError, match="not final"):
-        read_evidence(json.dumps({"state": "pending"}).encode())
+        read_evidence(pending)
     with pytest.raises(EvidenceFormatError):
         read_evidence(b"<!DOCTYPE x><testsuites/>")
 

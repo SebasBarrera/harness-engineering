@@ -662,8 +662,9 @@ def test_extended_profiles_are_detected_only_with_the_key(tmp_path: Path) -> Non
         "toolchain": {"profileDetection": "all"},
     }
     (root / ".harness" / "project.yaml").write_text(yaml.safe_dump(base))
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError, match="no supported technology profile"):
-        ConfigurationResolver().resolve(root)
+        resolver.resolve(root)
     base["toolchain"] = {"profileDetection": "all", "extendedProfiles": True}
     (root / ".harness" / "project.yaml").write_text(yaml.safe_dump(base))
     resolved = ConfigurationResolver().resolve(root)

@@ -183,12 +183,12 @@ def test_enforce_waits_for_a_complete_and_confirmed_contract(
     assert confirmed["digest"] == contract["digest"]
     resumed = application.continue_run(python_workspace, execution.execution_id)
     assert resumed.current_phase is PhaseId.DECISION
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("contract:\n  favourite: blue\n", encoding="utf-8")
+    create(python_workspace, tmp_path, {**CLEAR, "taskId": "task_other"})
+    other = application.start_run(python_workspace, "task_other")
+    assert other.status is ResultStatus.BLOCKED
     with pytest.raises(ConfigurationError, match="unknown contract item"):
-        bad = tmp_path / "bad.yaml"
-        bad.write_text("contract:\n  favourite: blue\n", encoding="utf-8")
-        create(python_workspace, tmp_path, {**CLEAR, "taskId": "task_other"})
-        other = application.start_run(python_workspace, "task_other")
-        assert other.status is ResultStatus.BLOCKED
         application.clarify_task(
             python_workspace, task_id="task_other", answers_file=bad, actor_id="human.author"
         )

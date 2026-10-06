@@ -195,8 +195,9 @@ def test_all_repositories_of_the_registry(python_workspace: Path, tmp_path: Path
 
 def test_narrative_is_one_call_on_demand(python_workspace: Path, tmp_path: Path) -> None:
     closed_run(python_workspace, tmp_path)
+    application, filters = HarnessApplication(), Filters()
     with pytest.raises(ConfigurationError, match="metrics.narrative"):
-        HarnessApplication().metrics(python_workspace, filters=Filters(), narrative=True)
+        application.metrics(python_workspace, filters=filters, narrative=True)
     script = tmp_path / "narrate.py"
     script.write_text(
         "import sys\ndata = sys.stdin.read()\nprint('One run closed.' if 'totals' in data else '')\n",
