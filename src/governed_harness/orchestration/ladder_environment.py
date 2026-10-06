@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - fixed git argv below, no shell
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -46,7 +46,7 @@ _TIMEOUT = 15
 
 def _git(workspace: Path, *args: str) -> tuple[int, str]:
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607 - fixed git argv, no shell
             ["git", *args],
             cwd=workspace,
             capture_output=True,

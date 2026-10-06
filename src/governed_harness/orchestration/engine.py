@@ -3,7 +3,7 @@ from __future__ import annotations
 import contextlib
 import json
 import socket
-import subprocess
+import subprocess  # nosec B404 - only SubprocessError: the engine starts no process here
 import threading
 import time
 from collections.abc import Callable, Sequence
