@@ -148,6 +148,13 @@ class VerificationLadder:
         ladder = verification.ladder if verification else None
         return ladder if ladder is not None and ladder.enabled else None
 
+    def enabled_config(self) -> LadderConfig:
+        """The ladder's configuration, for the steps that run only when it is enabled."""
+        config = self.config
+        if config is None:  # not reached: the engine calls these steps only when enabled
+            raise RuntimeError("verification.ladder is not enabled")
+        return config
+
     @property
     def manual_checklist(self) -> bool:
         return bool(self.project.review and self.project.review.manual_checklist)
@@ -301,8 +308,7 @@ class VerificationLadder:
     def preflight(self, execution: Execution, phase: PhaseExecution, task: Task) -> PreflightResult:
         """The verification plan of every criterion and, under ``preflight``, the probes and the
         frozen acceptance tests on the baseline, classified READY, PARTIAL or UNAVAILABLE."""
-        config = self.config
-        assert config is not None
+        config = self.enabled_config()
         results = self.engine.results
         capabilities = self.capabilities(execution)
         probes = self.probes(task)
@@ -797,8 +803,7 @@ class VerificationLadder:
         checked: set[str] | None = None,
         decided: bool = False,
     ) -> CertificationInputs:
-        config = self.config
-        assert config is not None
+        config = self.enabled_config()
         own = {CERTIFICATION_ID}
         mandatory = [
             item for item in validations if item.mandatory and item.validator_id not in own
@@ -922,8 +927,7 @@ class VerificationLadder:
         outputs: list[Any],
         evaluations: dict[str, ProbeEvaluation],
     ) -> list[ValidatorOutput]:
-        config = self.config
-        assert config is not None
+        config = self.enabled_config()
         self.ensure_deferred(execution, task, change_set.digest)
         validations = [item.result for item in outputs]
         inputs = self.certification_inputs(
@@ -1006,8 +1010,7 @@ class VerificationLadder:
 
     def ensure_deferred(self, execution: Execution, task: Task, digest: str) -> None:
         """One pending item per criterion that declares ``deferred``, bound to the digest."""
-        config = self.config
-        assert config is not None
+        config = self.enabled_config()
         existing = {
             item.criterion_id
             for item in self.s.state.list(

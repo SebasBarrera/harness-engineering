@@ -100,6 +100,13 @@ class PanelReview:
         review = self.results.project.review
         return review.panel if review is not None else None
 
+    def enabled_settings(self) -> ReviewPanelConfig:
+        """The panel's settings, for the steps that run only when it is configured."""
+        settings = self.settings
+        if settings is None:  # not reached: the review runs the panel only when configured
+            raise RuntimeError("review.panel is not configured")
+        return settings
+
     @property
     def configured(self) -> bool:
         settings = self.settings
@@ -200,8 +207,7 @@ class PanelReview:
     def run(
         self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
     ) -> ReviewOutcome:
-        settings = self.settings
-        assert settings is not None
+        settings = self.enabled_settings()
         results = self.results
         engine = results.engine
         resolved = results.s.resolved
@@ -412,8 +418,7 @@ class PanelReview:
         change_set: ChangeSet,
         blocking: list[tuple[Finding, ReviewFinding | None]],
     ) -> tuple[Finding, ...]:
-        settings = self.settings
-        assert settings is not None
+        settings = self.enabled_settings()
         config = settings.auto_fix
         if config is None:
             # Without autoFix the panel behaves as the single reviewer: every error goes back.

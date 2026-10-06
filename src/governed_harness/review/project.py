@@ -226,7 +226,8 @@ def linter_runner(
     """Outside a governed run (``review.panel.runTools``): run each pack tool the repository
     configures that verifies an active rule, once, and keep the diagnostics of those rules on
     reportable lines."""
-    if not setup.settings.run_tools or setup.standards is None:
+    standards = setup.standards
+    if not setup.settings.run_tools or standards is None:
         return None
     from governed_harness.validators.parsers import parse_output
 
@@ -240,8 +241,7 @@ def linter_runner(
             return []
         grants = grants_from_rules(execution_id, TOOLS_ACTOR, resolved.effective_capabilities)
         findings: list[ReviewFinding] = []
-        assert setup.standards is not None
-        for pack in setup.standards.packs:
+        for pack in standards.packs:
             for pack_tool in pack.tools:
                 if pack_tool.tool_id not in wanted or not pack_tool.command:
                     continue

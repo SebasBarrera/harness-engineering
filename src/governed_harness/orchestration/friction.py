@@ -193,7 +193,8 @@ class Friction:
     def classify(self, execution: Execution, phase: PhaseExecution, task: Task) -> dict[str, Any]:
         """The lane of the run for the current task revision, recorded once per revision."""
         config = self.fast_lane
-        assert config is not None
+        if config is None:  # not reached: the engine classifies only in the fast lane
+            raise RuntimeError("friction.fastLane is not enabled")
         digest = task_digest(task)
         known = self.lane(execution)
         if known is not None and known.get("taskDigest") == digest:
@@ -565,7 +566,8 @@ class Friction:
         ran = {index for index, _ in pending}
         for index, definition in enumerate(definitions):
             slot = slots[index]
-            assert slot is not None
+            if slot is None:  # not reached: every slot was reused or run above
+                raise RuntimeError(f"validator {definition.validator_id} has no result")
             save(slot)
             if config.cache and index in ran:
                 self._remember(execution, change_set, definition, slot)
