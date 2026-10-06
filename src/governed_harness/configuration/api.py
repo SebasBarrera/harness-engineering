@@ -44,7 +44,7 @@ DEFAULT_API_TOKEN_ROLE: ApiRole = "admin"
 MIN_API_TOKEN_LENGTH = 16
 """Shorter tokens taken from the environment are refused at start (fail closed)."""
 
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 _USER_ID = re.compile(r"^[a-z][a-z0-9_.-]{1,127}$")
 
 

@@ -247,7 +247,7 @@ class RuntimeConfig(ConfigModel):
     @classmethod
     def _write_paths_are_absolute(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
         for path in value or ():
-            if not (path.startswith("/") or path == "~" or path.startswith("~/")):
+            if not (path == "~" or path.startswith(("/", "~/"))):
                 raise ValueError(f"sandbox write path must be absolute or start with ~/: {path!r}")
             if any(ord(char) < 32 for char in path) or _SANDBOX_PATH_FORBIDDEN & set(path):
                 raise ValueError(
@@ -302,7 +302,7 @@ class RuntimeConfig(ConfigModel):
     def _state_dir(cls, value: str | None) -> str | None:
         if value is None or value == "auto":
             return value
-        if not (value.startswith("/") or value.startswith("~/")) or "$" in value:
+        if not value.startswith(("/", "~/")) or "$" in value:
             raise ValueError(
                 f"stateDir is auto, an absolute path or a path that starts with ~/: {value!r}"
             )

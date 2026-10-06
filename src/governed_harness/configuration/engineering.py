@@ -27,7 +27,7 @@ from governed_harness.configuration.agent_results import (
 )
 from governed_harness.domain.enums import FindingSeverity
 
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 _NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 
 

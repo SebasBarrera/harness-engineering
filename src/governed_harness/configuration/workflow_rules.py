@@ -56,6 +56,14 @@ def enforced_workflow_errors(workflow: WorkflowDefinition) -> list[str]:
     the nine phases is fixed, so it could never be met), a phase that is not followed by a
     declared transition to the next one, and a parallelizable phase that writes the workspace
     (there is one workspace per run)."""
+    return [
+        *_phase_errors(workflow),
+        *_transition_errors(workflow),
+        *_missing_transitions(workflow),
+    ]
+
+
+def _phase_errors(workflow: WorkflowDefinition) -> list[str]:
     errors: list[str] = []
     order = [phase.phase_id for phase in workflow.phases]
     for position, phase in enumerate(workflow.phases):
@@ -64,30 +72,38 @@ def enforced_workflow_errors(workflow: WorkflowDefinition) -> list[str]:
                 f"phase {phase.phase_id.value}: unknown exitGate {phase.exit_gate!r}; known: "
                 f"{', '.join(sorted({*EXIT_GATE_CONDITIONS, *CONDITION_ALIASES}))}"
             )
-        for dependency in phase.depends_on:
-            if dependency not in order[:position]:
-                errors.append(
-                    f"phase {phase.phase_id.value}: dependsOn {dependency.value} is not an "
-                    "earlier phase of the workflow"
-                )
+        errors.extend(
+            f"phase {phase.phase_id.value}: dependsOn {dependency.value} is not an "
+            "earlier phase of the workflow"
+            for dependency in phase.depends_on
+            if dependency not in order[:position]
+        )
         if phase.parallelizable and "filesystem.write" in phase.allowed_capabilities:
             errors.append(
                 f"phase {phase.phase_id.value}: parallelizable but allowed filesystem.write; "
                 "a run has one workspace"
             )
-    for transition in workflow.transitions:
-        if transition.condition in DECISION_TRANSITION_CONDITIONS:
-            continue
-        if not known_condition(transition.condition):
-            errors.append(
-                f"transition {transition.source.value} -> {transition.target.value}: unknown "
-                f"condition {transition.condition!r}"
-            )
-    declared = {(item.source, item.target) for item in workflow.transitions}
-    for source, target in zip(order, order[1:], strict=False):
-        if (source, target) not in declared:
-            errors.append(f"no transition from {source.value} to {target.value}")
     return errors
+
+
+def _transition_errors(workflow: WorkflowDefinition) -> list[str]:
+    return [
+        f"transition {transition.source.value} -> {transition.target.value}: unknown "
+        f"condition {transition.condition!r}"
+        for transition in workflow.transitions
+        if transition.condition not in DECISION_TRANSITION_CONDITIONS
+        and not known_condition(transition.condition)
+    ]
+
+
+def _missing_transitions(workflow: WorkflowDefinition) -> list[str]:
+    order = [phase.phase_id for phase in workflow.phases]
+    declared = {(item.source, item.target) for item in workflow.transitions}
+    return [
+        f"no transition from {source.value} to {target.value}"
+        for source, target in zip(order, order[1:], strict=False)
+        if (source, target) not in declared
+    ]
 
 
 def validate_enforced_workflow(workflow: WorkflowDefinition) -> None:
