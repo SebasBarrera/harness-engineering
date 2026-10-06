@@ -31,18 +31,18 @@ from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import Actor
 
+WRITE = "filesystem.write"
+EXECUTE = "process.execute"
+
 HARNESS_PHASE_CAPABILITIES: dict[str, tuple[str, ...]] = {
-    "SPECIFICATION": ("process.execute",),
-    "PLANNING": ("process.execute",),
-    "INDEPENDENT_REVIEW": ("process.execute",),
+    "SPECIFICATION": (EXECUTE,),
+    "PLANNING": (EXECUTE,),
+    "INDEPENDENT_REVIEW": (EXECUTE,),
 }
 """What the harness itself runs in a phase beyond the workflow's 1.0.0 declaration: the frozen
 acceptance tests before the change (SPECIFICATION), the preflight probes on a copy of the
 baseline (PLANNING), the project's consistency checks before the reviewers (INDEPENDENT_REVIEW).
 Applied only under ``governance.phaseCapabilities`` and recorded in the resolved workflow."""
-
-WRITE = "filesystem.write"
-EXECUTE = "process.execute"
 
 
 @dataclass(frozen=True)
