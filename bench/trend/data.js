@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791289454660,
+  "lastUpdate": 1791295209981,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -3323,6 +3323,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 7.147,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cd68be6d9887c09fd51d3941057cb5a606deaaa2",
+          "message": "Merge pull request #89 from fix/wave9-hardening\n\nWave 9 fixes the defects that the 2.0.0 evaluation found before 2.0.0 is released. The deterministic suites found them with fault probes and seeded corpora (#71), and the Haiku pilot of the agent-run evaluator found more (#72).\n\nIntake and routing:\n- The agent ambiguity review converges (#79). It sees the earlier answers, asks only blocking points the latest revision left open, and at the round cap continues with explicit assumptions (`intake.ambiguityReview` object form, `onExhausted: assume|block`). In the pilot, two of four governed Haiku runs never reached IMPLEMENTATION.\n- A read-only answer that breaks its contract is retried once, on the fallback provider when one is configured (`runtime.contractRetry`, #80).\n- The gate contract names the traced requirements and the naming rule, and suggests only commands the agent may run (#84).\n- `agentRouting.mode: anchored`: routing anchored at the invoking model, which is the ceiling (#85). Every review-panel reviewer records its routing decision.\n\nRun lifecycle:\n- Every wait before DECISION is in the inbox (#73).\n- Replanning after the correction budget happens only for a coarse model (#77).\n- Re-verification after a change made outside the run (`verification.reverifyOnChange`, #78).\n- Frozen acceptance files are kept out of the embedded session's edits (#81) and are never overwritten by another run (#82).\n- `plan decide --no-continue` exits 0, and a rejected run stays closed (#83).\n\nCapabilities, review, ladder and init:\n- A provider command outside the grants is refused before it starts under `governance.phaseCapabilities` (#87, security). Provider commands are granted with `capabilities.extend`.\n- A refused destructive launch leaves the run BLOCKED (#76).\n- A review served from the global cache reports no model call (#75).\n- Every probe assertion honours its variants (#74).\n- `harness init` keeps an existing repository's tree clean by using `.git/info/exclude` (#86).\n\nNew behaviour is behind keys that `harness init` writes. A project.yaml without them keeps its earlier behaviour and configuration digest. The fixes that restore documented behaviour apply always and are listed as such in the CHANGELOG.\n\nCloses #73\nCloses #74\nCloses #75\nCloses #76\nCloses #77\nCloses #78\nCloses #79\nCloses #80\nCloses #81\nCloses #82\nCloses #83\nCloses #84\nCloses #85\nCloses #86\nCloses #87\n\nVerification on the PR head 12b13d9df60c: 54 check(s) passed, no blocking check failed.",
+          "timestamp": "2026-10-06T08:59:16-05:00",
+          "tree_id": "fd4aeb133d5fc5d39890bbcd65ff7415802bf344",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/cd68be6d9887c09fd51d3941057cb5a606deaaa2"
+        },
+        "date": 1791295208941,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000912,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001372,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.008653,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.044666,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.195665,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 9.467437,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 9.830689,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 3.541,
             "unit": "%"
           }
         ]
