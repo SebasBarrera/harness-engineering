@@ -59,7 +59,9 @@ from common import (  # noqa: E402
 )
 
 AGENT = """\
-import argparse, json, math, sys
+import argparse, json, math, sys, time
+
+started = time.monotonic()
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
@@ -95,7 +97,9 @@ answer["usage"] = {
 }
 try:
     with Path(args.log).open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps({"kind": kind, "inputTokens": answer["usage"]["inputTokens"]}) + "\\n")
+        handle.write(json.dumps({"kind": kind, "inputTokens": answer["usage"]["inputTokens"],
+                                 "outputTokens": answer["usage"]["outputTokens"],
+                                 "wallSeconds": round(time.monotonic() - started, 4)}) + "\\n")
 except OSError:
     pass
 print(json.dumps(answer))
@@ -321,6 +325,20 @@ def measure(
     types = [item[0] for item in run_events]
     lanes = [payload.get("lane") for kind, payload in run_events if kind == "lane.classified"]
     calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+    # The external side of N04 (metrics_validity.py): the provider's own call log and the
+    # runner's clock of the typed commands, kept with the run.
+    (run_dir / "agent-calls.jsonl").write_text(log.read_text() if log.exists() else "")
+    (run_dir / "runner-clock.json").write_text(
+        json.dumps(
+            {
+                "commands": [
+                    {"command": c, "exitCode": e, "seconds": round(s, 3)} for c, e, s in typed
+                ],
+                "totalSeconds": round(sum(s for _, _, s in typed), 3),
+            },
+            indent=1,
+        )
+    )
     by_kind: dict[str, int] = {}
     for call in calls:
         by_kind[call["kind"]] = by_kind.get(call["kind"], 0) + 1
