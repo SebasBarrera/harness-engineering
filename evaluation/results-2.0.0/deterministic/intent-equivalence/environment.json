@@ -1,6 +1,6 @@
 {
   "assessedWith": "<repo>/.venv/bin/python",
-  "evaluationCodeDigest": "25d3ba1c812cc7e7",
+  "evaluationCodeDigest": "2fa38d882a04aaa4",
   "git": "git version 2.56.0",
   "governedHarnessVersion": "1.0.0",
   "harnessExecutable": "<repo>/.venv/bin/harness",
@@ -9,8 +9,8 @@
   "modelCalls": 0,
   "platform": "macOS-15.8.1-arm64-arm-64bit",
   "python": "3.12.11",
-  "recordedAt": "2026-10-06T04:37:21Z",
-  "repositoryHead": "397b3f2bc48734a2dc3560b47b3b6b592082c388+dirty",
+  "recordedAt": "2026-10-06T13:55:40Z",
+  "repositoryHead": "012aabe3c90a0c1110d8dd84814ffc93086743b8",
   "suite": "P24 INTENT equivalence",
   "wheel": null,
   "wheelSha256": null

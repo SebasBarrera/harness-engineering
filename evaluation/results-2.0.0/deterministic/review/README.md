@@ -16,7 +16,9 @@ configuration `harness init` writes (`review.panel` in `enforce`), one consisten
    itself (rules a tool verifies, its own checks, the consistency check). Detection per domain
    against the truth (same file and same line or rule) and findings on clean changes.
 2. `repeat`: the same review again (global cache), with the fixture's own count of the calls it
-   received (`fixtureCalls`), next to the report's `tokens.modelCalls`.
+   received (`fixtureCalls`), next to the report's `tokens.modelCalls`. On the code before wave 9
+   the identical re-review reported 34 model calls while the fixture received none; since #75 a
+   global cache hit reports 0 (`cache.identicalReReviewModelCalls` in `review-summary.json`).
 3. `oracle` (`--no-cache`): reviewers answer the seeded findings of their domain plus two decoys
    each: one at line 9999 (outside the diff) and one on a rule outside the catalog without
    evidence; the report's `droppedOutside` and `downgraded` are compared with the decoys sent.
@@ -35,8 +37,8 @@ Command (worktree code):
 
 ```bash
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
-$SCRATCH/venvs/eval/bin/python evaluation/deterministic/review_corpus.py --harness "$PWD/.venv/bin/harness" \
-  --out evaluation/results-2.0.0/deterministic/review --work $SCRATCH/work/review-final
+$SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/review_corpus.py --harness "$PWD/.venv/bin/harness" \
+  --out evaluation/results-2.0.0/deterministic/review --work $SCRATCH/work/review-w9
 ```
 
 Files: `review-corpus.jsonl` (one record per case and step), `review-summary.json`,

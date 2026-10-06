@@ -4,7 +4,7 @@
     "firstReviewModelCalls": 34,
     "identicalReReviewFixtureCalls": 0,
     "identicalReReviewGlobalHits": 23,
-    "identicalReReviewModelCalls": 34,
+    "identicalReReviewModelCalls": 0,
     "identicalReReviewTokens": 0,
     "testOnlyReviewFixtureCalls": 22,
     "testOnlyReviewModelCalls": 22,

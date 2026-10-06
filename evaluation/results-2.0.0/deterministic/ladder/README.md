@@ -10,6 +10,11 @@ returns a float with a test that does not exercise it, a test without assertions
 passes on the baseline, a command line with wrong output at L1 and at L3) and eight are correct
 (at L1, L2 and L3, four of them with evidence that does not reach the declared rung).
 
+The command-line probe `cli_value` (criterion `ac_e_value` at L3) runs two variants, the stock
+file and the empty file, each value assertion narrowed to its variant. Before wave 9 only
+`differs` honoured an assertion's `variants` (#74), so the first results used the stock file
+alone; the empty-file part of the criterion is probed since.
+
 Truth per case (`cases.yaml`): `defective` (re-checked by the hidden tests of the case's part on a
 separate copy with the change applied: `oracle`, `defectiveObserved`, `truthConsistent`) and
 `evidenceAdequate` (the tests or probes really reach the declared rung). Signals per case:
@@ -24,8 +29,8 @@ Command (worktree code):
 
 ```bash
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
-$SCRATCH/venvs/eval/bin/python evaluation/deterministic/ladder_corpus.py --harness "$PWD/.venv/bin/harness" \
-  --out evaluation/results-2.0.0/deterministic/ladder --work $SCRATCH/work/ladder-final
+$SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/ladder_corpus.py --harness "$PWD/.venv/bin/harness" \
+  --out evaluation/results-2.0.0/deterministic/ladder --work $SCRATCH/work/ladder-w9
 ```
 
 Files: `ladder-corpus.jsonl` (one record per case: run status and phase, gate, certification per
