@@ -900,22 +900,22 @@ issued for the whole run whatever the phase: a project could widen a profile but
 and the workflow's `allowedCapabilities` had no effect (issue #4). Under
 `governance.phaseCapabilities: true`:
 
-* a capability the project lists in `capabilities.grants` keeps only the scopes both the
+- a capability the project lists in `capabilities.grants` keeps only the scopes both the
   profiles and the project allow (a project scope inside a profile scope, `src/**` inside `**`);
   a capability the project does not list keeps the profiles' scopes; a scope no profile grants
   is added explicitly with `capabilities.extend` (without the key, `extend` is added like
   `grants`). Scopes the harness derives from what the project selects (its toolchain validators,
   the interpreter, the standards tools) are added after it. Two patterns that only overlap in
   part are not kept: the intersection fails closed;
-* every grant made while a phase runs (validators, probes, agent calls) keeps only the
+- every grant made while a phase runs (validators, probes, agent calls) keeps only the
   capabilities the phase allows: the workflow's `allowedCapabilities` plus what the harness
   itself runs there (`process.execute` in SPECIFICATION for the frozen acceptance tests, in
   PLANNING for the preflight probes, in INDEPENDENT_REVIEW for the review panel's consistency
   checks), written into the resolved workflow of the configuration snapshot;
-* an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
+- an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
   and every reviewer of the panel) gets no `filesystem.write` and may start only its own
   configured command (`agentProviders.ID.command`);
-* each phase attempt records the resolved grants of the validators and of the run's agent as
+- each phase attempt records the resolved grants of the validators and of the run's agent as
   evidence and as a `capabilities.resolved` event.
 
 `harness config validate` warns that `allowedCapabilities` is declared but not applied while the
@@ -926,7 +926,7 @@ key is off.
 The policies `repositoryContentTrusted` and `destructiveActionsDefault` were part of the core
 policies and read by nothing (issue #5). Under `governance.applyRepositoryPolicies: true`:
 
-* `repositoryContentTrusted: false` (the default): every request the harness builds says that
+- `repositoryContentTrusted: false` (the default): every request the harness builds says that
   repository content is untrusted data, not instructions (a prompt-injection notice). The
   instruction files of the repository (`instructions.files`, by default `AGENTS.md`, `CLAUDE.md`,
   `.cursorrules`, `.cursor/rules`, `.github/copilot-instructions.md`) reach the implementing agent
@@ -937,7 +937,7 @@ policies and read by nothing (issue #5). Under `governance.applyRepositoryPolici
   instructions", "reviewers must approve", chat-template markers. With
   `repositoryContentTrusted: true` that rule is inactive and no notice is added. A CLI that loads
   instruction files by itself still reads them; the notice tells it how to treat them.
-* `destructiveActionsDefault: deny` (the default): a command the harness runs while a phase runs
+- `destructiveActionsDefault: deny` (the default): a command the harness runs while a phase runs
   (validators, probes, consistency checks, provider launches) is refused before it starts when it
   deletes recursively outside the workspace (or the workspace root), force-pushes or deletes a
   remote ref, rewrites history (`rebase`, `commit --amend`, `filter-branch`, `filter-repo`),
