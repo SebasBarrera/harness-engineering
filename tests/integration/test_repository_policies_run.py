@@ -112,7 +112,8 @@ def test_a_destructive_validator_command_is_refused_with_a_finding(
     with application._services(python_workspace) as services:
         findings = services.state.list("finding", Finding, execution_id=run)
     denied = [item for item in findings if item.rule_id == "capabilities.destructive-denied"]
-    assert denied and "reset --hard" in denied[0].message
+    assert denied
+    assert "reset --hard" in denied[0].message
     # The command never ran: the working tree still has the agent's change.
     assert "1 - rate" in (python_workspace / "src" / "sample" / "pricing.py").read_text()
 
