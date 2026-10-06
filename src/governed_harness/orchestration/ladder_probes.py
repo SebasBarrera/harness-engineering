@@ -99,7 +99,11 @@ def run_probe(
         stdout = result.stdout.decode("utf-8", "replace")
         stderr = result.stderr.decode("utf-8", "replace")
         ran = not result.timed_out and not result.cancelled
-        stopped = "timed out" if result.timed_out else "cancelled" if result.cancelled else None
+        stopped = None
+        if result.timed_out:
+            stopped = "timed out"
+        elif result.cancelled:
+            stopped = "cancelled"
         runs.append(VariantRun(variant.name, ran, result.exit_code, stdout, stderr, stopped))
         stdout_ref = services.artifacts.put(
             result.stdout,
