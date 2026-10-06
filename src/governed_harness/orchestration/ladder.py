@@ -564,7 +564,6 @@ class VerificationLadder:
     def verification(
         self,
         execution: Execution,
-        phase: PhaseExecution,
         change_set: ChangeSet,
         outputs: list[Any],
     ) -> list[ValidatorOutput]:
