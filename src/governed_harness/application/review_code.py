@@ -66,9 +66,11 @@ PULL_REQUEST_NUMBER_ENV = (
     "SYSTEM_PULLREQUEST_PULLREQUESTNUMBER",
     "SYSTEM_PULLREQUEST_PULLREQUESTID",
 )
+_DEFAULT_TARGET = "@default"
+"""The target of a branch convention that stands for the default branch of the repository."""
 BUILTIN_CONVENTIONS: tuple[tuple[str, str], ...] = (
-    ("release/*", "@default"),
-    ("hotfix/*", "@default"),
+    ("release/*", _DEFAULT_TARGET),
+    ("hotfix/*", _DEFAULT_TARGET),
     ("*", "develop"),
 )
 """Branch conventions applied after ``review.panel.baseBranches``: release and hotfix branches
@@ -123,7 +125,7 @@ def _convention(branch: str, configured: dict[str, str] | None, git: Git) -> str
     for pattern, target in (*(configured or {}).items(), *BUILTIN_CONVENTIONS):
         if not fnmatch.fnmatchcase(branch, pattern):
             continue
-        name = default_branch(git) if target == "@default" else target
+        name = default_branch(git) if target == _DEFAULT_TARGET else target
         if (
             name
             and name != branch
@@ -153,22 +155,26 @@ def _fetch(git: Git, branch: str) -> None:
         )
 
 
-def resolve_base(
-    git: Git, mode: str, explicit: str | None, configured: dict[str, str] | None
-) -> BaseResolution:
-    """explicit, then the pull or merge request base, then the branch convention, then the
-    merge base with the default branch."""
-    if mode == "staged":
-        head = git.resolve("HEAD")
-        return BaseResolution("HEAD", head or EMPTY_TREE, "staged")
-    candidates: list[tuple[str, str]] = []
-    if explicit:
-        candidates.append((explicit, "explicit"))
+def _pull_request_base() -> tuple[str, str] | None:
+    """The base branch the CI exposes for the pull or merge request being built, if any."""
     for name in PULL_REQUEST_BASE_ENV:
         value = os.environ.get(name, "").strip().removeprefix("refs/heads/")
         if value:
-            candidates.append((value, f"pull-request:{name}"))
-            break
+            return value, f"pull-request:{name}"
+    return None
+
+
+def _base_candidates(
+    git: Git, explicit: str | None, configured: dict[str, str] | None
+) -> list[tuple[str, str]]:
+    """``(name, source)`` of every base to try, in order; all of them are gathered before the
+    first one is tried."""
+    candidates: list[tuple[str, str]] = []
+    if explicit:
+        candidates.append((explicit, "explicit"))
+    pull_request = _pull_request_base()
+    if pull_request is not None:
+        candidates.append(pull_request)
     branch = git.run("rev-parse", "--abbrev-ref", "HEAD", check=False).stdout.decode().strip()
     if branch and branch != "HEAD":
         convention = _convention(branch, configured, git)
@@ -177,29 +183,47 @@ def resolve_base(
     fallback = default_branch(git)
     if fallback and fallback != branch:
         candidates.append((fallback, "merge-base"))
-    for name, source in candidates:
-        fetched = False
-        is_branch = source != "explicit" or not _COMMIT.match(name)
-        if mode == "hook" and is_branch:
-            if not _has_remote(git):
-                raise ReviewAborted(
-                    "hook mode: there is no origin remote to fetch the base from; the review is "
-                    "aborted"
-                )
-            _fetch(git, name)
-            fetched = True
-        ref = name
-        if is_branch and _ref_exists(git, f"refs/remotes/origin/{name}"):
-            ref = f"origin/{name}"
-        if not _ref_exists(git, ref):
-            if source == "explicit":
-                raise ConfigurationError(f"base {name!r} does not resolve to a commit")
-            continue
-        merge = git.run("merge-base", "HEAD", ref, check=False)
-        sha = merge.stdout.decode().strip()
-        if merge.returncode != 0 or not sha:
-            continue
-        return BaseResolution(ref, sha, source, fetched)
+    return candidates
+
+
+def _resolve_candidate(git: Git, mode: str, name: str, source: str) -> BaseResolution | None:
+    """One candidate base: fetched first in hook mode, then its merge base with ``HEAD``;
+    ``None`` to try the next one. An explicit base that does not resolve is an error."""
+    fetched = False
+    is_branch = source != "explicit" or not _COMMIT.match(name)
+    if mode == "hook" and is_branch:
+        if not _has_remote(git):
+            raise ReviewAborted(
+                "hook mode: there is no origin remote to fetch the base from; the review is aborted"
+            )
+        _fetch(git, name)
+        fetched = True
+    ref = name
+    if is_branch and _ref_exists(git, f"refs/remotes/origin/{name}"):
+        ref = f"origin/{name}"
+    if not _ref_exists(git, ref):
+        if source == "explicit":
+            raise ConfigurationError(f"base {name!r} does not resolve to a commit")
+        return None
+    merge = git.run("merge-base", "HEAD", ref, check=False)
+    sha = merge.stdout.decode().strip()
+    if merge.returncode != 0 or not sha:
+        return None
+    return BaseResolution(ref, sha, source, fetched)
+
+
+def resolve_base(
+    git: Git, mode: str, explicit: str | None, configured: dict[str, str] | None
+) -> BaseResolution:
+    """explicit, then the pull or merge request base, then the branch convention, then the
+    merge base with the default branch."""
+    if mode == "staged":
+        head = git.resolve("HEAD")
+        return BaseResolution("HEAD", head or EMPTY_TREE, "staged")
+    for name, source in _base_candidates(git, explicit, configured):
+        resolution = _resolve_candidate(git, mode, name, source)
+        if resolution is not None:
+            return resolution
     raise ConfigurationError(
         "no base to review against: pass --base, or create the default branch (main) or the "
         "convention's base branch"
@@ -363,6 +387,18 @@ def write_evidence_ref(git: Git, report: PanelReport) -> str | None:
     return ref
 
 
+def _evidence_ref(git: Git, commit: str) -> tuple[str, str] | None:
+    """``(verdict, ref)`` of the first evidence ref the commit has, in ``REF_KINDS`` order."""
+    for verdict, kind in REF_KINDS.items():
+        ref = f"{REF_PREFIX}/{kind}/{commit}"
+        if (
+            git.resolve(ref) is not None
+            or git.run("rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
+        ):
+            return verdict, ref
+    return None
+
+
 def verify_evidence(git: Git, sha: str) -> dict[str, Any]:
     """Check the review evidence of a commit without calling any model: the ref exists, its
     report is bound to the commit, its digest is intact, its verdict matches the ref and its
@@ -372,15 +408,7 @@ def verify_evidence(git: Git, sha: str) -> dict[str, Any]:
     result: dict[str, Any] = {"sha": sha, "commit": commit}
     if commit is None:
         return {**result, "valid": False, "problems": [f"{sha} is not a commit"]}
-    found: tuple[str, str] | None = None
-    for verdict, kind in REF_KINDS.items():
-        ref = f"{REF_PREFIX}/{kind}/{commit}"
-        if (
-            git.resolve(ref) is not None
-            or git.run("rev-parse", "--verify", "--quiet", ref, check=False).returncode == 0
-        ):
-            found = (verdict, ref)
-            break
+    found = _evidence_ref(git, commit)
     if found is None:
         return {**result, "valid": False, "problems": ["no review evidence ref for the commit"]}
     verdict, ref = found
