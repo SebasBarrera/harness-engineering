@@ -33,6 +33,7 @@ from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.capabilities.phase import CommandRefused, PhasePolicy, phase_scope
 from governed_harness.capabilities.repository import (
+    DestructiveActionDenied,
     DestructivePolicy,
     destructive_scope,
     repository_policies,
@@ -888,9 +889,11 @@ class RunEngine:
         phase: PhaseExecution,
         handler: Callable[[Execution, PhaseExecution], PhaseOutcome],
     ) -> PhaseOutcome:
-        """Run the phase's work under the policies of the phase. A provider command no grant
-        allows, refused before it starts under ``governance.phaseCapabilities`` (#87), blocks
-        the phase with the finding the refusal recorded; any other exception is an ``ERROR``."""
+        """Run the phase's work under the policies of the phase. A command the policies refuse
+        before it starts (a provider command no grant allows under
+        ``governance.phaseCapabilities``, #87; a destructive command under
+        ``destructiveActionsDefault: deny``, #76) blocks the phase with the finding the refusal
+        recorded; any other exception is an ``ERROR``."""
         execution_id = running.execution_id
         try:
             if self.is_cancelled(execution_id):
@@ -910,7 +913,7 @@ class RunEngine:
                     f"The harness was interrupted ({type(interruption).__name__})",
                 )
             raise
-        except CommandRefused as refusal:
+        except (CommandRefused, DestructiveActionDenied) as refusal:
             return PhaseOutcome(ResultStatus.BLOCKED, f"{type(refusal).__name__}: {refusal}")
         except Exception as error:
             self.s.events.append(

@@ -955,7 +955,10 @@ policies and read by nothing (issue #5). Under `governance.applyRepositoryPolici
   discards commits (`reset --hard`), drops data (`DROP TABLE`, `TRUNCATE TABLE`, `dropdb`,
   `FLUSHALL`) or changes ownership or permissions outside the workspace, also inside `sh -c`.
   A `process.destructive` grant whose scope prefixes the command allows it. Each refusal is a
-  `HIGH` `capabilities.destructive-denied` finding. Implement and read-only requests carry
+  `HIGH` `capabilities.destructive-denied` finding. A refused command that the phase cannot do
+  without (a provider launch) leaves the phase and the run `BLOCKED` with the refusal as the
+  reason, and `run start` or `run continue` exits with 6 (issue #76; before, the run ended as
+  `ERROR` with exit 1). Implement and read-only requests carry
   `commandPolicy: {destructive: deny}`; the Claude Code adapter passes the same operations as
   `--disallowedTools` (a pattern cannot see paths, so `chown` and `chmod -R` are refused there
   everywhere). Commands an agent CLI runs by itself are confined by the agent sandbox, not by this

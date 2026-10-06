@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- A provider launch refused by `destructiveActionsDefault: deny` blocks the run instead of ending
+  it as an internal error (closes #76). The refusal reached the phase as an exception, so the run
+  ended `ERROR` and `run start` exited with 1, as if the harness had failed. Now the phase and the
+  run are `BLOCKED` with the refusal (`DestructiveActionDenied: ...`, naming the agent, the
+  command and the `process.destructive` grant that would allow it) as the reason, the `HIGH`
+  `capabilities.destructive-denied` finding is recorded as before, and `run start` exits with 6,
+  the documented code for a run stopped by a policy. A bug fix that restores the documented exit
+  code: it applies whenever the policy is in force (`governance.applyRepositoryPolicies`), with no
+  new key. A blocked phase does not use up one of the workflow's `maxAttempts` (an error did).
 - A provider command outside the grants is refused again under `governance.phaseCapabilities`
   (closes #87, security). The phase policy gave every configured provider an implicit
   `process.execute` grant for its own command, so a provider command no grant allowed (the
