@@ -143,6 +143,7 @@ from .ladder import (
 from .notifications import inbox, notify, notify_transition
 from .onboarding import (
     EXAMPLE_TASK_NAME,
+    GITIGNORE_FILE,
     IgnoreFile,
     ensure_ignored,
     git_identity,
@@ -283,7 +284,7 @@ class HarnessApplication(ReviewCodeCommands):
         if gitignore:
             ignore = ensure_ignored(workspace, ignore_file)
             result["ignore"] = ignore
-            if ignore["file"] == ".gitignore":
+            if ignore["file"] == GITIGNORE_FILE:
                 result["gitignore"] = ignore["status"]
         if skills is not None:
             result["agentSkills"] = skills

@@ -15,6 +15,7 @@ from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.validators.command import _MODULE_MISSING_EXIT_CODE, _MODULE_PROBE
 
 GITIGNORE_ENTRY = ".harness/"
+GITIGNORE_FILE = ".gitignore"
 
 EXAMPLE_TASK_NAME = "task.example.yaml"
 
@@ -79,7 +80,7 @@ def _add_entry(path: Path) -> str:
 
 def ensure_gitignore(workspace: Path) -> str:
     """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
-    return _add_entry(workspace / ".gitignore")
+    return _add_entry(workspace / GITIGNORE_FILE)
 
 
 def _exclude_path(workspace: Path) -> Path | None:
@@ -111,10 +112,10 @@ def ensure_ignored(workspace: Path, target: IgnoreFile = IgnoreFile.EXCLUDE) -> 
     the ``.gitignore`` is left as it is. Outside a Git repository, or with ``gitignore``, the
     entry goes to the workspace ``.gitignore`` as before. Returns the file, the entry and
     whether it was added, present or created."""
-    gitignore = workspace / ".gitignore"
+    gitignore = workspace / GITIGNORE_FILE
     exclude = _exclude_path(workspace) if target is IgnoreFile.EXCLUDE else None
     if exclude is None or _add_entry_present(gitignore):
-        return {"file": ".gitignore", "entry": GITIGNORE_ENTRY, "status": _add_entry(gitignore)}
+        return {"file": GITIGNORE_FILE, "entry": GITIGNORE_ENTRY, "status": _add_entry(gitignore)}
     return {
         "file": _shown(exclude, workspace),
         "entry": GITIGNORE_ENTRY,
