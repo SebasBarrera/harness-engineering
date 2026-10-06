@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- A probe assertion's `variants` is honoured by every assertion kind (closes #74). Only `differs`
+  read it: an `exitCode`, `jsonPath`, `order` or `text` assertion meant for one variant was checked
+  on every variant, so a correct command line could come out `NOT_CERTIFIED` (seen in the ladder
+  corpus of the 2.0.0 evaluation). Now each assertion is checked on the variants it names (every
+  variant when it names none), and one whose `variants` names no variant of the probe fails
+  instead of checking nothing. A bug fix that makes a documented field take effect; it applies
+  always, with no new key.
 - A review served from the global review cache reports no model call (closes #75). On a global
   cache hit `harness review-code` (and the panel of a governed run) copied the cached report's
   reviewers, so `tokens.modelCalls` counted their attempts and the second opinion and each

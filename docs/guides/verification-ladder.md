@@ -55,6 +55,10 @@ contains the criterion id). `ac_cli` reaches `L3` through the probe: two variant
 a JSON path and a value that must differ between them. `ac_e2e` can only be verified by CI and
 `ac_look` only by a person.
 
+An assertion of any kind checks every variant unless its `variants` names some of them: for
+example `{kind: jsonPath, path: "$.error", present: true, variants: [below]}` is checked on
+`below` only. An assertion whose `variants` names no variant of the probe fails.
+
 ## Run, review, decide
 
 ```bash

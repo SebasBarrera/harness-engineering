@@ -150,7 +150,10 @@ class ProbeAssertion(StrictModel):
       every variant (``variants`` narrows the comparison);
     * ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``
       appears before ``after`` (in the list at ``path``, or in the text);
-    * ``text``: the output ``matches`` a regular expression or ``contains`` a text."""
+    * ``text``: the output ``matches`` a regular expression or ``contains`` a text.
+
+    ``variants`` names the variants an assertion of any kind checks (every variant when it is
+    empty); an assertion that names no variant of the probe fails."""
 
     kind: Literal["exitCode", "jsonPath", "differs", "order", "text"]
     path: str | None = None
