@@ -87,8 +87,12 @@ def _add_entry(path: Path, root: Path) -> str:
     text = path.read_text(encoding="utf-8")
     if _has_entry(text):
         return "present"
-    separator = "" if not text or text.endswith("\n") else "\n"
-    path.write_text(f"{text}{separator}{GITIGNORE_ENTRY}\n", encoding="utf-8")
+    # Append the entry rather than rewrite the file: only the fixed entry is written.
+    addition = (
+        f"{GITIGNORE_ENTRY}\n" if not text or text.endswith("\n") else f"\n{GITIGNORE_ENTRY}\n"
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(addition)
     return "added"
 
 
