@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
 from governed_harness.checks.model import DiffLine, is_test_path
 from governed_harness.checks.secrets import scan_secrets
@@ -87,7 +88,11 @@ def _code_lines(item: FileChange) -> list[DiffLine]:
     return [line for line in item.added if not line.text.lstrip().startswith("#")]
 
 
-def _first_match(text: str, patterns: Iterable[tuple[re.Pattern[str], str]]) -> str | None:
+class _Searcher(Protocol):
+    def search(self, text: str, /) -> object: ...
+
+
+def _first_match(text: str, patterns: Iterable[tuple[_Searcher, str]]) -> str | None:
     """Why the first matching pattern flags ``text``."""
     return next((why for pattern, why in patterns if pattern.search(text)), None)
 
@@ -113,17 +118,35 @@ def weakened_gates(files: Iterable[FileChange]) -> list[CheckHit]:
     return hits
 
 
-_DANGEROUS = (
+# ``rm``, its run of ``-flags`` options and what follows the run. The run is matched whole (its
+# tokens cannot overlap), so the scan is linear where one pattern with the recursive flag inside
+# a repeated option group backtracks over every split of the run.
+_RM_OPTIONS = re.compile(r"\brm\s+((?:-[A-Za-z]*\s+)+)")
+
+
+@dataclass(frozen=True)
+class _RecursiveDelete:
+    """An ``rm`` whose last option holds ``r``/``R`` and whose target matches ``target`` right
+    after the options: what ``\\brm\\s+(?:-[A-Za-z]*\\s+)*-[A-Za-z]*[rR][A-Za-z]*\\s+TARGET``
+    finds, read in one pass."""
+
+    target: re.Pattern[str]
+
+    def search(self, text: str, /) -> bool:
+        for command in _RM_OPTIONS.finditer(text):
+            last = command.group(1).split()[-1]
+            if ("r" in last or "R" in last) and self.target.match(text, command.end()):
+                return True
+        return False
+
+
+_DANGEROUS: tuple[tuple[_Searcher, str], ...] = (
     (
-        re.compile(
-            r"\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rR][A-Za-z]*\s+(?:--\s+)?[\"']?(?:/|~|\$HOME)[\"']?(?:\s|$|/\*)"
-        ),
+        _RecursiveDelete(re.compile(r"(?:--\s+)?[\"']?(?:/|~|\$HOME)[\"']?(?:\s|$|/\*)")),
         "recursive delete of the root or the home directory",
     ),
     (
-        re.compile(
-            r"\brm\s+(?:-[A-Za-z]*\s+)*-[A-Za-z]*[rR][A-Za-z]*\s+(?:--\s+)?[\"']?\$\{?[A-Za-z_]\w*\}?[\"']?/"
-        ),
+        _RecursiveDelete(re.compile(r"(?:--\s+)?[\"']?\$\{?[A-Za-z_]\w*\}?[\"']?/")),
         "recursive delete under an unguarded variable (use ${VAR:?})",
     ),
     (re.compile(r"\bchmod\s+(?:-R\s+)?0?777\b"), "world-writable permissions"),
@@ -155,7 +178,7 @@ def dangerous_paths(files: Iterable[FileChange]) -> list[CheckHit]:
     return hits
 
 
-_TMP = re.compile(r"(?<![\w$])/tmp/[A-Za-z0-9_][A-Za-z0-9_.-]*")
+_TMP = re.compile(r"(?<![\w$])/tmp/(?a:\w[\w.-]*)")  # an ASCII name, as before
 
 
 def temporary_files(files: Iterable[FileChange]) -> list[CheckHit]:
