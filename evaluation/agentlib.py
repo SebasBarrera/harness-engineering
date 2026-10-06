@@ -18,6 +18,11 @@ from pathlib import Path
 from typing import Any
 
 CLAUDE_BIN = os.environ.get("EVAL_CLAUDE_BIN", "claude")
+# The deterministic stand-in for the Claude Code CLI used by the dry runs (no model call).
+FAKE_CLAUDE = Path(__file__).resolve().parent / "fake_claude.py"
+# Every real call runs only on this Claude account (the evaluation's own subscription), with no API key
+# and no configuration-directory override; anything else aborts before the CLI starts.
+EXPECTED_ACCOUNT = os.environ.get("EVAL_CLAUDE_ACCOUNT", "js.barrerap@gmail.com")
 TOOLS = "Read,Edit,Write,Glob,Grep,Bash"
 ALLOWED_TOOLS = [
     "Read",
@@ -58,10 +63,28 @@ CONTINUE_PROMPT = (
 )
 
 
+GENERATED_ID = re.compile(r"^(req|ac)_[0-9a-f]{32}$")
+ID_KEYS = ("requirementId", "requirement_id", "criterionId", "criterion_id")
+
+
 def _items(task: dict[str, Any], *keys: str) -> list[str]:
+    """The texts of a task list, prefixed with the id the task file gave the item (``req_spec:``).
+
+    Since the 2.0.0 evaluation the ids are shown in every condition: the harness's requirement
+    traceability names requirements by these ids, and the direct condition must get the same text.
+    Ids the harness generated (``req_<32 hex>``, for answers to clarification questions) are left out.
+    """
     for key in keys:
         if key in task and task[key]:
-            return [item["text"] if isinstance(item, dict) else str(item) for item in task[key]]
+            rendered = []
+            for item in task[key]:
+                if not isinstance(item, dict):
+                    rendered.append(str(item))
+                    continue
+                ident = next((str(item[k]) for k in ID_KEYS if item.get(k)), "")
+                prefix = f"{ident}: " if ident and not GENERATED_ID.match(ident) else ""
+                rendered.append(prefix + str(item["text"]))
+            return rendered
     return []
 
 
@@ -113,13 +136,89 @@ def agent_environment() -> dict[str, str]:
     return env
 
 
-def _command(prompt: str, model: str, max_budget_usd: str, session: list[str]) -> list[str]:
+CALL_RECORD = re.compile(r"^call-(\d+)\.json$")
+
+
+def call_records(directory: Path) -> list[Path]:
+    """The usage records ``call-N.json`` of a directory, in call order (requests, prompts and stderr
+    files next to them are left out)."""
+    if not directory.is_dir():
+        return []
+    found = [(int(m.group(1)), p) for p in directory.iterdir() if (m := CALL_RECORD.match(p.name))]
+    return [p for _, p in sorted(found)]
+
+
+def allocate_call(directory: Path) -> Path:
+    """Reserve the next ``call-N.json`` atomically: the reviewers of the review panel may call the
+    provider in parallel, and two calls must never share a record."""
+    directory.mkdir(parents=True, exist_ok=True)
+    number = len(call_records(directory)) + 1
+    while True:
+        path = directory / f"call-{number}.json"
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+        except FileExistsError:
+            number += 1
+            continue
+        os.write(fd, b"{}")
+        os.close(fd)
+        return path
+
+
+def load_calls(directory: Path) -> list[dict[str, Any]]:
+    """The completed usage records of a directory (a reserved, never written record is skipped)."""
+    records = []
+    for path in call_records(directory):
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except ValueError:
+            continue
+        if isinstance(value, dict) and "wallSeconds" in value:
+            records.append(value)
+    return records
+
+
+class AccountError(RuntimeError):
+    """The Claude CLI is not on the evaluation account, or an override is set."""
+
+
+def is_fake(binary: str | None = None) -> bool:
+    """True when the CLI is the deterministic stand-in of the dry runs (no model call)."""
+    return Path(binary or CLAUDE_BIN).name == FAKE_CLAUDE.name
+
+
+def ensure_account() -> str:
+    """Abort unless ~/.claude.json is logged in to EXPECTED_ACCOUNT and no override is set.
+
+    Checked before every real call (not cached: the login could change during a long matrix).
+    """
+    for name in ("ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"):
+        if os.environ.get(name):
+            raise AccountError(f"{name} is set: the evaluation runs only on the subscription login")
+    path = Path(os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir)) / ".claude.json"
+    try:
+        account = (json.loads(path.read_text(encoding="utf-8")).get("oauthAccount") or {}).get(
+            "emailAddress", ""
+        )
+    except (OSError, ValueError) as error:
+        raise AccountError(f"cannot read {path}: {error}") from error
+    if account != EXPECTED_ACCOUNT:
+        raise AccountError(f"the Claude CLI is logged in as {account!r}, not {EXPECTED_ACCOUNT!r}")
+    return account
+
+
+def _command(
+    prompt: str, model: str, max_budget_usd: str, session: list[str], effort: str | None = None
+) -> list[str]:
     return [
         CLAUDE_BIN,
         "-p",
         prompt,
         "--model",
         model,
+        # Only the routed calls of the tiered condition carry an effort; every other call keeps the
+        # command line of the direct condition.
+        *(["--effort", effort] if effort else []),
         "--output-format",
         "json",
         "--safe-mode",
@@ -145,18 +244,21 @@ def run_claude(
     max_budget_usd: str = MAX_BUDGET_USD,
     resumable: bool = False,
     resume_session: str | None = None,
+    effort: str | None = None,
 ) -> dict[str, Any]:
     """Run Claude Code non-interactively and return the normalized usage record.
 
     The large-project scenario raises the time and budget limits and makes the call resumable; every
-    other scenario uses the defaults (one call, no session kept).
+    other scenario uses the defaults (one call, no session kept). ``effort`` is passed only for the
+    calls the tiered router sends with an effort.
     """
     if resumable:
         return _run_resumable(
-            prompt, cwd, model, log_path, timeout_seconds, max_budget_usd, resume_session
+            prompt, cwd, model, log_path, timeout_seconds, max_budget_usd, resume_session, effort
         )
-    command = _command(prompt, model, max_budget_usd, ["--no-session-persistence"])
+    command = _command(prompt, model, max_budget_usd, ["--no-session-persistence"], effort)
     record, stderr, _ = _invoke(command, cwd, model, timeout_seconds)
+    record["effort"] = effort
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     (log_path.with_suffix(".stderr.txt")).write_text(stderr[-20000:], encoding="utf-8")
@@ -191,6 +293,7 @@ def _run_resumable(
     timeout_seconds: int,
     max_budget_usd: str,
     resume_session: str | None,
+    effort: str | None = None,
 ) -> dict[str, Any]:
     """One call that survives usage limits and restarts of the runner.
 
@@ -214,10 +317,12 @@ def _run_resumable(
     while True:
         if not state["started"]:
             state["sessionId"] = str(uuid.uuid4())
-            command = _command(prompt, model, max_budget_usd, ["--session-id", state["sessionId"]])
+            command = _command(
+                prompt, model, max_budget_usd, ["--session-id", state["sessionId"]], effort
+            )
         else:
             command = _command(
-                CONTINUE_PROMPT, model, max_budget_usd, ["--resume", state["sessionId"]]
+                CONTINUE_PROMPT, model, max_budget_usd, ["--resume", state["sessionId"]], effort
             )
         inflight.write_text(json.dumps(state, indent=1), encoding="utf-8")
         active = sum(seg["wallSeconds"] for seg in state["segments"])
@@ -295,6 +400,7 @@ def _run_resumable(
         "limitPauses": state.get("limitPauses", 0),
         "transientRetries": state.get("transientRetries", 0),
         "pausedSeconds": round(state["pausedSeconds"], 3),
+        "effort": effort,
     }
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     (log_path.with_suffix(".stderr.txt")).write_text(stderr_tail, encoding="utf-8")
@@ -306,6 +412,8 @@ def _invoke(
     command: list[str], cwd: Path, model: str, timeout_seconds: int
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
     """Run one Claude Code process; return its normalized record, its stderr and the raw result."""
+    if not is_fake(command[0]):
+        ensure_account()
     started = time.monotonic()
     try:
         proc = subprocess.run(
