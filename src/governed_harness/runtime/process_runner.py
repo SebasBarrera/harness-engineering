@@ -138,6 +138,12 @@ class SafeProcessRunner:
             raise ValueError("argv must be a non-empty, NUL-free vector")
         self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
         cwd = contained_path(self.workspace_root, spec.cwd)
+        from governed_harness.capabilities.repository import current_destructive
+
+        destructive = current_destructive()
+        if destructive is not None:
+            # governance.applyRepositoryPolicies, destructiveActionsDefault: deny (#5).
+            destructive.check(spec.argv, cwd, actor, grants)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
         process = subprocess.Popen(

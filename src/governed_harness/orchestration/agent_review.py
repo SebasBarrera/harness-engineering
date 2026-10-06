@@ -56,6 +56,9 @@ class AgentReview:
     @property
     def policy(self) -> str:
         review = self.results.project.review
+        if review is not None and review.panel is not None and review.panel.mode is not None:
+            # #57: the review panel replaces the single reviewer under its own policy.
+            return review.panel.mode
         return (review.agent_review if review else None) or "off"
 
     def blocking_severities(self) -> set[FindingSeverity]:
@@ -109,6 +112,8 @@ class AgentReview:
                 },
             )
             return ReviewOutcome(False)
+        if self.results.panel.configured:
+            return self.results.panel.run(execution, phase, change_set)
         task = engine.run_task(execution)
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         payload: dict[str, Any] = {

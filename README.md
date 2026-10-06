@@ -324,6 +324,8 @@ and `harness init --agent-skills`, see the [embedded mode guide](docs/guides/emb
 the run can carry the team's language standards, engineering principles, testing strategy and
 architecture ([guide](docs/guides/engineering.md)), and the result can be published on GitHub,
 GitLab, Bitbucket, Azure DevOps or Gitea ([forges and CI templates](docs/guides/forges.md)).
+The second review is a panel of reviewers by domain with a layered rule catalog, also usable
+outside a run as `harness review-code` and a pre-push hook ([review panel](docs/guides/review-panel.md)).
 
 ## Web dashboard and API
 

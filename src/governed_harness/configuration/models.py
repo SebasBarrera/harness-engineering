@@ -53,6 +53,7 @@ from governed_harness.configuration.ladder import (
     ProfileVerification,
     PullRequestConfig,
 )
+from governed_harness.configuration.review import ReviewPanelConfig
 from governed_harness.domain.enums import FindingSeverity, PhaseId
 from governed_harness.domain.models import ProbeDefinition
 
@@ -120,8 +121,21 @@ class CapabilityRule(ConfigModel):
 
 
 class CapabilitiesConfig(ConfigModel):
+    """``grants`` are the project's capabilities. Under ``governance.phaseCapabilities`` (#4)
+    they narrow the profiles' (``profile ∩ project``) and ``extend`` is the explicit way to add
+    a scope no profile grants (a device lab's command, an agent CLI); without the key both are
+    added to the profiles' scopes, as in 1.0.0."""
+
     default: Literal["deny"] = "deny"
     grants: tuple[CapabilityRule, ...] = ()
+    extend: tuple[CapabilityRule, ...] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_absent_extend(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        data: dict[str, Any] = handler(self)
+        if self.extend is None:
+            data.pop("extend", None)
+        return data
 
 
 DEFAULT_TRANSIENT_PATTERNS: tuple[str, ...] = (
@@ -632,6 +646,10 @@ class ReviewConfig(ConfigModel):
     manual_checklist: bool | None = Field(default=None, alias="manualChecklist")
     """Since #55: items only a person can verify (``manual`` criteria and the task's
     ``checklist``) are ticked in DECISION (``gate decide --check``); APPROVE needs them all."""
+    panel: ReviewPanelConfig | None = None
+    """Since #57: the review panel (reviewers by domain, layered rule catalog, output
+    contract, deterministic verdict) replaces the single reviewer in INDEPENDENT_REVIEW and runs
+    outside governed runs with ``harness review-code``."""
 
     @field_validator("agent_review", mode="before")
     @classmethod
@@ -760,6 +778,18 @@ class GovernanceConfig(ConfigModel):
     * ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,
       derived from the capability grants (read-only for clarify, review and plan), recorded as
       evidence.
+    * ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a
+      project narrows, never widens, a profile), every grant made while a phase runs keeps only
+      the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call
+      outside IMPLEMENTATION is read-only and may start only its own command, and the resolved
+      grants of each phase attempt are recorded as evidence.
+    * ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes
+      repository content (instruction files included) quoted, untrusted context of every agent
+      request with a prompt-injection notice, and the review panel flags instructions in changed
+      files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive
+      deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or
+      permission changes outside the workspace) unless a ``process.destructive`` grant allows
+      them, with a finding for each attempt.
     * ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are
       evaluated from the run's records after a phase attempt passes (an unmet condition leaves
       the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides
@@ -783,6 +813,8 @@ class GovernanceConfig(ConfigModel):
     apply_network_policy: bool | None = Field(default=None, alias="applyNetworkPolicy")
     stop_the_line: StopTheLine | None = Field(default=None, alias="stopTheLine")
     phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
+    phase_capabilities: bool | None = Field(default=None, alias="phaseCapabilities")
+    apply_repository_policies: bool | None = Field(default=None, alias="applyRepositoryPolicies")
     enforce_workflow: bool | None = Field(default=None, alias="enforceWorkflow")
 
     @field_validator("stop_the_line", mode="before")
@@ -1096,8 +1128,10 @@ class WorkflowPhaseDefinition(ConfigModel):
     allowed_capabilities: tuple[str, ...] = Field(
         default=(),
         alias="allowedCapabilities",
-        description="Declarative: capabilities are granted per run, not per phase (issue #4).",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Capabilities a grant made while the phase runs may carry, under "
+            "governance.phaseCapabilities (issue #4); without it grants are per run."
+        ),
     )
     validators: tuple[str, ...] = Field(
         default=(),

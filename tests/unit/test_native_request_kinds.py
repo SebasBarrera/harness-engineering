@@ -64,3 +64,32 @@ def test_implement_extras_are_listed_for_the_agent() -> None:
     lines = implement_extras_lines({"gate": {"checkCommand": ["harness", "check"]}})
     assert lines[0].startswith("## What the harness will check")
     assert implement_extras_lines({"task": {}}) == []
+
+
+def test_a_reviewer_runs_isolated_on_the_built_in_adapters() -> None:
+    # #57: a reviewer of the review panel is read-only, limited to its tools and to the MCP
+    # servers of the allowlist; the MCP definitions never reach the recorded argv or prompt.
+    request = {
+        **REQUEST,
+        "kind": "review",
+        "isolation": {
+            "readOnly": True,
+            "tools": ["Read", "Grep"],
+            "mcpServers": ["docs"],
+            "mcpConfig": {"docs": {"command": "docs-server", "env": {"LEVEL": "debug"}}},
+        },
+    }
+    claude = provider("claude-code")
+    argv, stdin, recorded = claude.process_input(request, cast(Any, None))
+    assert argv[argv.index("--allowedTools") + 1] == "Read,Grep"
+    assert "--strict-mcp-config" in argv and "acceptEdits" not in argv
+    assert argv[argv.index("--setting-sources") + 1] == "project"
+    assert json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["docs"]
+    assert recorded[recorded.index("--mcp-config") + 1] == "<mcp-config>"
+    assert stdin is not None and b"docs-server" not in stdin
+    codex = provider("codex")
+    argv, _, _ = codex.process_input(request, cast(Any, None))
+    assert argv[argv.index("--sandbox") + 1] == "read-only" and "--full-auto" not in argv
+    # Without isolation the base arguments are unchanged.
+    argv, _, _ = claude.process_input(REQUEST, cast(Any, None))
+    assert "acceptEdits" in argv and "--allowedTools" not in argv
