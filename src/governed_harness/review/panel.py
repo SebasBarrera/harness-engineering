@@ -267,27 +267,7 @@ class PanelReport:
 
     @classmethod
     def from_dict(cls, value: Mapping[str, Any]) -> PanelReport:
-        reviewers = [
-            ReviewerOutcome(
-                reviewer=str(item["id"]),
-                domain=str(item.get("domain") or ""),
-                status=str(item["status"]),
-                reason=str(item.get("reason") or ""),
-                activation=dict(item.get("activation") or {}),
-                files=list(item.get("files") or []),
-                changed_lines=int(item.get("changedLines") or 0),
-                slice_hash=item.get("sliceHash"),
-                budget=item.get("budget"),
-                provider=item.get("provider"),
-                configured_model=(item.get("model") or {}).get("configured"),
-                executed_model=(item.get("model") or {}).get("executed"),
-                attempts=int(item.get("attempts") or 0),
-                cache=str(item.get("cache") or "off"),
-                tokens=0,
-                summary=str(item.get("summary") or ""),
-            )
-            for item in value.get("reviewers") or []
-        ]
+        reviewers = [_outcome_from_dict(item) for item in value.get("reviewers") or []]
         return cls(
             mode=str(value["mode"]),
             base=value.get("base"),
@@ -306,6 +286,29 @@ class PanelReport:
             locations=int((value.get("counts") or {}).get("reportableLines") or 0),
             second_opinion=value.get("secondOpinion"),
         )
+
+
+def _outcome_from_dict(item: Mapping[str, Any]) -> ReviewerOutcome:
+    """A reviewer outcome of a cached report (its findings are in the report's list)."""
+    model = item.get("model") or {}
+    return ReviewerOutcome(
+        reviewer=str(item["id"]),
+        domain=str(item.get("domain") or ""),
+        status=str(item["status"]),
+        reason=str(item.get("reason") or ""),
+        activation=dict(item.get("activation") or {}),
+        files=list(item.get("files") or []),
+        changed_lines=int(item.get("changedLines") or 0),
+        slice_hash=item.get("sliceHash"),
+        budget=item.get("budget"),
+        provider=item.get("provider"),
+        configured_model=model.get("configured"),
+        executed_model=model.get("executed"),
+        attempts=int(item.get("attempts") or 0),
+        cache=str(item.get("cache") or "off"),
+        tokens=0,
+        summary=str(item.get("summary") or ""),
+    )
 
 
 # ----- helpers ----------------------------------------------------------------------------------
@@ -336,32 +339,28 @@ def deterministic_findings(
     by_check: dict[str, list[Rule]] = {}
     unknown: list[str] = []
     for rule in catalog.tool_rules():
-        for tool, name in rule.tools:
-            if tool != HARNESS_TOOL:
-                continue
+        for name in (name for tool, name in rule.tools if tool == HARNESS_TOOL):
             if name in CHECKS:
                 by_check.setdefault(name, []).append(rule)
             else:
-                unknown.append(f"{rule.rule_id}: tool:{tool}:{name}")
-    findings: list[ReviewFinding] = []
-    for hit in run_checks(by_check, files):
-        for rule in by_check.get(hit.check, []):
-            if not rule.applies(hit.path) or not locations.allows(hit.path, hit.side, hit.line):
-                continue
-            findings.append(
-                ReviewFinding(
-                    reviewer=HARNESS_TOOL,
-                    file=hit.path,
-                    side=hit.side,
-                    line=hit.line,
-                    rule=rule.rule_id,
-                    severity="error" if rule.blocking else "suggestion",
-                    issue=hit.message,
-                    evidence=hit.evidence,
-                    priority=rule.priority,
-                    source=f"tool:{HARNESS_TOOL}:{hit.check}",
-                )
-            )
+                unknown.append(f"{rule.rule_id}: tool:{HARNESS_TOOL}:{name}")
+    findings = [
+        ReviewFinding(
+            reviewer=HARNESS_TOOL,
+            file=hit.path,
+            side=hit.side,
+            line=hit.line,
+            rule=rule.rule_id,
+            severity="error" if rule.blocking else "suggestion",
+            issue=hit.message,
+            evidence=hit.evidence,
+            priority=rule.priority,
+            source=f"tool:{HARNESS_TOOL}:{hit.check}",
+        )
+        for hit in run_checks(by_check, files)
+        for rule in by_check.get(hit.check, [])
+        if rule.applies(hit.path) and locations.allows(hit.path, hit.side, hit.line)
+    ]
     return findings, {
         "checks": sorted(by_check),
         "unknownChecks": sorted(unknown),
@@ -592,11 +591,31 @@ def _from_cache(outcome: ReviewerOutcome, value: Mapping[str, Any]) -> None:
     outcome.tokens = 0
 
 
-def _call_reviewers(inputs: PanelInputs, planned: list[_Planned], limit: int) -> None:
-    pending = [item for item in planned if item.outcome.status == "PENDING"]
-    if not pending:
-        return
-    cache = inputs.cache
+def _call_of(inputs: PanelInputs, item: _Planned, provider: str, attempt: int) -> ReviewerCall:
+    """The call of a planned reviewer on ``provider``; on another provider than planned (the
+    fallback) the model and effort are routed again."""
+    request = item.request
+    model, effort = item.model, item.effort
+    if provider != item.provider:
+        model, effort = inputs.route(item.reviewer, provider)
+        model = inputs.forced_model or model
+        request = {key: value for key, value in request.items() if key != "routing"}
+        if model or effort:
+            request["routing"] = {"model": model, "effort": effort}
+    return ReviewerCall(
+        reviewer=item.reviewer.reviewer_id,
+        provider=provider,
+        request=request,
+        model=model,
+        effort=effort,
+        timeout_seconds=item.reviewer.spec.timeout_seconds,
+        max_tokens=item.outcome.budget or 1,
+        attempt=attempt,
+    )
+
+
+def _uncached(cache: ReviewCache | None, pending: list[_Planned]) -> list[_Planned]:
+    """The planned reviewers to call: a cached answer fills the others."""
     calls: list[_Planned] = []
     for item in pending:
         cached = cache.get(item.key) if cache is not None and item.key else None
@@ -605,47 +624,37 @@ def _call_reviewers(inputs: PanelInputs, planned: list[_Planned], limit: int) ->
             continue
         item.outcome.cache = "miss" if cache is not None else "off"
         calls.append(item)
+    return calls
+
+
+def _call_reviewers(inputs: PanelInputs, planned: list[_Planned], limit: int) -> None:
+    pending = [item for item in planned if item.outcome.status == "PENDING"]
+    if not pending:
+        return
+    cache = inputs.cache
+    calls = _uncached(cache, pending)
     workers = inputs.settings.workers
-
-    def call_of(item: _Planned, provider: str, attempt: int) -> ReviewerCall:
-        request = item.request
-        model, effort = item.model, item.effort
-        if provider != item.provider:
-            model, effort = inputs.route(item.reviewer, provider)
-            if inputs.forced_model:
-                model = inputs.forced_model
-            request = dict(request)
-            request.pop("routing", None)
-            if model or effort:
-                request["routing"] = {"model": model, "effort": effort}
-        return ReviewerCall(
-            reviewer=item.reviewer.reviewer_id,
-            provider=provider,
-            request=request,
-            model=model,
-            effort=effort,
-            timeout_seconds=item.reviewer.spec.timeout_seconds,
-            max_tokens=item.outcome.budget or 1,
-            attempt=attempt,
-        )
-
-    answers = inputs.invoker.invoke([call_of(item, item.provider, 1) for item in calls], workers)
-    retry: list[_Planned] = []
-    for item, answer in zip(calls, answers, strict=True):
-        if not _apply_answer(item, answer, limit):
-            retry.append(item)
+    answers = inputs.invoker.invoke(
+        [_call_of(inputs, item, item.provider, 1) for item in calls], workers
+    )
+    retry = [
+        item
+        for item, answer in zip(calls, answers, strict=True)
+        if not _apply_answer(item, answer, limit)
+    ]
     if retry:
-        alternate = [inputs.fallback or item.provider for item in retry]
         second = inputs.invoker.invoke(
-            [call_of(item, provider, 2) for item, provider in zip(retry, alternate, strict=True)],
+            [_call_of(inputs, item, inputs.fallback or item.provider, 2) for item in retry],
             workers,
         )
         for item, answer in zip(retry, second, strict=True):
             if not _apply_answer(item, answer, limit):
                 item.outcome.status = "UNKNOWN"
                 item.outcome.findings = []
+    if cache is None:
+        return
     for item in calls:
-        if cache is not None and item.key and item.outcome.status != "UNKNOWN":
+        if item.key and item.outcome.status != "UNKNOWN":
             cache.put(item.key, _cached_value(item.outcome))
 
 
@@ -726,6 +735,54 @@ def _second_opinion(
 
 
 # ----- the panel --------------------------------------------------------------------------------
+def _global_key(inputs: PanelInputs, hashed: str) -> str:
+    """The cache key of a whole review."""
+    return global_key(
+        mode=inputs.mode,
+        diff_hash=hashed,
+        definitions_hash=sha256_json([definitions_hash(inputs.reviewers), inputs.catalog.digest]),
+        runner_version=inputs.runner_version,
+        skip=inputs.skip,
+        forced_model=inputs.forced_model,
+        provider=inputs.provider,
+        fallback=inputs.fallback,
+        options={**options_of(inputs.settings), "base": inputs.base, "head": inputs.head},
+    )
+
+
+def _deterministic(
+    inputs: PanelInputs, files: list[FileChange], locations: Locations, report: PanelReport
+) -> list[ReviewFinding]:
+    """The findings of the harness's checks and of the repository's linters, counted in the
+    report."""
+    findings, report.deterministic = deterministic_findings(inputs.catalog, files, locations)
+    if inputs.linters is not None:
+        linted = inputs.linters(
+            [
+                rule
+                for rule in inputs.catalog.tool_rules()
+                if any(t != HARNESS_TOOL for t, _ in rule.tools)
+            ],
+            locations,
+        )
+        report.deterministic["linterFindings"] = len(linted)
+        findings.extend(linted)
+    report.deterministic["findings"] = len(findings)
+    return findings
+
+
+def _verdict(
+    failed: bool, reviewers: list[ReviewerOutcome], findings: list[ReviewFinding]
+) -> Verdict:
+    """FAIL when a consistency check failed, UNKNOWN when a reviewer never answered, else the
+    verdict of the findings."""
+    if failed:
+        return "FAIL"
+    if any(item.status == "UNKNOWN" for item in reviewers):
+        return "UNKNOWN"
+    return verdict_of(findings)
+
+
 def run_panel(inputs: PanelInputs) -> PanelReport:
     settings = inputs.settings
     limit = settings.finding_limit
@@ -733,26 +790,12 @@ def run_panel(inputs: PanelInputs) -> PanelReport:
     locations = reportable_locations(files)
     hashed = diff_hash(inputs.diff_text)
     drifted = drift(inputs.reviewers, inputs.catalog)
-    key = None
-    if inputs.cache is not None:
-        key = global_key(
-            mode=inputs.mode,
-            diff_hash=hashed,
-            definitions_hash=sha256_json(
-                [definitions_hash(inputs.reviewers), inputs.catalog.digest]
-            ),
-            runner_version=inputs.runner_version,
-            skip=inputs.skip,
-            forced_model=inputs.forced_model,
-            provider=inputs.provider,
-            fallback=inputs.fallback,
-            options={**options_of(settings), "base": inputs.base, "head": inputs.head},
-        )
-        cached = inputs.cache.get(key)
-        if cached is not None:
-            report = PanelReport.from_dict(cached)
-            report.cache = "hit"
-            return report
+    key = _global_key(inputs, hashed) if inputs.cache is not None else None
+    cached = inputs.cache.get(key) if inputs.cache is not None and key is not None else None
+    if cached is not None:
+        report = PanelReport.from_dict(cached)
+        report.cache = "hit"
+        return report
     report = PanelReport(
         mode=inputs.mode,
         base=inputs.base,
@@ -776,37 +819,24 @@ def run_panel(inputs: PanelInputs) -> PanelReport:
         report.consistency = inputs.consistency()
     failed = [item for item in report.consistency if item.get("status") != "PASSED"]
     # 3. deterministic rules.
-    findings, report.deterministic = deterministic_findings(inputs.catalog, files, locations)
-    if inputs.linters is not None:
-        linted = inputs.linters(
-            [
-                rule
-                for rule in inputs.catalog.tool_rules()
-                if any(t != HARNESS_TOOL for t, _ in rule.tools)
-            ],
-            locations,
-        )
-        report.deterministic["linterFindings"] = len(linted)
-        findings.extend(linted)
-    report.deterministic["findings"] = len(findings)
+    findings = _deterministic(inputs, files, locations, report)
     if failed:
-        for reviewer in sorted(inputs.reviewers, key=lambda item: item.reviewer_id):
-            report.reviewers.append(
-                ReviewerOutcome(
-                    reviewer.reviewer_id,
-                    reviewer.domain,
-                    "SKIPPED",
-                    "a consistency check failed: no model was called",
-                )
+        report.reviewers = [
+            ReviewerOutcome(
+                reviewer.reviewer_id,
+                reviewer.domain,
+                "SKIPPED",
+                "a consistency check failed: no model was called",
             )
+            for reviewer in sorted(inputs.reviewers, key=lambda item: item.reviewer_id)
+        ]
     else:
         # 4-5. reviewers.
         planned = _plan(inputs, files, limit)
         _call_reviewers(inputs, planned, limit)
         report.reviewers = [item.outcome for item in planned]
         report.reviewer_cache_hits = sum(1 for item in report.reviewers if item.cache == "hit")
-        for outcome in report.reviewers:
-            findings.extend(outcome.findings)
+        findings.extend(finding for outcome in report.reviewers for finding in outcome.findings)
     # 6. findings.
     merged = _dedupe(findings)
     merged, report.second_opinion = _second_opinion(inputs, merged, files, limit)
@@ -815,12 +845,7 @@ def run_panel(inputs: PanelInputs) -> PanelReport:
         merged = merged[:limit]
     report.findings = merged
     # 7. verdict.
-    if failed:
-        report.verdict = "FAIL"
-    elif any(item.status == "UNKNOWN" for item in report.reviewers):
-        report.verdict = "UNKNOWN"
-    else:
-        report.verdict = verdict_of(merged)
+    report.verdict = _verdict(bool(failed), report.reviewers, merged)
     report.blocking = report.verdict in {"FAIL", "UNKNOWN"} and settings.mode != "warn"
     if inputs.cache is not None and key is not None and report.verdict != "UNKNOWN":
         inputs.cache.put(key, report.as_dict())
