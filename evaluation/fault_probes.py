@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import signal
 import sqlite3
@@ -1029,7 +1030,12 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
     return result
 
 
+IDENTIFIERS = re.compile(
+    r"\b[a-z]+_[0-9a-f]{32}\b|sha256:[0-9a-f]{8,64}|\d{4}-\d\d-\d\dT[0-9:.+]+(?:Z|[+-]\d\d:\d\d)?"
+    r"|probe-[a-z-]+-r\d+-\d{8}T\d{6}Z"
+)
 SIGNATURE_DROP = {
+    "lease",
     "seconds",
     "eventCount",
     "verifyReport",
@@ -1047,6 +1053,9 @@ def signature(record: dict[str, Any]) -> str:
             return {k: clean(v) for k, v in value.items() if k not in SIGNATURE_DROP}
         if isinstance(value, list):
             return [clean(v) for v in value]
+        if isinstance(value, str):
+            # Record identifiers, digests and instants differ in every repetition by design.
+            return IDENTIFIERS.sub("<id>", value)
         return value
 
     kept = clean(record)
