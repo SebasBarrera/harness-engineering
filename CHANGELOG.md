@@ -91,6 +91,56 @@
     VERIFICATION and the independent review again on the new ChangeSet, instead of leaving an
     `INCONCLUSIVE` gate that forced a new run. A `project.yaml` without the key keeps that
     fail-closed behaviour and its configuration digest.
+- `harness init` no longer dirties the tree of an existing repository (closes #86). It appended
+  `.harness/` to the `.gitignore`, so the first run of a brownfield repository reported an
+  `environment.dirty-tree` finding about a change the harness itself had made (the fault probes
+  of the 2.0.0 evaluation left `.gitignore` changed in every probe). In a Git repository init now
+  writes the entry to the repository's `info/exclude` (`.git/info/exclude`; a linked worktree
+  shares its repository's file), which Git reads like a `.gitignore` but which is not part of the
+  tree; an entry already in `.gitignore` is left as it is, and outside a Git repository the
+  `.gitignore` is written as before. `--ignore-file gitignore` keeps the earlier behaviour. The
+  output gains `ignore` (`file`, `entry`, `status`); `gitignore` is still reported when the
+  `.gitignore` was the file. A change of `init` only: `project.yaml` and runs are unchanged.
+- A probe assertion's `variants` is honoured by every assertion kind (closes #74). Only `differs`
+  read it: an `exitCode`, `jsonPath`, `order` or `text` assertion meant for one variant was checked
+  on every variant, so a correct command line could come out `NOT_CERTIFIED` (seen in the ladder
+  corpus of the 2.0.0 evaluation). Now each assertion is checked on the variants it names (every
+  variant when it names none), and one whose `variants` names no variant of the probe fails
+  instead of checking nothing. A bug fix that makes a documented field take effect; it applies
+  always, with no new key.
+- A review served from the global review cache reports no model call (closes #75). On a global
+  cache hit `harness review-code` (and the panel of a governed run) copied the cached report's
+  reviewers, so `tokens.modelCalls` counted their attempts and the second opinion and each
+  reviewer kept the `cache` value of the original review, although no model was called (the
+  review corpus of the 2.0.0 evaluation reported 34 calls while its fixture received none). Now
+  the report of a hit has `tokens.total` and `tokens.modelCalls` 0, every reviewer that answered
+  is marked `cache: hit`, the second opinion carries 0 tokens, and the cached review's numbers
+  are kept under `tokens.cachedFrom` (`total`, `modelCalls`). `harness metrics` counts the agent
+  invocations a run recorded, and a cache hit records none. A bug fix of the report's counts; it
+  applies always, with no new key.
+- A provider launch refused by `destructiveActionsDefault: deny` blocks the run instead of ending
+  it as an internal error (closes #76). The refusal reached the phase as an exception, so the run
+  ended `ERROR` and `run start` exited with 1, as if the harness had failed. Now the phase and the
+  run are `BLOCKED` with the refusal (`DestructiveActionDenied: ...`, naming the agent, the
+  command and the `process.destructive` grant that would allow it) as the reason, the `HIGH`
+  `capabilities.destructive-denied` finding is recorded as before, and `run start` exits with 6,
+  the documented code for a run stopped by a policy. A bug fix that restores the documented exit
+  code: it applies whenever the policy is in force (`governance.applyRepositoryPolicies`), with no
+  new key. A blocked phase does not use up one of the workflow's `maxAttempts` (an error did).
+- A provider command outside the grants is refused again under `governance.phaseCapabilities`
+  (closes #87, security). The phase policy gave every configured provider an implicit
+  `process.execute` grant for its own command, so a provider command no grant allowed (the
+  `unauthorized-command` fault probe, `sh -c ...` in a Python project) was started, which 0.9.0
+  refused. Now the agent `agent.ID` keeps the grant for its own command (that provider's
+  `command`, or a built-in adapter's executable) only when one of the run's `process.execute`
+  grants allows it (`capabilities.extend` grants a command outside the profiles); otherwise the
+  command is refused before it starts, recorded as a `HIGH` `capabilities.command-denied`
+  finding, and the phase stops `BLOCKED` with a reason naming the agent, the command and
+  `capabilities.extend` (`run start` exits with 6). `harness config validate` warns about each
+  provider whose command no grant allows. Applies only under `governance.phaseCapabilities`, a
+  security fix with no new key; without the key a refused provider command still ends the run
+  as `ERROR` (exit 1) as in 0.9.0. A project under the key whose provider command (`claude`,
+  `codex`, a wrapper) was granted only implicitly must now grant it in `capabilities.extend`.
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

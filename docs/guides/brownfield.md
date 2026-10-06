@@ -18,7 +18,11 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    the run starts. Uncommitted changes that already exist are part of the baseline and stay out of
    the ChangeSet. Only files the run owns count: the patch paths in `patch` mode, or
    `metadata.ownedPaths` for an external agent. If neither is declared, every file that changes
-   during the run is included.
+   during the run is included. `harness init` keeps the tree clean: in a Git repository it writes
+   its `.harness/` entry to `.git/info/exclude`, which Git reads like a `.gitignore` but which is
+   not part of the tree, so the first run's dirty-tree check (`environment.dirtyTree`) finds
+   nothing caused by init (issue #86). An entry already in `.gitignore` is left as it is;
+   `harness init --ignore-file gitignore` writes the `.gitignore` instead (a change to commit).
 2. **Install the project's test dependencies where the harness runs.** Validators run the
    project's own commands (`python -m pytest`, `npm test`) with the interpreter or tools found on
    `PATH`; under `toolchain.interpreter: auto` (written by `harness init` since 1.1) the Python

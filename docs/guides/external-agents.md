@@ -31,8 +31,13 @@ agentProviders:
 `harness run start --task <id> --provider local_wrapper` selects it explicitly. The first element
 of `command` must be allowed by a `process.execute` capability (the Python profile allows
 `python`, the Node.js profile `npm` and `node`); add a grant in `capabilities.grants` for anything
-else. The process runs with `cwd` set to the workspace, without a shell, with the
-`runtime.commandTimeoutSeconds` timeout and the `runtime.maxOutputBytes` output bound.
+else, or, under `governance.phaseCapabilities` (which `harness init` writes and where
+`capabilities.grants` only narrows the profiles), in `capabilities.extend`. A provider command no
+grant allows is refused before it starts: under `governance.phaseCapabilities` the run records a
+`HIGH` `capabilities.command-denied` finding and stops `BLOCKED` (exit 6), and
+`harness config validate` warns about it beforehand. The process runs with `cwd` set to the
+workspace, without a shell, with the `runtime.commandTimeoutSeconds` timeout and the
+`runtime.maxOutputBytes` output bound.
 
 ## Built-in adapters
 
@@ -44,7 +49,8 @@ agentProviders:
     model: claude-sonnet-4-5       # passed as --model and recorded on the invocation
     passEnv: [ANTHROPIC_API_KEY, HTTPS_PROXY]
 capabilities:
-  grants:
+  grants: []
+  extend:                          # added to the profiles with or without phaseCapabilities
     - capability: process.execute
       scope: [claude]
 ```

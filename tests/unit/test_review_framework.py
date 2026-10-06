@@ -586,6 +586,50 @@ def test_caches_skip_repeated_calls_and_share_answers_across_modes(tmp_path: Pat
     assert len(invoker.calls) == calls  # every reviewer answer reused
 
 
+def test_a_global_cache_hit_reports_no_model_call(tmp_path: Path) -> None:
+    # #75: the reviewers of a cached review are not called again; the review reports 0 calls
+    # and 0 tokens and keeps the cached review's numbers apart.
+    cache = ReviewCache(tmp_path / "cache", ttl_seconds=3600, max_entries=50)
+    invoker = FakeInvoker()
+    first = run_panel(_inputs(tmp_path, invoker, cache=cache)).as_dict()
+    assert first["tokens"]["modelCalls"] == 5
+    again = run_panel(_inputs(tmp_path, invoker, cache=cache)).as_dict()
+    assert len(invoker.calls) == 5
+    assert again["cache"]["global"] == "hit"
+    assert again["tokens"]["modelCalls"] == 0
+    assert again["tokens"]["total"] == 0
+    assert set(again["tokens"]["byReviewer"].values()) == {0}
+    assert again["tokens"]["cachedFrom"] == {"total": 500, "modelCalls": 5}
+    called = [item for item in again["reviewers"] if item["status"] != "SKIPPED"]
+    assert {item["cache"] for item in called} == {"hit"}
+    assert "cachedFrom" not in first["tokens"]
+
+
+def test_a_global_cache_hit_counts_no_second_opinion(tmp_path: Path) -> None:
+    quiet = "--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+    blocking = {
+        "file": "src/a.py",
+        "side": "new",
+        "line": 1,
+        "rule": "quality.wrong-logic",
+        "severity": "error",
+        "issue": "a",
+    }
+    settings = ReviewPanelConfig(
+        mode="enforce", second_opinion=SecondOpinionConfig(mode="blocking")
+    )
+    cache = ReviewCache(tmp_path / "cache", ttl_seconds=3600, max_entries=50)
+    invoker = FakeInvoker({"quality": [blocking], "second-opinion": [blocking]})
+    values: dict[str, Any] = {"diff_text": quiet, "settings": settings, "cache": cache}
+    first = run_panel(_inputs(tmp_path, invoker, **values))
+    assert first.second_opinion is not None
+    calls = first.model_calls
+    again = run_panel(_inputs(tmp_path, invoker, **values))
+    assert again.model_calls == 0
+    assert again.tokens == 0
+    assert again.cached_from == {"total": first.tokens, "modelCalls": calls}
+
+
 def test_report_is_deterministic(tmp_path: Path) -> None:
     answers = {
         "quality": [

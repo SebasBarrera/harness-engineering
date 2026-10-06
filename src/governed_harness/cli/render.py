@@ -286,7 +286,10 @@ def _init(value: Mapping[str, Any]) -> list[str]:
         f"{item['profileId']} ({item['confidence']:.2f})" for item in value.get("profiles", [])
     )
     lines.append(f"Detected profiles: {profiles or 'none'}")
-    if "gitignore" in value:
+    ignore = value.get("ignore")
+    if isinstance(ignore, Mapping):
+        lines.append(f"{ignore['file']}: {ignore['entry']} {ignore['status']}")
+    elif "gitignore" in value:
         lines.append(f".gitignore: .harness/ {value['gitignore']}")
     if value.get("exampleTask"):
         lines.append(f"Example task: {value['exampleTask']}")

@@ -16,7 +16,7 @@ Global options go before the command name (`harness --no-json run list`):
 
 | Command | Summary |
 |---|---|
-| [`harness init`](#harness-init) | Create .harness/project.yaml for a repository, using the detected technology profiles, add .harness/ to .gitignore... |
+| [`harness init`](#harness-init) | Create .harness/project.yaml for a repository, using the detected technology profiles, make Git ignore .harness/ (in... |
 | [`harness inspect`](#harness-inspect) | Detect the technology profiles of a repository (read-only), with confidence and evidence. |
 | [`harness doctor`](#harness-doctor) | Check the local environment (Python and Git required; Node.js and npm reported as NOT_APPLICABLE when absent; Git... |
 | [`harness do`](#harness-do) | Make a change from TEXT in one command: create the task (the text is its intent and, without --criterion, its... |
@@ -94,8 +94,8 @@ Global options go before the command name (`harness --no-json run list`):
 ## harness init
 
 Create .harness/project.yaml for a repository, using the detected technology profiles,
-add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
-next commands.
+make Git ignore .harness/ (in .git/info/exclude, so the tree stays clean) and write an
+example task. Prints the detected profiles and the next commands.
 
 ```text
 harness init [OPTIONS]
@@ -105,7 +105,8 @@ harness init [OPTIONS]
 |---|---|---|---|---|
 | `--path` | path | no |  | Project directory |
 | `--force` | flag | no | false | Replace an existing project configuration |
-| `--gitignore`, `--no-gitignore` | flag | no | --gitignore | Add .harness/ to the project's .gitignore (state, artifacts and copies of the code live there) |
+| `--gitignore`, `--no-gitignore` | flag | no | --gitignore | Make Git ignore .harness/ (state, artifacts and copies of the code live there) |
+| `--ignore-file` | `exclude` \| `gitignore` | no | `exclude` | Where the .harness/ entry goes: exclude writes the repository's .git/info/exclude, so an existing repository's tree stays clean (the .gitignore outside a Git repository); gitignore writes the project's .gitignore |
 | `--example-task`, `--no-example-task` | flag | no | --example-task | Write an example task to .harness/task.example.yaml |
 | `--agent-skills` | flag | no | false | Also write the skill of the governed flow for Claude Code (.claude/skills/harness/SKILL.md) and Codex (.codex/skills/harness/SKILL.md) |
 | `--json`, `--no-json` | flag | no |  | Print JSON, or readable text with --no-json (default: JSON unless standard output is a terminal) |

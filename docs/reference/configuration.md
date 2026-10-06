@@ -304,9 +304,12 @@ api:
   users: []
 ```
 
-Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
+Since 1.1 the CLI `harness init` also makes Git ignore `.harness/` and writes
 `.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
-`notifications` section is never written, because it needs a URL.
+`notifications` section is never written, because it needs a URL. Since #86 the entry goes to
+the repository's `.git/info/exclude` in a Git repository, so the tree stays clean (an entry
+already in `.gitignore` is left as it is), and to `.gitignore` outside one or with
+`--ignore-file gitignore`.
 
 ## Fields
 
@@ -950,6 +953,17 @@ and the workflow's `allowedCapabilities` had no effect (issue #4). Under
 - an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
   and every reviewer of the panel) gets no `filesystem.write` and may start only its own
   configured command (`agentProviders.ID.command`);
+- an agent's own command is the command of the configured provider the agent is (the actor
+  `agent.ID` starts only `agentProviders.ID.command`, or the default executable of a built-in
+  adapter), and it keeps its grant in every phase only when one of the run's `process.execute`
+  grants allows it (the profiles' narrowed by `capabilities.grants`, plus `capabilities.extend`
+  and the derived scopes; a grant with `approvalRequired` does not count). A command no grant
+  allows is refused before it starts (issue #87): the refusal is a `HIGH`
+  `capabilities.command-denied` finding, the phase is `BLOCKED` with a reason that names the
+  agent, the command and `capabilities.extend`, and `run start` exits with 6. `harness config
+  validate` warns about each provider whose command no grant allows. A provider command outside
+  the profiles (`claude`, `codex`, a wrapper) is granted with `capabilities.extend`, since
+  `capabilities.grants` only narrows the profiles;
 - each phase attempt records the resolved grants of the validators and of the run's agent as
   evidence and as a `capabilities.resolved` event.
 
@@ -979,7 +993,10 @@ policies and read by nothing (issue #5). Under `governance.applyRepositoryPolici
   discards commits (`reset --hard`), drops data (`DROP TABLE`, `TRUNCATE TABLE`, `dropdb`,
   `FLUSHALL`) or changes ownership or permissions outside the workspace, also inside `sh -c`.
   A `process.destructive` grant whose scope prefixes the command allows it. Each refusal is a
-  `HIGH` `capabilities.destructive-denied` finding. Implement and read-only requests carry
+  `HIGH` `capabilities.destructive-denied` finding. A refused command that the phase cannot do
+  without (a provider launch) leaves the phase and the run `BLOCKED` with the refusal as the
+  reason, and `run start` or `run continue` exits with 6 (issue #76; before, the run ended as
+  `ERROR` with exit 1). Implement and read-only requests carry
   `commandPolicy: {destructive: deny}`; the Claude Code adapter passes the same operations as
   `--disallowedTools` (a pattern cannot see paths, so `chown` and `chmod -R` are refused there
   everywhere). Commands an agent CLI runs by itself are confined by the agent sandbox, not by this

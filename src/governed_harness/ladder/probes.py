@@ -247,10 +247,33 @@ def _observed(run: VariantRun, document: Any, assertion: Any, output: str) -> st
     return _shown(_values(document, assertion.path, output))
 
 
+def _chosen(assertion: Any, runs: list[VariantRun]) -> list[VariantRun]:
+    """The runs an assertion checks: the variants it names, or every variant."""
+    return [run for run in runs if not assertion.variants or run.name in assertion.variants]
+
+
+def _per_variant(
+    index: int, assertion: Any, runs: list[VariantRun], documents: dict[str, Any], output: str
+) -> list[AssertionResult]:
+    """An assertion other than ``differs`` on each variant it names (#74); one that names no
+    variant of the probe fails instead of checking nothing."""
+    chosen = _chosen(assertion, runs)
+    if not chosen:
+        return [
+            AssertionResult(
+                index,
+                assertion.kind,
+                False,
+                f"names no variant of the probe: {', '.join(assertion.variants)}",
+            )
+        ]
+    return [_single(index, assertion, run, documents[run.name], output) for run in chosen]
+
+
 def _differs(
     index: int, assertion: Any, runs: list[VariantRun], documents: dict[str, Any], output: str
 ) -> AssertionResult:
-    chosen = [run for run in runs if not assertion.variants or run.name in assertion.variants]
+    chosen = _chosen(assertion, runs)
     observed = [_observed(run, documents[run.name], assertion, output) for run in chosen]
     passed = len(chosen) >= 2 and len(set(observed)) > 1
     return AssertionResult(
@@ -278,9 +301,7 @@ def evaluate(probe: Any, runs: list[VariantRun]) -> ProbeEvaluation:
         if assertion.kind == "differs":
             results.append(_differs(index, assertion, runs, documents, probe.output))
         else:
-            results.extend(
-                _single(index, assertion, run, documents[run.name], probe.output) for run in runs
-            )
+            results.extend(_per_variant(index, assertion, runs, documents, probe.output))
     return ProbeEvaluation(
         probe.probe_id, "READY", all(item.passed for item in results), tuple(results), (), names
     )
