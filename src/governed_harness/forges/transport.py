@@ -14,7 +14,7 @@ import base64
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - gh or glab api with a fixed argv, no shell
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -24,6 +24,7 @@ from governed_harness.delivery.publisher import PublishError
 from governed_harness.domain.errors import ConfigurationError
 
 _TIMEOUT_SECONDS = 30
+_JSON = "application/json"
 
 DEFAULT_TOKEN_ENV: dict[str, str] = {
     "github": "GITHUB_TOKEN",
@@ -57,7 +58,7 @@ class HttpTransport:
             data=data,
             method=method,
             headers={
-                "Content-Type": "application/json",
+                "Content-Type": _JSON,
                 "User-Agent": "governed-harness",
                 **self.headers,
             },
@@ -69,7 +70,7 @@ class HttpTransport:
             raise PublishError(
                 f"{method} {path.split('?')[0]} returned HTTP {error.code}"
             ) from error
-        except (urllib.error.URLError, OSError) as error:
+        except OSError as error:  # URLError is an OSError
             raise PublishError(f"{method} {path.split('?')[0]} failed: {error}") from error
         return json.loads(text) if text.strip() else None
 
@@ -114,11 +115,11 @@ def auth_headers(kind: str, token: str) -> dict[str, str]:
     if kind == "gitlab":
         return {"PRIVATE-TOKEN": token}
     if kind == "bitbucket":
-        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        return {"Authorization": f"Bearer {token}", "Accept": _JSON}
     if kind == "azure-devops":
         basic = base64.b64encode(f":{token}".encode()).decode("ascii")
-        return {"Authorization": f"Basic {basic}", "Accept": "application/json"}
-    return {"Authorization": f"token {token}", "Accept": "application/json"}
+        return {"Authorization": f"Basic {basic}", "Accept": _JSON}
+    return {"Authorization": f"token {token}", "Accept": _JSON}
 
 
 def build_transport(

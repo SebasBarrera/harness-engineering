@@ -10,6 +10,7 @@ from __future__ import annotations
 import html
 from typing import Any
 
+_SECTION_END = "</section>"
 _CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --panel: #ffffff; --ink: #0b0b0b;
   --ink-2: #52514e; --grid: #d9d8d3; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
@@ -259,7 +260,7 @@ def render_html(report: dict[str, Any]) -> str:
             [("reported", "--s1"), ("estimated", "--s2")],
             "USD",
         )
-        + "</section>"
+        + _SECTION_END
     )
     models = report["models"]
     sections.append(
@@ -270,7 +271,7 @@ def render_html(report: dict[str, Any]) -> str:
             [[_e(m["provider"]), _e(m["model"]), m["calls"], _e(m["cost"])] for m in models],
             {2},
         )
-        + "</section>"
+        + _SECTION_END
     )
     lines = report["lines"]
     sections.append(
@@ -291,7 +292,7 @@ def render_html(report: dict[str, Any]) -> str:
             [("added", "--s3"), ("removed", "--s2")],
             "lines",
         )
-        + "</section>"
+        + _SECTION_END
     )
     daily = report["trends"]["daily"]
     weekly = report["trends"]["weekly"]
@@ -391,7 +392,7 @@ def render_html(report: dict[str, Any]) -> str:
             friction_rows,
             {3, 5, 7},
         )
-        + "</section>"
+        + _SECTION_END
     )
     time = report["time"]
     calls = time["agentCalls"]
@@ -412,7 +413,7 @@ def render_html(report: dict[str, Any]) -> str:
             [[calls["count"], calls["totalMs"], calls["meanMs"], calls["p50Ms"], calls["p90Ms"]]],
             {0, 1, 2, 3, 4},
         )
-        + "</section>"
+        + _SECTION_END
     )
     quality = report["quality"]
     sections.append(
@@ -447,7 +448,7 @@ def render_html(report: dict[str, Any]) -> str:
             ],
             {1},
         )
-        + "</section>"
+        + _SECTION_END
     )
     delivery = report["delivery"]
     features = [
@@ -470,7 +471,7 @@ def render_html(report: dict[str, Any]) -> str:
             features,
             set(),
         )
-        + "</section>"
+        + _SECTION_END
     )
     narrative = report.get("narrative")
     if narrative:

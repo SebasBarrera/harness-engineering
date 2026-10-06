@@ -3,7 +3,7 @@
 # Multi-stage: the wheel is built with the PEP 517 front end and only the wheel is installed in
 # the runtime stage. The base image is pinned by digest (python:3.12-slim, multi-arch index);
 # Dependabot proposes digest updates.
-ARG PYTHON_IMAGE=python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f
+ARG PYTHON_IMAGE=python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
 
 FROM ${PYTHON_IMAGE} AS build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
@@ -23,8 +23,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 # Git is required: the harness captures baselines and ChangeSets from the repository it governs.
+# libpcre2-8-0 (a git dependency already in the base) is named so that apt installs the
+# security update the base image does not carry yet.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git libpcre2-8-0 \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --uid 10001 --shell /usr/sbin/nologin harness
 COPY --from=build /dist/ /tmp/dist/

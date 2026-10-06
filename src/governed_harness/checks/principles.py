@@ -32,7 +32,7 @@ import ast
 import hashlib
 import re
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -124,27 +124,38 @@ def source_corpus(workspace: Path, families: set[str]) -> dict[str, str]:
     root = workspace.resolve()
     stack = [root]
     while stack and len(found) < _MAX_CORPUS_FILES and total < _MAX_CORPUS_BYTES:
-        directory = stack.pop()
-        try:
-            entries = sorted(directory.iterdir(), key=lambda item: item.name)
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name in DEFAULT_EXCLUDES or entry.is_symlink():
-                continue
+        for entry in _entries(stack.pop()):
             if entry.is_dir():
                 stack.append(entry)
                 continue
             relative = entry.relative_to(root).as_posix()
-            if not is_source(relative) or _family(relative) not in families:
-                continue
-            try:
-                data = entry.read_bytes()[:400_000]
-            except OSError:
-                continue
-            total += len(data)
-            found[relative] = data.decode("utf-8", "replace")
+            data = _source_bytes(entry, relative, families)
+            if data is not None:
+                total += len(data)
+                found[relative] = data.decode("utf-8", "replace")
     return found
+
+
+def _entries(directory: Path) -> list[Path]:
+    """The entries of a directory by name, without the default excludes and symbolic links
+    (none when the directory cannot be read)."""
+    try:
+        entries = sorted(directory.iterdir(), key=lambda item: item.name)
+    except OSError:
+        return []
+    return [
+        entry for entry in entries if entry.name not in DEFAULT_EXCLUDES and not entry.is_symlink()
+    ]
+
+
+def _source_bytes(entry: Path, relative: str, families: set[str]) -> bytes | None:
+    """The first 400 kB of a source file of one of ``families``, else ``None``."""
+    if not is_source(relative) or _family(relative) not in families:
+        return None
+    try:
+        return entry.read_bytes()[:400_000]
+    except OSError:
+        return None
 
 
 # ----- DRY ------------------------------------------------------------------------------------
@@ -181,21 +192,37 @@ def duplication(
         if item.is_deleted or not is_source(path) or is_test_path(path) or path not in files:
             continue
         added = {line.number for line in item.added}
-        reported_until = 0
-        lines = files[path].splitlines()
-        for first, digest in _windows(lines, window):
-            if first <= reported_until:
-                continue
-            span = range(first, first + window)
-            if not any(number in added for number in span):
-                continue
-            others = [
-                (other, line)
-                for other, line in index.get(digest, [])
-                if other != path or abs(line - first) >= window
-            ]
-            if not others:
-                continue
+        issues.extend(
+            _duplicates(
+                path, files[path].splitlines(), added, index, window=window, severity=severity
+            )
+        )
+    return issues
+
+
+def _duplicates(
+    path: str,
+    lines: Sequence[str],
+    added: set[int],
+    index: Mapping[str, list[tuple[str, int]]],
+    *,
+    window: int,
+    severity: FindingSeverity,
+) -> list[Issue]:
+    """The windows of one file with an added line that exist elsewhere in ``index``."""
+    issues: list[Issue] = []
+    reported_until = 0
+    for first, digest in _windows(lines, window):
+        if first <= reported_until:
+            continue
+        if not any(number in added for number in range(first, first + window)):
+            continue
+        others = [
+            (other, line)
+            for other, line in index.get(digest, [])
+            if other != path or abs(line - first) >= window
+        ]
+        if others:
             other, line = others[0]
             issues.append(
                 Issue(
@@ -308,27 +335,36 @@ _EXTENDS = re.compile(
 _RUBY_CLASS = re.compile(r"^\s*class\s+(?P<name>[A-Z]\w*)\s*<\s*(?P<base>[A-Z][\w:]*)")
 
 
+_NOT_A_BASE = frozenset({"object", "Protocol", "Generic", "ABC", "Enum"})
+
+
+def _base_name(base: ast.expr) -> str | None:
+    if isinstance(base, ast.Name):
+        return base.id
+    if isinstance(base, ast.Attribute):
+        return base.attr
+    return None
+
+
+def _python_bases(text: str) -> dict[str, str]:
+    found: dict[str, str] = {}
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return found
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ClassDef) and node.bases:
+            name = _base_name(node.bases[0])
+            if name and name not in _NOT_A_BASE:
+                found[node.name] = name
+    return found
+
+
 def _bases(path: str, text: str) -> dict[str, str]:
     """``class -> first base`` declared in one file."""
-    found: dict[str, str] = {}
     if path.endswith(".py"):
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            return found
-        for node in ast.walk(tree):
-            if isinstance(node, ast.ClassDef) and node.bases:
-                base = node.bases[0]
-                name = (
-                    base.id
-                    if isinstance(base, ast.Name)
-                    else base.attr
-                    if isinstance(base, ast.Attribute)
-                    else None
-                )
-                if name and name not in {"object", "Protocol", "Generic", "ABC", "Enum"}:
-                    found[node.name] = name
-        return found
+        return _python_bases(text)
+    found: dict[str, str] = {}
     for line in text.splitlines():
         match = _RUBY_CLASS.match(line) if path.endswith(".rb") else _EXTENDS.search(line)
         if match:
@@ -336,6 +372,29 @@ def _bases(path: str, text: str) -> dict[str, str]:
             if parent:
                 found[match["name"]] = str(parent).split("::")[-1]
     return found
+
+
+def _chain(name: str, hierarchy: Mapping[str, str], limit: int) -> list[str]:
+    """``name`` and its ancestors, stopping at a cycle or a few levels past ``limit``."""
+    chain = [name]
+    while chain[-1] in hierarchy and len(chain) <= limit + 5:
+        parent = hierarchy[chain[-1]]
+        if parent in chain:
+            break
+        chain.append(parent)
+    return chain
+
+
+def _class_line(text: str, name: str) -> int | None:
+    declaration = re.compile(rf"\bclass\s+{re.escape(name)}\b")
+    return next(
+        (
+            number
+            for number, line in enumerate(text.splitlines(), start=1)
+            if declaration.search(line)
+        ),
+        None,
+    )
 
 
 def inheritance_depth(
@@ -358,41 +417,41 @@ def inheritance_depth(
         if item.is_deleted or not is_source(path) or is_test_path(path) or path not in files:
             continue
         added_text = "\n".join(line.text for line in item.added)
-        for name in _bases(path, files[path]):
-            if not re.search(rf"\b{re.escape(name)}\b", added_text):
-                continue
-            chain = [name]
-            while chain[-1] in hierarchy and len(chain) <= limit + 5:
-                parent = hierarchy[chain[-1]]
-                if parent in chain:
-                    break
-                chain.append(parent)
-            depth = len(chain) - 1
-            if depth > limit:
-                line = next(
-                    (
-                        number
-                        for number, text in enumerate(files[path].splitlines(), start=1)
-                        if re.search(rf"\bclass\s+{re.escape(name)}\b", text)
-                    ),
-                    None,
-                )
-                issues.append(
-                    Issue(
-                        rule_id="principles.composition.inheritance",
-                        severity=severity,
-                        message=(
-                            f"{name} inherits through {depth} levels ({' -> '.join(chain)}); "
-                            f"the limit is {limit}"
-                        ),
-                        path=path,
-                        line=line,
-                        category=_CATEGORY,
-                        recommendation="Prefer composition: hold the behaviour as a collaborator "
-                        "instead of inheriting it.",
-                    )
-                )
+        issues.extend(
+            _inheritance_issue(path, files[path], chain, limit, severity)
+            for chain in _deep_chains(path, files[path], added_text, hierarchy, limit)
+        )
     return issues
+
+
+def _deep_chains(
+    path: str, text: str, added_text: str, hierarchy: Mapping[str, str], limit: int
+) -> Iterator[list[str]]:
+    """The inheritance chains past ``limit`` of the classes of a file the added lines name."""
+    for name in _bases(path, text):
+        if re.search(rf"\b{re.escape(name)}\b", added_text):
+            chain = _chain(name, hierarchy, limit)
+            if len(chain) - 1 > limit:
+                yield chain
+
+
+def _inheritance_issue(
+    path: str, text: str, chain: list[str], limit: int, severity: FindingSeverity
+) -> Issue:
+    name = chain[0]
+    return Issue(
+        rule_id="principles.composition.inheritance",
+        severity=severity,
+        message=(
+            f"{name} inherits through {len(chain) - 1} levels ({' -> '.join(chain)}); "
+            f"the limit is {limit}"
+        ),
+        path=path,
+        line=_class_line(text, name),
+        category=_CATEGORY,
+        recommendation="Prefer composition: hold the behaviour as a collaborator "
+        "instead of inheriting it.",
+    )
 
 
 # ----- YAGNI ----------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, Literal, NoReturn
 
@@ -57,6 +57,29 @@ def trusted_hosts(workspace: Path) -> tuple[str, ...] | None:
     return project.governance_settings.trusted_hosts
 
 
+_ERRORS: dict[int, str] = {
+    400: "The workspace configuration or the query is not valid.",
+    401: "Authentication required (api.auth: token).",
+    403: "The authenticated user lacks the role, or the actor is not a person.",
+    404: "The run or its records were not found.",
+    409: "The decision was refused, or the evidence chain does not verify.",
+    500: "The API audit log cannot be written.",
+}
+
+
+def _responses(*codes: int) -> dict[int | str, dict[str, Any]]:
+    """The error responses a route documents in the OpenAPI description."""
+    return {code: {"description": _ERRORS[code]} for code in codes}
+
+
+def _answer[T](status: int, call: Callable[[], T]) -> T:
+    """``call()``, any error answered with ``status`` and its message."""
+    try:
+        return call()
+    except Exception as error:
+        raise HTTPException(status_code=status, detail=str(error)) from error
+
+
 def create_app(
     workspace: Path,
     *,
@@ -96,8 +119,24 @@ def create_app(
         # whose Host header is not a configured name are answered with 400. Added last, it runs
         # before the authentication.
         api.add_middleware(TrustedHostMiddleware, allowed_hosts=list(hosts))
+    _workspace_routes(api, root, application, settings)
+    _run_routes(api, root, application, settings, audit)
+    _registry_routes(api, root, application)
+    _metrics_routes(api, root, application)
 
-    @api.get("/api/session")
+    @api.get("/", response_class=HTMLResponse)
+    def index() -> str:
+        return _dashboard_html()
+
+    return api
+
+
+def _workspace_routes(
+    api: FastAPI, root: Path, application: HarnessApplication, settings: ApiConfig
+) -> None:
+    """The session, the configuration, the health and the runs of the workspace."""
+
+    @api.get("/api/session", responses=_responses(401, 403))
     def session(request: Request) -> dict[str, object]:
         """Who this request is authenticated as (``authentication: off`` without the ``api``
         section, or with ``api.auth: off``)."""
@@ -106,43 +145,53 @@ def create_app(
             return {"authentication": "off"}
         return {"authentication": "token", "userId": principal.user_id, "role": principal.role}
 
-    @api.get("/api/config")
+    @api.get("/api/config", responses=_responses(400, 401, 403))
     def config(request: Request) -> dict[str, object]:
         """``harness config validate`` of the workspace (role ``admin``)."""
         _authorize(settings, request, "admin")
-        try:
-            return application.validate_config(root)
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _answer(400, lambda: application.validate_config(root))
 
     @api.get("/api/health")
     def health() -> dict[str, object]:
         return application.doctor(root)
 
-    @api.get("/api/runs")
+    @api.get("/api/runs", responses=_responses(400))
     def runs() -> list[dict[str, object]]:
-        try:
-            return [
+        return _answer(
+            400,
+            lambda: [
                 item.model_dump(mode="json", by_alias=True) for item in application.list_runs(root)
-            ]
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+            ],
+        )
 
-    @api.get("/api/runs/{execution_id}")
+
+_TRACE_MEDIA = {
+    "json": "application/json",
+    "markdown": "text/markdown",
+    "jsonl": "application/x-ndjson",
+    "sarif": "application/sarif+json",
+}
+
+
+def _run_routes(
+    api: FastAPI,
+    root: Path,
+    application: HarnessApplication,
+    settings: ApiConfig,
+    audit: DecisionAuditLog | None,
+) -> None:
+    """The records of one run (status, brief, trace, evidence, retrospective, findings,
+    verification) and its decision."""
+
+    @api.get("/api/runs/{execution_id}", responses=_responses(404))
     def run_status(execution_id: str) -> dict[str, object]:
-        try:
-            return application.status(root, execution_id)
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        return _answer(404, lambda: application.status(root, execution_id))
 
-    @api.get("/api/runs/{execution_id}/review")
+    @api.get("/api/runs/{execution_id}/review", responses=_responses(404))
     def run_review(execution_id: str, diff: bool = False) -> dict[str, object]:
-        try:
-            return application.review(root, execution_id, include_diff=diff)
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        return _answer(404, lambda: application.review(root, execution_id, include_diff=diff))
 
-    @api.get("/api/runs/{execution_id}/trace")
+    @api.get("/api/runs/{execution_id}/trace", responses=_responses(404, 409))
     def run_trace(
         execution_id: str, format: Literal["json", "markdown", "jsonl", "sarif"] = "json"
     ) -> Response:
@@ -152,140 +201,134 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
         except Exception as error:
             raise HTTPException(status_code=404, detail=str(error)) from error
-        media = {
-            "json": "application/json",
-            "markdown": "text/markdown",
-            "jsonl": "application/x-ndjson",
-            "sarif": "application/sarif+json",
-        }[format]
-        return Response(data, media_type=media)
+        return Response(data, media_type=_TRACE_MEDIA[format])
 
-    @api.get("/api/runs/{execution_id}/evidence")
+    @api.get("/api/runs/{execution_id}/evidence", responses=_responses(404))
     def run_evidence(execution_id: str) -> list[dict[str, object]]:
-        try:
-            return application.list_evidence(root, execution_id)
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        return _answer(404, lambda: application.list_evidence(root, execution_id))
 
-    @api.get("/api/runs/{execution_id}/retrospective")
+    @api.get("/api/runs/{execution_id}/retrospective", responses=_responses(404))
     def run_retrospective(execution_id: str) -> dict[str, object]:
-        try:
-            return application.retrospect(root, execution_id).model_dump(mode="json", by_alias=True)
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        return _answer(
+            404,
+            lambda: application.retrospect(root, execution_id).model_dump(
+                mode="json", by_alias=True
+            ),
+        )
 
-    @api.get("/api/runs/{execution_id}/findings")
+    @api.get("/api/runs/{execution_id}/findings", responses=_responses(404))
     def run_findings(execution_id: str) -> list[dict[str, object]]:
-        try:
-            return [
+        return _answer(
+            404,
+            lambda: [
                 item.model_dump(mode="json", by_alias=True)
                 for item in application.list_findings(root, execution_id)
-            ]
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+            ],
+        )
 
-    @api.post("/api/runs/{execution_id}/decision")
-    def decide(execution_id: str, request: DecisionRequest, http: Request) -> dict[str, object]:
-        actor_id = request.actor_id
-        audited = _Audited(audit, http, execution_id, request)
-        principal = _authorize(settings, http, "viewer")
-        if principal is not None:
-            # The authenticated person is the decider; the audit attempt is written before
-            # anything is decided (if it cannot be written, nothing is).
-            audited.attempt(principal)
-            if not principal.allows("reviewer"):
-                audited.refuse(
-                    403,
-                    f"user {principal.user_id} has the role {principal.role}; recording a "
-                    "decision needs the role reviewer or admin",
-                )
-            if request.actor_id and request.actor_id != principal.user_id:
-                audited.refuse(
-                    403,
-                    f"actor_id {request.actor_id!r} is not the authenticated user "
-                    f"{principal.user_id!r}; leave it out or send {principal.user_id!r}",
-                )
-            actor_id = principal.user_id
-        try:
-            acting = HarnessApplication()  # its notices belong to this request only
-            decision, execution = acting.decide_gate(
-                root,
-                execution_id=execution_id,
-                decision=request.decision,
-                change_set_digest=request.change_set_digest,
-                actor_id=actor_id,
-                rationale=request.rationale,
-                continue_after=request.continue_after,
-                default_actor=DEFAULT_API_ACTOR,
-                exception=ExceptionOptions(
-                    expires_in=request.expires_in,
-                    expires_at=request.expires_at,
-                    scope=request.scope,
-                    alternative_evidence=request.alternative_evidence,
-                    follow_up=request.follow_up,
-                ),
-                checked_items=request.checked_items,
-            )
-            body: dict[str, object] = {
-                "decision": decision.model_dump(mode="json", by_alias=True),
-                "execution": execution.model_dump(mode="json", by_alias=True),
-            }
-            if acting.notices:
-                body["warnings"] = list(acting.notices)
-        except NonHumanActorError as error:
-            audited.refuse(403, str(error), error)
-        except Exception as error:
-            audited.refuse(409, str(error), error)
-        audited.recorded(decision.decision_id, decision.actor.actor_id)
-        return body
+    _decision_route(api, root, settings, audit)
 
-    @api.get("/api/runs/{execution_id}/verification")
+    @api.get("/api/runs/{execution_id}/verification", responses=_responses(404))
     def run_verification(execution_id: str) -> dict[str, object]:
-        try:
-            return application.verification(root, execution_id)
-        except Exception as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        return _answer(404, lambda: application.verification(root, execution_id))
 
-    @api.get("/api/registry")
+
+def _decision_route(
+    api: FastAPI, root: Path, settings: ApiConfig, audit: DecisionAuditLog | None
+) -> None:
+    @api.post("/api/runs/{execution_id}/decision", responses=_responses(401, 403, 409, 500))
+    def decide(execution_id: str, request: DecisionRequest, http: Request) -> dict[str, object]:
+        audited = _Audited(audit, http, execution_id, request)
+        actor_id = _decider(settings, http, request, audited)
+        return _record_decision(root, execution_id, request, actor_id, audited)
+
+
+def _decider(
+    settings: ApiConfig, http: Request, request: DecisionRequest, audited: _Audited
+) -> str | None:
+    """The actor of a decision: the authenticated person (a reviewer or an admin, and the
+    ``actor_id`` sent, if any, must be theirs), else the ``actor_id`` of the request."""
+    principal = _authorize(settings, http, "viewer")
+    if principal is None:
+        return request.actor_id
+    # The audit attempt is written before anything is decided (if it cannot be written,
+    # nothing is).
+    audited.attempt(principal)
+    if not principal.allows("reviewer"):
+        audited.refuse(
+            403,
+            f"user {principal.user_id} has the role {principal.role}; recording a "
+            "decision needs the role reviewer or admin",
+        )
+    if request.actor_id and request.actor_id != principal.user_id:
+        audited.refuse(
+            403,
+            f"actor_id {request.actor_id!r} is not the authenticated user "
+            f"{principal.user_id!r}; leave it out or send {principal.user_id!r}",
+        )
+    return principal.user_id
+
+
+def _record_decision(
+    root: Path,
+    execution_id: str,
+    request: DecisionRequest,
+    actor_id: str | None,
+    audited: _Audited,
+) -> dict[str, object]:
+    try:
+        acting = HarnessApplication()  # its notices belong to this request only
+        decision, execution = acting.decide_gate(
+            root,
+            execution_id=execution_id,
+            decision=request.decision,
+            change_set_digest=request.change_set_digest,
+            actor_id=actor_id,
+            rationale=request.rationale,
+            continue_after=request.continue_after,
+            default_actor=DEFAULT_API_ACTOR,
+            exception=ExceptionOptions(
+                expires_in=request.expires_in,
+                expires_at=request.expires_at,
+                scope=request.scope,
+                alternative_evidence=request.alternative_evidence,
+                follow_up=request.follow_up,
+            ),
+            checked_items=request.checked_items,
+        )
+        body: dict[str, object] = {
+            "decision": decision.model_dump(mode="json", by_alias=True),
+            "execution": execution.model_dump(mode="json", by_alias=True),
+        }
+        if acting.notices:
+            body["warnings"] = list(acting.notices)
+    except NonHumanActorError as error:
+        audited.refuse(403, str(error), error)
+    except Exception as error:
+        audited.refuse(409, str(error), error)
+    audited.recorded(decision.decision_id, decision.actor.actor_id)
+    return body
+
+
+def _registry_routes(api: FastAPI, root: Path, application: HarnessApplication) -> None:
+    """The run registry, the inbox and the exceptions."""
+
+    @api.get("/api/registry", responses=_responses(400))
     def registry() -> dict[str, object]:
         """The projects of the shared run registry (``runtime.stateDir``, #55)."""
-        try:
-            return application.registry()
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _answer(400, application.registry)
 
-    @api.get("/api/inbox")
+    @api.get("/api/inbox", responses=_responses(400))
     def pending() -> list[dict[str, object]]:
-        try:
-            return application.inbox(root)
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _answer(400, lambda: application.inbox(root))
 
-    @api.get("/api/exceptions")
+    @api.get("/api/exceptions", responses=_responses(400))
     def exceptions(status: Literal["all", "active", "expired"] = "all") -> list[dict[str, object]]:
-        try:
-            return application.list_exceptions(root, status=status)
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
+        return _answer(400, lambda: application.list_exceptions(root, status=status))
 
-    def metrics_report(
-        since: str | None, task: str | None, model: str | None, agent: str | None, all_repos: bool
-    ) -> dict[str, Any]:
-        from governed_harness.metrics import Filters, parse_since
 
-        try:
-            filters = Filters(
-                since=parse_since(since), task=task, model=model, agent=agent, all_repos=all_repos
-            )
-        except ValueError as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        try:
-            report, _settings = application.metrics(root, filters=filters)
-        except Exception as error:
-            raise HTTPException(status_code=400, detail=str(error)) from error
-        return report
-
-    @api.get("/api/metrics")
+def _metrics_routes(api: FastAPI, root: Path, application: HarnessApplication) -> None:
+    @api.get("/api/metrics", responses=_responses(400))
     def metrics(
         since: str | None = None,
         task: str | None = None,
@@ -294,9 +337,9 @@ def create_app(
         all_repos: bool = False,
     ) -> dict[str, Any]:
         """``harness metrics --format json`` (#58): computed from the records, no model call."""
-        return metrics_report(since, task, model, agent, all_repos)
+        return _metrics_report(application, root, since, task, model, agent, all_repos)
 
-    @api.get("/api/metrics/report", response_class=HTMLResponse)
+    @api.get("/api/metrics/report", response_class=HTMLResponse, responses=_responses(400))
     def metrics_page(
         since: str | None = None,
         task: str | None = None,
@@ -307,13 +350,29 @@ def create_app(
         """The self-contained HTML report of ``harness metrics --format html``."""
         from governed_harness.metrics import render
 
-        return render(metrics_report(since, task, model, agent, all_repos), "html")
+        report = _metrics_report(application, root, since, task, model, agent, all_repos)
+        return render(report, "html")
 
-    @api.get("/", response_class=HTMLResponse)
-    def index() -> str:
-        return _dashboard_html()
 
-    return api
+def _metrics_report(
+    application: HarnessApplication,
+    root: Path,
+    since: str | None,
+    task: str | None,
+    model: str | None,
+    agent: str | None,
+    all_repos: bool,
+) -> dict[str, Any]:
+    from governed_harness.metrics import Filters, parse_since
+
+    try:
+        filters = Filters(
+            since=parse_since(since), task=task, model=model, agent=agent, all_repos=all_repos
+        )
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    report, _settings = _answer(400, lambda: application.metrics(root, filters=filters))
+    return report
 
 
 def _authorize(settings: ApiConfig, request: Request, role: ApiRole) -> Principal | None:

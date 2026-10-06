@@ -4,7 +4,7 @@ import contextlib
 import os
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 - the governed runner: resolved executable, no shell
 import threading
 import time
 from collections.abc import Mapping
@@ -146,7 +146,7 @@ class SafeProcessRunner:
             destructive.check(spec.argv, cwd, actor, grants)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
-        process = subprocess.Popen(
+        process = subprocess.Popen(  # nosec B603 - executable resolved and checked by policy, shell=False
             [*spec.sandbox_prefix, resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,
@@ -156,7 +156,6 @@ class SafeProcessRunner:
             shell=False,
             start_new_session=os.name != "nt",
         )
-        assert process.stdout is not None and process.stderr is not None
         if self.observer is not None:
             self.observer.started(process.pid, spec.argv)
         try:
@@ -182,7 +181,8 @@ class SafeProcessRunner:
         start: float,
         cancellation: CancellationToken | None,
     ) -> ProcessResult:
-        assert process.stdout is not None and process.stderr is not None
+        if process.stdout is None or process.stderr is None:  # not reached: both are pipes
+            raise RuntimeError("the process was started without its output pipes")
         # Read both streams while the process runs and keep at most max_output_bytes of each;
         # the rest is drained and discarded, so memory stays bounded whatever the output size.
         readers = [
@@ -193,7 +193,8 @@ class SafeProcessRunner:
             reader.start()
         writer = None
         if spec.stdin is not None:
-            assert process.stdin is not None
+            if process.stdin is None:  # not reached: stdin is a pipe when there is input
+                raise RuntimeError("the process was started without its input pipe")
             writer = threading.Thread(
                 target=_write_stdin, args=(process.stdin, spec.stdin), daemon=True
             )
@@ -259,13 +260,12 @@ class SafeProcessRunner:
                 os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=1.0)
         except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
+            # Still running after SIGTERM: kill it; a process group that is already gone is fine.
+            with contextlib.suppress(ProcessLookupError):
                 if os.name == "nt":
                     process.kill()
                 else:
                     os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
     @staticmethod
     def _environment(spec: CommandSpec, extra_env: Mapping[str, str] | None) -> dict[str, str]:

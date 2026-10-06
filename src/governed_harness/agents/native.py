@@ -64,9 +64,12 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     task = request["task"]
     plan = request.get("plan") or {}
     lines = [
-        "You are implementing a task in the repository in the current directory, under the "
-        "Governed Agent Harness. Edit the files needed to meet the acceptance criteria. Do not "
-        "commit, push or create branches; the harness verifies your change and a person decides.",
+        (
+            "You are implementing a task in the repository in the current directory, under the "
+            "Governed Agent Harness. Edit the files needed to meet the acceptance criteria. Do not "
+            "commit, push or create branches; the harness verifies your change and a person "
+            "decides."
+        ),
         "",
         f"# Task {task['task_id']}: {task['title']}",
         "",

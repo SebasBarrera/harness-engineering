@@ -105,8 +105,8 @@ def _omit_unset(model: BaseModel, data: dict[str, Any]) -> dict[str, Any]:
 # ----- since 1.1 (#55): the verification ladder of a criterion, probes, the checklist ---------
 _PROBE_ID = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
 _ITEM_ID = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
-_ENV_NAME = r"^[A-Za-z_][A-Za-z0-9_]{0,127}$"
-PROBE_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_NAME = r"(?a)^[A-Za-z_]\w{0,127}$"
+PROBE_PLACEHOLDER = re.compile(r"\{([A-Za-z_]\w*)\}", re.ASCII)
 """A ``{name}`` in a probe's command or working directory, filled from the variant."""
 
 
@@ -165,6 +165,14 @@ class ProbeAssertion(StrictModel):
 
     @model_validator(mode="after")
     def _complete(self) -> ProbeAssertion:
+        self._check_syntax()
+        problem = self._kind_problem()
+        if problem is not None:
+            raise ValueError(problem)
+        return self
+
+    def _check_syntax(self) -> None:
+        """The regular expression compiles and the path is in the supported JSONPath subset."""
         if self.matches is not None:
             try:
                 re.compile(self.matches)
@@ -174,25 +182,30 @@ class ProbeAssertion(StrictModel):
             from governed_harness.ladder.jsonpath import parse_path
 
             parse_path(self.path)
+
+    def _kind_problem(self) -> str | None:
+        """What the assertion's kind needs and it lacks, if anything."""
         kind = self.kind
         if kind == "exitCode" and not isinstance(self.equals, int):
-            raise ValueError("an exitCode assertion needs 'equals' with an integer")
+            return "an exitCode assertion needs 'equals' with an integer"
         if kind == "jsonPath":
-            if self.path is None:
-                raise ValueError("a jsonPath assertion needs 'path'")
-            given = [self.present is not None, self.equals is not None, self.matches is not None]
-            if sum(given) != 1:
-                raise ValueError(
-                    "a jsonPath assertion needs exactly one of present, equals, matches"
-                )
+            return self._json_path_problem()
         if kind == "order" and not (
             (self.path is not None and self.order is not None)
             or (self.before is not None and self.after is not None)
         ):
-            raise ValueError("an order assertion needs path and order, or before and after")
+            return "an order assertion needs path and order, or before and after"
         if kind == "text" and (self.matches is None) == (self.contains is None):
-            raise ValueError("a text assertion needs exactly one of matches, contains")
-        return self
+            return "a text assertion needs exactly one of matches, contains"
+        return None
+
+    def _json_path_problem(self) -> str | None:
+        if self.path is None:
+            return "a jsonPath assertion needs 'path'"
+        given = [self.present is not None, self.equals is not None, self.matches is not None]
+        if sum(given) != 1:
+            return "a jsonPath assertion needs exactly one of present, equals, matches"
+        return None
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

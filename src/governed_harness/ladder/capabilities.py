@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
-import subprocess
+import subprocess  # nosec B404 - catalog probes with fixed argv, no shell
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from pathlib import Path

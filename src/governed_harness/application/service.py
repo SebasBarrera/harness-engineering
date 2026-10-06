@@ -156,6 +156,91 @@ from .review_code import ReviewCodeCommands
 from .task_loader import load_task_file
 
 
+def _dumped(model: Any) -> dict[str, Any] | None:
+    """A settings model as JSON with its aliases, ``None`` when it is absent."""
+    return model.model_dump(mode="json", by_alias=True) if model else None
+
+
+def _ladder_summary(ladder: Any) -> dict[str, Any]:
+    return {
+        "mode": (ladder.mode if ladder else None) or "off",
+        "defaultLevel": ladder.required_default.value if ladder else None,
+        "deferredExpiryDays": ladder.expiry_days if ladder else None,
+        "preflight": bool(ladder and ladder.preflight),
+        "capabilityDetection": bool(ladder and ladder.capability_detection),
+    }
+
+
+def _state_dir_check(project: Any, workspace: Path) -> dict[str, Any]:
+    """Whether the run registry's directory (or its nearest existing parent) is writable."""
+    from governed_harness.runtime.state_location import resolve_state_location
+
+    location = resolve_state_location(
+        workspace, project.project_id, project.runtime.state_dir, create=False
+    )
+    root = location.root
+    existing = next((item for item in (root, *root.parents) if item.exists()), Path(root.anchor))
+    writable = os.access(existing, os.W_OK)
+    check: dict[str, Any] = {"status": "PASSED" if writable else "FAILED", "path": str(root)}
+    if not writable:
+        check["hint"] = f"Make {root} writable, or set runtime.stateDir."
+    return check
+
+
+def _hooks_install_check(command: tuple[str, ...], workspace: Path) -> dict[str, Any]:
+    """``harness doctor --install-hooks``: run the project's declared hook installation."""
+    import subprocess  # nosec B404 - runs the project's declared hook installer
+
+    completed = subprocess.run(  # nosec B603 - the project's own declared command
+        list(command),
+        cwd=workspace,
+        capture_output=True,
+        check=False,
+        timeout=600,
+        stdin=subprocess.DEVNULL,
+    )
+    return {
+        "status": "PASSED" if completed.returncode == 0 else "FAILED",
+        "command": list(command),
+        "message": completed.stderr.decode("utf-8", "replace").strip()[-300:],
+    }
+
+
+def _environment_check(environment: Any, workspace: Path) -> dict[str, Any]:
+    from governed_harness.orchestration.ladder_environment import environment_checks
+
+    report = environment_checks(environment, workspace)
+    problems = report["problems"]
+    check: dict[str, Any] = {
+        "status": "FAILED" if problems else "PASSED",
+        "message": "; ".join(problems[:3]) if problems else None,
+        "tools": report["tools"],
+        "variables": report["variables"],
+        "gitHooks": report["gitHooks"],
+        "dirtyTree": report["dirtyTree"],
+    }
+    if problems:
+        check["hint"] = (
+            "Install the tools and set the variables the project declares in "
+            "environment; `harness doctor --install-hooks` runs the declared hook "
+            "installation."
+        )
+    return check
+
+
+def _instructions_check(resolved: Any) -> dict[str, Any]:
+    from governed_harness.application.ladder import config_lint
+
+    lint = config_lint(resolved)
+    check: dict[str, Any] = {
+        "status": "PASSED" if lint["status"] == "PASSED" else "WARNING",
+        "message": f"{len(lint['issues'])} issue(s) in {len(lint['files'])} file(s)",
+    }
+    if lint["issues"]:
+        check["hint"] = "`harness config lint` lists them."
+    return check
+
+
 class HarnessApplication(ReviewCodeCommands):
     def __init__(self) -> None:
         self.notices: list[str] = []
@@ -342,26 +427,16 @@ class HarnessApplication(ReviewCodeCommands):
         )
         context = project.context
         return {
-            "ladder": {
-                "mode": (ladder.mode if ladder else None) or "off",
-                "defaultLevel": ladder.required_default.value if ladder else None,
-                "deferredExpiryDays": ladder.expiry_days if ladder else None,
-                "preflight": bool(ladder and ladder.preflight),
-                "capabilityDetection": bool(ladder and ladder.capability_detection),
-            },
+            "ladder": _ladder_summary(ladder),
             "probes": [
                 item.probe_id for item in (verification.probes if verification else None) or ()
             ],
             "mutation": (mutation.mode if mutation else None) or "off",
             "manualChecklist": bool(project.review and project.review.manual_checklist),
             "operationalContract": (intake.operational_contract if intake else None) or "off",
-            "interruptions": intake.interruptions.model_dump(mode="json", by_alias=True)
-            if intake and intake.interruptions
-            else None,
+            "interruptions": _dumped(intake.interruptions if intake else None),
             "isolation": isolation.effective_mode if isolation else "none",
-            "environment": project.environment.model_dump(mode="json", by_alias=True)
-            if project.environment
-            else None,
+            "environment": _dumped(project.environment),
             "locate": bool(context and context.locate and context.locate.enabled),
             "delivery": {
                 "stage": bool(delivery.stage),
@@ -754,7 +829,7 @@ class HarnessApplication(ReviewCodeCommands):
         """Contradictions between the configuration and the agent instruction files (#55)."""
         return config_lint(ConfigurationResolver().resolve(path))
 
-    def registry(self, path: Path | None = None) -> dict[str, Any]:
+    def registry(self) -> dict[str, Any]:
         """The projects whose run registry lives in the state directory (``runtime.stateDir:
         auto``), with their latest runs: one dashboard for several repositories (#55)."""
         from governed_harness.runtime.state_location import default_state_root, registered_projects
@@ -853,16 +928,15 @@ class HarnessApplication(ReviewCodeCommands):
             run_id = self._run_id(services, execution_id)
             checkpoint = checkpoint_state(services, run_id)
             try:
-                decomposition: dict[str, Any] | None = plan_state(services, run_id)
+                decomposition = plan_state(services, run_id)
             except NotFoundError:
                 if checkpoint is None:
                     raise
-                decomposition = None
+                decomposition = {"executionId": run_id}
             if checkpoint is None:
-                assert decomposition is not None
                 return decomposition
             # The plan-approval checkpoint of #8 (friction.planApproval, #58).
-            return {**(decomposition or {"executionId": run_id}), "approval": checkpoint}
+            return {**decomposition, "approval": checkpoint}
 
     def decide_plan(
         self,
@@ -2009,71 +2083,19 @@ class HarnessApplication(ReviewCodeCommands):
     @staticmethod
     def _ladder_checks(resolved: Any, *, install_hooks: bool) -> dict[str, Any]:
         """The run registry, the environment preflight and the instruction files (#55)."""
-        from governed_harness.application.ladder import config_lint
-        from governed_harness.orchestration.ladder_environment import environment_checks
-        from governed_harness.runtime.state_location import resolve_state_location
-
         checks: dict[str, Any] = {}
         project = resolved.project
         workspace = resolved.workspace_root
         if project.runtime.state_dir is not None:
-            location = resolve_state_location(
-                workspace, project.project_id, project.runtime.state_dir, create=False
-            )
-            root = location.root
-            existing = next(
-                (item for item in (root, *root.parents) if item.exists()), Path(root.anchor)
-            )
-            writable = os.access(existing, os.W_OK)
-            checks["stateDir"] = {
-                "status": "PASSED" if writable else "FAILED",
-                "path": str(root),
-            }
-            if not writable:
-                checks["stateDir"]["hint"] = f"Make {root} writable, or set runtime.stateDir."
+            checks["stateDir"] = _state_dir_check(project, workspace)
         environment = project.environment
         if environment is not None:
             hooks = environment.git_hooks
             if install_hooks and hooks and hooks.install:
-                import subprocess
-
-                completed = subprocess.run(  # nosec B603 - the project's own declared command
-                    list(hooks.install),
-                    cwd=workspace,
-                    capture_output=True,
-                    check=False,
-                    timeout=600,
-                    stdin=subprocess.DEVNULL,
-                )
-                checks["hooksInstall"] = {
-                    "status": "PASSED" if completed.returncode == 0 else "FAILED",
-                    "command": list(hooks.install),
-                    "message": completed.stderr.decode("utf-8", "replace").strip()[-300:],
-                }
-            report = environment_checks(environment, workspace)
-            problems = report["problems"]
-            checks["environment"] = {
-                "status": "FAILED" if problems else "PASSED",
-                "message": "; ".join(problems[:3]) if problems else None,
-                "tools": report["tools"],
-                "variables": report["variables"],
-                "gitHooks": report["gitHooks"],
-                "dirtyTree": report["dirtyTree"],
-            }
-            if problems:
-                checks["environment"]["hint"] = (
-                    "Install the tools and set the variables the project declares in "
-                    "environment; `harness doctor --install-hooks` runs the declared hook "
-                    "installation."
-                )
+                checks["hooksInstall"] = _hooks_install_check(tuple(hooks.install), workspace)
+            checks["environment"] = _environment_check(environment, workspace)
         if project.instructions is not None:
-            lint = config_lint(resolved)
-            checks["instructions"] = {
-                "status": "PASSED" if lint["status"] == "PASSED" else "WARNING",
-                "message": f"{len(lint['issues'])} issue(s) in {len(lint['files'])} file(s)",
-            }
-            if lint["issues"]:
-                checks["instructions"]["hint"] = "`harness config lint` lists them."
+            checks["instructions"] = _instructions_check(resolved)
         return checks
 
     @staticmethod

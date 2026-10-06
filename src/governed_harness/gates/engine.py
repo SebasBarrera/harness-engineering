@@ -103,14 +103,18 @@ class GateEngine:
             reasons.append(f"BLOCKING_FINDING_{finding.finding_id}")
         if not reasons and status is ResultStatus.PASSED:
             reasons.append("ALL_MANDATORY_VALIDATIONS_PASSED")
-        assert (
-            execution_id is not None
-            and gate_id is not None
-            and change_set_digest is not None
-            and policy_digest is not None
-            and policy is not None
-            and provenance is not None
-        )
+        if (
+            execution_id is None
+            or gate_id is None
+            or change_set_digest is None
+            or policy_digest is None
+            or policy is None
+            or provenance is None
+        ):
+            raise TypeError(
+                "evaluate() without inputs needs execution_id, gate_id, change_set_digest, "
+                "policy_digest, policy and provenance"
+            )
         return GateEvaluation(
             gate_evaluation_id=new_id("gateeval"),
             execution_id=execution_id,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 - git with a fixed argv, no shell
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,7 +50,7 @@ class GitAdapter:
         return values[0], values[1]
 
     def _run(self, *args: str) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603 B607 - git from PATH, argv built here, no shell
             ["git", *args],
             cwd=self.workspace,
             stdin=subprocess.DEVNULL,
