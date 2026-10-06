@@ -27,7 +27,8 @@ Measures per run: commands typed, human interactions the harness recorded
 whether the change was delivered and whether it was delivered without a person (a false fast
 lane for a risk task).
 
-Command (worktree code; run while no other suite ran, so the seconds are not shared):
+Command (worktree code). It ran while the fault-probe suite was running in another process, so the
+seconds share the machine with that suite:
 
 ```bash
 SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
