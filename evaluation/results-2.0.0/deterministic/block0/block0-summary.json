@@ -1,0 +1,39 @@
+{
+  "environment": {
+    "evaluationCodeDigest": "25d3ba1c812cc7e7",
+    "git": "git version 2.56.0",
+    "harnessExecutable": "/Users/jbarrerapuli/Documents/Repos/Proyecto de grado/.claude/worktrees/agent-ae8f0f00edfc9653f/.venv/bin/harness",
+    "harnessVersion": "harness 1.0.0",
+    "machine": "arm64",
+    "modelCalls": 0,
+    "platform": "macOS-15.8.1-arm64-arm-64bit",
+    "python": "3.12.11",
+    "recordedAt": "2026-10-06T04:40:11Z",
+    "repo": "/Users/jbarrerapuli/Documents/Repos/Proyecto de grado/.claude/worktrees/agent-ae8f0f00edfc9653f",
+    "repositoryHead": "d9cd085d8c0bd59f8dd5a84af4a52b5164f27ba8+dirty",
+    "suite": "block0",
+    "wheel": null,
+    "wheelSha256": null
+  },
+  "static": {
+    "mypy": {
+      "exitCode": 0,
+      "seconds": 21.71,
+      "summary": "Success: no issues found in 240 source files"
+    },
+    "ruffCheck": {
+      "exitCode": 0,
+      "findings": 0,
+      "stderr": ""
+    },
+    "ruffFormat": {
+      "exitCode": 0,
+      "summary": "352 files already formatted",
+      "wouldReformat": 0
+    },
+    "versions": {
+      "mypy": "mypy 1.20.2 (compiled: yes)",
+      "ruff": "ruff 0.16.7"
+    }
+  }
+}
