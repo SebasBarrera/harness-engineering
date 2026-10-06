@@ -57,6 +57,8 @@ runtime:
   providerRetryDelaySeconds: 60
   extendedRedaction: true
   gateContract: true
+  contractRetry:
+    mode: once
   reproduceFirst: true
   stateDir: auto
 retention:
@@ -65,7 +67,11 @@ retention:
   orphanArtifacts: true
 intake:
   criteriaPolicy: enforce
-  ambiguityReview: agent
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3
+    maxQuestions: 8
+    onExhausted: assume
   validateAnswers: true
   operationalContract: batch
   interruptions:
@@ -212,9 +218,9 @@ governance:
   applyNetworkPolicy: true
   stopTheLine: restore
   phasePermissions: true
+  phaseCapabilities: true
   applyRepositoryPolicies: true
   enforceWorkflow: true
-  phaseCapabilities: true
 toolchain:
   profileDetection: all
   interpreter: auto
