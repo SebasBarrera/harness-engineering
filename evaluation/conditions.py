@@ -1,22 +1,26 @@
 """The project configuration of each governed condition of the 2.0.0 evaluation.
 
-=================  ==========================================================================
-Condition          ``.harness/project.yaml``
-=================  ==========================================================================
-``direct``         none: Claude Code runs on its own (``agentlib``).
-``harness-core``   the file ``harness init`` wrote in 1.0.0, written here key by key, so it has
-                   none of the keys added after 1.0.0 (every one of them is optional and its
-                   absence keeps the 1.0.0 behaviour and configuration digest).
-``harness``        what ``harness init`` of the version under test writes (every 2.0.0 setting
-                   on), with ``agentRouting.mode: fixed``: every call uses the cell's model.
-``harness-tiered`` what ``harness init`` writes, routing left ``tiered`` (the default tables): the
-                   router picks the model and effort of each call; the cell's model is the
-                   provider's own model (the invoking model), used where the router sends none.
-=================  ==========================================================================
+====================  =======================================================================
+Condition             ``.harness/project.yaml``
+====================  =======================================================================
+``direct``            none: Claude Code runs on its own (``agentlib``).
+``harness-core``      the file ``harness init`` wrote in 1.0.0, written here key by key, so it has
+                      none of the keys added after 1.0.0 (every one of them is optional and its
+                      absence keeps the 1.0.0 behaviour and configuration digest).
+``harness``           what ``harness init`` of the version under test writes (every 2.0.0 setting
+                      on), with ``agentRouting.mode: fixed``: every call uses the cell's model.
+``harness-anchored``  what ``harness init`` writes, routing left as init writes it (``anchored``,
+                      #85) with ``agentRouting.anchorModel`` set to the cell's model: the model the
+                      person invoked is the ceiling, cheaper rungs of the routing tables below it
+                      are kept. The factor is the invoking model (Haiku, Sonnet or Opus).
+====================  =======================================================================
 
 The evaluation changes only what it must in every governed condition: the agent provider (the
 evaluation adapter ``claude_provider.py`` as a command provider, or the harness's deterministic
-``simulated`` provider in a dry run), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
+``simulated`` provider in a dry run), the grant of exactly that provider command (wave 9, #87:
+a provider command must be allowed by a ``process.execute`` grant; it goes to
+``capabilities.extend`` under ``governance.phaseCapabilities`` and to ``capabilities.grants``,
+the 1.0.0 key, in ``harness-core``), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
 of 1500 s plus the harness's own work, as in the 0.9.0 evaluation) and, where the write sandbox
 is on, one extra ``runtime.sandboxWritePaths`` entry: the run's ``agent-calls`` directory outside
 the workspace, where the adapter writes its usage records. The exact file of every run is saved
@@ -34,7 +38,9 @@ from typing import Any
 
 import yaml
 
-GOVERNED = ("harness-core", "harness", "harness-tiered")
+GOVERNED = ("harness-core", "harness", "harness-anchored")
+# Read in records of the first 2.0.0 pilot (routing left ``tiered``, before #85).
+LEGACY_GOVERNED = ("harness-tiered",)
 CONDITIONS = ("direct", *GOVERNED)
 TIMEOUT_SECONDS = 1800
 # The 1.0.0 ``harness init`` file (src/governed_harness/configuration/init_project.py at v1.0.0).
@@ -116,7 +122,7 @@ def apply_provider(
         command = provider_command(
             code,
             model,
-            honor_routing=condition == "harness-tiered",
+            honor_routing=condition in ("harness-anchored", "harness-tiered"),
             claude_bin=claude_bin,
             resumable=resumable,
         )
@@ -124,6 +130,7 @@ def apply_provider(
         config["agentProviders"] = {
             "claude": {"kind": "command", "command": command, "model": model}
         }
+        grant_provider_command(config, command, core=condition == "harness-core")
     if runtime.get("agentSandbox") == "enforce":
         paths = list(runtime.get("sandboxWritePaths") or [])
         calls = str((run_dir / "agent-calls").resolve())
@@ -132,7 +139,34 @@ def apply_provider(
         runtime["sandboxWritePaths"] = paths
     if condition == "harness":
         config.setdefault("agentRouting", {})["mode"] = "fixed"
+    if condition == "harness-anchored":
+        config.setdefault("agentRouting", {})["anchorModel"] = model
     return config
+
+
+def provider_grant(command: list[str]) -> dict[str, Any]:
+    """The ``process.execute`` rule of exactly the provider's command line: its scope is the
+    whole command (``command_in_scope`` matches it, or it followed by arguments the harness
+    adds), never its executable alone (``python`` would allow every Python command)."""
+    return {"capability": "process.execute", "scope": [" ".join(command)]}
+
+
+def grant_provider_command(config: dict[str, Any], command: list[str], *, core: bool) -> None:
+    """Grant the provider command (wave 9, #87). Under ``governance.phaseCapabilities``
+    ``capabilities.grants`` only narrows the profiles, so the grant goes to
+    ``capabilities.extend``; ``harness-core`` has no ``extend`` (a 1.0.0 key set), so there it
+    goes to ``capabilities.grants``, which 1.0.0 adds to the profiles (``core``).
+
+    The adapter is started as ``python claude_provider.py ...`` and the Python profile already
+    allows ``python``; the explicit rule makes the grant of the provider independent of that
+    profile and visible in the saved ``project.yaml``."""
+    capabilities = config.setdefault("capabilities", {"default": "deny", "grants": []})
+    key = "grants" if core else "extend"
+    rules = [dict(r) for r in capabilities.get(key) or []]
+    rule = provider_grant(command)
+    if rule not in rules:
+        rules.append(rule)
+    capabilities[key] = rules
 
 
 def write_config(
@@ -152,17 +186,18 @@ def write_config(
     ``harness`` runs a harness command in the workspace (``run_eval.harness``)."""
     path = workspace / ".harness" / "project.yaml"
     if condition == "harness-core":
-        # ``harness init`` also adds .harness/ to .gitignore; the core file is then written over it.
+        # ``harness init`` (since #86 it writes .harness/ to .git/info/exclude, not .gitignore);
+        # the core file is then written over its project.yaml.
         harness(workspace, "init", "--path", ".")
         config = core_config(yaml.safe_load(path.read_text(encoding="utf-8"))["projectId"])
-    elif condition in ("harness", "harness-tiered"):
+    elif condition in ("harness", "harness-anchored"):
         harness(workspace, "init", "--path", ".")
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         if (
-            condition == "harness-tiered"
-            and (config.get("agentRouting") or {}).get("mode") != "tiered"
+            condition == "harness-anchored"
+            and (config.get("agentRouting") or {}).get("mode") != "anchored"
         ):
-            raise RuntimeError("harness init did not write agentRouting.mode: tiered")
+            raise RuntimeError("harness init did not write agentRouting.mode: anchored")
     else:
         raise ValueError(f"not a governed condition: {condition}")
     apply_provider(
@@ -214,6 +249,24 @@ def configuration_digest(
     if proc.returncode != 0:
         raise RuntimeError(proc.stderr[-2000:])
     return proc.stdout.strip()
+
+
+def check_grant(workspace: Path, harness: Any) -> dict[str, Any]:
+    """Evidence that the run's provider command is granted (wave 9, #87): the rules the
+    evaluation wrote and the warnings of ``harness config validate`` about provider commands no
+    ``process.execute`` grant allows (empty when the grant holds)."""
+    config = yaml.safe_load((workspace / ".harness" / "project.yaml").read_text(encoding="utf-8"))
+    capabilities = config.get("capabilities") or {}
+    proc = harness(workspace, "config", "validate", "--path", ".", "--json")
+    validate = json.loads(proc.stdout) if proc.stdout.strip().startswith("{") else {}
+    return {
+        "extend": capabilities.get("extend"),
+        "grants": capabilities.get("grants"),
+        "validateExit": proc.returncode,
+        "providerWarnings": [
+            w for w in validate.get("warnings") or [] if str(w).startswith("agentProviders.")
+        ],
+    }
 
 
 def check_core(workspace: Path, harness: Any, reference_src: Path | None = None) -> dict[str, Any]:

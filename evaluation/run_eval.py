@@ -7,7 +7,9 @@ see ``conditions.py`` for the exact configuration of each):
 * ``direct`` (``baseline`` in the 0.9.0 records): Claude Code alone on the prepared repository;
 * ``harness-core``: the harness with the 1.0.0 configuration (no key added after 1.0.0);
 * ``harness``: the harness as ``harness init`` configures it, routing fixed to the cell's model;
-* ``harness-tiered``: the same with the router choosing the model and effort of every call;
+* ``harness-anchored``: the same with the routing ``harness init`` writes (``anchored``, wave 9
+  #85), anchored at the cell's model: the router picks the model and effort of every call, never
+  above the invoking model;
 * ``clarify``: the 1.1.0 pilot (legacy; ``harness init`` of the version under test, poor prompt).
 
 Every governed run is driven by the simulated person (``person.py``: the 0.9.0 decision rule at
@@ -88,7 +90,7 @@ SCENARIOS = {
         "archive_sha256": "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b",
     },
 }
-CONDITION_CHOICES = ["direct", "baseline", "harness-core", "harness", "harness-tiered", "clarify"]
+CONDITION_CHOICES = ["direct", "baseline", "harness-core", "harness", "harness-anchored", "clarify"]
 GIT = [
     "git",
     "-c",
@@ -167,6 +169,9 @@ def configure_provider(
     if RESUMABLE_PROVIDER and agent == "claude":
         command.append("--resumable")
         config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
+    # Wave 9 (#87): the provider command must be granted (extend under phaseCapabilities).
+    phase_capabilities = bool((config.get("governance") or {}).get("phaseCapabilities"))
+    conditions.grant_provider_command(config, command, core=not phase_capabilities)
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
@@ -541,6 +546,8 @@ def main() -> int:
         run_id = result.pop("_runId", None)
         if condition == "harness-core":
             result["coreCheck"] = conditions.check_core(workspace, harness, args.core_reference_src)
+        if condition != "clarify":
+            result["grantCheck"] = conditions.check_grant(workspace, harness)
         record["harness"] = result
         record["productOwner"] = owner.rounds if owner else []
         # The exact configuration of the run (also kept as project.yaml in the run directory).
