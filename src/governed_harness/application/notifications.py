@@ -34,6 +34,8 @@ from governed_harness.domain.models import (
 from governed_harness.intake import task_digest
 from governed_harness.orchestration.engine import EngineServices
 
+from .waits import risk_acknowledgements
+
 RETRY_BASE_SECONDS = 0.5
 RETRY_MAX_SECONDS = 5.0
 _ERROR_CHARS = 200
@@ -229,7 +231,10 @@ def inbox(services: EngineServices) -> list[dict[str, Any]]:
                     "kind": "decision",
                     "gateStatus": gate.status.value if gate else None,
                     "changeSetDigest": execution.change_set_digest,
+                    "digest": execution.change_set_digest,
                     "blockingFindings": blocking_count,
+                    # Risk factors an APPROVE must acknowledge (--acknowledge-risk, #73).
+                    "acknowledgeRisks": risk_acknowledgements(services, execution),
                     "next": f"harness review --run {execution.execution_id}",
                 }
             )

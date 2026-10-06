@@ -297,11 +297,14 @@ harness gc [OPTIONS]
 ## harness inbox
 
 List the runs of the project that wait for a person, oldest first: a decision in
-DECISION (gate status, digest, blocking findings) or answers to clarification questions in
-INTENT, each with the next command. With --approve, --reject, --request-changes,
---decisions or --batch it records several decisions, each bound to its own ChangeSet digest:
-a stale digest or a refused decision is reported for that run (the others are recorded) and
-the command exits 5 when any was refused.
+DECISION (gate status, digest, blocking findings, the risk factors an APPROVE must
+acknowledge), answers to clarification questions in INTENT, and every other wait before
+DECISION (kind plan, decomposition, acceptance, architecture, contract, deferred or
+preflight, with the digest it binds to), each with the next command. With --approve,
+--reject, --request-changes, --decisions or --batch it records several decisions, each bound
+to its own ChangeSet digest (a batch file may list acknowledgeRisks per decision): a stale
+digest or a refused decision is reported for that run (the others are recorded) and the
+command exits 5 when any was refused.
 
 ```text
 harness inbox [OPTIONS]

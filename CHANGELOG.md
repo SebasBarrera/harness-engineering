@@ -10,6 +10,15 @@
   - `harness run continue` on a run a person rejected reports the closed run (`FAILED`, exit 6)
     instead of evaluating again the baseline that stop the line restored and asking for a new
     decision (#83).
+  - `harness inbox` (text and `--json`, and `GET /api/inbox`) lists every wait before DECISION:
+    a plan at the plan-approval checkpoint (`plan`), a proposed decomposition
+    (`decomposition`), proposed acceptance tests (`acceptance`), architecture options or
+    inferred layer rules (`architecture`) and an operational contract to confirm (`contract`),
+    next to the deferred verifications and the preflight, each with its `kind`, the `digest` the
+    answer binds to and the command that answers it; before, `run start` exited 6 on a plan
+    approval while the inbox was empty (#73). A decision entry gains `digest` and
+    `acknowledgeRisks` (the risk factors an `APPROVE` must acknowledge); a batch file accepts
+    `acknowledgeRisks` per decision and `--batch` asks for each factor on the terminal.
 
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without

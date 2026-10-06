@@ -454,8 +454,11 @@ happened after a run to it (schema
 ## Notifications
 
 `harness inbox` (and `GET /api/inbox`, the dashboard's left column) lists the runs that wait for
-a person: a decision in `DECISION` (gate status, digest, blocking findings) or answers to
-clarification questions in `INTENT`, oldest first. It needs no configuration. The dashboard
+a person: a decision in `DECISION` (gate status, digest, blocking findings and the risk factors
+an `APPROVE` must acknowledge, `acknowledgeRisks`) or answers to clarification questions in
+`INTENT`, and every other wait before `DECISION` (`plan`, `decomposition`, `acceptance`,
+`architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
+and the command that answers it, oldest first. It needs no configuration. The dashboard
 refreshes the inbox, the runs and the selected run every 5 seconds.
 
 Webhooks are opt-in. `harness init` writes none, because a URL is needed:
