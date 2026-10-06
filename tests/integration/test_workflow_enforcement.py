@@ -251,8 +251,9 @@ def test_unknown_exit_gate_is_a_configuration_error(
     monkeypatch.setattr(resolver_module, "load_builtin_workflow", broken)
     ConfigurationResolver().resolve(python_workspace)  # without the key the name is a label
     enforce(python_workspace)
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError, match="unknown exitGate 'looks_fine'"):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 PROBE = """\

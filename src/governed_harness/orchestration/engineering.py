@@ -13,7 +13,6 @@ Token cost rules, all deterministic:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,6 +27,7 @@ from governed_harness.configuration.engineering import (
 )
 from governed_harness.domain.enums import ActorType, FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import Actor, ChangeSet, Execution, PhaseExecution, Task
+from governed_harness.orchestration.engine_types import Strategy as Strategy
 from governed_harness.orchestration.workspace_ops import materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.runtime.process_runner import CommandSpec
@@ -46,27 +46,10 @@ from governed_harness.standards import (
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 TDD_ID = "harness.tdd"
 SETUP_FLAG = "projectsetup"
-
-
-@dataclass(frozen=True)
-class Strategy:
-    """The effective testing strategy and where it came from."""
-
-    strategy: str
-    source: str
-    """``configuration``, ``project-setup`` (a person's answer), ``detected`` or ``unknown``."""
-    frameworks: tuple[str, ...] = ()
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "strategy": self.strategy,
-            "source": self.source,
-            "frameworks": list(self.frameworks),
-        }
 
 
 def detect_testing(workspace: Path, technologies: tuple[str, ...] = ()) -> Strategy:
@@ -83,7 +66,7 @@ def detect_testing(workspace: Path, technologies: tuple[str, ...] = ()) -> Strat
 
 
 class Engineering:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
         self._standards: ProjectStandards | None = None
         self._detected: Strategy | None = None
@@ -226,7 +209,6 @@ class Engineering:
         self,
         execution: Execution,
         phase: PhaseExecution,
-        task: Task,
         paths: list[str],
     ) -> tuple[dict[str, Any], str]:
         """The ``standards`` and ``testing`` blocks of the implement request and the sentence
@@ -259,7 +241,7 @@ class Engineering:
                     "Behaviour-driven (BDD): the approved feature files are frozen; write the "
                     "step definitions and the code that make their scenarios pass."
                 )
-        architecture = self.results.architecture.request_extra(execution)
+        architecture = self.results.architecture.request_extra()
         if architecture is not None:
             extra["architecture"] = architecture
             notes.append(
@@ -301,9 +283,7 @@ class Engineering:
         return payload
 
     # ----- the review call -------------------------------------------------------------------
-    def review_extra(
-        self, execution: Execution, change_set: ChangeSet
-    ) -> tuple[dict[str, Any], str]:
+    def review_extra(self, change_set: ChangeSet) -> tuple[dict[str, Any], str]:
         """The checklist the existing review call gains: the cards no tool verifies, for the
         files the ChangeSet changed, and the principles checklist. No extra call."""
         checklist: dict[str, Any] = {}
@@ -334,58 +314,14 @@ class Engineering:
         diff: list[DiffFile],
         outputs_so_far: list[ValidatorOutput],
     ) -> ValidatorOutput | None:
-        if self.testing_config is None and not self.setup_record(execution.project_id):
-            return None
-        if self.strategy(execution.project_id).strategy != "tdd":
-            return None
-        friction = self.results.engine.friction
-        if friction.active and friction.tests_exempt(execution, change_set, "TDD evidence"):
-            # friction.changeTypes (#58): a documentation or configuration change.
+        if not self._tdd_applies(execution, change_set):
             return None
         results = self.results
         started = datetime.now(UTC)
         tests = [item.path for item in diff if not item.is_deleted and is_test_path(item.path)]
         sources = [item.path for item in diff if not is_test_path(item.path)]
-        issues: list[Issue] = []
         record: dict[str, Any] = {"tests": tests, "sources": sources}
-        if sources and not tests:
-            issues.append(
-                Issue(
-                    rule_id="tdd.no-tests",
-                    severity=FindingSeverity.HIGH,
-                    message="The change modifies code but adds or changes no test (TDD)",
-                    category="tests",
-                    recommendation="Write the failing test first, then the code.",
-                )
-            )
-            record["red"] = "NO_TESTS"
-        elif tests and sources:
-            red = self._red(execution, tests, sources)
-            record["red"] = red
-            if red["status"] == ResultStatus.PASSED.value:
-                issues.append(
-                    Issue(
-                        rule_id="tdd.not-red",
-                        severity=FindingSeverity.HIGH,
-                        message=(
-                            f"The tests the change adds ({', '.join(tests[:5])}) already pass on "
-                            "the code before the change: they were not written first"
-                        ),
-                        category="tests",
-                        recommendation="Write a test that fails without the change.",
-                    )
-                )
-            elif red["status"] != ResultStatus.FAILED.value:
-                issues.append(
-                    Issue(
-                        rule_id="tdd.red-unavailable",
-                        severity=FindingSeverity.INFO,
-                        message=f"The red step could not be measured ({red['status']})",
-                        category="tests",
-                    )
-                )
-        else:
-            record["red"] = "NOT_APPLICABLE"
+        record["red"], issues = self._red_step(execution, tests, sources)
         latest = results.engine._latest_validations(execution.execution_id, change_set.digest)
         green = [
             item.validator_id
@@ -405,13 +341,14 @@ class Engineering:
             "checks": sorted(refactor_checks),
             "failing": refactor_blocking,
         }
+        red = record["red"]
         ref = results.record_json(
             execution,
             PhaseId.VERIFICATION,
             record,
             kind="tdd-evidence",
             summary=(
-                f"TDD: red {record['red'] if isinstance(record['red'], str) else record['red']['status']}, "
+                f"TDD: red {red if isinstance(red, str) else red['status']}, "
                 f"green {record['green']['status']}, refactor {record['refactor']['status']}"
             ),
         )
@@ -427,6 +364,56 @@ class Engineering:
             report={"tdd": record},
         )
         return output
+
+    def _tdd_applies(self, execution: Execution, change_set: ChangeSet) -> bool:
+        """Whether the TDD evidence is checked: the strategy is ``tdd`` and the ChangeSet is
+        not exempt (``friction.changeTypes``, #58: a documentation or configuration change)."""
+        if self.testing_config is None and not self.setup_record(execution.project_id):
+            return False
+        if self.strategy(execution.project_id).strategy != "tdd":
+            return False
+        friction = self.results.engine.friction
+        return not (
+            friction.active and friction.tests_exempt(execution, change_set, "TDD evidence")
+        )
+
+    def _red_step(
+        self, execution: Execution, tests: list[str], sources: list[str]
+    ) -> tuple[str | dict[str, Any], list[Issue]]:
+        """The red step: the tests the change adds must fail on the code before it."""
+        if sources and not tests:
+            no_tests = Issue(
+                rule_id="tdd.no-tests",
+                severity=FindingSeverity.HIGH,
+                message="The change modifies code but adds or changes no test (TDD)",
+                category="tests",
+                recommendation="Write the failing test first, then the code.",
+            )
+            return "NO_TESTS", [no_tests]
+        if not (tests and sources):
+            return "NOT_APPLICABLE", []
+        red = self._red(execution, tests, sources)
+        if red["status"] == ResultStatus.PASSED.value:
+            not_red = Issue(
+                rule_id="tdd.not-red",
+                severity=FindingSeverity.HIGH,
+                message=(
+                    f"The tests the change adds ({', '.join(tests[:5])}) already pass on "
+                    "the code before the change: they were not written first"
+                ),
+                category="tests",
+                recommendation="Write a test that fails without the change.",
+            )
+            return red, [not_red]
+        if red["status"] != ResultStatus.FAILED.value:
+            unavailable = Issue(
+                rule_id="tdd.red-unavailable",
+                severity=FindingSeverity.INFO,
+                message=f"The red step could not be measured ({red['status']})",
+                category="tests",
+            )
+            return red, [unavailable]
+        return red, []
 
     def _red(self, execution: Execution, tests: list[str], sources: list[str]) -> dict[str, Any]:
         """Run the changed tests on the workspace with the changed sources reverted to the

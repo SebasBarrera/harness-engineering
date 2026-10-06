@@ -44,6 +44,28 @@ def _forge(workspace: Path) -> dict[str, str] | None:
     return {"kind": location.kind, "host": location.host, "repository": location.repository}
 
 
+def _registry_sources(entries: list[dict[str, Any]], current: Path) -> list[ProjectSource]:
+    """The other projects of the run registry, each database once (the current one apart)."""
+    sources: list[ProjectSource] = []
+    seen = {str(current.resolve())}
+    for entry in entries:
+        database = Path(entry["database"])
+        if not database.is_file() or str(database.resolve()) in seen:
+            continue
+        seen.add(str(database.resolve()))
+        workspace = Path(str(entry.get("workspace") or ""))
+        sources.append(
+            ProjectSource(
+                project_id=str(entry["projectId"]),
+                workspace=str(workspace),
+                state=SQLiteStateStore(database),
+                events=SQLiteEventStore(database),
+                forge=_forge(workspace) if workspace.is_dir() else None,
+            )
+        )
+    return sources
+
+
 def _sources(path: Path, all_repos: bool) -> tuple[list[ProjectSource], dict[str, Any]]:
     """The current project (with its configuration) and, with ``all_repos``, every project of
     the run registry (``runtime.stateDir``)."""
@@ -65,22 +87,7 @@ def _sources(path: Path, all_repos: bool) -> tuple[list[ProjectSource], dict[str
     )
     sources.append(current)
     if all_repos:
-        seen = {str(paths.database.resolve())}
-        for entry in registered_projects():
-            database = Path(entry["database"])
-            if not database.is_file() or str(database.resolve()) in seen:
-                continue
-            seen.add(str(database.resolve()))
-            workspace = Path(str(entry.get("workspace") or ""))
-            sources.append(
-                ProjectSource(
-                    project_id=str(entry["projectId"]),
-                    workspace=str(workspace),
-                    state=SQLiteStateStore(database),
-                    events=SQLiteEventStore(database),
-                    forge=_forge(workspace) if workspace.is_dir() else None,
-                )
-            )
+        sources.extend(_registry_sources(registered_projects(), paths.database))
     settings: dict[str, Any] = {
         "prices": dict(project.metrics.prices or {}) if project.metrics else {},
         "narrative": project.metrics.narrative if project.metrics else None,
@@ -185,12 +192,11 @@ def write_reports(
 
 def narrative_settings(settings: dict[str, Any]) -> NarrativeConfig:
     narrative = settings.get("narrative")
-    if narrative is None:
+    if not isinstance(narrative, NarrativeConfig):
         raise ConfigurationError(
             "--narrative needs metrics.narrative.command in project.yaml (a command that reads "
             "the prompt on standard input and prints the summary)"
         )
-    assert isinstance(narrative, NarrativeConfig)
     return narrative
 
 

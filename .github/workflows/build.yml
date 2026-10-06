@@ -63,14 +63,17 @@ jobs:
               "governed_harness/resources/profiles/python.yaml",
               "governed_harness/resources/profiles/node.yaml",
               "governed_harness/resources/verification/capabilities.yaml",
+              "governed_harness/resources/review/rules.yaml",
           ]
           schemas = [n for n in names if n.startswith("governed_harness/resources/schemas/v1/")]
           standards = [n for n in names if n.startswith("governed_harness/resources/standards/")]
+          reviewers = [n for n in names if n.startswith("governed_harness/resources/review/agents/")]
           missing = [n for n in required if n not in names]
-          print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas, {len(standards)} standards files")
+          print(f"{wheel}: {len(names)} entries, {len(schemas)} JSON Schemas, {len(standards)} standards files, {len(reviewers)} reviewers")
           assert not missing, f"missing from wheel: {missing}"
           assert len(schemas) == 38, f"expected 38 schemas, found {len(schemas)}"
-          assert len(standards) == 30, f"expected 30 standards files (15 packs), found {len(standards)}"
+          assert len(standards) == 45, f"expected 45 standards files (15 packs), found {len(standards)}"
+          assert len(reviewers) == 6, f"expected 6 built-in reviewers, found {len(reviewers)}"
           PY
       - name: Install the wheel in a clean environment
         run: |

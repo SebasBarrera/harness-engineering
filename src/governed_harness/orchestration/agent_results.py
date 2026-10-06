@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -51,6 +50,9 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
+from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import (
     Contents,
     changes_since,
@@ -67,7 +69,8 @@ from governed_harness.runtime.snapshots import StoredSnapshot
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 _SECURITY_WORDS = (
     "password",
@@ -81,25 +84,12 @@ _SECURITY_WORDS = (
     "encrypt",
 )
 
-READ_ONLY_RULE = "agent.read-only-violation"
 BUDGET_EXCEEDED_RULE = "budget.exceeded"
 BUDGET_WARNING_RULE = "budget.warning"
 
 
-@dataclass(frozen=True)
-class AgentCallOutcome:
-    """What a read-only agent call returned: its status, the structured result when it passed
-    and the evidence it left."""
-
-    status: ResultStatus
-    summary: str
-    result: dict[str, Any] | None
-    invocation_id: str | None
-    evidence_refs: tuple[str, ...]
-
-
 class AgentResults:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         from governed_harness.orchestration.acceptance import AcceptanceTests
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
@@ -119,6 +109,10 @@ class AgentResults:
         self.gate = GateContract(self)
         self.corrections = Corrections(self)
         self.agent_review = AgentReview(self)
+        # Wave 7 (#57): the review panel replaces the single reviewer under review.panel.
+        from governed_harness.orchestration.review_panel import PanelReview
+
+        self.panel = PanelReview(self)
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
@@ -236,6 +230,7 @@ class AgentResults:
                     review.agent_review is not None
                     or review.reviewer is not None
                     or review.structured_changes is not None
+                    or review.panel is not None
                 ),
                 runtime.gate_contract is not None or runtime.reproduce_first is not None,
                 governance.stop_the_line is not None or governance.phase_permissions is not None,
@@ -245,6 +240,7 @@ class AgentResults:
                 project.memory is not None,
                 project.agent_routing is not None,
                 self.engineering.configured,
+                bool(governance.apply_repository_policies),
             )
         )
 
@@ -506,8 +502,6 @@ class AgentResults:
     ) -> PhaseOutcome | None:
         """Fail closed before an agent call when a limit is already crossed (or a call crossed
         its per-call limit and no person raised it since)."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -597,22 +591,9 @@ class AgentResults:
 
     # ----- agent calls (#37, #38, #39) -----------------------------------------------------
     def call_config(self, kind: CallKind) -> AgentCallConfig | None:
-        if kind == "clarify":
-            return self.project.intake.clarify_agent if self.project.intake else None
-        if kind == "review":
-            return self.project.review.reviewer if self.project.review else None
-        if kind == "plan":
-            return self.project.planning.planner if self.project.planning else None
-        if kind == "acceptance":
-            config = self.acceptance.config
-            return config.author if config else None
-        if kind == "locate":
-            context = self.project.context
-            return context.locate.agent if context and context.locate else None
-        if kind == "architecture":
-            architecture = self.project.architecture
-            return architecture.agent if architecture else None
-        return None
+        """The configuration of a read-only call kind (``None``: the provider's defaults)."""
+        read = _CALL_CONFIGS.get(kind)
+        return read(self) if read is not None else None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
         configured = self.call_config(kind)
@@ -667,6 +648,12 @@ class AgentResults:
         }
         request.update(payload)
         request.update(self.request_common(execution, phase, kind, task, provider_id, grants))
+        repository = self.repository_extra(read_only=True)
+        if repository:
+            # #5: the notice and the names of the instruction files, never their directives.
+            request.update(repository)
+            if "untrustedContent" in repository:
+                request["instructions"] += " " + repository["untrustedContent"]["notice"]
         request_ref = self.record_json(
             execution,
             phase.phase_id,
@@ -854,6 +841,14 @@ class AgentResults:
             {**record, "evidenceRef": ref},
             phase_execution_id=phase.phase_execution_id,
         )
+        if decision.warning is not None:
+            # #59: a call kind without its own routing entry runs on the implement rung.
+            self.s.events.append(
+                execution.execution_id,
+                "agent.routing.fallback",
+                {"callKind": kind, "warning": decision.warning, "evidenceRef": ref},
+                phase_execution_id=phase.phase_execution_id,
+            )
         if decision.model is None and decision.effort is None:
             return None
         value: dict[str, Any] = {
@@ -913,6 +908,7 @@ class AgentResults:
             extra["gate"] = self.gate.contract(execution)
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
+        extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
@@ -929,7 +925,7 @@ class AgentResults:
                 else []
             )
             paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, task, paths)
+            engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
             extra.update(engineering)
         if not extra:
             return None
@@ -943,6 +939,25 @@ class AgentResults:
                 + (f" {suffix}" if suffix else ""),
             }
         )
+        return extra
+
+    def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
+        """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the
+        repository's instruction files as quoted, untrusted context (only their names for a
+        read-only call) and the command policy."""
+        from governed_harness.capabilities.repository import (
+            repository_policies,
+            untrusted_context,
+        )
+
+        policies = repository_policies(self.s.resolved)
+        extra: dict[str, Any] = {}
+        if policies.untrusted:
+            extra["untrustedContent"] = untrusted_context(
+                self.s.paths.workspace, policies.instruction_files, include_content=not read_only
+            )
+        if policies.deny_destructive:
+            extra["commandPolicy"] = {"destructive": "deny"}
         return extra
 
     def implement_context(
@@ -1050,6 +1065,9 @@ class AgentResults:
             for item in review
             for finding_id in item.finding_ids
         ]
+        if self.panel.configured:
+            # #57: under scoped auto-fix only the errors on lines the agent wrote go back.
+            findings = self.panel.scoped_findings(execution, findings)
         feedback_ref: str | None = None
         if engine._feedback_applies(execution.execution_id):
             feedback_ref = engine._record_feedback(
@@ -1147,3 +1165,44 @@ class AgentResults:
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the configuration of each read-only call kind -----------------------------------------
+def _clarify_config(results: AgentResults) -> AgentCallConfig | None:
+    intake = results.project.intake
+    return intake.clarify_agent if intake else None
+
+
+def _review_config(results: AgentResults) -> AgentCallConfig | None:
+    review = results.project.review
+    return review.reviewer if review else None
+
+
+def _plan_config(results: AgentResults) -> AgentCallConfig | None:
+    planning = results.project.planning
+    return planning.planner if planning else None
+
+
+def _acceptance_config(results: AgentResults) -> AgentCallConfig | None:
+    config = results.acceptance.config
+    return config.author if config else None
+
+
+def _locate_config(results: AgentResults) -> AgentCallConfig | None:
+    context = results.project.context
+    return context.locate.agent if context and context.locate else None
+
+
+def _architecture_config(results: AgentResults) -> AgentCallConfig | None:
+    architecture = results.project.architecture
+    return architecture.agent if architecture else None
+
+
+_CALL_CONFIGS: dict[str, Callable[[AgentResults], AgentCallConfig | None]] = {
+    "clarify": _clarify_config,
+    "review": _review_config,
+    "plan": _plan_config,
+    "acceptance": _acceptance_config,
+    "locate": _locate_config,
+    "architecture": _architecture_config,
+}

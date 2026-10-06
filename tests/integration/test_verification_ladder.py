@@ -124,7 +124,8 @@ def test_a_project_without_the_keys_keeps_its_configuration(python_workspace: Pa
     dumped = resolved.project.model_dump(mode="json", by_alias=True)
     for key in ("environment", "instructions"):
         assert key not in dumped
-    assert "stateDir" not in dumped["runtime"] and "isolation" not in dumped["workspace"]
+    assert "stateDir" not in dumped["runtime"]
+    assert "isolation" not in dumped["workspace"]
     services = EngineServices.open(resolved)
     try:
         assert services.paths.database == python_workspace.resolve() / ".harness" / "state.db"
@@ -141,10 +142,14 @@ def test_init_writes_the_ladder_settings(tmp_path: Path) -> None:
     (root / "pyproject.toml").write_text("[project]\nname='x'\nversion='0.1.0'\n")
     HarnessApplication().init(root)
     settings = HarnessApplication().validate_config(root)["ladder"]
-    assert settings["ladder"]["mode"] == "enforce" and settings["ladder"]["defaultLevel"] == "L1"
-    assert settings["mutation"] == "warn" and settings["manualChecklist"] is True
-    assert settings["operationalContract"] == "batch" and settings["isolation"] == "none"
-    assert settings["locate"] is True and settings["state"]["stateDir"] == "auto"
+    assert settings["ladder"]["mode"] == "enforce"
+    assert settings["ladder"]["defaultLevel"] == "L1"
+    assert settings["mutation"] == "warn"
+    assert settings["manualChecklist"] is True
+    assert settings["operationalContract"] == "batch"
+    assert settings["isolation"] == "none"
+    assert settings["locate"] is True
+    assert settings["state"]["stateDir"] == "auto"
     assert settings["delivery"] == {
         "stage": True,
         "push": False,
@@ -189,9 +194,11 @@ def test_every_rung_is_reached_by_recorded_evidence(python_workspace: Path, tmp_
     assert execution.current_phase is PhaseId.DECISION, state["preflight"]["reasons"]
     assert state["preflight"]["status"] == "PARTIAL"
     by_id = {item["criterionId"]: item for item in state["certification"]["criteria"]}
-    assert by_id["ac_unit"]["status"] == "CERTIFIED" and by_id["ac_unit"]["achieved"] == "L1"
+    assert by_id["ac_unit"]["status"] == "CERTIFIED"
+    assert by_id["ac_unit"]["achieved"] == "L1"
     assert by_id["ac_cli"]["achieved"] == "L3"
-    assert by_id["ac_e2e"]["status"] == "PENDING" and by_id["ac_look"]["status"] == "PENDING"
+    assert by_id["ac_e2e"]["status"] == "PENDING"
+    assert by_id["ac_look"]["status"] == "PENDING"
     assert state["certification"]["status"] == "PARTIAL"
     brief = application.review(python_workspace, run)
     assert brief["gate"]["status"] == "PASSED"
@@ -304,9 +311,11 @@ def test_deferred_evidence_closes_the_item_and_certifies(
     report = application.attach_evidence(
         python_workspace, file=passing, execution_id=run, item="D-ac_e2e", actor_id="human.ci"
     )
-    assert report["deferred"]["status"] == "PASSED" and report["certification"] == "CERTIFIED"
+    assert report["deferred"]["status"] == "PASSED"
+    assert report["certification"] == "CERTIFIED"
     events = [item.event_type for item in _events(python_workspace, run)]
-    assert "verification.deferred.closed" in events and events[-1] == "certification.recorded"
+    assert "verification.deferred.closed" in events
+    assert events[-1] == "certification.recorded"
     assert HarnessApplication().verify(python_workspace, run)["valid"]
 
 
@@ -463,7 +472,8 @@ def test_undeclared_criteria_report_the_default_level_without_blocking(
     criteria = application.verification(python_workspace, execution.execution_id)["certification"][
         "criteria"
     ]
-    assert criteria[0]["declared"] is False and criteria[0]["status"] == "NOT_CERTIFIED"
+    assert criteria[0]["declared"] is False
+    assert criteria[0]["status"] == "NOT_CERTIFIED"
     assert criteria[0]["achieved"] == "L0"
 
 
@@ -549,7 +559,8 @@ def test_a_failing_probe_is_a_failed_verification(python_workspace: Path, tmp_pa
         for item in findings(python_workspace, execution.execution_id)
         if item.rule_id == "probe.assertion-failed"
     ]
-    assert len(messages) == 2 and "variant below" in messages[0]
+    assert len(messages) == 2
+    assert "variant below" in messages[0]
 
 
 def test_light_mutation_finds_an_untested_change(python_workspace: Path, tmp_path: Path) -> None:
@@ -566,9 +577,9 @@ def test_light_mutation_finds_an_untested_change(python_workspace: Path, tmp_pat
         if item.rule_id == "tests.change-not-exercised"
     ]
     assert execution.current_phase is PhaseId.VERIFICATION
-    assert (
-        len(found) == 1 and found[0].location and found[0].location.path == "src/sample/pricing.py"
-    )
+    assert len(found) == 1
+    assert found[0].location
+    assert found[0].location.path == "src/sample/pricing.py"
     assert found[0].severity.value == "HIGH"
 
 
@@ -586,7 +597,8 @@ def test_light_mutation_classifies_new_tests(python_workspace: Path, tmp_path: P
     application, execution = start(python_workspace, tmp_path, value)
     assert execution.current_phase is PhaseId.DECISION
     rules = [item.rule_id for item in findings(python_workspace, execution.execution_id)]
-    assert "tests.weak" in rules and "tests.change-not-exercised" not in rules
+    assert "tests.weak" in rules
+    assert "tests.change-not-exercised" not in rules
     summaries = [
         item["summary"]
         for item in application.list_evidence(python_workspace, execution.execution_id)[0][
@@ -619,7 +631,8 @@ def test_a_task_attachment_reaches_the_request_as_intake_context(
         note="the bug as the customer saw it",
         actor_id="human.reporter",
     )
-    assert attached["taskDigest"] and attached["mediaType"] == "image/png"
+    assert attached["taskDigest"]
+    assert attached["mediaType"] == "image/png"
     with pytest.raises(ConfigurationError, match="--manual"):
         application.attach_evidence(
             python_workspace, file=shot, task_id="task_ladder", actor_id="human.reporter"
@@ -649,8 +662,9 @@ def test_extended_profiles_are_detected_only_with_the_key(tmp_path: Path) -> Non
         "toolchain": {"profileDetection": "all"},
     }
     (root / ".harness" / "project.yaml").write_text(yaml.safe_dump(base))
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError, match="no supported technology profile"):
-        ConfigurationResolver().resolve(root)
+        resolver.resolve(root)
     base["toolchain"] = {"profileDetection": "all", "extendedProfiles": True}
     (root / ".harness" / "project.yaml").write_text(yaml.safe_dump(base))
     resolved = ConfigurationResolver().resolve(root)

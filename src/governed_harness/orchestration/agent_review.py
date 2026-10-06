@@ -16,7 +16,6 @@ the reviewer's identity and its output are evidence."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents.requests import REVIEW_SEVERITIES
@@ -33,9 +32,10 @@ from governed_harness.domain.models import (
     Finding,
     PhaseExecution,
 )
+from governed_harness.orchestration.engine_types import ReviewOutcome as ReviewOutcome
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 AGENT_REVIEW_ID = "review.agent"
 MAX_DIFF_CHARS = 200_000
@@ -43,19 +43,16 @@ MAX_FINDINGS = 50
 _RANK = {"INFO": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 
 
-@dataclass(frozen=True)
-class ReviewOutcome:
-    ran: bool
-    blocking: tuple[Finding, ...] = ()
-
-
 class AgentReview:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
     def policy(self) -> str:
         review = self.results.project.review
+        if review is not None and review.panel is not None and review.panel.mode is not None:
+            # #57: the review panel replaces the single reviewer under its own policy.
+            return review.panel.mode
         return (review.agent_review if review else None) or "off"
 
     def blocking_severities(self) -> set[FindingSeverity]:
@@ -109,6 +106,8 @@ class AgentReview:
                 },
             )
             return ReviewOutcome(False)
+        if self.results.panel.configured:
+            return self.results.panel.run(execution, phase, change_set)
         task = engine.run_task(execution)
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         payload: dict[str, Any] = {
@@ -124,7 +123,7 @@ class AgentReview:
         if results.engineering.configured:
             # The standards cards no tool verifies and the principles checklist ride on this
             # call (#56): no extra agent call.
-            checklist, suffix = results.engineering.review_extra(execution, change_set)
+            checklist, suffix = results.engineering.review_extra(change_set)
             payload.update(checklist)
         outcome = results.call_agent(
             execution, phase, "review", payload, task=task, instructions_suffix=suffix

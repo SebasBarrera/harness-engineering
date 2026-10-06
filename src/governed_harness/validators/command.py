@@ -12,6 +12,7 @@ from governed_harness.domain.enums import (
     ResultStatus,
     ValidationKind,
 )
+from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
@@ -72,10 +73,12 @@ class CommandValidator:
                 provenance=context.provenance.model_copy(update={"actor": actor}),
             )
             return ValidatorOutput(result)
-        assert context.definition.command is not None
+        command = context.definition.command
+        if command is None:  # not reached: _availability blocks a validator without a command
+            raise ConfigurationError(f"validator {self.validator_id} has no configured command")
         process = context.process_runner.run(
             CommandSpec(
-                argv=context.definition.command,
+                argv=command,
                 cwd=context.workspace,
                 timeout_seconds=float(context.definition.timeout_seconds or 900),
                 allowed_environment=context.definition.pass_env or (),
@@ -98,7 +101,7 @@ class CommandValidator:
         report = context.artifact_store.put_json(
             {
                 "validatorId": self.validator_id,
-                "argv": list(context.definition.command),
+                "argv": list(command),
                 "exitCode": process.exit_code,
                 "status": process.status,
                 "durationMs": process.duration_ms,
@@ -117,7 +120,7 @@ class CommandValidator:
             phase_id=PhaseId.VERIFICATION,
             actor=actor,
             tool_id=self.validator_id,
-            argv=context.definition.command,
+            argv=command,
             cwd=".",
             started_at=started,
             finished_at=datetime.now(UTC),

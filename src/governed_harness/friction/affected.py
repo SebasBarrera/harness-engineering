@@ -74,23 +74,34 @@ def affected_python_tests(workspace: Path, changed: Iterable[str]) -> list[str]:
         names |= _module_names(item)
         stems.add(PurePosixPath(item).stem)
     if names:
-        for relative in discover_test_files(workspace, ("python",)):
-            if relative in selected or not relative.endswith(".py"):
-                continue
-            stem = PurePosixPath(relative).stem
-            if stem.removeprefix("test_") in stems or stem.removesuffix("_test") in stems:
-                selected.add(relative)
-                continue
-            path = workspace / relative
-            try:
-                if path.stat().st_size > MAX_TEST_FILE_BYTES:
-                    continue
-                text = path.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            if _imports(text, names):
-                selected.add(relative)
+        selected.update(
+            relative
+            for relative in discover_test_files(workspace, ("python",))
+            if relative not in selected
+            and relative.endswith(".py")
+            and _reaches(workspace, relative, names, stems)
+        )
     return sorted(selected)[:MAX_AFFECTED_TESTS]
+
+
+def _reaches(workspace: Path, relative: str, names: set[str], stems: set[str]) -> bool:
+    """A test file is affected when it is named after a changed module (``test_x.py``,
+    ``x_test.py``) or imports one."""
+    stem = PurePosixPath(relative).stem
+    if stem.removeprefix("test_") in stems or stem.removesuffix("_test") in stems:
+        return True
+    text = _test_text(workspace / relative)
+    return text is not None and _imports(text, names)
+
+
+def _test_text(path: Path) -> str | None:
+    """The text of a test file, ``None`` when it is too large or cannot be read."""
+    try:
+        if path.stat().st_size > MAX_TEST_FILE_BYTES:
+            return None
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
 
 
 __all__ = ["affected_python_tests"]

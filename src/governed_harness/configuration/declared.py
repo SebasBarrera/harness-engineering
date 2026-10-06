@@ -13,13 +13,8 @@ from governed_harness.configuration.models import ResolvedConfiguration
 
 DECLARATIVE_SETTINGS: dict[str, str] = {
     "workspace.units": "Declared units are not used by the engine.",
-    "policies.repositoryContentTrusted": "No component reads it; repository content is always "
-    "treated as untrusted.",
-    "policies.destructiveActionsDefault": "No component reads it; destructive actions follow "
-    "the capability grants.",
     "policies.ambiguousPackageManager": "No component reads it; the Node.js profile always uses "
     "npm.",
-    "workflow.phases[].allowedCapabilities": "Capabilities are granted per run (issue #4).",
     "workflow.phases[].validators": "The validators come from the profiles and the project.",
     "workflow.invariants": "Names of invariants the engine enforces in code.",
 }
@@ -27,7 +22,7 @@ DECLARATIVE_SETTINGS: dict[str, str] = {
 _PROJECT_KEYS = {
     "workspace.units": ("workspace", "units"),
 }
-_POLICY_KEYS = ("repositoryContentTrusted", "destructiveActionsDefault", "ambiguousPackageManager")
+_POLICY_KEYS = ("ambiguousPackageManager",)
 
 
 def _present(raw: dict[str, Any], path: tuple[str, ...]) -> bool:
@@ -56,6 +51,16 @@ def declared_settings_report(
                 f"policies.{key} is declarative: {DECLARATIVE_SETTINGS[f'policies.{key}']}"
             )
     governance = resolved.project.governance_settings
+    if not governance.phase_capabilities:
+        warnings.append(
+            "workflow allowedCapabilities are declared but not applied (grants are per run); "
+            "set governance.phaseCapabilities: true"
+        )
+    if not governance.apply_repository_policies:
+        warnings.append(
+            "policies repositoryContentTrusted and destructiveActionsDefault are declared but not "
+            "applied; set governance.applyRepositoryPolicies: true"
+        )
     if not governance.apply_workflow_settings:
         warnings.append(
             "workflow maxAttempts, timeoutSeconds and exitGate are declared but not applied; "

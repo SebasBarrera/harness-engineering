@@ -135,42 +135,57 @@ def _parse_json(text: str, workspace: Path) -> list[ParsedIssue] | None:
         data = json.loads(stripped)
     except ValueError:
         return None
-    if isinstance(data, dict) and "runs" in data and str(data.get("version", "")).startswith("2."):
+    if isinstance(data, dict):
+        return _parse_json_object(data, workspace)
+    if isinstance(data, list):
+        return _parse_json_list(data, workspace)
+    return None
+
+
+def _parse_json_object(data: dict[str, Any], workspace: Path) -> list[ParsedIssue] | None:
+    """A SARIF 2.x log or a RuboCop report."""
+    if "runs" in data and str(data.get("version", "")).startswith("2."):
         return parse_sarif(data, workspace)
-    if isinstance(data, list) and data and all(isinstance(item, dict) for item in data):
-        if all("filePath" in item and "messages" in item for item in data):
-            return parse_eslint_json(data, workspace)
-        if all("code" in item and "filename" in item for item in data):
-            return parse_ruff_json(data, workspace)
-    if isinstance(data, dict) and isinstance(data.get("files"), list) and "summary" in data:
+    if isinstance(data.get("files"), list) and "summary" in data:
         return parse_rubocop_json(data, workspace)
-    if isinstance(data, list) and not data:
+    return None
+
+
+def _parse_json_list(data: list[Any], workspace: Path) -> list[ParsedIssue] | None:
+    """An ESLint or Ruff report; an empty list is a report without issues."""
+    if not data:
         return []
+    if not all(isinstance(item, dict) for item in data):
+        return None
+    if all("filePath" in item and "messages" in item for item in data):
+        return parse_eslint_json(data, workspace)
+    if all("code" in item and "filename" in item for item in data):
+        return parse_ruff_json(data, workspace)
     return None
 
 
 def parse_rubocop_json(data: dict[str, Any], workspace: Path) -> list[ParsedIssue]:
-    issues: list[ParsedIssue] = []
-    for item in data.get("files") or []:
-        if not isinstance(item, dict):
-            continue
-        for offense in item.get("offenses") or []:
-            if not isinstance(offense, dict):
-                continue
-            severity = str(offense.get("severity") or "warning")
-            location = offense.get("location") or {}
-            issues.append(
-                ParsedIssue(
-                    rule=str(offense.get("cop_name") or "offense"),
-                    message=_message(offense.get("message")),
-                    level="error" if severity in {"error", "fatal"} else "warning",
-                    path=_relative(item.get("path"), workspace),
-                    line=_line(location.get("start_line")),
-                    end_line=_line(location.get("last_line")),
-                    tool="rubocop",
-                )
-            )
-    return issues
+    return [
+        _rubocop_issue(item, offense, workspace)
+        for item in data.get("files") or []
+        if isinstance(item, dict)
+        for offense in item.get("offenses") or []
+        if isinstance(offense, dict)
+    ]
+
+
+def _rubocop_issue(item: dict[str, Any], offense: dict[str, Any], workspace: Path) -> ParsedIssue:
+    severity = str(offense.get("severity") or "warning")
+    location = offense.get("location") or {}
+    return ParsedIssue(
+        rule=str(offense.get("cop_name") or "offense"),
+        message=_message(offense.get("message")),
+        level="error" if severity in {"error", "fatal"} else "warning",
+        path=_relative(item.get("path"), workspace),
+        line=_line(location.get("start_line")),
+        end_line=_line(location.get("last_line")),
+        tool="rubocop",
+    )
 
 
 def parse_cargo_messages(text: str, workspace: Path) -> list[ParsedIssue]:
@@ -178,33 +193,39 @@ def parse_cargo_messages(text: str, workspace: Path) -> list[ParsedIssue]:
     messages carry the lint code, the level and the primary span."""
     issues: list[ParsedIssue] = []
     for raw in text.splitlines():
-        line = raw.strip()
-        if not line.startswith("{") or "compiler-message" not in line:
-            continue
-        try:
-            record = json.loads(line)
-        except ValueError:
-            continue
-        message = record.get("message") if isinstance(record, dict) else None
-        if not isinstance(message, dict) or message.get("level") not in {"error", "warning"}:
-            continue
-        spans = [item for item in message.get("spans") or [] if isinstance(item, dict)]
-        primary = next(
-            (item for item in spans if item.get("is_primary")), spans[0] if spans else {}
-        )
-        code = message.get("code")
-        issues.append(
-            ParsedIssue(
-                rule=str((code if isinstance(code, dict) else {}).get("code") or "compiler"),
-                message=_message(message.get("message")),
-                level="error" if message.get("level") == "error" else "warning",
-                path=_relative(primary.get("file_name"), workspace),
-                line=_line(primary.get("line_start")),
-                end_line=_line(primary.get("line_end")),
-                tool="cargo",
-            )
-        )
+        message = _cargo_message(raw.strip())
+        if message is not None:
+            issues.append(_cargo_issue(message, workspace))
     return issues
+
+
+def _cargo_message(line: str) -> dict[str, Any] | None:
+    """The compiler message (an error or a warning) of one line of cargo's JSON output."""
+    if not line.startswith("{") or "compiler-message" not in line:
+        return None
+    try:
+        record = json.loads(line)
+    except ValueError:
+        return None
+    message = record.get("message") if isinstance(record, dict) else None
+    if not isinstance(message, dict) or message.get("level") not in {"error", "warning"}:
+        return None
+    return message
+
+
+def _cargo_issue(message: dict[str, Any], workspace: Path) -> ParsedIssue:
+    spans = [item for item in message.get("spans") or [] if isinstance(item, dict)]
+    primary = next((item for item in spans if item.get("is_primary")), spans[0] if spans else {})
+    code = message.get("code")
+    return ParsedIssue(
+        rule=str((code if isinstance(code, dict) else {}).get("code") or "compiler"),
+        message=_message(message.get("message")),
+        level="error" if message.get("level") == "error" else "warning",
+        path=_relative(primary.get("file_name"), workspace),
+        line=_line(primary.get("line_start")),
+        end_line=_line(primary.get("line_end")),
+        tool="cargo",
+    )
 
 
 _CHECKSTYLE_LEVELS: dict[str, Level] = {"error": "error", "warning": "warning", "info": "note"}

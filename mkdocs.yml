@@ -81,6 +81,7 @@ nav:
       - Forges and CI templates: guides/forges.md
       - Standards, principles, testing and architecture: guides/engineering.md
       - Embedded mode: guides/embedded-mode.md
+      - Review panel: guides/review-panel.md
   - Reference:
       - CLI: reference/cli.md
       - Task file: reference/task-file.md
@@ -92,6 +93,7 @@ nav:
       - Metrics: metrics.md
       - Monitoring: monitoring.md
       - Benchmarks: benchmarks.md
+      - Maintainer setup: maintainer-setup.md
   - Architecture:
       - Phases: architecture/phases.md
       - Traceability: architecture/traceability.md

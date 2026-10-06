@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed git and interpreter argv, no shell
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +82,7 @@ def write_example_task(harness_dir: Path, technologies: list[str], *, force: boo
 def _run(
     argv: list[str], cwd: Path | None, timeout: float = 20.0
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return subprocess.run(  # nosec B603 - argv lists built here (git, a validator's interpreter), no shell
         argv,
         cwd=cwd,
         stdin=subprocess.DEVNULL,

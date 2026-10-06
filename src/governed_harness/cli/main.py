@@ -8,7 +8,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import typer
 
@@ -526,55 +526,83 @@ def do(
     task_id = result["task"]["taskId"]
     terminal = interactive and sys.stdin.isatty() and sys.stdout.isatty()
     while terminal and result["questions"]:
-        typer.echo(f"INTENT asks about {task_id}:")
-        answers: dict[str, str] = {}
-        for question in result["questions"]:
-            answer = ""
-            while not answer.strip():
-                answer = str(typer.prompt(f"{question['questionId']}: {question['text']}"))
-            answers[question["questionId"]] = answer.strip()
-        _call(partial(application.answer_questions, path, task_id=task_id, answers=answers))
-        execution = _call(lambda: application.continue_run(path, run_id))
-        result["run"] = {
-            "executionId": execution.execution_id,
-            "status": execution.status.value,
-            "currentPhase": execution.current_phase.value,
-            "changeSetDigest": execution.change_set_digest,
-        }
-        result["execution"] = execution.model_dump(mode="json", by_alias=True)
-        result["questions"] = (
-            _open_questions(application, path, run_id)
-            if execution.current_phase.value == "INTENT"
-            else []
-        )
+        _answer_intent(application, path, run_id, task_id, result)
     status = ResultStatus(result["run"]["status"])
     phase = result["run"]["currentPhase"]
     if terminal and status is ResultStatus.BLOCKED and phase == "DECISION":
-        decision, digest, reason = _interactive_decision(
-            application, path, run_id, None, None, None
-        )
-        checked = _interactive_checklist(application, path, run_id, [])
-        record, execution = _call(
-            lambda: application.decide_gate(
-                path,
-                execution_id=run_id,
-                decision=decision,
-                change_set_digest=digest,
-                actor_id=actor,
-                rationale=reason,
-                checked_items=tuple(checked),
-            ),
-            hint=_decide_hint(application, path, run_id),
-        )
-        result["decision"] = record.model_dump(mode="json", by_alias=True)
-        result["execution"] = execution.model_dump(mode="json", by_alias=True)
-        status, phase = execution.status, execution.current_phase.value
+        status, phase = _decide_on_terminal(application, path, run_id, actor, result)
     elif status is ResultStatus.BLOCKED and phase == "DECISION":
         result["next"] = f"harness review --run {run_id}; harness gate decide --run {run_id}"
     elif status is ResultStatus.BLOCKED and phase == "INTENT":
         result["next"] = f"harness task questions --task {task_id}"
     _emit(result, json_output)
     _exit_for_execution(status, phase)
+
+
+def _prompt_answers(questions: list[Any]) -> dict[str, str]:
+    """One non-empty answer per question, asked on the terminal."""
+    answers: dict[str, str] = {}
+    for question in questions:
+        answer = ""
+        while not answer.strip():
+            answer = str(typer.prompt(f"{question['questionId']}: {question['text']}"))
+        answers[question["questionId"]] = answer.strip()
+    return answers
+
+
+def _answer_intent(
+    application: HarnessApplication,
+    path: Path,
+    run_id: str,
+    task_id: str,
+    result: dict[str, Any],
+) -> None:
+    """``harness do`` on a terminal: answer INTENT's questions, continue the run and update
+    ``result`` with the run and the questions still open."""
+    typer.echo(f"INTENT asks about {task_id}:")
+    answers = _prompt_answers(result["questions"])
+    _call(partial(application.answer_questions, path, task_id=task_id, answers=answers))
+    execution = _call(lambda: application.continue_run(path, run_id))
+    result["run"] = {
+        "executionId": execution.execution_id,
+        "status": execution.status.value,
+        "currentPhase": execution.current_phase.value,
+        "changeSetDigest": execution.change_set_digest,
+    }
+    result["execution"] = execution.model_dump(mode="json", by_alias=True)
+    result["questions"] = (
+        _open_questions(application, path, run_id)
+        if execution.current_phase.value == "INTENT"
+        else []
+    )
+
+
+def _decide_on_terminal(
+    application: HarnessApplication,
+    path: Path,
+    run_id: str,
+    actor: str | None,
+    result: dict[str, Any],
+) -> tuple[ResultStatus, str]:
+    """``harness do`` on a terminal at DECISION: show the brief, ask for the decision and
+    record it; ``result`` gets the decision and the execution."""
+    decision, digest, reason = _interactive_decision(application, path, run_id, None, None, None)
+    checked = _interactive_checklist(application, path, run_id, [])
+    record, execution = _call(
+        lambda: application.decide_gate(
+            path,
+            execution_id=run_id,
+            decision=decision,
+            change_set_digest=digest,
+            actor_id=actor,
+            rationale=reason,
+            checked_items=tuple(checked),
+        ),
+        hint=_decide_hint(application, path, run_id),
+    )
+    result["decision"] = record.model_dump(mode="json", by_alias=True)
+    result["execution"] = execution.model_dump(mode="json", by_alias=True)
+    return execution.status, execution.current_phase.value
 
 
 def _open_questions(application: HarnessApplication, path: Path, run_id: str) -> list[Any]:
@@ -1656,15 +1684,7 @@ def gate_decide(
     missing = decision is None or change_set_digest is None or rationale is None
     terminal = sys.stdin.isatty() and sys.stdout.isatty()
     if missing and not (interactive or terminal):
-        _report_error(
-            {
-                "status": "ERROR",
-                "error": "missing --decision, --change-set-digest or --rationale",
-                "hint": "Pass the three options, or run `harness gate decide --run "
-                f"{run_id}` on a terminal (or with --interactive) to decide interactively.",
-            }
-        )
-        raise typer.Exit(code=2)
+        _missing_decision_options(run_id)
     exception = ExceptionOptions(
         expires_in=expires_in,
         expires_at=expires_at,
@@ -1675,14 +1695,13 @@ def gate_decide(
     confirm = terminal and _digest_confirmation_configured(path)
     checked = list(check or ())
     if missing or interactive or confirm:
-        decision, change_set_digest, rationale = _interactive_decision(
+        chosen, digest, reason = _interactive_decision(
             application, path, run_id, decision, change_set_digest, rationale
         )
-        if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
-            exception = _interactive_exception(exception)
+        exception = _exception_for(chosen, exception, path)
         checked = _interactive_checklist(application, path, run_id, checked)
-    assert decision is not None and change_set_digest is not None and rationale is not None
-    chosen, digest, reason = decision, change_set_digest, rationale
+    else:
+        chosen, digest, reason = _given_decision(run_id, decision, change_set_digest, rationale)
     record, execution = _call(
         lambda: application.decide_gate(
             path,
@@ -1707,6 +1726,40 @@ def gate_decide(
         kind="decision",
     )
     _exit_for_execution(execution.status, execution.current_phase.value)
+
+
+def _missing_decision_options(run_id: str) -> NoReturn:
+    """Without a terminal, ``gate decide`` needs the decision, the digest and the rationale."""
+    _report_error(
+        {
+            "status": "ERROR",
+            "error": "missing --decision, --change-set-digest or --rationale",
+            "hint": "Pass the three options, or run `harness gate decide --run "
+            f"{run_id}` on a terminal (or with --interactive) to decide interactively.",
+        }
+    )
+    raise typer.Exit(code=2)
+
+
+def _exception_for(
+    decision: DecisionKind, exception: ExceptionOptions, path: Path
+) -> ExceptionOptions:
+    """Under ``review.exceptions``, an interactive APPROVE_EXCEPTION asks what it records."""
+    if decision is DecisionKind.APPROVE_EXCEPTION and _exceptions_enabled(path):
+        return _interactive_exception(exception)
+    return exception
+
+
+def _given_decision(
+    run_id: str,
+    decision: DecisionKind | None,
+    change_set_digest: str | None,
+    rationale: str | None,
+) -> tuple[DecisionKind, str, str]:
+    """The decision given as options (all three; a missing one exits as above)."""
+    if decision is None or change_set_digest is None or rationale is None:
+        _missing_decision_options(run_id)
+    return decision, change_set_digest, rationale
 
 
 def _interactive_checklist(
@@ -1787,20 +1840,29 @@ def _interactive_decision(
         )
         raise typer.Exit(code=5)
     if decision is None:
-        # Validated here rather than with click.Choice: click is not a declared dependency,
-        # and recent Typer versions no longer install it.
-        allowed = [item.value for item in DecisionKind]
-        while decision is None:
-            choice = str(typer.prompt(f"Decision ({', '.join(allowed)})")).strip().upper()
-            if choice in allowed:
-                decision = DecisionKind(choice)
-            else:
-                typer.echo(f"Choose one of: {', '.join(allowed)}", err=True)
+        decision = _prompt_decision()
     while not (rationale or "").strip():
         rationale = typer.prompt("Rationale (what you checked and why)")
     if change_set_digest is not None and change_set_digest != current:
         # Let the engine reject it with its usual message and exit code.
         return decision, change_set_digest, str(rationale)
+    _confirm_digest(decision, current)
+    return decision, current, str(rationale)
+
+
+def _prompt_decision() -> DecisionKind:
+    # Validated here rather than with click.Choice: click is not a declared dependency,
+    # and recent Typer versions no longer install it.
+    allowed = [item.value for item in DecisionKind]
+    while True:
+        choice = str(typer.prompt(f"Decision ({', '.join(allowed)})")).strip().upper()
+        if choice in allowed:
+            return DecisionKind(choice)
+        typer.echo(f"Choose one of: {', '.join(allowed)}", err=True)
+
+
+def _confirm_digest(decision: DecisionKind, current: str) -> None:
+    """The person types the start of the digest the decision binds to (exit 5 otherwise)."""
     expected = current.removeprefix("sha256:")
     typed = typer.prompt(
         f"Type the first {DIGEST_CONFIRM_CHARS} characters of the digest to bind this "
@@ -1816,7 +1878,6 @@ def _interactive_decision(
             }
         )
         raise typer.Exit(code=5)
-    return decision, current, str(rationale)
 
 
 def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hint:
@@ -1898,55 +1959,74 @@ def inbox(
     --decisions or --batch it records several decisions, each bound to its own ChangeSet digest:
     a stale digest or a refused decision is reported for that run (the others are recorded) and
     the command exits 5 when any was refused."""
-    from governed_harness.application.friction import (
-        BatchItem,
-        load_batch_file,
-        parse_batch_item,
-    )
+    items = _option_batch(approve, reject, request_changes)
+    if decisions is not None:
+        items.extend(_file_batch(decisions))
+    if batch:
+        items.extend(_terminal_batch(path))
+    if not items:
+        _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+        return
+    reason = _batch_rationale(rationale, items)
+    result = _call(lambda: _acting().decide_batch(path, items, rationale=reason, actor_id=actor))
+    _emit(result, json_output)
+    if result["refused"]:
+        raise typer.Exit(code=5)
 
-    items: list[BatchItem] = []
+
+def _option_batch(
+    approve: list[str] | None, reject: list[str] | None, request_changes: list[str] | None
+) -> list[Any]:
+    """The decisions given as RUN=sha256:DIGEST options, approvals first."""
+    from governed_harness.application.friction import parse_batch_item
+
+    items: list[Any] = []
     for values, kind in (
         (approve, DecisionKind.APPROVE),
         (reject, DecisionKind.REJECT),
         (request_changes, DecisionKind.REQUEST_CHANGES),
     ):
-        for value in values or ():
-            items.append(_call(partial(parse_batch_item, value, kind)))
-    if decisions is not None:
-        import yaml
+        items.extend(_call(partial(parse_batch_item, value, kind)) for value in values or ())
+    return items
 
-        raw = _call(lambda: yaml.safe_load(decisions.read_text(encoding="utf-8")))
-        items.extend(_call(lambda: load_batch_file(raw)))
-    if batch:
-        if not (sys.stdin.isatty() and sys.stdout.isatty()):
-            _report_error(
-                {
-                    "status": "ERROR",
-                    "error": "--batch needs a terminal",
-                    "hint": "Use --approve RUN=DIGEST or --decisions FILE without a terminal.",
-                }
-            )
-            raise typer.Exit(code=2)
-        items.extend(_interactive_batch(path))
-    if not items:
-        _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
-        return
-    if rationale is None and any(item.rationale is None for item in items):
-        if sys.stdin.isatty() and sys.stdout.isatty():
-            rationale = str(typer.prompt("Rationale recorded with each decision"))
-        else:
-            _report_error(
-                {
-                    "status": "ERROR",
-                    "error": "a batch decision needs --rationale (or a rationale per decision)",
-                }
-            )
-            raise typer.Exit(code=2)
-    reason = rationale or ""
-    result = _call(lambda: _acting().decide_batch(path, items, rationale=reason, actor_id=actor))
-    _emit(result, json_output)
-    if result["refused"]:
-        raise typer.Exit(code=5)
+
+def _file_batch(decisions: Path) -> list[Any]:
+    import yaml
+
+    from governed_harness.application.friction import load_batch_file
+
+    raw = _call(lambda: yaml.safe_load(decisions.read_text(encoding="utf-8")))
+    return list(_call(lambda: load_batch_file(raw)))
+
+
+def _terminal_batch(path: Path) -> list[Any]:
+    """``--batch``: the decisions asked on a terminal (exit 2 without one)."""
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        _report_error(
+            {
+                "status": "ERROR",
+                "error": "--batch needs a terminal",
+                "hint": "Use --approve RUN=DIGEST or --decisions FILE without a terminal.",
+            }
+        )
+        raise typer.Exit(code=2)
+    return _interactive_batch(path)
+
+
+def _batch_rationale(rationale: str | None, items: list[Any]) -> str:
+    """The rationale of the decisions without their own: given, asked on a terminal, or exit
+    2."""
+    if rationale is not None or all(item.rationale is not None for item in items):
+        return rationale or ""
+    if sys.stdin.isatty() and sys.stdout.isatty():
+        return str(typer.prompt("Rationale recorded with each decision"))
+    _report_error(
+        {
+            "status": "ERROR",
+            "error": "a batch decision needs --rationale (or a rationale per decision)",
+        }
+    )
+    raise typer.Exit(code=2)
 
 
 def _interactive_batch(path: Path) -> list[Any]:
@@ -1989,6 +2069,17 @@ def _interactive_batch(path: Path) -> list[Any]:
         if confirmed.strip().lower() not in {"y", "yes"}:
             raise typer.Exit(code=5)
     return items
+
+
+def _print_metrics(text: str, fmt: str, output: Path | None) -> Path | None:
+    """The report in one format, printed or written to ``output``; the HTML file written."""
+    if output is None:
+        typer.echo(text, nl=False)
+        return None
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(text, encoding="utf-8")
+    typer.echo(json.dumps({"file": str(output), "format": fmt}))
+    return output if fmt == "html" else None
 
 
 @app.command()
@@ -2084,15 +2175,7 @@ def metrics(
             )
         )
     else:
-        text = render(report, fmt)
-        if output is not None:
-            output.parent.mkdir(parents=True, exist_ok=True)
-            output.write_text(text, encoding="utf-8")
-            typer.echo(json.dumps({"file": str(output), "format": fmt}))
-            if fmt == "html":
-                html_file = output
-        else:
-            typer.echo(text, nl=False)
+        html_file = _print_metrics(render(report, fmt), fmt, output)
     if open_report:
         if html_file is None:
             directory = output_dir or Path(settings["harnessDir"]) / "metrics"
@@ -2207,23 +2290,178 @@ def exceptions_list(
     )
 
 
-@app.command()
+review_app = typer.Typer(invoke_without_command=True)
+review_rules_app = typer.Typer(help="The review rule catalog and the reviewers' rules blocks")
+review_hook_app = typer.Typer(help="The pre-push hook of the review panel")
+app.add_typer(review_app, name="review")
+review_app.add_typer(review_rules_app, name="rules")
+review_app.add_typer(review_hook_app, name="hook")
+
+PATH_OPTION: Any = typer.Option(
+    default_factory=Path.cwd, show_default="current directory", help="Project directory"
+)
+
+
+@review_app.callback(invoke_without_command=True)
 def review(
+    ctx: typer.Context,
     run: str = RUN_OPTION_LATEST,
     diff: bool = typer.Option(False, "--diff", help="Include the ChangeSet diff (redacted)"),
     json_output: bool | None = JSON_OPTION,
-    path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
-    ),
+    path: Path = PATH_OPTION,
 ) -> None:
     """Show the decision brief of a run: what was asked, what changed, the risks with file and
     line, what was verified on which ChangeSet digest and what was not, active exceptions,
     retries and corrections, what changed since the last decision and the exact decide
-    command. It only reads the record."""
+    command. It only reads the record. The subcommands manage the review panel (#57)."""
+    if ctx.invoked_subcommand is not None:
+        return
     _emit(
         _call(lambda: HarnessApplication().review(path, run, include_diff=diff)),
         json_output,
         kind="review",
+    )
+
+
+@app.command("review-code")
+def review_code(
+    mode: str = typer.Option(
+        "manual",
+        "--mode",
+        help="manual: the branch against its base; hook: the same, fetching the base first (a "
+        "failed fetch aborts); staged: the index against HEAD",
+    ),
+    base: str | None = typer.Option(
+        None,
+        "--base",
+        help="Base branch or commit; default: the pull or merge request base of the CI, the "
+        "branch convention (review.panel.baseBranches), then the default branch",
+    ),
+    head: str = typer.Option("HEAD", "--head", help="The commit to review (manual and hook)"),
+    provider: str | None = typer.Option(
+        None, "--provider", help="Provider of the reviewers (an agentProviders id or simulated)"
+    ),
+    fallback: str | None = typer.Option(
+        None, "--fallback-provider", help="Provider of the one retry after an invalid answer"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Force one model for every reviewer"),
+    skip: list[str] | None = typer.Option(
+        None, "--skip", help="A reviewer id to skip (repeatable)"
+    ),
+    pull_request: int | None = typer.Option(
+        None,
+        "--pull-request",
+        help="Pull or merge request number for the comment (default: from the CI environment)",
+    ),
+    comment: bool | None = typer.Option(
+        None,
+        "--comment/--no-comment",
+        help="Post one comment per passing result on the pull or merge request (default: "
+        "review.panel.comment)",
+    ),
+    cache: bool = typer.Option(True, "--cache/--no-cache", help="Use the review cache"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Review a change with the review panel outside a governed run: reviewers by domain over
+    diff slices, the layered rule catalog, a fixed output contract and a verdict the harness
+    recomputes. Rules a tool verifies never reach a model; reviewers run only on their
+    signals; answers are cached. A passing review is recorded as refs/harness/review/pass/SHA
+    (or pass-warn). Exit code 6 when the verdict is FAIL or UNKNOWN (under review.panel.mode
+    enforce) or when hook mode cannot fetch the base."""
+    result = _call(
+        lambda: HarnessApplication().review_code(
+            path,
+            mode=mode,
+            base=base,
+            head=head,
+            provider=provider,
+            fallback=fallback,
+            model=model,
+            skip=tuple(skip or ()),
+            pull_request=pull_request,
+            comment=comment,
+            cache=cache,
+        )
+    )
+    _emit(result, json_output)
+    if result.get("blocking"):
+        raise typer.Exit(code=6)
+
+
+@review_rules_app.command("show")
+def review_rules_show(path: Path = PATH_OPTION, json_output: bool | None = JSON_OPTION) -> None:
+    """Show the effective review rule catalog: the rules of the three layers (built-in,
+    language packs, project) after precedence and supersedes, the inactive rules and why, the
+    reviewers and the ones whose rules block drifted. Reads only."""
+    _emit(_call(lambda: HarnessApplication().review_rules(path)), json_output)
+
+
+@review_rules_app.command("sync")
+def review_rules_sync(
+    check: bool = typer.Option(
+        False, "--check", help="Only report project reviewers whose rules block drifted (exit 6)"
+    ),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Write the generated rules block of every project reviewer (.harness/review/agents) from
+    the catalog, between its BEGIN and END markers; the only writer of that block. With
+    --check nothing is written and a drift exits with 6."""
+    result = _call(lambda: HarnessApplication().review_rules_sync(path, check=check))
+    _emit(result, json_output)
+    if result["status"] != "PASSED":
+        raise typer.Exit(code=6)
+
+
+@review_app.command("verify")
+def review_verify(
+    sha: str = typer.Option("HEAD", "--sha", help="The commit whose review evidence to check"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Check the review evidence of a commit (refs/harness/review/pass/SHA or pass-warn)
+    without calling any model: the report is bound to the commit, its digest is intact and its
+    diff is the diff between its base and the commit. Exit code 6 when it does not verify."""
+    result = _call(lambda: HarnessApplication().review_verify(path, sha))
+    _emit(result, json_output)
+    if not result.get("valid"):
+        raise typer.Exit(code=6)
+
+
+@review_hook_app.command("install")
+def review_hook_install(
+    force: bool = typer.Option(
+        False, "--force", help="Replace a pre-push hook the harness did not write"
+    ),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Install a pre-push hook that runs harness review-code --mode hook: a FAIL or UNKNOWN
+    verdict, or a base that cannot be fetched, stops the push."""
+    _emit(_call(lambda: HarnessApplication().review_hook_install(path, force=force)), json_output)
+
+
+@review_app.command("variance")
+def review_variance(
+    runs: int = typer.Option(3, "--runs", min=2, max=10, help="Identical reviews to run"),
+    mode: str = typer.Option("manual", "--mode", help="manual or staged"),
+    base: str | None = typer.Option(None, "--base", help="Base branch or commit"),
+    provider: str | None = typer.Option(None, "--provider", help="Provider of the reviewers"),
+    model: str | None = typer.Option(None, "--model", help="Force one model for every reviewer"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Run the same review several times without cache and report its variance: verdict
+    stability, how often each finding appears and the mean pairwise agreement (Jaccard). Every
+    run calls the reviewers again."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().review_variance(
+                path, runs=runs, mode=mode, base=base, provider=provider, model=model
+            )
+        ),
+        json_output,
     )
 
 

@@ -108,7 +108,8 @@ def test_probe_evaluation_passes_and_fails() -> None:
             run("amount=1000", {"total": 900, "items": [1, 3]}),
         ],
     )
-    assert passing.readiness == "READY" and passing.passed
+    assert passing.readiness == "READY"
+    assert passing.passed
     failing = evaluate(
         item,
         [
@@ -116,9 +117,11 @@ def test_probe_evaluation_passes_and_fails() -> None:
             run("amount=1000", {"total": 10, "items": [1]}),
         ],
     )
-    assert failing.readiness == "READY" and not failing.passed
+    assert failing.readiness == "READY"
+    assert not failing.passed
     failed = {(result.kind, result.variant) for result in failing.results if not result.passed}
-    assert ("jsonPath", "amount=10") in failed and ("differs", None) in failed
+    assert ("jsonPath", "amount=10") in failed
+    assert ("differs", None) in failed
     assert ("order", "amount=10") in failed
 
 
@@ -131,13 +134,15 @@ def test_probe_that_cannot_run_is_unavailable() -> None:
             run("amount=1000", {"total": 1}),
         ],
     )
-    assert missing.readiness == "UNAVAILABLE" and not missing.passed
+    assert missing.readiness == "UNAVAILABLE"
+    assert not missing.passed
     garbage = evaluate(
         item,
         [VariantRun("amount=10", True, 0, "not json"), run("amount=1000", {"total": 1})],
     )
     # A program that ran and printed something else is READY: its JSON assertions fail.
-    assert garbage.readiness == "READY" and not garbage.passed
+    assert garbage.readiness == "READY"
+    assert not garbage.passed
     assert any("not JSON" in item.detail for item in garbage.results if not item.passed)
     text = ProbeDefinition.model_validate(
         {
@@ -181,9 +186,12 @@ JUNIT = b"""<?xml version="1.0"?>
 def test_external_evidence_formats() -> None:
     assert detect_kind(JUNIT) == "junit"
     verdict = read_evidence(JUNIT)
-    assert not verdict.passed and verdict.details and verdict.details["failed"] == 1
+    assert not verdict.passed
+    assert verdict.details
+    assert verdict.details["failed"] == 1
     narrowed = read_evidence(JUNIT, case="ac_login")
-    assert narrowed.passed and "1 test case(s)" in narrowed.summary
+    assert narrowed.passed
+    assert "1 test case(s)" in narrowed.summary
     assert not read_evidence(JUNIT, case="nothing").passed
     sarif = json.dumps(
         {"runs": [{"tool": {"driver": {"name": "scan"}}, "results": [{"level": "warning"}]}]}
@@ -191,9 +199,11 @@ def test_external_evidence_formats() -> None:
     assert read_evidence(sarif).passed
     status = json.dumps({"state": "success", "sha": "abc123", "context": "ci/e2e"}).encode()
     verdict = read_evidence(status)
-    assert verdict.passed and verdict.commit == "abc123"
+    assert verdict.passed
+    assert verdict.commit == "abc123"
+    pending = json.dumps({"state": "pending"}).encode()
     with pytest.raises(EvidenceFormatError, match="not final"):
-        read_evidence(json.dumps({"state": "pending"}).encode())
+        read_evidence(pending)
     with pytest.raises(EvidenceFormatError):
         read_evidence(b"<!DOCTYPE x><testsuites/>")
 
@@ -243,11 +253,15 @@ def test_certification_levels_and_statuses() -> None:
     )
     status, results = certify(criteria, inputs)
     by_id = {item.criterion_id: item for item in results}
-    assert by_id["ac_unit"].status == "CERTIFIED" and by_id["ac_unit"].achieved == "L1"
-    assert by_id["ac_probe"].status == "CERTIFIED" and by_id["ac_probe"].achieved == "L3"
-    assert by_id["ac_ci"].status == "PENDING" and by_id["ac_ci"].pending == ("D-ac_ci",)
+    assert by_id["ac_unit"].status == "CERTIFIED"
+    assert by_id["ac_unit"].achieved == "L1"
+    assert by_id["ac_probe"].status == "CERTIFIED"
+    assert by_id["ac_probe"].achieved == "L3"
+    assert by_id["ac_ci"].status == "PENDING"
+    assert by_id["ac_ci"].pending == ("D-ac_ci",)
     assert by_id["ac_eye"].status == "PENDING"
-    assert by_id["ac_gap"].status == "NOT_CERTIFIED" and by_id["ac_gap"].achieved == "L0"
+    assert by_id["ac_gap"].status == "NOT_CERTIFIED"
+    assert by_id["ac_gap"].achieved == "L0"
     assert status == "PARTIAL"
     inputs.deferred = [deferred("ac_ci", "PASSED")]
     inputs.checked = {"ac_eye"}
@@ -263,7 +277,8 @@ def test_no_rung_by_omission() -> None:
         default_level=VerificationLevel.L1, verification_passed=False, digest="sha256:x"
     )
     status, results = certify([criterion("ac_unit")], inputs)
-    assert status == "NOT_CERTIFIED" and results[0].achieved is None
+    assert status == "NOT_CERTIFIED"
+    assert results[0].achieved is None
     unavailable = CertificationInputs(
         default_level=VerificationLevel.L1,
         verification_passed=True,
@@ -271,7 +286,8 @@ def test_no_rung_by_omission() -> None:
         probes=[ProbeOutcome("cli", VerificationLevel.L3, ("ac_probe",), False, "UNAVAILABLE")],
     )
     _, results = certify([criterion("ac_probe", level="L3")], unavailable)
-    assert results[0].achieved == "L0" and results[0].status == "NOT_CERTIFIED"
+    assert results[0].achieved == "L0"
+    assert results[0].status == "NOT_CERTIFIED"
 
 
 # ----- operational contract -------------------------------------------------------------------
@@ -291,8 +307,10 @@ def test_contract_summary_is_bound_to_the_task() -> None:
     values = summary.values
     assert values["objective"] == "Apply the discount at the threshold."
     assert values["examples"] == ["apply(100) returns 90"]
-    assert values["createPullRequest"] is True and values["push"] is False
-    assert "verificationLevel" in summary.missing and "comment" in summary.missing
+    assert values["createPullRequest"] is True
+    assert values["push"] is False
+    assert "verificationLevel" in summary.missing
+    assert "comment" in summary.missing
     other = derive_contract(task, "sha256:other", {"push": False, "coverageThreshold": 80})
     assert other.digest != summary.digest
 
@@ -352,11 +370,13 @@ def test_capability_catalog_and_detection(tmp_path: Path) -> None:
         declared, tmp_path, {"python.pytest"}, run_detections=False, timeout=5, runner=runner
     )
     unchecked = {(item.profile_id, item.level): item for item in skipped}[("python_default", "L1")]
-    assert unchecked.available and not unchecked.detections[0].checked
+    assert unchecked.available
+    assert not unchecked.detections[0].checked
     expect = CapabilityDetection.model_validate(
         {"command": ["adb", "devices"], "expect": "\\tdevice$"}
     )
     found = detect(expect, tmp_path, 5, lambda *_: (0, "List of devices\nemulator-5554\tdevice"))
     absent = detect(expect, tmp_path, 5, lambda *_: (0, "List of devices attached\n"))
-    assert found.available and not absent.available
+    assert found.available
+    assert not absent.available
     assert Actor(actor_type=ActorType.HUMAN, actor_id="human.x").actor_id == "human.x"

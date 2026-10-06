@@ -67,9 +67,9 @@ def test_dependencies_decide_the_order_and_a_cycle_is_refused() -> None:
     moved = with_phase(moved, PhaseId.SPECIFICATION, depends_on=(PhaseId.INTENT,))
     order = WorkflowGraph(moved).order()
     assert order.index(PhaseId.SPECIFICATION) < order.index(PhaseId.DISCOVERY)
-    cycle = with_phase(default(), PhaseId.INTENT, depends_on=(PhaseId.DISCOVERY,))
+    cycle = WorkflowGraph(with_phase(default(), PhaseId.INTENT, depends_on=(PhaseId.DISCOVERY,)))
     with pytest.raises(ValueError, match="cycle"):
-        WorkflowGraph(cycle).order()
+        cycle.order()
 
 
 def test_exit_conditions_reconcile_the_decision_gate() -> None:
@@ -187,4 +187,5 @@ def test_enforced_settings_are_not_declarative() -> None:
     assert "workflow.phases[].dependsOn" not in DECLARATIVE_SETTINGS
     assert "workflow.phases[].parallelizable" not in DECLARATIVE_SETTINGS
     assert "runtime.maxParallel" not in DECLARATIVE_SETTINGS
-    assert "workflow.phases[].allowedCapabilities" in DECLARATIVE_SETTINGS
+    # Applied under governance.phaseCapabilities (#4).
+    assert "workflow.phases[].allowedCapabilities" not in DECLARATIVE_SETTINGS

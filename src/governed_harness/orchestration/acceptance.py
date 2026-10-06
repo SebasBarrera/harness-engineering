@@ -46,17 +46,57 @@ from governed_harness.domain.models import (
 )
 from governed_harness.evidence import sha256_json
 from governed_harness.evidence.hashing import sha256_bytes
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.runtime import CancellationToken
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 ACCEPTANCE_ID = "harness.acceptance-tests"
 MAX_FILES = 20
 MAX_FILE_BYTES = 200_000
+
+
+def _check_feature(index: int, path: str, content: Any, directory: str) -> None:
+    """A feature file lives under ``directory`` and has a Feature and a Scenario."""
+    if (
+        not path.startswith(directory + "/")
+        or ".." in PurePosixPath(path).parts
+        or not path.endswith(".feature")
+    ):
+        raise ValueError(f"feature file {index} must be {directory}/<name>.feature, got {path!r}")
+    if not isinstance(content, str) or "Feature:" not in content or ("Scenario" not in content):
+        raise ValueError(f"feature file {path} needs a Feature and a Scenario")
+
+
+def _check_test_path(index: int, path: str, directory: str) -> None:
+    """A pytest file lives under ``directory`` and is named ``test_<name>.py``."""
+    if (
+        not path.startswith(directory + "/")
+        or ".." in PurePosixPath(path).parts
+        or not PurePosixPath(path).name.startswith("test_")
+        or not path.endswith(".py")
+    ):
+        raise ValueError(f"test file {index} must be {directory}/test_<name>.py, got {path!r}")
+
+
+def _test_file(index: int, entry: Any, directory: str, gherkin: bool) -> dict[str, str]:
+    """One file of the answer, checked: its place, its name and its content."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"test file {index} is not an object")
+    path = str(entry.get("path") or "")
+    content = entry.get("content")
+    if gherkin:
+        _check_feature(index, path, content, directory)
+    else:
+        _check_test_path(index, path, directory)
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError(f"test file {path} has no content")
+    if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ValueError(f"test file {path} is larger than {MAX_FILE_BYTES} bytes")
+    return {"path": path, "content": content}
 
 
 def validate_tests(
@@ -70,46 +110,16 @@ def validate_tests(
     files: list[dict[str, str]] = []
     seen: set[str] = set()
     for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"test file {index} is not an object")
-        path = str(entry.get("path") or "")
-        content = entry.get("content")
-        parts = PurePosixPath(path).parts
-        if gherkin:
-            if (
-                not path.startswith(directory + "/")
-                or ".." in parts
-                or not path.endswith(".feature")
-            ):
-                raise ValueError(
-                    f"feature file {index} must be {directory}/<name>.feature, got {path!r}"
-                )
-            if (
-                not isinstance(content, str)
-                or "Feature:" not in content
-                or ("Scenario" not in content)
-            ):
-                raise ValueError(f"feature file {path} needs a Feature and a Scenario")
-        elif (
-            not path.startswith(directory + "/")
-            or ".." in parts
-            or not PurePosixPath(path).name.startswith("test_")
-            or not path.endswith(".py")
-        ):
-            raise ValueError(f"test file {index} must be {directory}/test_<name>.py, got {path!r}")
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError(f"test file {path} has no content")
-        if len(content.encode("utf-8")) > MAX_FILE_BYTES:
-            raise ValueError(f"test file {path} is larger than {MAX_FILE_BYTES} bytes")
-        if path in seen:
-            raise ValueError(f"test file {path} appears twice")
-        seen.add(path)
-        files.append({"path": path, "content": content})
+        item = _test_file(index, entry, directory, gherkin)
+        if item["path"] in seen:
+            raise ValueError(f"test file {item['path']} appears twice")
+        seen.add(item["path"])
+        files.append(item)
     return files
 
 
 class AcceptanceTests:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -145,8 +155,6 @@ class AcceptanceTests:
     def propose(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if not self.enabled:
             return None
         state = self.state(execution)

@@ -90,6 +90,12 @@ def grants_from_rules(
     *,
     lifetime: timedelta = timedelta(hours=8),
 ) -> list[CapabilityGrant]:
+    from governed_harness.capabilities.phase import current_policy
+
+    policy = current_policy()
+    if policy is not None:
+        # governance.phaseCapabilities (#4): only what the running phase allows.
+        rules = policy.apply(actor, rules)
     issued = datetime.now(UTC)
     return [
         CapabilityGrant(

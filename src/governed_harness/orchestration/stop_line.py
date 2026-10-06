@@ -33,7 +33,7 @@ from governed_harness.runtime.guard import IGNORED_PATTERNS
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 OWNED_PATHS_ID = "harness.owned-paths"
 STOPPED_STATUSES = frozenset({ResultStatus.FAILED, ResultStatus.TIMED_OUT, ResultStatus.ERROR})
@@ -41,7 +41,7 @@ _STOPPED_PHASES = frozenset({PhaseId.IMPLEMENTATION, PhaseId.VERIFICATION})
 
 
 class StopLine:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

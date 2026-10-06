@@ -74,9 +74,11 @@ def test_config_validate_reports_declarative_settings(python_workspace: Path) ->
     assert result.exit_code == 0
     body = json.loads(result.stdout)
     keys = {item["key"] for item in body["declarative"]}
-    assert {"workspace.units", "workflow.phases[].allowedCapabilities"} <= keys
+    assert "workspace.units" in keys
     # Enforced under governance.enforceWorkflow (#3), which the fixture leaves out.
     assert not keys & {"runtime.maxParallel", "workflow.phases[].dependsOn"}
+    # Applied under governance.phaseCapabilities (#4), so never reported as declarative.
+    assert "workflow.phases[].allowedCapabilities" not in keys
     assert any(item.startswith("runtime.maxParallel is declarative") for item in body["warnings"])
     assert any("set governance.enforceWorkflow: true" in item for item in body["warnings"])
     assert "retention is applied only when harness gc --apply runs" in body["warnings"]
@@ -89,6 +91,11 @@ def test_config_validate_reports_declarative_settings(python_workspace: Path) ->
     )
     assert any("maxAttempts, timeoutSeconds and exitGate" in item for item in body["warnings"])
     assert any("missingTestCommand" in item for item in body["warnings"])
+    # #4: allowedCapabilities is applied under governance.phaseCapabilities, not declarative.
+    assert "workflow.phases[].allowedCapabilities" not in {
+        item["key"] for item in body["declarative"]
+    }
+    assert any("governance.phaseCapabilities" in item for item in body["warnings"])
 
 
 def test_schema_marks_declarative_fields() -> None:
@@ -98,10 +105,10 @@ def test_schema_marks_declarative_fields() -> None:
     assert project["$defs"]["WorkspaceConfig"]["properties"]["units"]["x-declarative"] is True
     assert "x-declarative" not in project["$defs"]["RuntimeConfig"]["properties"]["maxParallel"]
     phase = workflow["$defs"]["WorkflowPhaseDefinition"]["properties"]
-    assert phase["allowedCapabilities"]["x-declarative"] is True
     assert "x-declarative" not in phase["parallelizable"]
     assert "x-declarative" not in phase["dependsOn"]
     assert "x-declarative" not in phase["maxAttempts"]
+    assert "x-declarative" not in phase["allowedCapabilities"]
 
 
 def test_invalid_profile_policy_is_a_configuration_error(python_workspace: Path) -> None:

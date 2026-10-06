@@ -359,6 +359,14 @@ class FamilyTable(_Section):
     locate: Rung | None = None
     """Since #55: the rung of the read-only ``locate`` call; without it the cheapest rung of
     the ladder (its first entry) is used."""
+    acceptance: Rung | None = None
+    """Since #59: the rung of the ``acceptance`` call; without it the implement rung of the
+    task's size is used, with a warning."""
+    architecture: Rung | None = None
+    """Since #59: the rung of the ``architecture`` call; without it the ``plan`` rung."""
+    reviewers: dict[str, Rung] | None = None
+    """Since #57: the rung of each reviewer of the review panel by id; without one the
+    ``review`` rung."""
     ladder: tuple[Rung, ...] | None = None
 
 
@@ -393,6 +401,16 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
         "clarify": {"model": "claude-sonnet-5-5", "effort": "medium"},
         "plan": {"model": "claude-opus-5-5", "effort": "high"},
         "review": {"model": "claude-opus-5-5", "effort": "high"},
+        "acceptance": {"model": "claude-sonnet-5-5", "effort": "high"},
+        "architecture": {"model": "claude-opus-5-5", "effort": "high"},
+        "reviewers": {
+            "quality": {"model": "claude-sonnet-5-5", "effort": "high"},
+            "architecture": {"model": "claude-opus-5-5", "effort": "high"},
+            "resilience": {"model": "claude-sonnet-5-5", "effort": "high"},
+            "tests": {"model": "claude-sonnet-5-5", "effort": "medium"},
+            "concurrency": {"model": "claude-opus-5-5", "effort": "high"},
+            "pipeline-security": {"model": "claude-sonnet-5-5", "effort": "high"},
+        },
         "ladder": [
             {"model": "claude-sonnet-5-5", "effort": "medium"},
             {"model": "claude-sonnet-5-5", "effort": "high"},
@@ -409,6 +427,16 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
         "clarify": {"model": "gpt-6.1-sol", "effort": "medium"},
         "plan": {"model": "gpt-6.1-sol", "effort": "high"},
         "review": {"model": "gpt-6.1-sol", "effort": "high"},
+        "acceptance": {"model": "gpt-6.1-sol", "effort": "medium"},
+        "architecture": {"model": "gpt-6.1-sol", "effort": "high"},
+        "reviewers": {
+            "quality": {"model": "gpt-6.1-sol", "effort": "medium"},
+            "architecture": {"model": "gpt-6.1-sol", "effort": "high"},
+            "resilience": {"model": "gpt-6.1-sol", "effort": "medium"},
+            "tests": {"model": "gpt-6-luna", "effort": "high"},
+            "concurrency": {"model": "gpt-6.1-sol", "effort": "high"},
+            "pipeline-security": {"model": "gpt-6.1-sol", "effort": "medium"},
+        },
         "ladder": [
             {"model": "gpt-6-luna", "effort": "high"},
             {"model": "gpt-6.1-sol", "effort": "medium"},

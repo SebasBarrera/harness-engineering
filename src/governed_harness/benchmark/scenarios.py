@@ -4,7 +4,7 @@ import os
 import platform
 import shutil
 import statistics
-import subprocess
+import subprocess  # nosec B404 - fixed git, node and fixture argv, no shell
 import sys
 import tempfile
 import time
@@ -25,7 +25,7 @@ def _git_init(root: Path) -> None:
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
     def git(*args: str) -> None:
-        subprocess.run(["git", *_GIT_ISOLATION, *args], cwd=root, check=True, env=env)
+        subprocess.run(["git", *_GIT_ISOLATION, *args], cwd=root, check=True, env=env)  # nosec B603 B607 - git from PATH, fixed fixture argv, no shell
 
     git("init", "-q")
     git("config", "user.email", "benchmark@example.invalid")
@@ -194,7 +194,7 @@ def _run_direct(
         start = time.perf_counter_ns()
         _apply_direct_change(stack, root)
         argv = [resolve_executable(command[0]), *command[1:]]
-        result = subprocess.run(argv, cwd=root, capture_output=True, check=False)
+        result = subprocess.run(argv, cwd=root, capture_output=True, check=False)  # nosec B603 - the fixture's own resolved command, no shell
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
         if result.returncode != 0:
             raise RuntimeError(
@@ -284,7 +284,7 @@ def run_scenario_benchmarks(*, iterations: int = 3) -> dict[str, object]:
         "generatedAt": datetime.now(UTC).isoformat(),
         "environment": {
             "python": sys.version.split()[0],
-            "node": subprocess.run(
+            "node": subprocess.run(  # nosec B603 B607 - node --version from PATH, no shell
                 ["node", "--version"], capture_output=True, text=True
             ).stdout.strip()
             if shutil.which("node")

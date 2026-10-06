@@ -88,6 +88,61 @@
   recorded in the declared order; phases and the sub-tasks of a decomposition stay sequential on
   the run's one workspace, recorded in `workflow.schedule`. `dependsOn`, `parallelizable` and
   `runtime.maxParallel` are no longer marked declarative.
+- Review panel with layered rule catalogs, wave 7 (#57). The single second reviewer read the whole
+  diff in one request and its verdict was the model's. Under the new `review.panel` (written by
+  `harness init`; absent keeps the single reviewer and the configuration digest) the second
+  review is a panel of reviewers by domain (quality, architecture, resilience, tests,
+  concurrency, pipeline security, plus the project's), each over its diff slice and only when its
+  signal is present. Guide: `docs/guides/review-panel.md`.
+  - Rule catalog in three layers merged with precedence project > language pack > built-in, with
+    `supersedes` and inactive rules (missing tool or file, no reviewer); rules a tool verifies
+    are checked by the harness or the linter, never by a model; `harness review rules sync`
+    writes each project reviewer's rules block and `--check` reports drift.
+  - Fixed output contract, reportable locations from the unified diff (findings elsewhere
+    dropped and counted), out-of-catalog findings blocking only with concrete evidence, a
+    verdict the harness recomputes, `UNKNOWN` answers retried once on the fallback provider and
+    blocking when they persist, configured and executed models recorded.
+  - Global and per-reviewer cache (the per-reviewer key leaves the mode out), budget proportional
+    to the slice, reviewers in parallel, read-only sandbox, tool allowlist and strict MCP
+    allowlist per reviewer; per-reviewer routing entries (`agentRouting.tables.FAMILY.reviewers`).
+  - Consistency checks of the project before any reviewer, scoped auto-fix of errors on lines the
+    agent wrote (provenance), an optional second opinion on blocking findings and
+    `harness review variance`.
+  - `harness review-code --mode hook|manual|staged` with base resolution (explicit, pull or merge
+    request base, branch convention, merge base; hook mode aborts when the base cannot be
+    fetched), `harness review hook install`, evidence as `refs/harness/review/pass/SHA` checked
+    by `harness review verify` without models, one pull or merge request comment per passing
+    result. `harness review` keeps the decision brief and gains the subcommands.
+  - Token cost, measured with `scripts/measure_agent_tokens.py --compare review` (fixture
+    provider, estimated input tokens = request characters / 4): on a one-line change with a new
+    test the panel called two reviewers and used about 2,500 estimated input tokens per review
+    against about 1,640 for the single reviewer; a re-review after a test-only change called only
+    the tests reviewer (1,400), the quality answer coming from the cache.
+- Repository policies applied (#5). `policies.repositoryContentTrusted` and
+  `policies.destructiveActionsDefault` were read by nothing. Under the new
+  `governance.applyRepositoryPolicies` (written by `harness init`; absent keeps the earlier
+  behaviour and configuration digest), repository content is untrusted: requests carry a
+  prompt-injection notice, the repository's instruction files reach the implementing agent only
+  quoted (reviewers get their names) and the review panel flags instructions addressed to an
+  agent in changed files; destructive commands (recursive deletes outside the workspace, force
+  pushes, history rewrites, dropped data, ownership or permission changes outside the workspace)
+  are refused unless a `process.destructive` grant allows them, each attempt a `HIGH` finding,
+  and the Claude Code adapter passes them as disallowed tools. Neither policy is declarative any
+  more.
+- Capabilities per phase (#4). The grants of a run were the union of the profiles' and the
+  project's capabilities for the whole run, so a project could not narrow a profile and the
+  workflow's `allowedCapabilities` had no effect. Under the new `governance.phaseCapabilities`
+  (written by `harness init`; absent keeps the earlier behaviour and configuration digest) the
+  project narrows the profiles (`capabilities.extend` adds a scope explicitly), every grant made
+  while a phase runs keeps only what the phase allows, an agent call outside IMPLEMENTATION is
+  read-only and may start only its own command, and each phase attempt records its resolved
+  grants (`capabilities.resolved`). `allowedCapabilities` is no longer marked declarative.
+- Every call kind has a routing entry (#59). With `agentRouting.mode: tiered` and a Claude Code
+  or Codex provider an `acceptance` call failed, because the routing tables had no `acceptance`
+  entry. The default tables now route every call kind of provider protocol 1.1 (`acceptance` and
+  `architecture` have their own rungs), and a table without the entry of a call kind uses the
+  implement rung of the task size for it, with a warning in the decision
+  (`fallback:implement:KIND:SIZE`) and an `agent.routing.fallback` event.
 - Verification ladder, certification and delivery hygiene, wave 5 (#55). Every key is optional:
   a `project.yaml` without it keeps the earlier behaviour and configuration digest, a task without
   the new fields keeps its digest, and `harness init` writes them (`harness config validate`

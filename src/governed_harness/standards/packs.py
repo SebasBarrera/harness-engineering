@@ -158,6 +158,10 @@ def _glob_match(path: str, pattern: str) -> bool:
 
 
 # ----- loading --------------------------------------------------------------------------------
+_CARDS_FILE = "cards.yaml"
+_TOOLS_FILE = "tools.yaml"
+
+
 def _resource_yaml(pack: str, name: str) -> dict[str, Any]:
     target = resources.files("governed_harness.resources").joinpath("standards", pack, name)
     if not target.is_file():
@@ -172,8 +176,8 @@ def builtin_pack(pack: str) -> Pack:
         raise ConfigurationError(
             f"unknown standards pack {pack!r}; known: {', '.join(BUILTIN_PACKS)}"
         )
-    cards = _resource_yaml(pack, "cards.yaml")
-    tools = _resource_yaml(pack, "tools.yaml")
+    cards = _resource_yaml(pack, _CARDS_FILE)
+    tools = _resource_yaml(pack, _TOOLS_FILE)
     return Pack.model_validate({**tools, **cards, "pack": pack})
 
 
@@ -197,43 +201,18 @@ def load_pack(
 ) -> Pack:
     """A pack with the repository's overrides applied (repository > pack)."""
     directory = (workspace / overrides / pack) if workspace is not None and overrides else None
-    local_cards = (
-        _read_yaml(directory / "cards.yaml")
-        if directory and (directory / "cards.yaml").is_file()
-        else {}
-    )
-    local_tools = (
-        _read_yaml(directory / "tools.yaml")
-        if directory and (directory / "tools.yaml").is_file()
-        else {}
-    )
+    local_cards = _local_yaml(directory, _CARDS_FILE)
+    local_tools = _local_yaml(directory, _TOOLS_FILE)
     if pack in BUILTIN_PACKS:
         base = builtin_pack(pack)
     elif local_cards or local_tools:
-        try:
-            base = Pack.model_validate(
-                {
-                    "title": pack,
-                    **{k: v for k, v in local_tools.items() if k != "disabled"},
-                    **{k: v for k, v in local_cards.items() if k != "disabled"},
-                    "pack": pack,
-                    "source": "repository",
-                }
-            )
-        except ValueError as error:
-            raise ConfigurationError(f"invalid repository pack {pack}: {error}") from error
+        base = _repository_pack(pack, local_cards, local_tools)
         local_cards, local_tools = {}, {}
     else:
         raise ConfigurationError(
             f"unknown standards pack {pack!r}; known: {', '.join(BUILTIN_PACKS)}"
         )
-    try:
-        local_card_items = [Card.model_validate(item) for item in local_cards.get("cards") or []]
-        local_tool_items = [
-            PackTool.model_validate(item) for item in local_tools.get("tools") or []
-        ]
-    except ValueError as error:
-        raise ConfigurationError(f"invalid repository standards for {pack}: {error}") from error
+    local_card_items, local_tool_items = _local_items(pack, local_cards, local_tools)
     off = set(disabled) | set(local_cards.get("disabled") or [])
     cards: dict[str, Card] = {item.card_id: item for item in base.cards}
     cards.update({item.card_id: item for item in local_card_items})
@@ -247,6 +226,40 @@ def load_pack(
             "source": "builtin+repository" if changed and base.source == "builtin" else base.source,
         }
     )
+
+
+def _local_yaml(directory: Path | None, name: str) -> dict[str, Any]:
+    """A file of the repository's overrides of a pack, empty when there is none."""
+    if directory is None or not (directory / name).is_file():
+        return {}
+    return _read_yaml(directory / name)
+
+
+def _repository_pack(pack: str, local_cards: dict[str, Any], local_tools: dict[str, Any]) -> Pack:
+    """A pack the repository defines on its own (no built-in pack of that name)."""
+    try:
+        return Pack.model_validate(
+            {
+                "title": pack,
+                **{k: v for k, v in local_tools.items() if k != "disabled"},
+                **{k: v for k, v in local_cards.items() if k != "disabled"},
+                "pack": pack,
+                "source": "repository",
+            }
+        )
+    except ValueError as error:
+        raise ConfigurationError(f"invalid repository pack {pack}: {error}") from error
+
+
+def _local_items(
+    pack: str, local_cards: dict[str, Any], local_tools: dict[str, Any]
+) -> tuple[list[Card], list[PackTool]]:
+    try:
+        cards = [Card.model_validate(item) for item in local_cards.get("cards") or []]
+        tools = [PackTool.model_validate(item) for item in local_tools.get("tools") or []]
+    except ValueError as error:
+        raise ConfigurationError(f"invalid repository standards for {pack}: {error}") from error
+    return cards, tools
 
 
 # ----- detection ------------------------------------------------------------------------------
@@ -399,6 +412,20 @@ def _with_extends(ids: list[str]) -> list[str]:
     return ordered
 
 
+def _repository_pack_ids(local: Path, packs: tuple[str, ...] | None) -> list[str]:
+    """The repository-only packs (directories of the overrides that name no built-in pack)
+    the configuration selects: all of them under ``auto`` or no list."""
+    if not local.is_dir():
+        return []
+    return [
+        directory.name
+        for directory in sorted(local.iterdir())
+        if directory.is_dir()
+        and directory.name not in BUILTIN_PACKS
+        and (packs is None or "auto" in packs or directory.name in packs)
+    ]
+
+
 def project_standards(
     workspace: Path,
     *,
@@ -417,15 +444,7 @@ def project_standards(
         else:
             wanted.append(item)
     if overrides:
-        local = workspace / overrides
-        if local.is_dir():
-            for directory in sorted(local.iterdir()):
-                if (
-                    directory.is_dir()
-                    and directory.name not in BUILTIN_PACKS
-                    and (packs is None or "auto" in packs or directory.name in packs)
-                ):
-                    wanted.append(directory.name)
+        wanted.extend(_repository_pack_ids(workspace / overrides, packs))
     ids = _with_extends(list(dict.fromkeys(wanted)))
     return ProjectStandards(
         packs=tuple(load_pack(item, workspace, overrides, disabled) for item in ids),

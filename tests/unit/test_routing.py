@@ -4,6 +4,7 @@ from typing import Any
 
 import pytest
 
+from governed_harness.agents.requests import CALL_KINDS
 from governed_harness.agents.routing import (
     CalibrationRow,
     RoutingHistory,
@@ -190,12 +191,45 @@ def test_tiered_codex(kind: Any, signals: TaskSignals, model: str, effort: str) 
     assert decision.flags == ("-m", model, "-c", f'model_reasoning_effort="{effort}"')
 
 
-def test_missing_rung_falls_back_to_fixed() -> None:
+def test_missing_rung_falls_back_to_the_implement_tier() -> None:
+    # #59: a call kind without its own entry runs on the implement rung, with a warning; with
+    # no implement rung for the size either, the provider keeps its own model.
     policy = _policy(tables={"claude-code": {"implement": {"S": {"model": "x"}}}})
     decision = select("plan", SMALL, RoutingHistory(), policy, family="claude-code")
-    assert decision.rule == "fixed"
+    assert (decision.rule, decision.model) == ("fallback:implement:plan:S", "x")
+    assert decision.warning is not None
+    assert "plan" in decision.warning
+    assert decision.as_dict()["warning"] == decision.warning
     decision = select("implement", LARGE, RoutingHistory(), policy, family="claude-code")
     assert decision.rule == "fixed"
+    assert decision.warning is None
+    decision = select("plan", LARGE, RoutingHistory(), policy, family="claude-code")
+    assert (decision.rule, decision.warning) == ("fixed", None)
+
+
+@pytest.mark.parametrize("family", ["claude-code", "codex"])
+@pytest.mark.parametrize("kind", list(CALL_KINDS))
+def test_every_call_kind_has_a_default_routing_entry(family: Any, kind: Any) -> None:
+    # #59: every call kind of provider protocol 1.1 is routed by the default tables, without
+    # a fallback and without an error.
+    for signals in (SMALL, MEDIUM, LARGE):
+        decision = select(kind, signals, RoutingHistory(), TIERED, family=family)
+        assert decision.model, (kind, signals)
+        assert decision.warning is None
+        assert decision.rule.startswith("tier:")
+
+
+@pytest.mark.parametrize("kind", [item for item in CALL_KINDS if item != "implement"])
+def test_every_call_kind_falls_back_to_the_implement_tier(kind: Any) -> None:
+    policy = _policy(
+        tables={"codex": {"implement": {size: {"model": f"m-{size}"} for size in "SML"}}}
+    )
+    decision = select(kind, MEDIUM, RoutingHistory(), policy, family="codex")
+    assert decision.model == "m-M"
+    assert decision.rule == f"fallback:implement:{kind}:M"
+    assert decision.warning == (
+        f"no routing entry for the {kind} call: the implement rung of size M is used"
+    )
 
 
 def test_policy_table_replaces_default() -> None:
