@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "governed-agent-harness"
-version = "1.0.0"
+version = "2.0.0"
 description = "Technology-neutral research prototype for governing AI-assisted software development"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -75,7 +75,11 @@ governed_harness = [
   "py.typed",
   "resources/profiles/*.yaml",
   "resources/workflows/*.yaml",
+  "resources/verification/*.yaml",
   "resources/schemas/v1/*.json",
+  "resources/standards/*/*.yaml",
+  "resources/review/*.yaml",
+  "resources/review/agents/*.md",
 ]
 
 [tool.pytest.ini_options]

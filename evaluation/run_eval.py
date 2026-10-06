@@ -36,8 +36,14 @@ sys.path.insert(0, str(HERE))
 
 from agentlib import build_prompt, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
+from product_owner import ProductOwner  # noqa: E402
 
 MAX_CORRECTIONS = 2
+# Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
+MAX_CLARIFY_ROUNDS = 3
+# Set by the clarify condition only: agent calls resume after a usage limit or a failure of the machine,
+# and the harness waits for them; the evaluated conditions keep one plain call.
+RESUMABLE_PROVIDER = False
 SCENARIOS = {
     "greenfield": {
         "task": HERE / "tasks" / "greenfield-shipping.yaml",
@@ -102,6 +108,9 @@ def configure_provider(workspace: Path, model: str, agent: str = "claude", effor
     config["agentProvider"] = agent
     config["agentProviders"] = {agent: {"kind": "command", "command": command, "model": model}}
     config["runtime"]["commandTimeoutSeconds"] = 1800
+    if RESUMABLE_PROVIDER and agent == "claude":
+        command.append("--resumable")
+        config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
 
@@ -116,7 +125,13 @@ def feedback_from(workspace: Path, run_id: str, status: dict[str, Any]) -> str:
 
 
 def run_harness(
-    workspace: Path, run_dir: Path, task_file: Path, model: str, agent: str = "claude", effort: str = ""
+    workspace: Path,
+    run_dir: Path,
+    task_file: Path,
+    model: str,
+    agent: str = "claude",
+    effort: str = "",
+    clarifier: Any = None,
 ) -> dict[str, Any]:
     events: list[dict[str, Any]] = []
 
@@ -132,6 +147,31 @@ def run_harness(
     started = step("run", "start", "--path", ".", "--task", task["taskId"], "--provider", agent)
     run_id = json.loads(started.stdout)["executionId"]
     code = started.returncode
+    clarification: list[dict[str, Any]] = []
+    # Without a clarifier the flow is the one of the evaluated runs. With one, a run blocked in INTENT
+    # by clarification questions gets them answered (harness task clarify) and continues.
+    while clarifier is not None and code == 6 and len(clarification) < MAX_CLARIFY_ROUNDS:
+        request = harness_json(workspace, "task", "questions", "--path", ".", "--task", task["taskId"]).get(
+            "openRequest"
+        )
+        if not request:
+            break
+        current = harness_json(workspace, "task", "show", "--path", ".", "--task", task["taskId"])
+        try:
+            answers = clarifier(current, request)
+        except Exception as error:  # noqa: BLE001 - the clarifier is an agent; its failure is a result
+            clarification.append({"questions": [q["ruleId"] for q in request["questions"]],
+                                  "error": f"{type(error).__name__}: {str(error)[:300]}"})
+            break
+        answers_file = run_dir / f"answers-{task['taskId']}-{len(clarification) + 1}.yaml"
+        answers_file.write_text(yaml.safe_dump(answers, sort_keys=False, allow_unicode=True), encoding="utf-8")
+        clarified = step("task", "clarify", "--path", ".", "--task", task["taskId"], "--file", str(answers_file),
+                         "--actor", getattr(clarifier, "actor", "human.local"))
+        clarification.append({"questions": [q["ruleId"] for q in request["questions"]],
+                              "answered": sorted(answers["answers"]), "clarifyExit": clarified.returncode})
+        if clarified.returncode != 0:
+            break
+        code = step("run", "continue", "--path", ".", "--run", run_id).returncode
     corrections, outcome, gate_history = 0, "error", []
     while True:
         status = harness_json(workspace, "status", "--path", ".", "--run", run_id)
@@ -175,6 +215,7 @@ def run_harness(
         ],
         "eventCount": final["eventCount"],
         "eventChainValid": final["eventChainValid"],
+        "clarification": clarification,
         "harnessMetrics": {name: item.get("value") for name, item in final["metrics"].items()},
         "trace": trace_completeness(workspace, final),
         "commands": events,
@@ -227,7 +268,7 @@ def trace_completeness(workspace: Path, status: dict[str, Any]) -> dict[str, Any
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scenario", choices=sorted(SCENARIOS), required=True)
-    parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
+    parser.add_argument("--condition", choices=["baseline", "harness", "clarify"], required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--agent", choices=["claude", "codex"], default="claude")
     parser.add_argument("--prompt", choices=["full", "poor", "casual"], default="full")
@@ -253,6 +294,8 @@ def main() -> int:
             parser.error("the casual prompt has no task file; the harness rejects it at task create")
         casual_prompt = task_file.with_name(task_file.stem + "-casual.txt").read_text(encoding="utf-8")
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
+    if args.condition == "clarify" and args.prompt != "poor":
+        parser.error("the clarify condition applies to the poor prompt (harness 1.1.0 or later)")
 
     started = time.monotonic()
     record: dict[str, Any] = {
@@ -273,6 +316,19 @@ def main() -> int:
         else:
             run_claude(prompt, workspace, args.model, log)
         record["baseline"] = {"delivered": True}
+    elif args.condition == "clarify":
+        # The simulated product owner knows the full task and the specification the poor task leaves out.
+        full_task = SCENARIOS[args.scenario]["task"]
+        spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
+        knowledge = "Full task description:\n" + full_task.read_text(encoding="utf-8")
+        if spec.is_file():
+            knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
+        owner = ProductOwner(knowledge, args.model, run_dir)
+        global RESUMABLE_PROVIDER  # noqa: PLW0603
+        RESUMABLE_PROVIDER = True
+        record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort,
+                                        clarifier=owner)
+        record["productOwner"] = owner.rounds
     else:
         record["harness"] = run_harness(workspace, run_dir, task_file, args.model, args.agent, args.effort)
     record["wallSeconds"] = round(time.monotonic() - started, 3)

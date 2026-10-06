@@ -1,0 +1,35 @@
+pack: node
+title: Node.js
+cards:
+  - id: node.no-sync-io
+    title: No synchronous I/O on request paths
+    rule: Use the asynchronous fs, crypto and child_process APIs in servers and request handlers.
+    rationale: A synchronous call blocks the event loop for every client.
+    exceptions:
+      - Start-up code and command-line scripts.
+    appliesTo: ["src/**/*.js", "src/**/*.ts", "lib/**/*.js", "server/**/*.js", "server/**/*.ts"]
+    verifiedBy: ["eslint:n/no-sync"]
+  - id: node.errors-as-errors
+    title: Throw and reject with Error objects
+    rule: Throw and reject only Error instances (or subclasses) with a message; handle the error argument of every callback.
+    rationale: Strings lose the stack trace; an ignored callback error is lost.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.ts"]
+    verifiedBy: ["eslint:no-throw-literal", "eslint:prefer-promise-reject-errors", "eslint:n/handle-callback-err"]
+  - id: node.config-from-env
+    title: Configuration from the environment
+    rule: Read secrets and environment-specific settings from environment variables or a secret store, never from committed files.
+    rationale: Committed secrets leak and settings drift between environments.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.ts", "**/*.json"]
+    verifiedBy: ["review"]
+  - id: node.lockfile
+    title: Dependencies through the lockfile
+    rule: Add or change a dependency with the package manager so package.json and its lockfile change together; pin no git URLs.
+    rationale: An unlocked dependency changes what the tests ran.
+    appliesTo: ["package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
+    verifiedBy: ["review"]
+  - id: node.validate-input
+    title: Validate external input
+    rule: Validate request bodies, query strings and environment input at the boundary with a schema before use.
+    rationale: Unvalidated input reaches business logic and storage.
+    appliesTo: ["src/**/*.js", "src/**/*.ts", "server/**/*.js", "server/**/*.ts"]
+    verifiedBy: ["review"]

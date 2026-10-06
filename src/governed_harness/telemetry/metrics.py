@@ -8,6 +8,7 @@ from governed_harness.domain.enums import MetricQuality, ResultStatus
 from governed_harness.domain.models import (
     AgentInvocation,
     ChangeSet,
+    Finding,
     HumanDecision,
     PhaseExecution,
     ResourceUsage,
@@ -16,6 +17,42 @@ from governed_harness.domain.models import (
 )
 from governed_harness.events.sqlite_store import StoredEvent
 from governed_harness.storage.sqlite import SQLiteStateStore
+
+HUMAN_INTERACTION_EVENTS: dict[str, str] = {
+    "human.decision.recorded": "decision",
+    "intent.clarified": "clarification",
+    "planning.decomposition.decided": "plan",
+    "acceptance.tests.decided": "acceptance",
+    "budget.raised": "budget",
+    "workspace.quarantine.requested": "quarantine",
+    "verification.preflight.decided": "preflight",
+    "contract.confirmed": "contract",
+    "evidence.attached": "evidence",
+    "verification.deferred.closed": "evidence",
+    "decision.preauthorized": "preauthorization",
+    "plan.approval.decided": "plan",
+}
+"""Events a person causes on a run, by the kind of interruption they count as (#55; the
+pre-authorised approval and the plan approval since #58)."""
+
+_SAME_INTERACTION = ("withAnswers", "withPreAuthorization")
+"""Payload markers of an event recorded in the same act as another counted one."""
+
+
+def human_interactions(events: list[StoredEvent]) -> dict[str, int]:
+    """The human interactions of a run by kind: events of the types above recorded with a
+    human actor. A contract confirmed in the answers to a clarification (``withAnswers``) or with
+    a pre-authorised approval (``withPreAuthorization``) is part of that one interaction and is
+    not counted again; a decision the harness records from a pre-authorisation has the harness
+    as its actor and is not counted either."""
+    counts: dict[str, int] = {}
+    for event in events:
+        kind = HUMAN_INTERACTION_EVENTS.get(event.event_type)
+        if any(event.payload.get(marker) is True for marker in _SAME_INTERACTION):
+            continue
+        if kind is not None and event.actor.get("actorType") == "HUMAN":
+            counts[kind] = counts.get(kind, 0) + 1
+    return counts
 
 
 @dataclass(frozen=True)
@@ -88,8 +125,18 @@ class MetricsProjector:
                     ).total_seconds()
                     * 1000
                 )
-        correction_cycles = sum(
-            1 for event in events if event.event_type == "correction.authorized"
+        corrections = [event for event in events if event.event_type == "correction.authorized"]
+        correction_cycles = len(corrections)
+        verification_cycles = sum(
+            1 for event in corrections if event.payload.get("trigger") == "VERIFICATION_FAILED"
+        )
+        transient_retries = sum(
+            1 for event in events if event.event_type == "agent.invocation.retried"
+        )
+        unsupported_claims = sum(
+            1
+            for item in self.state.list("finding", Finding, execution_id=execution_id)
+            if item.rule_id == "agent.unsupported-claim"
         )
         implementation_attempts = sum(
             1
@@ -184,8 +231,33 @@ class MetricsProjector:
                 correction_cycles,
                 "count",
                 MetricQuality.OBSERVED,
-                "Count of human-authorized transitions from DECISION back to IMPLEMENTATION.",
+                "Count of authorized transitions back to IMPLEMENTATION: REQUEST_CHANGES "
+                "decisions and automatic corrections after a failed VERIFICATION.",
                 "event store",
+            ),
+            "correction.verification_cycles": MetricValue(
+                "correction.verification_cycles",
+                verification_cycles,
+                "count",
+                MetricQuality.OBSERVED,
+                "Automatic corrections after a failed VERIFICATION (runtime.verificationCorrections).",
+                "event store",
+            ),
+            "agent.transient_retries": MetricValue(
+                "agent.transient_retries",
+                transient_retries,
+                "count",
+                MetricQuality.OBSERVED,
+                "Command-provider calls repeated after a transient failure (runtime.providerRetries).",
+                "event store",
+            ),
+            "agent.unsupported_claims": MetricValue(
+                "agent.unsupported_claims",
+                unsupported_claims,
+                "count",
+                MetricQuality.DERIVED,
+                "Findings agent.unsupported-claim: the agent reported success and verification failed.",
+                "finding records",
             ),
             "review.cycles": MetricValue(
                 "review.cycles",
@@ -234,6 +306,16 @@ class MetricsProjector:
                 MetricQuality.OBSERVED,
                 "Number of persisted human decisions.",
                 "decision records",
+            ),
+            "human.interactions": MetricValue(
+                "human.interactions",
+                sum(human_interactions(events).values()),
+                "count",
+                MetricQuality.OBSERVED,
+                "Events a person caused on the run: decisions, clarification answers, plan, "
+                "acceptance and preflight decisions, budget raises, quarantines, contract "
+                "confirmations and attached evidence.",
+                "run events with a human actor",
             ),
             "tokens.input": self._token_metric("tokens.input", input_tokens, "input_tokens"),
             "tokens.output": self._token_metric("tokens.output", output_tokens, "output_tokens"),

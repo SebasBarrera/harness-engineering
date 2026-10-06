@@ -155,7 +155,9 @@ def test_memory_manifest_shows_what_a_run_applied(python_workspace: Path, tmp_pa
     )
     task_path = tmp_path / "task.yaml"
     task_path.write_text(
-        "title: Example\nintent: Do work\nacceptanceCriteria:\n  - It works\n"
+        "title: Example\nintent: Add a regression test\n"
+        "requirements:\n  - A subtotal below the threshold is unchanged.\n"
+        "acceptanceCriteria:\n  - apply_discount(1, 100, 0.1) returns 1.\n"
         "implementation:\n  mode: patch\n  patches:\n"
         "    - path: tests/test_pricing.py\n      operation: append\n      content: |\n"
         "\n        def test_extra() -> None:\n            assert apply_discount(1, 100, 0.1) == 1\n",

@@ -116,3 +116,46 @@ def test_output_bound_is_applied_while_reading(tmp_path: Path) -> None:
     assert result.stdout == b"x" * 1024
     assert result.stdout_truncated is True
     assert peak < 4 * 1024 * 1024, f"peak traced memory {peak} bytes for a 1 KiB bound"
+
+
+WRAPPER = (
+    "import subprocess, sys\n"
+    "sys.stderr.write('wrapped\\n')\n"
+    "raise SystemExit(subprocess.call(sys.argv[1:]))\n"
+)
+
+
+def test_sandbox_prefix_wraps_the_authorized_command(tmp_path: Path) -> None:
+    """The confinement wrapper runs the command; authorization applies to the command itself,
+    so the wrapper needs no grant of its own."""
+    actor, grants, runner = authorized(tmp_path)
+    wrapper = tmp_path / "wrapper.py"
+    wrapper.write_text(WRAPPER, encoding="utf-8")
+    result = runner.run(
+        CommandSpec(
+            argv=(sys.executable, "-c", "print('inner')"),
+            cwd=tmp_path,
+            timeout_seconds=10,
+            sandbox_prefix=(sys.executable, str(wrapper)),
+        ),
+        actor=actor,
+        grants=grants,
+    )
+    assert result.status is ResultStatus.PASSED
+    assert result.stdout.strip() == b"inner"
+    assert result.stderr.strip() == b"wrapped"
+
+
+def test_sandbox_prefix_does_not_authorize_the_command(tmp_path: Path) -> None:
+    actor, grants, runner = authorized(tmp_path)
+    with pytest.raises(CapabilityDenied):
+        runner.run(
+            CommandSpec(
+                argv=("not-granted",),
+                cwd=tmp_path,
+                timeout_seconds=5,
+                sandbox_prefix=(sys.executable,),
+            ),
+            actor=actor,
+            grants=grants,
+        )

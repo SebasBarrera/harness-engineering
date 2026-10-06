@@ -1,0 +1,243 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "VerificationLevel": {
+      "description": "Rungs of the verification ladder (since 2.0, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "enum": [
+        "L0",
+        "L1",
+        "L2",
+        "L3",
+        "L4",
+        "L5"
+      ],
+      "title": "VerificationLevel",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/deferred-verification.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "A criterion that only CI, staging or a device lab can verify: pending after the run,\nbound to the ChangeSet digest (and to the closure commit once there is one), until\n``harness evidence attach`` closes it with a JUnit, SARIF or CI status report. A pending\nitem expires; an expired one cannot be closed and the criterion is not certified.",
+  "properties": {
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "closedAt": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Closedat"
+    },
+    "closedBy": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Actor"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "commit": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Commit"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "criterionId": {
+      "title": "Criterionid",
+      "type": "string"
+    },
+    "deferredId": {
+      "title": "Deferredid",
+      "type": "string"
+    },
+    "evidenceDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidencedigest"
+    },
+    "evidenceKind": {
+      "anyOf": [
+        {
+          "enum": [
+            "junit",
+            "sarif",
+            "ci-status"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidencekind"
+    },
+    "evidenceRef": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Evidenceref"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "title": "Expiresat",
+      "type": "string"
+    },
+    "itemId": {
+      "title": "Itemid",
+      "type": "string"
+    },
+    "level": {
+      "$ref": "#/$defs/VerificationLevel"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "status": {
+      "default": "PENDING",
+      "enum": [
+        "PENDING",
+        "PASSED",
+        "FAILED",
+        "EXPIRED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Summary"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "where": {
+      "title": "Where",
+      "type": "string"
+    }
+  },
+  "required": [
+    "deferredId",
+    "itemId",
+    "projectId",
+    "executionId",
+    "taskId",
+    "criterionId",
+    "level",
+    "where",
+    "changeSetDigest",
+    "expiresAt"
+  ],
+  "title": "DeferredVerification",
+  "type": "object"
+}

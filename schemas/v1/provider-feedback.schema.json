@@ -1,0 +1,330 @@
+{
+  "$defs": {
+    "DecisionKind": {
+      "enum": [
+        "APPROVE",
+        "REJECT",
+        "REQUEST_CHANGES",
+        "APPROVE_EXCEPTION"
+      ],
+      "title": "DecisionKind",
+      "type": "string"
+    },
+    "FeedbackDecision": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "title": "Actorid",
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/DecisionKind"
+        },
+        "rationale": {
+          "maxLength": 4000,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "decision",
+        "rationale",
+        "actorId"
+      ],
+      "title": "FeedbackDecision",
+      "type": "object"
+    },
+    "FeedbackFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "location": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FindingLocation"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "message": {
+          "maxLength": 1000,
+          "title": "Message",
+          "type": "string"
+        },
+        "ruleId": {
+          "title": "Ruleid",
+          "type": "string"
+        },
+        "severity": {
+          "$ref": "#/$defs/FindingSeverity"
+        },
+        "validatorId": {
+          "title": "Validatorid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ruleId",
+        "severity",
+        "validatorId",
+        "message"
+      ],
+      "title": "FeedbackFinding",
+      "type": "object"
+    },
+    "FeedbackGate": {
+      "additionalProperties": false,
+      "description": "The outcome the feedback is about: the VERIFICATION result (``gate_id`` ``verification``)\nor the delivery gate a person decided on (``delivery_candidate``).",
+      "properties": {
+        "gateEvaluationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Gateevaluationid"
+        },
+        "gateId": {
+          "enum": [
+            "verification",
+            "delivery_candidate",
+            "independent_review"
+          ],
+          "title": "Gateid",
+          "type": "string"
+        },
+        "reasonCodes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reasoncodes",
+          "type": "array"
+        },
+        "status": {
+          "$ref": "#/$defs/ResultStatus"
+        }
+      },
+      "required": [
+        "gateId",
+        "status",
+        "reasonCodes"
+      ],
+      "title": "FeedbackGate",
+      "type": "object"
+    },
+    "FeedbackValidator": {
+      "additionalProperties": false,
+      "description": "A mandatory validator that did not pass, with the end of its redacted output.",
+      "properties": {
+        "exitCode": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exitcode"
+        },
+        "status": {
+          "$ref": "#/$defs/ResultStatus"
+        },
+        "stderr": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Stderr",
+          "type": "string"
+        },
+        "stderrTruncated": {
+          "default": false,
+          "title": "Stderrtruncated",
+          "type": "boolean"
+        },
+        "stdout": {
+          "default": "",
+          "maxLength": 4000,
+          "title": "Stdout",
+          "type": "string"
+        },
+        "stdoutTruncated": {
+          "default": false,
+          "title": "Stdouttruncated",
+          "type": "boolean"
+        },
+        "summary": {
+          "maxLength": 1000,
+          "title": "Summary",
+          "type": "string"
+        },
+        "validatorId": {
+          "title": "Validatorid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "validatorId",
+        "status",
+        "summary"
+      ],
+      "title": "FeedbackValidator",
+      "type": "object"
+    },
+    "FindingLocation": {
+      "additionalProperties": false,
+      "properties": {
+        "endLine": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Endline"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "startLine": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Startline"
+        }
+      },
+      "title": "FindingLocation",
+      "type": "object"
+    },
+    "FindingSeverity": {
+      "enum": [
+        "INFO",
+        "LOW",
+        "MEDIUM",
+        "HIGH",
+        "CRITICAL"
+      ],
+      "title": "FindingSeverity",
+      "type": "string"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE",
+        "INTERRUPTED"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/provider-feedback.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Why the previous attempt was not accepted, sent to a command provider as ``feedback``.\n\nIt is built when a failed VERIFICATION returns the run to IMPLEMENTATION\n(``VERIFICATION_FAILED``) or a person requests changes (``CHANGES_REQUESTED``), only when\n``runtime.providerFeedback`` is true. Validator output is bounded: the last\n``FEEDBACK_STREAM_CHARS`` characters of each stream and ``FEEDBACK_TOTAL_CHARS`` in all.",
+  "properties": {
+    "attempt": {
+      "minimum": 2,
+      "title": "Attempt",
+      "type": "integer"
+    },
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "decision": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/FeedbackDecision"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "findings": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FeedbackFinding"
+      },
+      "maxItems": 20,
+      "title": "Findings",
+      "type": "array"
+    },
+    "gate": {
+      "$ref": "#/$defs/FeedbackGate"
+    },
+    "omittedFindings": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Omittedfindings",
+      "type": "integer"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "trigger": {
+      "enum": [
+        "VERIFICATION_FAILED",
+        "CHANGES_REQUESTED",
+        "REVIEW_FINDINGS"
+      ],
+      "title": "Trigger",
+      "type": "string"
+    },
+    "validators": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FeedbackValidator"
+      },
+      "title": "Validators",
+      "type": "array"
+    }
+  },
+  "required": [
+    "attempt",
+    "trigger",
+    "changeSetDigest",
+    "gate"
+  ],
+  "title": "ProviderFeedback",
+  "type": "object"
+}

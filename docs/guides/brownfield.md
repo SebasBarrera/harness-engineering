@@ -18,14 +18,27 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    the run starts. Uncommitted changes that already exist are part of the baseline and stay out of
    the ChangeSet. Only files the run owns count: the patch paths in `patch` mode, or
    `metadata.ownedPaths` for an external agent. If neither is declared, every file that changes
-   during the run is included.
+   during the run is included. `harness init` keeps the tree clean: in a Git repository it writes
+   its `.harness/` entry to `.git/info/exclude`, which Git reads like a `.gitignore` but which is
+   not part of the tree, so the first run's dirty-tree check (`environment.dirtyTree`) finds
+   nothing caused by init (issue #86). An entry already in `.gitignore` is left as it is;
+   `harness init --ignore-file gitignore` writes the `.gitignore` instead (a change to commit).
 2. **Install the project's test dependencies where the harness runs.** Validators run the
    project's own commands (`python -m pytest`, `npm test`) with the interpreter or tools found on
-   `PATH`. A missing test dependency is not detected in advance: the tests fail to collect.
+   `PATH`; under `toolchain.interpreter: auto` (written by `harness init` since 2.0) the Python
+   validators use the project's `.venv` or `venv`, `uv run --no-sync` or `poetry run` instead. A
+   project whose commands differ declares its own validators under `toolchain.validators` (see
+   [project toolchain](../reference/configuration.md#project-toolchain)). A missing test
+   dependency is not detected in advance: the tests fail to collect.
 3. **The baseline may already be broken.** The harness does not yet tell pre-existing failures from
    introduced ones (the `PREEXISTING_ERROR` status exists but is never assigned, issue #7). The
    evidence shows which files failed, so you can see that they are outside the ChangeSet.
-4. **Respect the existing conventions.** Detection is read-only: the weights of the marker files
+4. **Large repositories.** Since 2.0 `harness init` writes `workspace.snapshot: git`,
+   `workspace.baseline: manifest` and `workspace.snapshotCache: true`: files that `.gitignore`
+   excludes are never read or stored, the baseline is a manifest of digests, and unchanged files
+   are not hashed again. See [large repositories](../reference/configuration.md#large-repositories)
+   for the measurement on 10,001 files.
+5. **Respect the existing conventions.** Detection is read-only: the weights of the marker files
    found are added up to a confidence of at most 1.0 and reported with the files as evidence. Lock
    files (`package-lock.json`, `pnpm-lock.yaml`, `yarn.lock`) add to the Node.js confidence, but the
    profile always runs `npm`; its `ambiguousPackageManager` policy is declared and not enforced. If
@@ -155,6 +168,16 @@ plain `APPROVE` was refused with exit 5 and the run was closed with `APPROVE_EXC
 Since 0.9.0 the latest attempt of each validator counts. The rest of the case is unchanged: the same
 exit codes for `run start` (6) and `run continue` (4), 298 tests, the same ChangeSet digest and the
 same number of events. The tag `v0.8.0` keeps the evaluated behavior.
+
+The figures above were recorded before `harness init` enabled the requirement-traceability check
+(`verification.requirementTraceability: enforce`, see the
+[configuration reference](../reference/configuration.md#requirement-traceability)). With it,
+`VERIFICATION` also records a `traceability.requirements` result and its evidence on each attempt,
+so the number of events is higher than 46; that count has not been re-recorded (the case needs
+network access). The requirement of `task.yaml` is identified by its `requirementId`,
+`base64_decode_rejects_non_ascii`, which the added test names
+(`test_base64_decode_rejects_non_ascii`), so the requirement is traced, the gate is not affected
+and the patch, and therefore the ChangeSet digest, is unchanged.
 
 ## Checklist for your own repository
 

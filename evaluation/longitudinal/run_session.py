@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""One longitudinal session: the same five increments of a small library, built either with
-one-line casual prompts (baseline) or with structured tasks through the harness (harness).
+"""One longitudinal session: the same five increments of a small library, built with one-line
+casual prompts (baseline), with the structured tasks sent directly to the agent (structured), or
+with the structured tasks through the harness (harness). The structured condition receives exactly
+the prompt that the harness adapter builds from the task, so it isolates the effect of the harness
+from the effect of structuring the task.
 
 After every increment an external oracle (the hidden tests of the parts delivered so far) plays the
 user who notices defects: if checks fail, a fix request with the bug report of each failing check
@@ -29,7 +32,7 @@ import yaml
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from agentlib import run_claude  # noqa: E402
+from agentlib import build_prompt, run_claude  # noqa: E402
 from measure import _bandit, _ruff  # noqa: E402
 from run_eval import git, run_harness  # noqa: E402
 
@@ -144,7 +147,7 @@ def final_measures(workspace: Path, scratch: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
+    parser.add_argument("--condition", choices=["baseline", "structured", "harness"], required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
@@ -168,6 +171,9 @@ def main() -> int:
         step: dict[str, Any] = {"increment": increment["id"], "kind": kind}
         if args.condition == "baseline":
             run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
+        elif args.condition == "structured":
+            prompt = build_prompt({"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})})
+            run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
         else:
             task_file = run_dir / f"task-{increment['id']}-{kind}.yaml"
             task_file.write_text(yaml.safe_dump({"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})},

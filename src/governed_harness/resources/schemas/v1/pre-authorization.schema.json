@@ -1,0 +1,157 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/pre-authorization.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "An approval a person gives in advance, when they confirm the operational contract\n(#58, item 3). It is a human decision recorded before the ChangeSet exists, bound to the\ncontract digest of the run and to a condition: the automatic gate passed, the ChangeSet has\nno risk factor and the task is size ``S``. At DECISION the harness records the approval on\nthe person's behalf only when every condition holds, the contract digest is unchanged and\nthe pre-authorisation has not expired; otherwise the person is asked as usual.",
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/Actor"
+    },
+    "authorizedAt": {
+      "format": "date-time",
+      "title": "Authorizedat",
+      "type": "string"
+    },
+    "conditions": {
+      "default": [
+        "gatePassed",
+        "noRiskFactors",
+        "sizeS"
+      ],
+      "items": {
+        "enum": [
+          "gatePassed",
+          "noRiskFactors",
+          "sizeS"
+        ],
+        "type": "string"
+      },
+      "title": "Conditions",
+      "type": "array"
+    },
+    "contractDigest": {
+      "title": "Contractdigest",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "expiresAt": {
+      "format": "date-time",
+      "title": "Expiresat",
+      "type": "string"
+    },
+    "identitySource": {
+      "anyOf": [
+        {
+          "enum": [
+            "explicit",
+            "git",
+            "fallback",
+            "default"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Identitysource"
+    },
+    "preAuthorizationId": {
+      "title": "Preauthorizationid",
+      "type": "string"
+    },
+    "rationale": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "taskDigest": {
+      "title": "Taskdigest",
+      "type": "string"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "preAuthorizationId",
+    "executionId",
+    "taskId",
+    "actor",
+    "contractDigest",
+    "taskDigest",
+    "rationale",
+    "expiresAt"
+  ],
+  "title": "PreAuthorization",
+  "type": "object"
+}

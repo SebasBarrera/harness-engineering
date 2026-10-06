@@ -1,0 +1,40 @@
+profileVersion: '1.0'
+profileId: rust_default
+technology: rust
+detectors:
+  - marker: Cargo.toml
+    weight: 0.80
+  - marker: Cargo.lock
+    weight: 0.20
+defaultCommands:
+  test: [cargo, test, --quiet]
+  lint: [cargo, clippy, --quiet]
+  typecheck: [cargo, check, --quiet]
+defaultValidators:
+  - rust.test
+  - rust.check
+  - rust.clippy
+validators:
+  - id: rust.test
+    command: [cargo, test, --quiet]
+    mandatory: true
+    timeoutSeconds: 1800
+  - id: rust.check
+    command: [cargo, check, --quiet]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 900
+  - id: rust.clippy
+    command: [cargo, clippy, --quiet]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 900
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['src/**', 'tests/**', 'benches/**', 'examples/**', 'Cargo.toml', 'Cargo.lock']
+  process.execute: [cargo]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

@@ -23,9 +23,18 @@ so they can be rotated or removed before they are discussed publicly.
 The harness enforces **application-level** controls: capabilities, path containment, shell-free
 process execution, bounded output, redaction, digest-bound decisions. It does not isolate the
 processes it launches. An authorized command runs with the file-system, network, CPU and memory
-permissions of the operating-system user. The local API and dashboard have no authentication and
-must stay on loopback. Run untrusted repositories, agents or plugins only inside a container, VM or
+permissions of the operating-system user. The local API and dashboard authenticate requests with
+a local bearer token only when `project.yaml` has the `api` section (written by `harness init`
+since 2.0, #18); without it they have no authentication, as in 1.0.0. In both cases they must stay
+on loopback. Run untrusted repositories, agents or plugins only inside a container, VM or
 comparable OS-level sandbox. The model below details what is and is not enforced.
+
+One OS-level control exists, for agent providers only: with `runtime.agentSandbox: enforce` (written
+by `harness init`) a command provider runs under `sandbox-exec` (macOS) or `bwrap` (Linux) and
+cannot **write** outside the workspace, `$TMPDIR` and the declared `runtime.sandboxWritePaths`; on a
+host without either tool `IMPLEMENTATION` is blocked instead (#34). It does not restrict reads,
+network access or process execution, and validators and the simulated provider are not wrapped.
+See [agent sandbox](docs/reference/configuration.md#agent-sandbox).
 
 ## Repository supply chain
 
@@ -73,12 +82,17 @@ The implementation distinguishes authorization logic from strong containment.
 - Any later owned-path change invalidates the approval.
 - Retrospective recommendations cannot apply themselves.
 - External plugin output must be a single schema-valid response correlated to the request ID.
+- With `runtime.agentSandbox: enforce`, command-provider processes cannot write outside the
+  workspace, `$TMPDIR` and the declared write paths (`sandbox-exec` on macOS, `bwrap` on Linux);
+  without a mechanism the provider is not started. The profile digest and the allowed paths are
+  recorded as `IMPLEMENTATION` evidence.
 
 ### Not enforced by the local process runner
 
 The local runner is **not an OS sandbox**. Once a native process is launched, capability metadata alone cannot technically prevent that process from:
 
-- accessing files permitted by the operating-system user but outside the workspace;
+- accessing files permitted by the operating-system user but outside the workspace (for an agent
+  provider under `agentSandbox: enforce`, reading them; writes are denied);
 - opening network connections;
 - spawning additional processes;
 - consuming CPU or memory beyond Python-level time/output controls;
@@ -96,7 +110,33 @@ Therefore:
 
 `APPROVE` is rejected when the gate itself failed because of blocking findings. `APPROVE_EXCEPTION` is a distinct, auditable decision and still requires the exact current digest and rationale. Exceptions do not rewrite policy or alter historical evidence.
 
-The current local decision API has no authentication. It is designed only for loopback use during research. Production adoption requires authenticated identity, authorization, CSRF protection, audit retention and transport security.
+### Local API authentication
+
+With the `api` section of `project.yaml` (#18) every route of `harness api serve`, the dashboard
+included, requires `Authorization: Bearer TOKEN`, compared in constant time; each token maps to a
+person (an actor id) with a role: `viewer` (read), `reviewer` (also decide) or `admin` (also read
+the configuration). Tokens live in environment variables named by the section, never in the file.
+The start token is generated with `secrets` when its variable is not set and is shown once on
+standard error; tokens are not logged or written to events, artifacts, the audit log or error
+messages, and their values are redacted from artifacts. The authenticated person is the recorded
+decider, and each API decision is appended to `.harness/audit/api-decisions.jsonl` without the
+token. See [the API reference](docs/reference/api.md#authentication-and-roles).
+
+This authentication is **local**, not a security boundary for a network service:
+
+- the server speaks plain HTTP, so a token sent over a network can be read; keep
+  `--host 127.0.0.1` (a non-loopback host prints a warning);
+- the harness is **not a sandbox for the API host**: anyone who can run commands as the OS user
+  that runs the server can read the environment, `project.yaml`, the run database and the audit
+  log directly, and record decisions with the CLI;
+- the audit log is append-only by convention (the file is opened for appending, mode 0600), not
+  tamper-evident;
+- a project without the `api` section (or with `api.auth: off`) serves **without authentication**,
+  as in 1.0.0: any process that reaches the port can read every run and record a decision under
+  any actor id outside the agent, validator and harness namespaces.
+
+Production adoption would still require transport security (TLS), an identity provider, token
+rotation and audit retention.
 
 ### Secret handling
 

@@ -25,8 +25,13 @@ is now a plain `APPROVE` instead of an `APPROVE_EXCEPTION` (see the
 [brownfield guide](guides/brownfield.md)). `v1.0.0` adds, after the evaluation, governed memory
 operations, decisions on retrospective recommendations and the usage reported by agent providers
 (see [memory and retrospective decisions](guides/memory.md)); with no memory records the run path
-is the evaluated one. The remaining defects are tracked in the milestone
-*backlog — thesis-impact*.
+is the evaluated one. `v2.0.0` adds the governance found missing by that evaluation and by use on
+real projects: clarification and criteria at intake, independent acceptance tests, a verification
+ladder with certification, a review panel with layered rule catalogs, capabilities per phase,
+an agent write sandbox, stop the line, routing anchored at the invoking model, low-friction small
+changes, local metrics, forges and embedded mode (see the [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md)).
+Every new behaviour sits behind a configuration key that `harness init` writes. The evaluation of
+`v2.0.0` is tracked in issue #70. The milestone *backlog — thesis-impact* has no open defects.
 
 ## Snapshot reported for the evaluated cut
 

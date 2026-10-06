@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+.harness/
+_hidden_eval/
+*.db
+*.sqlite

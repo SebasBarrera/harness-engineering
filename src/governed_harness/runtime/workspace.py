@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import difflib
 import os
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -23,12 +23,54 @@ DEFAULT_EXCLUDES = {
 }
 
 
+NO_NEWLINE_MARKER = "\\ No newline at end of file\n"
+
+
+def unified_file_diff(
+    path: str, old_text: str, new_text: str, *, added: bool = False, deleted: bool = False
+) -> list[str]:
+    """The unified diff of one text file as lines that each end with a newline, in the form
+    ``git apply`` and ``patch`` read: an added file is diffed from ``/dev/null`` and a deleted
+    one to it, and a last line without a newline is followed by the ``\\ No newline at end of
+    file`` marker.
+
+    Before 2.0 the lines were joined with an extra newline (every line was followed by an empty
+    line), so ChangeSet diffs recorded by earlier versions are not valid patches; their digests
+    stay as recorded."""
+    lines: list[str] = []
+    for line in difflib.unified_diff(
+        _text_lines(old_text),
+        _text_lines(new_text),
+        fromfile="/dev/null" if added else f"a/{path}",
+        tofile="/dev/null" if deleted else f"b/{path}",
+    ):
+        if line.endswith("\n"):
+            lines.append(line)
+        else:
+            lines.extend((line + "\n", NO_NEWLINE_MARKER))
+    return lines
+
+
+def _text_lines(text: str) -> list[str]:
+    # Split on newlines only, as Git does: str.splitlines also breaks on form feeds, vertical
+    # tabs and other separators, which would make the hunks disagree with the file.
+    parts = text.split("\n")
+    return [part + "\n" for part in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
 @dataclass(frozen=True)
 class FileState:
     path: str
     digest: str
     size_bytes: int
     text: str | None
+    text_loaded: bool = True
+    """False when ``text`` was not read (a manifest snapshot): the diff asks its text resolver
+    for the text of a changed file only."""
+
+
+TextResolver = Callable[[str, FileState], str | None]
+"""(side, state) -> the text of a file whose text was not loaded; side is before or after."""
 
 
 @dataclass(frozen=True)
@@ -89,7 +131,13 @@ class WorkspaceSnapshotter:
         digest = sha256_json({path: state.digest for path, state in sorted(states.items())})
         return WorkspaceSnapshot(files=states, digest=digest)
 
-    def diff(self, before: WorkspaceSnapshot, after: WorkspaceSnapshot) -> WorkspaceDiff:
+    def diff(
+        self,
+        before: WorkspaceSnapshot,
+        after: WorkspaceSnapshot,
+        *,
+        resolve_text: TextResolver | None = None,
+    ) -> WorkspaceDiff:
         paths = sorted(set(before.files) | set(after.files))
         changes: list[WorkspaceChange] = []
         diff_chunks: list[str] = []
@@ -106,19 +154,11 @@ class WorkspaceSnapshotter:
                 status = "MODIFIED"
             additions = deletions = 0
             # A missing side diffs as empty text; a present binary side (text None) is not diffed.
-            old_text = "" if old is None else old.text
-            new_text = "" if new is None else new.text
+            old_text = "" if old is None else self._text("before", old, resolve_text)
+            new_text = "" if new is None else self._text("after", new, resolve_text)
             if old_text is not None and new_text is not None:
-                old_lines = old_text.splitlines(keepends=True)
-                new_lines = new_text.splitlines(keepends=True)
-                chunk = list(
-                    difflib.unified_diff(
-                        old_lines,
-                        new_lines,
-                        fromfile=f"a/{path}",
-                        tofile=f"b/{path}",
-                        lineterm="",
-                    )
+                chunk = unified_file_diff(
+                    path, old_text, new_text, added=old is None, deleted=new is None
                 )
                 for line in chunk:
                     if line.startswith("+") and not line.startswith("+++"):
@@ -126,7 +166,7 @@ class WorkspaceSnapshotter:
                     elif line.startswith("-") and not line.startswith("---"):
                         deletions += 1
                 if chunk:
-                    diff_chunks.append("\n".join(chunk) + "\n")
+                    diff_chunks.append("".join(chunk))
             else:
                 diff_chunks.append(f"Binary files differ: {path}\n")
             changes.append(
@@ -148,13 +188,38 @@ class WorkspaceSnapshotter:
         )
         return WorkspaceDiff(tuple(changes), unified, digest)
 
+    def _text(self, side: str, state: FileState, resolve: TextResolver | None) -> str | None:
+        if state.text_loaded:
+            return state.text
+        if resolve is not None:
+            return resolve(side, state)
+        if side == "after":
+            path = self.root / state.path
+            try:
+                data = path.read_bytes()
+            except OSError:
+                return None
+            # A file that changed again since the snapshot is diffed as binary rather than with
+            # a text that does not match its recorded digest.
+            return (
+                decode_text(data, self.max_text_bytes)
+                if sha256_bytes(data) == state.digest
+                else None
+            )
+        return None
+
     def _read_text(self, path: Path, size: int) -> str | None:
         if size > self.max_text_bytes:
             return None
-        data = path.read_bytes()
-        if b"\x00" in data:
-            return None
-        try:
-            return data.decode("utf-8")
-        except UnicodeDecodeError:
-            return None
+        return decode_text(path.read_bytes(), self.max_text_bytes)
+
+
+def decode_text(data: bytes, max_text_bytes: int = 2_000_000) -> str | None:
+    """The text of a file's bytes as the ChangeSet diff reads it: ``None`` for a file larger
+    than ``max_text_bytes``, with a NUL byte or that is not UTF-8 (diffed as binary)."""
+    if len(data) > max_text_bytes or b"\x00" in data:
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError:
+        return None

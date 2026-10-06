@@ -12,6 +12,7 @@ from governed_harness.domain.enums import (
     ResultStatus,
     ValidationKind,
 )
+from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     Actor,
@@ -21,8 +22,9 @@ from governed_harness.domain.models import (
     ToolInvocation,
     ValidationResult,
 )
-from governed_harness.runtime.process_runner import CommandSpec
+from governed_harness.runtime.process_runner import CommandSpec, ProcessResult
 from governed_harness.validators.base import ValidationContext, ValidatorOutput
+from governed_harness.validators.parsers import MAX_ISSUES, parse_output, report_files
 
 # Exits with _MODULE_MISSING_EXIT_CODE when the module named in argv[1] cannot be found.
 _MODULE_MISSING_EXIT_CODE = 3
@@ -60,7 +62,7 @@ class CommandValidator:
                 status=status,
                 kind=(
                     ValidationKind.CONFIGURATION_ERROR
-                    if status is ResultStatus.BLOCKED
+                    if status in {ResultStatus.BLOCKED, ResultStatus.FAILED}
                     else ValidationKind.INCONCLUSIVE
                 ),
                 mandatory=context.definition.mandatory,
@@ -71,12 +73,15 @@ class CommandValidator:
                 provenance=context.provenance.model_copy(update={"actor": actor}),
             )
             return ValidatorOutput(result)
-        assert context.definition.command is not None
+        command = context.definition.command
+        if command is None:  # not reached: _availability blocks a validator without a command
+            raise ConfigurationError(f"validator {self.validator_id} has no configured command")
         process = context.process_runner.run(
             CommandSpec(
-                argv=context.definition.command,
+                argv=command,
                 cwd=context.workspace,
                 timeout_seconds=float(context.definition.timeout_seconds or 900),
+                allowed_environment=context.definition.pass_env or (),
                 max_output_bytes=context.max_output_bytes,
             ),
             actor=actor,
@@ -96,7 +101,7 @@ class CommandValidator:
         report = context.artifact_store.put_json(
             {
                 "validatorId": self.validator_id,
-                "argv": list(context.definition.command),
+                "argv": list(command),
                 "exitCode": process.exit_code,
                 "status": process.status,
                 "durationMs": process.duration_ms,
@@ -115,7 +120,7 @@ class CommandValidator:
             phase_id=PhaseId.VERIFICATION,
             actor=actor,
             tool_id=self.validator_id,
-            argv=context.definition.command,
+            argv=command,
             cwd=".",
             started_at=started,
             finished_at=datetime.now(UTC),
@@ -155,9 +160,10 @@ class CommandValidator:
                 validator_id=self.validator_id,
                 rule_id=f"{self.validator_id}.failed",
                 category="validation",
-                severity=FindingSeverity.HIGH
-                if context.definition.mandatory
-                else FindingSeverity.MEDIUM,
+                severity=context.definition.failure_severity
+                or (
+                    FindingSeverity.HIGH if context.definition.mandatory else FindingSeverity.MEDIUM
+                ),
                 message=summary,
                 location=FindingLocation(),
                 evidence_refs=(report.uri, stdout.uri, stderr.uri),
@@ -165,7 +171,7 @@ class CommandValidator:
                 introduced=None,
                 provenance=context.provenance.model_copy(update={"actor": actor}),
             )
-            findings = (finding,)
+            findings = (finding, *self._parsed_findings(context, process, finding, actor))
         result = ValidationResult(
             validation_result_id=new_id("validation"),
             execution_id=context.execution_id,
@@ -185,10 +191,86 @@ class CommandValidator:
         )
         return ValidatorOutput(result, findings, (tool,))
 
+    def _parsed_findings(
+        self, context: ValidationContext, process: ProcessResult, summary: Finding, actor: Actor
+    ) -> list[Finding]:
+        """One finding per problem the tool reported, when ``verification.outputParsers`` is on.
+
+        Errors keep the severity of the summary finding (so the gate outcome is the one the
+        summary already decides) and warnings are ``LOW``; the rule is
+        ``<validator>.<tool rule>``."""
+        parser = context.definition.parser
+        if parser is None:
+            if not context.parse_output:
+                return []
+            parser = "auto"
+        if parser == "none":
+            return []
+        reports = []
+        for path in report_files(context.definition.command or (), context.workspace):
+            try:
+                reports.append(path.read_text(encoding="utf-8", errors="replace"))
+            except OSError:
+                continue
+        issues = parse_output(
+            process.stdout.decode("utf-8", "replace"),
+            process.stderr.decode("utf-8", "replace"),
+            context.workspace,
+            tuple(reports),
+            parser,
+        )
+        severities = {
+            "error": summary.severity,
+            "warning": FindingSeverity.LOW,
+            "note": FindingSeverity.INFO,
+            **(context.definition.severity or {}),
+        }
+        findings = [
+            Finding(
+                finding_id=new_id("finding"),
+                execution_id=context.execution_id,
+                validator_id=self.validator_id,
+                rule_id=f"{self.validator_id}.{issue.rule}",
+                category="validation",
+                severity=severities[issue.level],
+                message=context.artifact_store.redactor.redact_configured_text(issue.message),
+                location=FindingLocation(
+                    path=issue.path,
+                    start_line=issue.line,
+                    end_line=issue.end_line or issue.line,
+                ),
+                evidence_refs=summary.evidence_refs,
+                recommendation=f"Reported by {issue.tool or self.validator_id}; fix it at the "
+                "location shown.",
+                introduced=None,
+                provenance=context.provenance.model_copy(update={"actor": actor}),
+            )
+            for issue in issues[:MAX_ISSUES]
+        ]
+        if len(issues) > MAX_ISSUES:
+            findings.append(
+                Finding(
+                    finding_id=new_id("finding"),
+                    execution_id=context.execution_id,
+                    validator_id=self.validator_id,
+                    rule_id=f"{self.validator_id}.more-issues",
+                    category="validation",
+                    severity=FindingSeverity.INFO,
+                    message=f"{len(issues) - MAX_ISSUES} more reported problem(s) were not "
+                    "recorded as findings; see the stored output",
+                    location=FindingLocation(),
+                    evidence_refs=summary.evidence_refs,
+                    provenance=context.provenance.model_copy(update={"actor": actor}),
+                )
+            )
+        return findings
+
     def _availability(
         self, context: ValidationContext, actor: Actor
     ) -> tuple[ResultStatus, str] | None:
         definition = context.definition
+        missing_command = context.missing_command_status or ResultStatus.BLOCKED
+        missing_script = context.missing_script_status or ResultStatus.BLOCKED
         if definition.command is None:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"validator {self.validator_id} has no configured command"
@@ -200,20 +282,16 @@ class CommandValidator:
             except (OSError, json.JSONDecodeError):
                 scripts = {}
             if definition.script not in scripts:
-                status = (
-                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                )
+                status = missing_script if definition.mandatory else ResultStatus.NOT_APPLICABLE
                 return status, f"package script {definition.script!r} is not defined"
         argv0 = definition.command[0]
         if shutil.which(argv0) is None:
-            status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
+            status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
         if len(definition.command) >= 3 and definition.command[1] == "-m":
             module = definition.command[2]
             if not self._module_available(context, actor, argv0, module):
-                status = (
-                    ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                )
+                status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
                 kind = "mandatory" if definition.mandatory else "optional"
                 return status, f"{kind} Python module {module!r} is not installed for {argv0!r}"
         return None

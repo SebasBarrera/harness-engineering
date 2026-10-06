@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from governed_harness.agents.base import AgentContext, AgentExecutionResult
+from governed_harness.agents.base import AgentCallResult, AgentContext, AgentExecutionResult
+from governed_harness.agents.requests import CallKind
 from governed_harness.domain.enums import ActorType, ErrorKind, PhaseId, ResultStatus
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
@@ -38,6 +39,69 @@ class SimulatedAgentContext:
     cancellation: CancellationToken
     context_manifest_ref: str | None = None
     memory_context: dict[str, Any] | None = None
+    feedback: dict[str, Any] | None = None
+    """Serialized ``ProviderFeedback`` for a correction attempt; ``None`` on a first attempt."""
+    request_extra: dict[str, Any] | None = None
+    """Keys the agent-results settings add to the provider request (``None``: the 1.0 form)."""
+
+
+def _call_result(kind: CallKind, request: dict[str, Any]) -> dict[str, Any]:
+    """The deterministic answer of a read-only request kind."""
+    if kind == "clarify":
+        return {"questions": []}
+    if kind == "review" and "outputContract" in request:
+        # A reviewer of the review panel (#57) answers with its output contract.
+        return {"verdict": "PASS", "findings": [], "summary": "Simulated review: no finding."}
+    if kind == "review":
+        return {"findings": []}
+    if kind == "acceptance":
+        return {"tests": []}
+    if kind == "locate":
+        return {"locations": [], "questions": []}
+    if kind == "architecture":
+        # No layering inferred and no option proposed: nothing waits for a person (#56).
+        if request.get("mode") == "advise":
+            return {"options": []}
+        return {
+            "style": "custom",
+            "summary": "Simulated survey: no layering was inferred.",
+            "layers": [],
+            "allow": {},
+        }
+    if kind == "plan":
+        return _plan_result(request)
+    return {}
+
+
+def _plan_result(request: dict[str, Any]) -> dict[str, Any]:
+    """The requirements in order, in sub-tasks of at most ``threshold`` requirements; the
+    acceptance criteria go to the last one."""
+    task = request.get("task") or {}
+    requirement_ids = [
+        str(item.get("requirement_id"))
+        for item in task.get("requirements") or []
+        if isinstance(item, dict)
+    ]
+    size = max(1, int(request.get("threshold") or len(requirement_ids) or 1))
+    groups = [
+        requirement_ids[index : index + size] for index in range(0, len(requirement_ids), size)
+    ] or [[]]
+    criteria = [
+        str(item.get("criterion_id"))
+        for item in task.get("acceptance_criteria") or []
+        if isinstance(item, dict)
+    ]
+    return {
+        "subtasks": [
+            {
+                "title": f"Part {number} of {len(groups)}",
+                "requirements": group,
+                "criteria": criteria if number == len(groups) else [],
+                "constraints": [],
+            }
+            for number, group in enumerate(groups, start=1)
+        ]
+    }
 
 
 class SimulatedAgentProvider:
@@ -164,3 +228,45 @@ class SimulatedAgentProvider:
         return AgentExecutionResult(
             status, summary, invocation, tuple(tool_invocations), output_ref.uri
         )
+
+    def call(
+        self,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: AgentContext,
+        *,
+        phase_id: PhaseId,
+    ) -> AgentCallResult:
+        """Deterministic answers to the read-only request kinds: no clarification question, no
+        review finding, and a plan that splits the requirements in order into sub-tasks of at
+        most ``threshold`` requirements (the acceptance criteria go to the last one)."""
+        actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
+        started = datetime.now(UTC)
+        result = _call_result(kind, request)
+        output_ref = context.artifact_store.put_json(
+            {"kind": kind, "result": result},
+            metadata={"kind": "agent-output", "provider": self.provider_id},
+        )
+        invocation = AgentInvocation(
+            invocation_id=new_id("agentinv"),
+            execution_id=context.execution_id,
+            phase_id=phase_id,
+            actor=actor,
+            provider=self.provider_id,
+            model="deterministic-v1",
+            started_at=started,
+            finished_at=datetime.now(UTC),
+            status=ResultStatus.PASSED,
+            prompt_digest=sha256_json(request),
+            context_manifest_ref=context.context_manifest_ref,
+            output_ref=output_ref.uri,
+            call_kind=kind,
+        )
+        execution = AgentExecutionResult(
+            ResultStatus.PASSED,
+            f"Simulated {kind} answer",
+            invocation,
+            (),
+            output_ref.uri,
+        )
+        return AgentCallResult(execution, result)

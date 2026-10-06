@@ -4,16 +4,17 @@ import contextlib
 import os
 import shutil
 import signal
-import subprocess
+import subprocess  # nosec B404 - the governed runner: resolved executable, no shell
 import threading
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO
+from typing import IO, Protocol
 
 from governed_harness.capabilities.authorizer import (
     CapabilityAuthorizer,
+    CapabilityDenied,
     contained_path,
 )
 from governed_harness.domain.enums import ResultStatus
@@ -29,6 +30,9 @@ class CommandSpec:
     allowed_environment: tuple[str, ...] = ()
     max_output_bytes: int = 1_000_000
     stdin: bytes | None = None
+    sandbox_prefix: tuple[str, ...] = ()
+    """Confinement wrapper (``runtime.agentSandbox``) placed before ``argv`` after authorization:
+    the capability grant applies to the command itself, the wrapper is the harness's own."""
 
 
 @dataclass(frozen=True)
@@ -96,12 +100,56 @@ def _write_stdin(stream: IO[bytes], data: bytes) -> None:
         stream.close()
 
 
+class ProcessObserver(Protocol):
+    """Told about every process the runner starts and finishes (``governance.workspaceLease``
+    records the process groups so that a recovery can terminate what a killed harness left)."""
+
+    def started(self, pid: int, argv: tuple[str, ...]) -> None: ...
+
+    def finished(self, pid: int) -> None: ...
+
+
 class SafeProcessRunner:
     def __init__(
-        self, workspace_root: Path, authorizer: CapabilityAuthorizer | None = None
+        self,
+        workspace_root: Path,
+        authorizer: CapabilityAuthorizer | None = None,
+        *,
+        observer: ProcessObserver | None = None,
+        terminate_on_exit: bool = False,
     ) -> None:
+        """``terminate_on_exit``: when the harness itself is interrupted while it waits
+        (``KeyboardInterrupt``, or ``SystemExit`` from a ``SIGTERM`` handler), terminate the
+        child's process group before the exception propagates."""
         self.workspace_root = workspace_root.resolve(strict=True)
         self.authorizer = authorizer or CapabilityAuthorizer()
+        self.observer = observer
+        self.terminate_on_exit = terminate_on_exit
+
+    def _authorize(self, spec: CommandSpec, actor: Actor, grants: list[CapabilityGrant]) -> Path:
+        """Check the command against the grants and the policies before it starts; returns the
+        working directory, contained in the workspace."""
+        if not spec.argv or any("\x00" in part for part in (*spec.argv, *spec.sandbox_prefix)):
+            raise ValueError("argv must be a non-empty, NUL-free vector")
+        try:
+            self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
+        except CapabilityDenied as error:
+            from governed_harness.capabilities.phase import current_policy
+
+            policy = current_policy()
+            if policy is not None:
+                # governance.phaseCapabilities (#87): an agent's refused command is a finding
+                # and blocks the phase.
+                policy.refuse(actor, spec.argv, error)
+            raise
+        cwd = contained_path(self.workspace_root, spec.cwd)
+        from governed_harness.capabilities.repository import current_destructive
+
+        destructive = current_destructive()
+        if destructive is not None:
+            # governance.applyRepositoryPolicies, destructiveActionsDefault: deny (#5).
+            destructive.check(spec.argv, cwd, actor, grants)
+        return cwd
 
     def run(
         self,
@@ -112,14 +160,11 @@ class SafeProcessRunner:
         extra_env: Mapping[str, str] | None = None,
         cancellation: CancellationToken | None = None,
     ) -> ProcessResult:
-        if not spec.argv or any("\x00" in part for part in spec.argv):
-            raise ValueError("argv must be a non-empty, NUL-free vector")
-        self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
-        cwd = contained_path(self.workspace_root, spec.cwd)
+        cwd = self._authorize(spec, actor, grants)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
-        process = subprocess.Popen(
-            [resolve_executable(spec.argv[0]), *spec.argv[1:]],
+        process = subprocess.Popen(  # nosec B603 - executable resolved and checked by policy, shell=False
+            [*spec.sandbox_prefix, resolve_executable(spec.argv[0]), *spec.argv[1:]],
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if spec.stdin is not None else subprocess.DEVNULL,
@@ -128,7 +173,33 @@ class SafeProcessRunner:
             shell=False,
             start_new_session=os.name != "nt",
         )
-        assert process.stdout is not None and process.stderr is not None
+        if self.observer is not None:
+            self.observer.started(process.pid, spec.argv)
+        try:
+            return self._wait(process, spec, start, cancellation)
+        except BaseException:
+            if self.terminate_on_exit:
+                self._terminate(process)
+                if os.name != "nt":
+                    # The leader may be gone while its children still run in its group.
+                    with contextlib.suppress(ProcessLookupError, PermissionError):
+                        os.killpg(process.pid, signal.SIGKILL)
+                with contextlib.suppress(subprocess.TimeoutExpired):
+                    process.wait(timeout=_READER_JOIN_SECONDS)
+            raise
+        finally:
+            if self.observer is not None and process.poll() is not None:
+                self.observer.finished(process.pid)
+
+    def _wait(
+        self,
+        process: subprocess.Popen[bytes],
+        spec: CommandSpec,
+        start: float,
+        cancellation: CancellationToken | None,
+    ) -> ProcessResult:
+        if process.stdout is None or process.stderr is None:  # not reached: both are pipes
+            raise RuntimeError("the process was started without its output pipes")
         # Read both streams while the process runs and keep at most max_output_bytes of each;
         # the rest is drained and discarded, so memory stays bounded whatever the output size.
         readers = [
@@ -139,7 +210,8 @@ class SafeProcessRunner:
             reader.start()
         writer = None
         if spec.stdin is not None:
-            assert process.stdin is not None
+            if process.stdin is None:  # not reached: stdin is a pipe when there is input
+                raise RuntimeError("the process was started without its input pipe")
             writer = threading.Thread(
                 target=_write_stdin, args=(process.stdin, spec.stdin), daemon=True
             )
@@ -205,13 +277,12 @@ class SafeProcessRunner:
                 os.killpg(process.pid, signal.SIGTERM)
             process.wait(timeout=1.0)
         except (ProcessLookupError, subprocess.TimeoutExpired):
-            try:
+            # Still running after SIGTERM: kill it; a process group that is already gone is fine.
+            with contextlib.suppress(ProcessLookupError):
                 if os.name == "nt":
                     process.kill()
                 else:
                     os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
 
     @staticmethod
     def _environment(spec: CommandSpec, extra_env: Mapping[str, str] | None) -> dict[str, str]:

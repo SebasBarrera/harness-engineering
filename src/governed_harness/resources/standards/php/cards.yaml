@@ -1,0 +1,41 @@
+pack: php
+title: PHP
+cards:
+  - id: php.strict-types
+    title: Strict types and typed signatures
+    rule: Start every file with declare(strict_types=1) and type every parameter, return value and property.
+    rationale: Coercion hides wrong arguments; types let PHPStan check the code.
+    appliesTo: ["**/*.php"]
+    verifiedBy: ["phpstan:missingType.parameter", "phpstan:missingType.return", "review"]
+  - id: php.prepared-statements
+    title: Prepared statements only
+    rule: Query databases with prepared statements or the query builder; never concatenate input into SQL.
+    rationale: String-built SQL is injectable.
+    appliesTo: ["**/*.php"]
+    verifiedBy: ["review"]
+  - id: php.escape-output
+    title: Escape output for its context
+    rule: Escape every value rendered into HTML, attributes, JavaScript or URLs with the template engine's escaping.
+    rationale: Unescaped output is cross-site scripting.
+    appliesTo: ["**/*.php", "**/*.twig", "**/*.blade.php"]
+    verifiedBy: ["review"]
+  - id: php.psr12
+    title: PSR-12 style
+    rule: Follow PSR-12 as the repository's formatter enforces it; do not reformat untouched code.
+    rationale: One style keeps diffs about behaviour.
+    appliesTo: ["**/*.php"]
+    verifiedBy: ["php-cs-fixer:check"]
+    principle: boy-scout
+  - id: php.small-methods
+    title: Small methods, injected dependencies
+    rule: Keep methods short; receive collaborators through the constructor instead of static calls and global state.
+    rationale: Static coupling prevents testing and substitution.
+    appliesTo: ["**/*.php"]
+    verifiedBy: ["review"]
+    principle: dip
+  - id: php.no-error-suppression
+    title: No error suppression
+    rule: Do not use the @ error-suppression operator or empty catch blocks.
+    rationale: Suppressed errors become silent wrong behaviour.
+    appliesTo: ["**/*.php"]
+    verifiedBy: ["review"]
