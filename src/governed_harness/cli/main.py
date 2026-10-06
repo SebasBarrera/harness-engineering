@@ -2207,23 +2207,178 @@ def exceptions_list(
     )
 
 
-@app.command()
+review_app = typer.Typer(invoke_without_command=True)
+review_rules_app = typer.Typer(help="The review rule catalog and the reviewers' rules blocks")
+review_hook_app = typer.Typer(help="The pre-push hook of the review panel")
+app.add_typer(review_app, name="review")
+review_app.add_typer(review_rules_app, name="rules")
+review_app.add_typer(review_hook_app, name="hook")
+
+PATH_OPTION: Any = typer.Option(
+    default_factory=Path.cwd, show_default="current directory", help="Project directory"
+)
+
+
+@review_app.callback(invoke_without_command=True)
 def review(
+    ctx: typer.Context,
     run: str = RUN_OPTION_LATEST,
     diff: bool = typer.Option(False, "--diff", help="Include the ChangeSet diff (redacted)"),
     json_output: bool | None = JSON_OPTION,
-    path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
-    ),
+    path: Path = PATH_OPTION,
 ) -> None:
     """Show the decision brief of a run: what was asked, what changed, the risks with file and
     line, what was verified on which ChangeSet digest and what was not, active exceptions,
     retries and corrections, what changed since the last decision and the exact decide
-    command. It only reads the record."""
+    command. It only reads the record. The subcommands manage the review panel (#57)."""
+    if ctx.invoked_subcommand is not None:
+        return
     _emit(
         _call(lambda: HarnessApplication().review(path, run, include_diff=diff)),
         json_output,
         kind="review",
+    )
+
+
+@app.command("review-code")
+def review_code(
+    mode: str = typer.Option(
+        "manual",
+        "--mode",
+        help="manual: the branch against its base; hook: the same, fetching the base first (a "
+        "failed fetch aborts); staged: the index against HEAD",
+    ),
+    base: str | None = typer.Option(
+        None,
+        "--base",
+        help="Base branch or commit; default: the pull or merge request base of the CI, the "
+        "branch convention (review.panel.baseBranches), then the default branch",
+    ),
+    head: str = typer.Option("HEAD", "--head", help="The commit to review (manual and hook)"),
+    provider: str | None = typer.Option(
+        None, "--provider", help="Provider of the reviewers (an agentProviders id or simulated)"
+    ),
+    fallback: str | None = typer.Option(
+        None, "--fallback-provider", help="Provider of the one retry after an invalid answer"
+    ),
+    model: str | None = typer.Option(None, "--model", help="Force one model for every reviewer"),
+    skip: list[str] | None = typer.Option(
+        None, "--skip", help="A reviewer id to skip (repeatable)"
+    ),
+    pull_request: int | None = typer.Option(
+        None,
+        "--pull-request",
+        help="Pull or merge request number for the comment (default: from the CI environment)",
+    ),
+    comment: bool | None = typer.Option(
+        None,
+        "--comment/--no-comment",
+        help="Post one comment per passing result on the pull or merge request (default: "
+        "review.panel.comment)",
+    ),
+    cache: bool = typer.Option(True, "--cache/--no-cache", help="Use the review cache"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Review a change with the review panel outside a governed run: reviewers by domain over
+    diff slices, the layered rule catalog, a fixed output contract and a verdict the harness
+    recomputes. Rules a tool verifies never reach a model; reviewers run only on their
+    signals; answers are cached. A passing review is recorded as refs/harness/review/pass/SHA
+    (or pass-warn). Exit code 6 when the verdict is FAIL or UNKNOWN (under review.panel.mode
+    enforce) or when hook mode cannot fetch the base."""
+    result = _call(
+        lambda: HarnessApplication().review_code(
+            path,
+            mode=mode,
+            base=base,
+            head=head,
+            provider=provider,
+            fallback=fallback,
+            model=model,
+            skip=tuple(skip or ()),
+            pull_request=pull_request,
+            comment=comment,
+            cache=cache,
+        )
+    )
+    _emit(result, json_output)
+    if result.get("blocking"):
+        raise typer.Exit(code=6)
+
+
+@review_rules_app.command("show")
+def review_rules_show(path: Path = PATH_OPTION, json_output: bool | None = JSON_OPTION) -> None:
+    """Show the effective review rule catalog: the rules of the three layers (built-in,
+    language packs, project) after precedence and supersedes, the inactive rules and why, the
+    reviewers and the ones whose rules block drifted. Reads only."""
+    _emit(_call(lambda: HarnessApplication().review_rules(path)), json_output)
+
+
+@review_rules_app.command("sync")
+def review_rules_sync(
+    check: bool = typer.Option(
+        False, "--check", help="Only report project reviewers whose rules block drifted (exit 6)"
+    ),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Write the generated rules block of every project reviewer (.harness/review/agents) from
+    the catalog, between its BEGIN and END markers; the only writer of that block. With
+    --check nothing is written and a drift exits with 6."""
+    result = _call(lambda: HarnessApplication().review_rules_sync(path, check=check))
+    _emit(result, json_output)
+    if result["status"] != "PASSED":
+        raise typer.Exit(code=6)
+
+
+@review_app.command("verify")
+def review_verify(
+    sha: str = typer.Option("HEAD", "--sha", help="The commit whose review evidence to check"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Check the review evidence of a commit (refs/harness/review/pass/SHA or pass-warn)
+    without calling any model: the report is bound to the commit, its digest is intact and its
+    diff is the diff between its base and the commit. Exit code 6 when it does not verify."""
+    result = _call(lambda: HarnessApplication().review_verify(path, sha))
+    _emit(result, json_output)
+    if not result.get("valid"):
+        raise typer.Exit(code=6)
+
+
+@review_hook_app.command("install")
+def review_hook_install(
+    force: bool = typer.Option(
+        False, "--force", help="Replace a pre-push hook the harness did not write"
+    ),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Install a pre-push hook that runs harness review-code --mode hook: a FAIL or UNKNOWN
+    verdict, or a base that cannot be fetched, stops the push."""
+    _emit(_call(lambda: HarnessApplication().review_hook_install(path, force=force)), json_output)
+
+
+@review_app.command("variance")
+def review_variance(
+    runs: int = typer.Option(3, "--runs", min=2, max=10, help="Identical reviews to run"),
+    mode: str = typer.Option("manual", "--mode", help="manual or staged"),
+    base: str | None = typer.Option(None, "--base", help="Base branch or commit"),
+    provider: str | None = typer.Option(None, "--provider", help="Provider of the reviewers"),
+    model: str | None = typer.Option(None, "--model", help="Force one model for every reviewer"),
+    path: Path = PATH_OPTION,
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Run the same review several times without cache and report its variance: verdict
+    stability, how often each finding appears and the mean pairwise agreement (Jaccard). Every
+    run calls the reviewers again."""
+    _emit(
+        _call(
+            lambda: HarnessApplication().review_variance(
+                path, runs=runs, mode=mode, base=base, provider=provider, model=model
+            )
+        ),
+        json_output,
     )
 
 

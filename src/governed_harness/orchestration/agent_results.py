@@ -119,6 +119,10 @@ class AgentResults:
         self.gate = GateContract(self)
         self.corrections = Corrections(self)
         self.agent_review = AgentReview(self)
+        # Wave 7 (#57): the review panel replaces the single reviewer under review.panel.
+        from governed_harness.orchestration.review_panel import PanelReview
+
+        self.panel = PanelReview(self)
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
@@ -236,6 +240,7 @@ class AgentResults:
                     review.agent_review is not None
                     or review.reviewer is not None
                     or review.structured_changes is not None
+                    or review.panel is not None
                 ),
                 runtime.gate_contract is not None or runtime.reproduce_first is not None,
                 governance.stop_the_line is not None or governance.phase_permissions is not None,
@@ -245,6 +250,7 @@ class AgentResults:
                 project.memory is not None,
                 project.agent_routing is not None,
                 self.engineering.configured,
+                bool(governance.apply_repository_policies),
             )
         )
 
@@ -667,6 +673,12 @@ class AgentResults:
         }
         request.update(payload)
         request.update(self.request_common(execution, phase, kind, task, provider_id, grants))
+        repository = self.repository_extra(read_only=True)
+        if repository:
+            # #5: the notice and the names of the instruction files, never their directives.
+            request.update(repository)
+            if "untrustedContent" in repository:
+                request["instructions"] += " " + repository["untrustedContent"]["notice"]
         request_ref = self.record_json(
             execution,
             phase.phase_id,
@@ -854,6 +866,14 @@ class AgentResults:
             {**record, "evidenceRef": ref},
             phase_execution_id=phase.phase_execution_id,
         )
+        if decision.warning is not None:
+            # #59: a call kind without its own routing entry runs on the implement rung.
+            self.s.events.append(
+                execution.execution_id,
+                "agent.routing.fallback",
+                {"callKind": kind, "warning": decision.warning, "evidenceRef": ref},
+                phase_execution_id=phase.phase_execution_id,
+            )
         if decision.model is None and decision.effort is None:
             return None
         value: dict[str, Any] = {
@@ -913,6 +933,7 @@ class AgentResults:
             extra["gate"] = self.gate.contract(execution)
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
+        extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
@@ -943,6 +964,25 @@ class AgentResults:
                 + (f" {suffix}" if suffix else ""),
             }
         )
+        return extra
+
+    def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
+        """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the
+        repository's instruction files as quoted, untrusted context (only their names for a
+        read-only call) and the command policy."""
+        from governed_harness.capabilities.repository import (
+            repository_policies,
+            untrusted_context,
+        )
+
+        policies = repository_policies(self.s.resolved)
+        extra: dict[str, Any] = {}
+        if policies.untrusted:
+            extra["untrustedContent"] = untrusted_context(
+                self.s.paths.workspace, policies.instruction_files, include_content=not read_only
+            )
+        if policies.deny_destructive:
+            extra["commandPolicy"] = {"destructive": "deny"}
         return extra
 
     def implement_context(
@@ -1050,6 +1090,9 @@ class AgentResults:
             for item in review
             for finding_id in item.finding_ids
         ]
+        if self.panel.configured:
+            # #57: under scoped auto-fix only the errors on lines the agent wrote go back.
+            findings = self.panel.scoped_findings(execution, findings)
         feedback_ref: str | None = None
         if engine._feedback_applies(execution.execution_id):
             feedback_ref = engine._record_feedback(

@@ -8,8 +8,9 @@ checked against the documented expectation. The script is used by CI in three wa
 * ``quickstart``: the README quickstart, command for command (docs-smoke workflow);
 * ``all``: quickstart plus the later-change, broken-baseline, review-exception, Node.js, memory,
   clarification, traceability, corrections, integrity, delivery, agent-results and ladder flows,
-  the gitlab, tdd and bdd flows of wave 6 and the friction flow of wave 8, leaving the
-  projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them (with ``HARNESS_STATE_DIR`` pointing at the same
+  the gitlab, tdd and bdd flows of wave 6, the review panel flows of wave 7 (a project rule,
+  a cache hit, an UNKNOWN reviewer, the hook mode) and the friction flow of wave 8, leaving
+  the projects in ``--workdir`` so ``scripts/metrics_report.py`` can read them (with ``HARNESS_STATE_DIR`` pointing at the same
   run registry: ``runtime.stateDir: auto``, written by init, keeps it outside the workspaces);
 * any single flow name, for local debugging.
 
@@ -292,9 +293,15 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "acceptanceTests",
         "principles",
     ),
-    "review": ("agentReview", "reviewer", "structuredChanges"),
+    "review": ("agentReview", "reviewer", "structuredChanges", "panel"),
     "runtime": ("gateContract", "reproduceFirst"),
-    "governance": ("stopTheLine", "phasePermissions", "enforceWorkflow"),
+    "governance": (
+        "stopTheLine",
+        "phasePermissions",
+        "phaseCapabilities",
+        "applyRepositoryPolicies",
+        "enforceWorkflow",
+    ),
 }
 
 
@@ -1473,11 +1480,13 @@ def flow_ladder(t: Transcript, root: Path) -> None:
     )
 
     # The device lab's command is granted to the probes, but this machine does not have it.
+    # Under governance.phaseCapabilities (#4) project grants narrow the profiles; a scope no
+    # profile grants is added with capabilities.extend.
     config = root / ".harness" / "project.yaml"
     config.write_text(
         config.read_text().replace(
             "  grants: []",
-            "  grants:\n  - capability: process.execute\n    scope: [device-lab]",
+            "  grants: []\n  extend:\n  - capability: process.execute\n    scope: [device-lab]",
         )
     )
     (root / "device.yaml").write_text(DEVICE_TASK)
@@ -1704,6 +1713,9 @@ results = {
     "acceptance": {"tests": [{"path": "features/discount.feature", "content": feature}]},
     "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}},
 }
+if kind == "review" and "outputContract" in request:
+    # A reviewer of the review panel (review.panel, #57) answers with its output contract.
+    results["review"] = {"verdict": "PASS", "findings": [], "summary": "No finding."}
 if kind in results:
     print(json.dumps({"status": "PASSED", "summary": kind, "result": results[kind]}))
     sys.exit(0)
@@ -1806,6 +1818,183 @@ def flow_bdd(t: Transcript, root: Path) -> None:
         decided["acceptanceTests"]["failBefore"]["status"] == "FAILED",
         "the frozen scenario fails before the step definitions exist",
     )
+
+
+REVIEWER = """\
+import json, sys
+
+request = json.load(sys.stdin)
+reviewer = (request.get("reviewer") or {}).get("id")
+if MODE == "unknown":
+    print(json.dumps({"status": "PASSED", "summary": "no contract", "result": {"findings": []}}))
+    sys.exit(0)
+findings = []
+diff = (request.get("slice") or {}).get("diff", "")
+if reviewer == "quality" and "project.no-magic-discount" in request["instructions"] and "* 0.9" in diff:
+    findings.append({
+        "file": "src/sample/pricing.py", "side": "new", "line": 2,
+        "rule": "project.no-magic-discount", "severity": "error",
+        "issue": "The discount rate is a literal.", "evidence": "return subtotal * 0.9",
+    })
+result = {"verdict": "FAIL" if findings else "PASS", "findings": findings, "summary": "Reviewed."}
+usage = {"inputTokens": len(json.dumps(request)) // 4, "outputTokens": 40}
+print(json.dumps({"status": "PASSED", "summary": "reviewed", "result": result, "usage": usage}))
+"""
+
+PROJECT_REVIEW_RULE = """\
+---
+domain: quality
+---
+
+## project.no-magic-discount: No literal discount rates
+
+- severity: blocking
+- priority: 2
+- when: a change computes a discount
+
+Discount rates come from the pricing configuration, never from a literal in the code.
+"""
+
+
+def review_project(t: Transcript, flow: str, root: Path, mode: str = "find") -> list[str]:
+    """A Python project with the review panel written by init, a fixture reviewer provider
+    that calls no model, and a feature branch whose change uses a literal discount rate."""
+    python_project(root)
+    (root / "reviewer.py").write_text(REVIEWER.replace("MODE", repr(mode)))
+    git(root, "add", "reviewer.py")
+    git(root, "commit", "-qm", "reviewer fixture")
+    here = ["--path", "."]
+    t.run(flow, root, ["init", *here], 0)
+    config = root / ".harness" / "project.yaml"
+    config.write_text(
+        config.read_text().replace("agentSandbox: enforce", "agentSandbox: 'off'")
+        + "agentProviders:\n  reviewer:\n    kind: command\n    command: [python, reviewer.py]\n"
+    )
+    git(root, "checkout", "-q", "-b", "feat/discount")
+    (root / "src" / "sample" / "pricing.py").write_text(
+        "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
+        "    return subtotal * 0.9 if subtotal >= threshold else subtotal\n"
+    )
+    git(root, "commit", "-qam", "discount")
+    return here
+
+
+def flow_review_panel(t: Transcript, root: Path) -> None:
+    """The review panel outside a run (#57) with a project rule (layer C): the rule reaches the
+    quality reviewer's block, its finding fails the review (exit 6, no evidence ref); once the
+    change reads the rate, the review passes, records refs/harness/review/pass/SHA and
+    harness review verify checks it without calling any model."""
+    flow = "review-panel"
+    here = review_project(t, flow, root)
+    rules = root / ".harness" / "review" / "rules"
+    rules.mkdir(parents=True)
+    (rules / "quality.md").write_text(PROJECT_REVIEW_RULE)
+    shown = t.json(flow, root, ["review", "rules", "show", *here], 0)
+    t.check(flow, shown["catalog"]["byLayer"]["C"] == 1, "the project rule is in the catalog")
+    failed = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 6)
+    t.check(
+        flow,
+        failed["verdict"] == "FAIL"
+        and [item["rule"] for item in failed["findings"]] == ["project.no-magic-discount"]
+        and failed["evidenceRef"] is None,
+        "the project rule's finding fails the review",
+    )
+    (root / "src" / "sample" / "pricing.py").write_text(
+        "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
+        "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\n"
+    )
+    git(root, "commit", "-qam", "read the rate")
+    passed = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 0)
+    t.check(flow, passed["verdict"] == "PASS" and bool(passed["evidenceRef"]), "a pass is a ref")
+    verified = t.json(flow, root, ["review", "verify", *here, "--sha", "HEAD"], 0)
+    t.check(flow, verified["valid"], "the evidence verifies without models")
+
+
+def flow_review_cache(t: Transcript, root: Path) -> None:
+    """The same review twice (#57): the second one is a global cache hit that calls no
+    reviewer; the reviewer answers are shared with another mode through the per-reviewer
+    cache."""
+    flow = "review-cache"
+    here = review_project(t, flow, root)
+    first = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 0)
+    second = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 0)
+    t.check(
+        flow,
+        first["cache"]["global"] == "miss"
+        and second["cache"]["global"] == "hit"
+        and second["tokens"]["total"] == 0
+        and second["digest"] == first["digest"],
+        "the second review is a cache hit with the same report digest",
+    )
+
+
+def flow_review_unknown(t: Transcript, root: Path) -> None:
+    """A reviewer whose answer does not follow the output contract (#57) is UNKNOWN, gets one
+    retry on the fallback provider and, still UNKNOWN, blocks the review (exit 6)."""
+    flow = "review-unknown"
+    here = review_project(t, flow, root, mode="unknown")
+    report = t.json(
+        flow,
+        root,
+        ["review-code", *here, "--provider", "reviewer", "--fallback-provider", "simulated"],
+        0,
+    )
+    t.check(
+        flow,
+        report["verdict"] == "PASS"
+        and all(
+            item["attempts"] == 2 for item in report["reviewers"] if item["status"] != "SKIPPED"
+        ),
+        "the fallback provider answered the retry",
+    )
+    blocked = t.json(
+        flow,
+        root,
+        [
+            "review-code",
+            *here,
+            "--provider",
+            "reviewer",
+            "--fallback-provider",
+            "reviewer",
+            "--no-cache",
+        ],
+        6,
+    )
+    t.check(flow, blocked["verdict"] == "UNKNOWN", "a persistent UNKNOWN blocks")
+
+
+def flow_review_hook(t: Transcript, root: Path) -> None:
+    """The pre-push hook mode (#57): harness review hook install writes the hook; the hook mode
+    fetches the base from origin (a local bare repository here) before reviewing, and aborts
+    when the base cannot be fetched (exit 6)."""
+    flow = "review-hook"
+    here = review_project(t, flow, root)
+    # The remote lives outside the workdir, whose subdirectories metrics_report.py reads.
+    holder = Path(tempfile.mkdtemp(prefix="harness-remote-"))
+    try:
+        remote = holder / "remote.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True, env=isolated_env())
+        git(root, "remote", "add", "origin", str(remote))
+        git(root, "push", "-q", "origin", "HEAD~1:refs/heads/main")
+        installed = t.json(flow, root, ["review", "hook", "install", *here], 0)
+        t.check(flow, installed["hook"].endswith("pre-push"), "the pre-push hook is installed")
+        report = t.json(
+            flow,
+            root,
+            ["review-code", *here, "--mode", "hook", "--base", "main", "--provider", "simulated"],
+            0,
+        )
+        t.check(
+            flow,
+            report["baseResolution"]["fetched"]
+            and report["baseResolution"]["ref"] == "origin/main",
+            "hook mode fetched the base first",
+        )
+        git(root, "remote", "set-url", "origin", str(holder / "missing.git"))
+        t.run(flow, root, ["review-code", *here, "--mode", "hook", "--base", "main"], 6)
+    finally:
+        shutil.rmtree(holder, ignore_errors=True)
 
 
 FRICTION_AGENT = """\
@@ -1950,6 +2139,10 @@ FLOWS = {
     "gitlab": flow_gitlab,
     "tdd": flow_tdd,
     "bdd": flow_bdd,
+    "review-panel": flow_review_panel,
+    "review-cache": flow_review_cache,
+    "review-unknown": flow_review_unknown,
+    "review-hook": flow_review_hook,
     "friction": flow_friction,
 }
 

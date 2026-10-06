@@ -1,0 +1,28 @@
+# Review metadata of the ruby pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: ruby
+domains:
+  ruby.specific-rescue: resilience
+  ruby.no-eval: pipeline-security
+  ruby.thin-controllers: architecture
+blocking:
+- ruby.no-eval
+signals:
+  concurrency:
+  - \bThread\.new\b
+  - \bMutex\.new\b
+  - '\bConcurrent::'
+  - \bRactor\b
+  external-calls:
+  - \bNet::HTTP\b
+  - \bFaraday\b
+  - \bHTTParty\b
+  - '`[^`]+`'
+  - \bOpen3\.
+  structure:
+  - ^\s*require(?:_relative)?\s
+  - ^\s*(?:class|module)\s+[A-Z]
+  - ^\s*def\s+(?!_)\w
+pipeline:
+- Rakefile

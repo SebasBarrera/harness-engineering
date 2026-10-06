@@ -187,4 +187,5 @@ def test_enforced_settings_are_not_declarative() -> None:
     assert "workflow.phases[].dependsOn" not in DECLARATIVE_SETTINGS
     assert "workflow.phases[].parallelizable" not in DECLARATIVE_SETTINGS
     assert "runtime.maxParallel" not in DECLARATIVE_SETTINGS
-    assert "workflow.phases[].allowedCapabilities" in DECLARATIVE_SETTINGS
+    # Applied under governance.phaseCapabilities (#4).
+    assert "workflow.phases[].allowedCapabilities" not in DECLARATIVE_SETTINGS
