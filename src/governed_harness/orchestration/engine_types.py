@@ -125,14 +125,20 @@ class ReviewOutcome:
 class Strategy:
     """The effective testing strategy and where it came from."""
 
-    strategy: str
+    name: str
+    """``tdd``, ``bdd``, ``conventional`` or ``unknown`` (the ``testing.strategy`` value)."""
     source: str
     """``configuration``, ``project-setup`` (a person's answer), ``detected`` or ``unknown``."""
     frameworks: tuple[str, ...] = ()
 
+    @property
+    def strategy(self) -> str:
+        """The strategy's name, as the callers and the ``strategy`` key of ``as_dict`` read it."""
+        return self.name
+
     def as_dict(self) -> dict[str, Any]:
         return {
-            "strategy": self.strategy,
+            "strategy": self.name,
             "source": self.source,
             "frameworks": list(self.frameworks),
         }
