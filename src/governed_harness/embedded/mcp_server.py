@@ -314,30 +314,28 @@ class McpServer:
             text = line.strip()
             if not text:
                 continue
-            try:
-                message = json.loads(text)
-            except ValueError:
-                response: dict[str, Any] | None = _error(None, -32700, "parse error")
-            else:
-                if isinstance(message, list):
-                    replies = [
-                        reply
-                        for item in message
-                        if isinstance(item, dict) and (reply := self.handle(item)) is not None
-                    ]
-                    if replies:
-                        writer.write(json.dumps(replies) + "\n")
-                        writer.flush()
-                    continue
-                response = (
-                    self.handle(message)
-                    if isinstance(message, dict)
-                    else _error(None, -32600, "invalid request")
-                )
-            if response is not None:
-                writer.write(json.dumps(response) + "\n")
+            reply = self._reply(text)
+            # Nothing is written for a notification or a batch of notifications.
+            if reply is not None and reply != []:
+                writer.write(json.dumps(reply) + "\n")
                 writer.flush()
         return 0
+
+    def _reply(self, text: str) -> dict[str, Any] | list[dict[str, Any]] | None:
+        """The reply to one line: a response, a batch of responses, or ``None``."""
+        try:
+            message = json.loads(text)
+        except ValueError:
+            return _error(None, -32700, "parse error")
+        if isinstance(message, list):
+            return [
+                reply
+                for item in message
+                if isinstance(item, dict) and (reply := self.handle(item)) is not None
+            ]
+        if isinstance(message, dict):
+            return self.handle(message)
+        return _error(None, -32600, "invalid request")
 
 
 def _error(identifier: Any, code: int, message: str) -> dict[str, Any]:

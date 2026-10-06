@@ -93,43 +93,68 @@ def _is_scaffolding(path: Path) -> bool:
     return path.stem.lower() in _ENTRY_POINTS and len(lines) <= SCAFFOLD_LINES
 
 
-def detect_project_kind(workspace: Path) -> ProjectKind:
-    root = workspace.resolve()
-    commits = _commits(root)
-    substantive = 0
-    scaffolding: list[str] = []
+@dataclass
+class _Census:
+    """The source files beyond scaffolding counted so far, and the scaffolding seen."""
+
+    substantive: int = 0
+    scaffolding: list[str] = field(default_factory=list)
+
+    @property
+    def done(self) -> bool:
+        return self.substantive >= _ENOUGH
+
+    def add(self, entry: Path, relative: str) -> None:
+        if not is_source(relative) or is_test_path(relative):
+            return
+        if _is_scaffolding(entry):
+            self.scaffolding.append(relative)
+        else:
+            self.substantive += 1
+
+
+def _entries(directory: Path) -> list[Path]:
+    """The entries of a directory by name, without the default excludes and symbolic links
+    (none when the directory cannot be read)."""
+    try:
+        entries = sorted(directory.iterdir(), key=lambda item: item.name)
+    except OSError:
+        return []
+    return [
+        entry for entry in entries if entry.name not in DEFAULT_EXCLUDES and not entry.is_symlink()
+    ]
+
+
+def _census(root: Path) -> _Census:
+    census = _Census()
     stack = [root]
     seen = 0
     # One source file beyond scaffolding settles it: a large repository is not read whole.
-    while stack and seen < _MAX_FILES and substantive < _ENOUGH:
-        directory = stack.pop()
-        try:
-            entries = sorted(directory.iterdir(), key=lambda item: item.name)
-        except OSError:
-            continue
-        for entry in entries:
-            if entry.name in DEFAULT_EXCLUDES or entry.is_symlink():
-                continue
+    while stack and seen < _MAX_FILES and not census.done:
+        for entry in _entries(stack.pop()):
             if entry.is_dir():
                 stack.append(entry)
                 continue
             seen += 1
-            relative = entry.relative_to(root).as_posix()
-            if not is_source(relative) or is_test_path(relative):
-                continue
-            if _is_scaffolding(entry):
-                scaffolding.append(relative)
-            else:
-                substantive += 1
-                if substantive >= _ENOUGH:
-                    break
+            census.add(entry, entry.relative_to(root).as_posix())
+            if census.done:
+                break
+    return census
+
+
+def detect_project_kind(workspace: Path) -> ProjectKind:
+    root = workspace.resolve()
+    commits = _commits(root)
+    census = _census(root)
+    substantive = census.substantive
+    scaffolding = tuple(census.scaffolding)
     if commits == 0:
         return ProjectKind(
-            "new", "the Git repository has no commit", commits, substantive, tuple(scaffolding)
+            "new", "the Git repository has no commit", commits, substantive, scaffolding
         )
     if substantive == 0:
         return ProjectKind(
-            "new", "no source file beyond scaffolding", commits, substantive, tuple(scaffolding)
+            "new", "no source file beyond scaffolding", commits, substantive, scaffolding
         )
     return ProjectKind(
         "existing",
@@ -138,7 +163,7 @@ def detect_project_kind(workspace: Path) -> ProjectKind:
         + (f" and {commits} commit(s)" if commits else ""),
         commits,
         substantive,
-        tuple(scaffolding),
+        scaffolding,
     )
 
 
