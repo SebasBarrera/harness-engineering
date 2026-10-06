@@ -23,7 +23,7 @@ from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.runtime.process_runner import CommandSpec
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import RunEngine
+    from governed_harness.orchestration.hosts import EngineHost
 
 PROBE_ACTOR_PREFIX = "validator.probe."
 _STREAM_CHARS = 2_000
@@ -52,7 +52,7 @@ def probe_actor(probe: ProbeDefinition) -> Actor:
 
 
 def run_probe(
-    engine: RunEngine,
+    engine: EngineHost,
     execution: Execution,
     probe: ProbeDefinition,
     root: Path,

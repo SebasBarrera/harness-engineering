@@ -36,7 +36,7 @@ from governed_harness.memory import MemoryStore
 from governed_harness.memory.store import is_effective
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 LESSON_PREFIX = "lesson:"
 DEFAULT_RECURRENCE_RUNS = 2
@@ -53,7 +53,7 @@ def lesson_text(finding: Finding) -> str:
 
 
 class Lessons:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

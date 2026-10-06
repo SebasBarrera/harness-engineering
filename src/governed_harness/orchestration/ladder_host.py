@@ -13,12 +13,13 @@ if TYPE_CHECKING:
     from governed_harness.configuration.models import ProjectConfiguration
     from governed_harness.domain.models import CertificationRecord, Execution
     from governed_harness.ladder.capabilities import CapabilityStatus
-    from governed_harness.orchestration.engine import EngineServices, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 
 class LadderHost(Protocol):
     @property
-    def engine(self) -> RunEngine: ...
+    def engine(self) -> EngineHost: ...
 
     @property
     def s(self) -> EngineServices: ...

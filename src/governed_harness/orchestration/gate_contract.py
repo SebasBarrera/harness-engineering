@@ -44,7 +44,7 @@ from governed_harness.validators import CommandValidator, ValidationContext
 from governed_harness.validators.review import RULES
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 CHECK_DIRECTORY = "check"
 
@@ -54,7 +54,7 @@ def check_state_path(harness_dir: Path, execution_id: str) -> Path:
 
 
 class GateContract:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

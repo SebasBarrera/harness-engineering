@@ -32,7 +32,7 @@ from governed_harness.domain.models import (
 )
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import RunEngine
+    from governed_harness.orchestration.hosts import EngineHost
 
 REVIEW_VALIDATOR_ID = "review.independent"
 APPROVALS = frozenset({DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION})
@@ -49,7 +49,7 @@ class ExitGateCheck:
 
 
 class ExitGateEvaluator:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         self.engine = engine
         self._checks: dict[str, Callable[[Execution, PhaseExecution], str | None]] = {
             "intent_complete": self._intent_complete,

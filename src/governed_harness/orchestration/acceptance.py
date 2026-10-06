@@ -46,13 +46,13 @@ from governed_harness.domain.models import (
 )
 from governed_harness.evidence import sha256_json
 from governed_harness.evidence.hashing import sha256_bytes
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.runtime import CancellationToken
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 ACCEPTANCE_ID = "harness.acceptance-tests"
 MAX_FILES = 20
@@ -109,7 +109,7 @@ def validate_tests(
 
 
 class AcceptanceTests:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -145,8 +145,6 @@ class AcceptanceTests:
     def propose(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if not self.enabled:
             return None
         state = self.state(execution)

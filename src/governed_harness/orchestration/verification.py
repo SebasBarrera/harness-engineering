@@ -41,7 +41,7 @@ from governed_harness.domain.models import (
 from governed_harness.events import AnchorStore, StoredEvent
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices
+    from governed_harness.orchestration.engine_types import EngineServices
 
 PROJECTED_EVENTS: dict[str, tuple[str, type[BaseModel], str]] = {
     "human.decision.recorded": ("decision", HumanDecision, "decision_id"),

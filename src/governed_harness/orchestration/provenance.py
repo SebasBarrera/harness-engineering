@@ -35,7 +35,7 @@ from governed_harness.domain.models import (
 from governed_harness.evidence import sha256_json
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import RunEngine
+    from governed_harness.orchestration.hosts import EngineHost
 
 Manifest = dict[str, str | None]
 """Path -> digest of every file of the ChangeSet scope that differs from the baseline
@@ -51,7 +51,7 @@ def _status(before: str | None, after: str | None) -> Literal["ADDED", "MODIFIED
 
 
 class ProvenanceRecorder:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         self.engine = engine
         self.s = engine.s
         self._baselines: dict[str, dict[str, str]] = {}

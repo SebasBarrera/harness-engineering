@@ -42,6 +42,7 @@ from governed_harness.domain.models import (
     Finding,
     PhaseExecution,
 )
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE, ReviewOutcome
 from governed_harness.review.cache import ReviewCache
 from governed_harness.review.contract import ReviewFinding
 from governed_harness.review.invoke import BuiltProvider, ProviderInvoker
@@ -56,8 +57,7 @@ from governed_harness.review.providers import build_reviewer_provider, mcp_diges
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.agent_review import ReviewOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 AUTOFIX_FLAG = "reviewfix"
 PANEL_RULE_PREFIX = "review.panel"
@@ -92,7 +92,7 @@ def compact_task(task: Any) -> dict[str, Any]:
 
 
 class PanelReview:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -160,8 +160,6 @@ class PanelReview:
             results.after_agent_call(execution, phase, result.execution)
 
         def on_violation(diff: WorkspaceDiff, restored: int, unrestorable: int) -> None:
-            from governed_harness.orchestration.agent_results import READ_ONLY_RULE
-
             shown = ", ".join(item.path for item in diff.changes[:10])
             results.record_finding(
                 execution,
@@ -202,8 +200,6 @@ class PanelReview:
     def run(
         self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
     ) -> ReviewOutcome:
-        from governed_harness.orchestration.agent_review import ReviewOutcome
-
         settings = self.settings
         assert settings is not None
         results = self.results

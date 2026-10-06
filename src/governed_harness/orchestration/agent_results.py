@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -51,6 +50,9 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
+from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import (
     Contents,
     changes_since,
@@ -67,7 +69,8 @@ from governed_harness.runtime.snapshots import StoredSnapshot
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 _SECURITY_WORDS = (
     "password",
@@ -81,25 +84,12 @@ _SECURITY_WORDS = (
     "encrypt",
 )
 
-READ_ONLY_RULE = "agent.read-only-violation"
 BUDGET_EXCEEDED_RULE = "budget.exceeded"
 BUDGET_WARNING_RULE = "budget.warning"
 
 
-@dataclass(frozen=True)
-class AgentCallOutcome:
-    """What a read-only agent call returned: its status, the structured result when it passed
-    and the evidence it left."""
-
-    status: ResultStatus
-    summary: str
-    result: dict[str, Any] | None
-    invocation_id: str | None
-    evidence_refs: tuple[str, ...]
-
-
 class AgentResults:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         from governed_harness.orchestration.acceptance import AcceptanceTests
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
@@ -512,8 +502,6 @@ class AgentResults:
     ) -> PhaseOutcome | None:
         """Fail closed before an agent call when a limit is already crossed (or a call crossed
         its per-call limit and no person raised it since)."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         check = self.budget_check(execution)
         if check is None:
             return None

@@ -69,6 +69,7 @@ from governed_harness.ladder.certification import (
     certify,
 )
 from governed_harness.ladder.probes import ProbeEvaluation
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.ladder_delivery import LadderDelivery
 from governed_harness.orchestration.ladder_environment import EnvironmentPreflight
 from governed_harness.orchestration.ladder_intake import IntentResult, LadderIntake
@@ -87,7 +88,8 @@ from governed_harness.validators.traceability import (
 if TYPE_CHECKING:
     from governed_harness.configuration.ladder import LadderConfig, ProfileVerification
     from governed_harness.configuration.models import ProjectConfiguration
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 CERTIFICATION_ID = "harness.certification"
 CONTRACT_ID = "harness.contract"
@@ -122,7 +124,7 @@ class PreflightResult:
 
 
 class VerificationLadder:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         self.engine = engine
         self.intake = LadderIntake(self)
         self.environment = EnvironmentPreflight(self)
@@ -255,8 +257,6 @@ class VerificationLadder:
     def planning(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if self.config is None:
             return None
         preflight = self.preflight(execution, phase, task)

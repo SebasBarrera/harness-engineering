@@ -9,7 +9,6 @@ import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_for_futures
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cached_property, partial
 from pathlib import Path
@@ -27,7 +26,6 @@ from governed_harness.agents import (
 from governed_harness.agents.environment import (
     ProviderEnvironment,
     provider_environment,
-    secret_values,
 )
 from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
@@ -41,7 +39,6 @@ from governed_harness.capabilities.repository import (
 )
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
-    ResolvedConfiguration,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
@@ -99,8 +96,8 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
-from governed_harness.events import AnchorStore, SQLiteEventStore
-from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
+from governed_harness.events import AnchorStore
+from governed_harness.evidence import sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
@@ -112,6 +109,9 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths
+from governed_harness.orchestration.engine_types import EngineServices as EngineServices
+from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
 from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
@@ -121,6 +121,8 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.friction import Friction
+from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
@@ -150,7 +152,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
-from governed_harness.runtime.state_location import isolation_marker, resolve_state_location
+from governed_harness.runtime.state_location import isolation_marker
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -251,80 +253,6 @@ class _ProcessLedger:
                 self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
-@dataclass(frozen=True)
-class EnginePaths:
-    workspace: Path
-    harness_dir: Path
-    database: Path
-    artifact_dir: Path
-    state_root: Path | None = None
-    """The run registry outside the workspace (``runtime.stateDir`` or an isolated run's
-    origin, #55); ``None`` when the state lives in ``.harness/`` as in 1.0.0."""
-
-    @classmethod
-    def from_workspace(cls, workspace: Path) -> EnginePaths:
-        root = workspace.resolve(strict=True)
-        harness_dir = root / ".harness"
-        harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return cls(root, harness_dir, harness_dir / "state.db", harness_dir / "artifacts")
-
-    @classmethod
-    def for_project(cls, resolved: ResolvedConfiguration) -> EnginePaths:
-        """The paths of a resolved project: ``.harness/`` for the workspace's own files and the
-        state location ``runtime.stateDir`` (or an isolation marker) names for the registry."""
-        paths = cls.from_workspace(resolved.workspace_root)
-        location = resolve_state_location(
-            paths.workspace, resolved.project.project_id, resolved.project.runtime.state_dir
-        )
-        if not location.external:
-            return paths
-        return cls(
-            paths.workspace,
-            paths.harness_dir,
-            location.database,
-            location.artifacts,
-            location.root,
-        )
-
-
-@dataclass
-class EngineServices:
-    resolved: ResolvedConfiguration
-    paths: EnginePaths
-    state: SQLiteStateStore
-    events: SQLiteEventStore
-    artifacts: LocalArtifactStore
-
-    @classmethod
-    def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
-        paths = EnginePaths.for_project(resolved)
-        return cls(
-            resolved=resolved,
-            paths=paths,
-            state=SQLiteStateStore(paths.database),
-            events=SQLiteEventStore(paths.database),
-            artifacts=LocalArtifactStore(
-                paths.artifact_dir,
-                SecretRedactor(
-                    literals=secret_values(resolved.project),
-                    extended=bool(resolved.project.runtime.extended_redaction),
-                ),
-            ),
-        )
-
-    def close(self) -> None:
-        self.state.close()
-        self.events.close()
-
-
-@dataclass(frozen=True)
-class PhaseOutcome:
-    status: ResultStatus
-    summary: str
-    evidence_refs: tuple[str, ...] = ()
-    artifact_refs: tuple[str, ...] = ()
-
-
 class RunEngine:
     _exit_gate_unmet: str | None = None
     """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
@@ -336,7 +264,7 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
-        self.provenance = ProvenanceRecorder(self)
+        self.provenance: ProvenanceRecorder = ProvenanceRecorder(self)
         self.snapshots = SnapshotStore(
             services.paths.workspace,
             services.artifacts,
@@ -348,14 +276,11 @@ class RunEngine:
             ),
         )
         self._phase_deadline: float | None = None
-        self.results = AgentResults(self)
-        # Imported here: the ladder modules type against the engine, so a module-level import
-        # would close an import cycle.
-        from governed_harness.orchestration.friction import Friction
-        from governed_harness.orchestration.ladder import VerificationLadder
-
-        self.ladder = VerificationLadder(self)
-        self.friction = Friction(self)
+        # The helpers type the engine as an EngineHost (orchestration.hosts); the annotations
+        # keep mypy from inferring these attributes while it checks the engine against it.
+        self.results: AgentResults = AgentResults(self)
+        self.ladder: VerificationLadder = VerificationLadder(self)
+        self.friction: Friction = Friction(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:

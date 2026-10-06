@@ -76,6 +76,7 @@ from governed_harness.friction import (
 )
 from governed_harness.intake import task_digest
 from governed_harness.ladder.contract import derive_contract
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
@@ -86,7 +87,8 @@ if TYPE_CHECKING:
         PreAuthorizationConfig,
     )
     from governed_harness.configuration.models import ProjectConfiguration
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 LANE_FLAG = "lane"
 PROFILE_FLAG = "changeprofile"
@@ -103,7 +105,7 @@ _CACHEABLE = frozenset({ResultStatus.PASSED})
 
 
 class Friction:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         self.engine = engine
 
     # ----- configuration ------------------------------------------------------------------------
@@ -584,8 +586,6 @@ class Friction:
     def plan_checkpoint(
         self, execution: Execution, phase: PhaseExecution, task: Task, plan: Plan, plan_ref: str
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         mode = self.plan_approval
         if mode == "off":
             return None

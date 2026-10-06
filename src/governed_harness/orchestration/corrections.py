@@ -41,7 +41,7 @@ from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 REPRODUCE_ID = "harness.reproduce-first"
 EMPTY_RULE = "agent.empty-correction"
@@ -49,7 +49,7 @@ NOT_REPRODUCED_RULE = "correction.not-reproduced"
 
 
 class Corrections:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

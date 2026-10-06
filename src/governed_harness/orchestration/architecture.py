@@ -34,11 +34,11 @@ from governed_harness.domain.errors import NotFoundError, PolicyViolationError
 from governed_harness.domain.models import Actor, Execution, PhaseExecution, Task, utc_now
 from governed_harness.evidence.hashing import sha256_json
 from governed_harness.intake.project_kind import ProjectKind, detect_project_kind
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 STATE_FILE = "architecture.json"
 SURVEY_FILE = "architecture.md"
@@ -183,7 +183,7 @@ def render_adr(option: dict[str, Any], *, decided_by: str, rationale: str, diges
 
 # ----- the flow ---------------------------------------------------------------------------------------
 class ArchitectureFlow:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -222,8 +222,6 @@ class ArchitectureFlow:
     def advise(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         config = self.config
         if config is None or not config.agent_enabled or config.layers or config.style:
             return None
@@ -296,8 +294,6 @@ class ArchitectureFlow:
     def survey(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         config = self.config
         if config is None or not config.agent_enabled or config.layers:
             return None
@@ -397,7 +393,6 @@ class ArchitectureFlow:
         self, execution: Execution, error: ValueError, refs: tuple[str, ...]
     ) -> PhaseOutcome:
         from governed_harness.domain.enums import FindingSeverity
-        from governed_harness.orchestration.engine import PhaseOutcome
 
         self.results.record_finding(
             execution,

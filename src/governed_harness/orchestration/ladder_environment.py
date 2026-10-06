@@ -32,12 +32,12 @@ from governed_harness.configuration.ladder import EnvironmentConfig
 from governed_harness.domain.enums import ActorType, FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import Actor, ChangeSet, Execution, PhaseExecution
 from governed_harness.ladder.capabilities import run_detection
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import Contents, materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.validators import ValidationContext
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import PhaseOutcome
     from governed_harness.orchestration.ladder_host import LadderHost
 
 ENVIRONMENT_ID = "harness.environment"
@@ -144,8 +144,6 @@ class EnvironmentPreflight:
     def run(
         self, execution: Execution, phase: PhaseExecution, baseline_digest: str
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         config = self.config
         if config is None:
             return None

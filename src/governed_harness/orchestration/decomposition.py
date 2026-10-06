@@ -49,11 +49,11 @@ from governed_harness.domain.models import (
 from governed_harness.evidence import sha256_json
 from governed_harness.gates import GatePolicy
 from governed_harness.intake import task_digest
+from governed_harness.orchestration.engine_types import PhaseOutcome
 
 if TYPE_CHECKING:
     from governed_harness.events.sqlite_store import StoredEvent
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 MALFORMED_RULE = "planning.plan-malformed"
 DEFAULT_MAX_SUBTASKS = 12
@@ -121,7 +121,7 @@ def validate_plan(task: Task, result: dict[str, Any], max_subtasks: int) -> list
 
 
 class Decomposition:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -170,8 +170,6 @@ class Decomposition:
 
     def plan(self, execution: Execution, phase: PhaseExecution, task: Task) -> PhaseOutcome | None:
         """Request, validate and hold for approval the decomposition of a large task."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if not self.enabled:
             return None
         results = self.results

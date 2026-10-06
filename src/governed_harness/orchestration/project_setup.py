@@ -33,7 +33,7 @@ from governed_harness.orchestration.engineering import SETUP_FLAG
 from governed_harness.standards import BUILTIN_PACKS, detect_packs
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 TARGETS = ("project:architecture", "project:testing", "project:standards")
 _STYLE_WORDS = {
@@ -78,7 +78,7 @@ def parse_standards(answer: str, detected: list[str]) -> list[str]:
 
 
 class ProjectSetup:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

@@ -61,7 +61,7 @@ from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidationContext, ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 INTERFACE_ID = "harness.interface"
 ARCHITECTURE_ID = "harness.architecture"
@@ -109,7 +109,7 @@ def declared_interfaces(task: Task) -> list[tuple[str, str]]:
 
 
 class VerificationChecks:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property

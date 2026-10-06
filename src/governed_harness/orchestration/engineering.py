@@ -13,7 +13,6 @@ Token cost rules, all deterministic:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -28,6 +27,7 @@ from governed_harness.configuration.engineering import (
 )
 from governed_harness.domain.enums import ActorType, FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import Actor, ChangeSet, Execution, PhaseExecution, Task
+from governed_harness.orchestration.engine_types import Strategy as Strategy
 from governed_harness.orchestration.workspace_ops import materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.runtime.process_runner import CommandSpec
@@ -46,27 +46,10 @@ from governed_harness.standards import (
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 TDD_ID = "harness.tdd"
 SETUP_FLAG = "projectsetup"
-
-
-@dataclass(frozen=True)
-class Strategy:
-    """The effective testing strategy and where it came from."""
-
-    strategy: str
-    source: str
-    """``configuration``, ``project-setup`` (a person's answer), ``detected`` or ``unknown``."""
-    frameworks: tuple[str, ...] = ()
-
-    def as_dict(self) -> dict[str, Any]:
-        return {
-            "strategy": self.strategy,
-            "source": self.source,
-            "frameworks": list(self.frameworks),
-        }
 
 
 def detect_testing(workspace: Path, technologies: tuple[str, ...] = ()) -> Strategy:
@@ -83,7 +66,7 @@ def detect_testing(workspace: Path, technologies: tuple[str, ...] = ()) -> Strat
 
 
 class Engineering:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
         self._standards: ProjectStandards | None = None
         self._detected: Strategy | None = None

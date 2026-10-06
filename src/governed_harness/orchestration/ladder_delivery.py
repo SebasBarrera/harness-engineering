@@ -32,10 +32,10 @@ from governed_harness.delivery.publisher import render_brief_markdown
 from governed_harness.delivery.vcs import Git, VcsError
 from governed_harness.domain.enums import DecisionKind, PhaseId, ResultStatus
 from governed_harness.domain.models import ChangeSet, Execution, HumanDecision, PhaseExecution, Task
+from governed_harness.orchestration.engine_types import PhaseOutcome
 
 if TYPE_CHECKING:
     from governed_harness.forges import BaseForge, Transport
-    from governed_harness.orchestration.engine import PhaseOutcome
     from governed_harness.orchestration.ladder_host import LadderHost
 
 TRANSPORT: dict[str, Transport | None] = {"override": None}
@@ -73,8 +73,6 @@ class LadderDelivery:
         commit: ClosureCommit,
         change_set: ChangeSet,
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         hub = self.ladder
         results = hub.engine.results
         task = hub.engine.run_task(execution)
