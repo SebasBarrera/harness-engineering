@@ -188,7 +188,8 @@ def test_setup_answers_and_architecture_payloads() -> None:
             "allow": {},
         }
     )
-    assert survey["style"] == "layered" and survey["layers"][0]["name"] == "domain"
+    assert survey["style"] == "layered"
+    assert survey["layers"][0]["name"] == "domain"
     options = validate_options(
         {
             "options": [
@@ -209,5 +210,6 @@ def test_setup_answers_and_architecture_payloads() -> None:
         }
     )
     adr = render_adr(options[0], decided_by="human.lead", rationale="Fits.", digest="sha256:x")
-    assert "ADR-0001" in adr and "adapters (src/adapters/**) may depend on: core" in adr
+    assert "ADR-0001" in adr
+    assert "adapters (src/adapters/**) may depend on: core" in adr
     assert similarity(["a", "b"], ["a", "b", "c"]) == 2 / 3

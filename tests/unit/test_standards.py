@@ -40,7 +40,9 @@ def test_every_pack_loads_with_unique_prefixed_cards_and_tools() -> None:
             assert card.card_id.startswith(f"{pack_id}."), card.card_id
             assert card.card_id not in seen
             seen.add(card.card_id)
-            assert card.rule and card.applies_to and card.verified_by
+            assert card.rule
+            assert card.applies_to
+            assert card.verified_by
         for tool in pack.tools:
             assert tool.command, (pack_id, tool.tool_id)
         for parent in pack.extends:
@@ -85,7 +87,8 @@ def test_selection_by_file_and_review_checklist(tmp_path: Path) -> None:
     standards = project_standards(tmp_path, packs=("python", "typescript"), overrides=None)
     assert [item.pack_id for item in standards.packs] == ["python", "javascript", "typescript"]
     python_cards = select_cards(standards, ["src/shop/orders.py"], 50)
-    assert python_cards and all(item.card_id.startswith("python.") for item in python_cards)
+    assert python_cards
+    assert all(item.card_id.startswith("python.") for item in python_cards)
     assert "python.test-behaviour" not in {item.card_id for item in python_cards}
     review = select_cards(standards, ["src/view.tsx"], 50, review_only=True)
     assert {item.card_id for item in review} >= {"typescript.discriminated-unions"}
@@ -129,7 +132,8 @@ def test_repository_standards_take_precedence(tmp_path: Path) -> None:
     pack = load_pack("python", tmp_path, ".harness/standards")
     cards = {item.card_id: item for item in pack.cards}
     assert cards["python.no-print-in-library"].rule.startswith("Printing is fine")
-    assert "python.team-rule" in cards and "python.naming" not in cards
+    assert "python.team-rule" in cards
+    assert "python.naming" not in cards
     assert pack.source == "builtin+repository"
     standards = project_standards(tmp_path, packs=("auto",), overrides=".harness/standards")
     assert "team" in [item.pack_id for item in standards.packs]
@@ -145,7 +149,8 @@ def test_tool_validators_need_the_repository_configuration(tmp_path: Path) -> No
     added = tool_validators(standards, tmp_path, [])
     assert [definition.validator_id for _, _, definition in added] == ["standards.ruby.rubocop"]
     definition = added[0][2]
-    assert definition.mandatory is False and definition.when_available
+    assert definition.mandatory is False
+    assert definition.when_available
     assert definition.parser == "rubocop"
     python = project_standards(tmp_path, packs=("python",), overrides=None)
     (tmp_path / "ruff.toml").write_text("line-length = 100\n")
@@ -192,7 +197,8 @@ def test_pack_tool_output_parsers(tmp_path: Path) -> None:
         "summary": {"offense_count": 1},
     }
     found = parse_rubocop_json(rubocop, tmp_path)
-    assert found[0].rule == "Style/FrozenStringLiteralComment" and found[0].level == "warning"
+    assert found[0].rule == "Style/FrozenStringLiteralComment"
+    assert found[0].level == "warning"
     assert parse_output(json.dumps(rubocop), "", tmp_path)[0].tool == "rubocop"
     cargo = json.dumps(
         {
@@ -212,5 +218,7 @@ def test_pack_tool_output_parsers(tmp_path: Path) -> None:
         "src/Shop/Cart.cs(12,5): warning CA1062: Validate parameter 'item' [src/Shop.csproj]\n"
     )
     built = parse_msbuild_text(msbuild.splitlines())
-    assert len(built) == 1 and built[0].rule == "CA1062" and built[0].line == 12
+    assert len(built) == 1
+    assert built[0].rule == "CA1062"
+    assert built[0].line == 12
     assert parse_output(msbuild, "", tmp_path, parser="msbuild")[0].path == "src/Shop/Cart.cs"
