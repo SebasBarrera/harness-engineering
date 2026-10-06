@@ -31,8 +31,8 @@ from governed_harness.review.rules import (
     project_rules,
 )
 from governed_harness.runtime import CancellationToken
-from governed_harness.runtime.process_runner import CommandSpec, SafeProcessRunner
-from governed_harness.standards import ProjectStandards, project_standards
+from governed_harness.runtime.process_runner import CommandSpec, ProcessResult, SafeProcessRunner
+from governed_harness.standards import PackTool, ProjectStandards, project_standards
 
 CONSISTENCY_ACTOR = Actor(
     actor_type=ActorType.TOOL, actor_id="validator.review.consistency", version="1"
@@ -229,64 +229,86 @@ def linter_runner(
     standards = setup.standards
     if not setup.settings.run_tools or standards is None:
         return None
-    from governed_harness.validators.parsers import parse_output
 
     def run(rules: list[Rule], locations: Locations) -> list[ReviewFinding]:
-        wanted: dict[str, dict[str, Rule]] = {}
-        for rule in rules:
-            for tool, name in rule.tools:
-                if tool in setup.tools and name:
-                    wanted.setdefault(tool, {})[name] = rule
+        wanted = _wanted_rules(rules, setup.tools)
         if not wanted or not locations.lines:
             return []
         grants = grants_from_rules(execution_id, TOOLS_ACTOR, resolved.effective_capabilities)
+        limit = resolved.project.runtime.max_output_bytes
         findings: list[ReviewFinding] = []
-        for pack in standards.packs:
-            for pack_tool in pack.tools:
-                if pack_tool.tool_id not in wanted or not pack_tool.command:
-                    continue
-                try:
-                    outcome = runner.run(
-                        CommandSpec(
-                            argv=pack_tool.command,
-                            cwd=workspace,
-                            timeout_seconds=600.0,
-                            max_output_bytes=resolved.project.runtime.max_output_bytes,
-                        ),
-                        actor=TOOLS_ACTOR,
-                        grants=grants,
-                    )
-                except (PermissionError, OSError, ValueError):
-                    continue
-                issues = parse_output(
-                    outcome.stdout.decode("utf-8", "replace"),
-                    outcome.stderr.decode("utf-8", "replace"),
-                    workspace,
-                    parser=pack_tool.parser or "auto",
+        for pack_tool in (tool for pack in standards.packs for tool in pack.tools):
+            if pack_tool.tool_id not in wanted or not pack_tool.command:
+                continue
+            try:
+                outcome = runner.run(
+                    CommandSpec(
+                        argv=pack_tool.command,
+                        cwd=workspace,
+                        timeout_seconds=600.0,
+                        max_output_bytes=limit,
+                    ),
+                    actor=TOOLS_ACTOR,
+                    grants=grants,
                 )
-                for issue in issues:
-                    matched = wanted[pack_tool.tool_id].get(issue.rule)
-                    if matched is None or not issue.path or not issue.line:
-                        continue
-                    if not locations.allows(issue.path, "new", issue.line):
-                        continue
-                    findings.append(
-                        ReviewFinding(
-                            reviewer=pack_tool.tool_id,
-                            file=issue.path,
-                            side="new",
-                            line=issue.line,
-                            rule=matched.rule_id,
-                            severity="error" if matched.blocking else "suggestion",
-                            issue=issue.message,
-                            priority=matched.priority,
-                            source=f"tool:{pack_tool.tool_id}",
-                        )
-                    )
-                del wanted[pack_tool.tool_id]
+            except (PermissionError, OSError, ValueError):
+                continue
+            findings.extend(
+                _tool_findings(pack_tool, wanted[pack_tool.tool_id], outcome, workspace, locations)
+            )
+            del wanted[pack_tool.tool_id]
         return findings
 
     return run
+
+
+def _wanted_rules(rules: list[Rule], tools: frozenset[str]) -> dict[str, dict[str, Rule]]:
+    """``tool -> tool rule name -> rule`` for the active rules a configured tool verifies."""
+    wanted: dict[str, dict[str, Rule]] = {}
+    for rule in rules:
+        for tool, name in rule.tools:
+            if tool in tools and name:
+                wanted.setdefault(tool, {})[name] = rule
+    return wanted
+
+
+def _tool_findings(
+    pack_tool: PackTool,
+    rules: dict[str, Rule],
+    outcome: ProcessResult,
+    workspace: Path,
+    locations: Locations,
+) -> list[ReviewFinding]:
+    """The diagnostics of one tool run that belong to a wanted rule, on a reportable line."""
+    from governed_harness.validators.parsers import parse_output
+
+    issues = parse_output(
+        outcome.stdout.decode("utf-8", "replace"),
+        outcome.stderr.decode("utf-8", "replace"),
+        workspace,
+        parser=pack_tool.parser or "auto",
+    )
+    findings: list[ReviewFinding] = []
+    for issue in issues:
+        matched = rules.get(issue.rule)
+        if matched is None or not issue.path or not issue.line:
+            continue
+        if not locations.allows(issue.path, "new", issue.line):
+            continue
+        findings.append(
+            ReviewFinding(
+                reviewer=pack_tool.tool_id,
+                file=issue.path,
+                side="new",
+                line=issue.line,
+                rule=matched.rule_id,
+                severity="error" if matched.blocking else "suggestion",
+                issue=issue.message,
+                priority=matched.priority,
+                source=f"tool:{pack_tool.tool_id}",
+            )
+        )
+    return findings
 
 
 __all__ = [
