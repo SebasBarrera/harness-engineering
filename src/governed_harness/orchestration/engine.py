@@ -433,10 +433,9 @@ class RunEngine:
         while True:
             execution = self.get_execution(execution_id)
             if execution.current_phase is PhaseId.DECISION:
-                outcome = self._run_phase(execution, self._phase_decision)
+                if self._decision_waits(execution):
+                    return self.get_execution(execution_id)
                 execution = self.get_execution(execution_id)
-                if outcome.status is ResultStatus.BLOCKED:
-                    return execution
             elif execution.current_phase is PhaseId.CLOSURE:
                 self._run_phase(execution, self._phase_closure)
                 return self.get_execution(execution_id)
@@ -482,6 +481,15 @@ class RunEngine:
                 ResultStatus.ERROR,
             }:
                 return execution
+
+    def _decision_waits(self, execution: Execution) -> bool:
+        """Run DECISION; whether the run stops there (BLOCKED). A ChangeSet that changed
+        outside the run sends it back to VERIFICATION first under
+        ``verification.reverifyOnChange`` (#78)."""
+        if self._reverify_after_change(execution):
+            return False
+        outcome = self._run_phase(execution, self._phase_decision)
+        return outcome.status is ResultStatus.BLOCKED
 
     def cancel(self, execution_id: str, actor_id: str = "human.local") -> Execution:
         execution = self.get_execution(execution_id)
@@ -2721,6 +2729,76 @@ class RunEngine:
             (f"record://gate/{gate.gate_evaluation_id}",),
         )
 
+    def _reverify_after_change(self, execution: Execution) -> bool:
+        """Under ``verification.reverifyOnChange`` (#78): a run in DECISION whose ChangeSet
+        changed outside the run (an edit after its gate was evaluated) goes back to
+        VERIFICATION on the new ChangeSet instead of evaluating a gate that has no validation
+        of it (INCONCLUSIVE). The change is recorded as evidence first: both digests, the
+        paths that differ and the new diff. Without the key the run stays in DECISION as
+        before. Returns whether the run was sent back."""
+        verification = self.s.resolved.project.verification
+        if verification is None or not verification.reverify_on_change:
+            return False
+        previous = execution.change_set_digest
+        if not previous:
+            return False
+        change_set = self._refresh_changeset(execution)
+        if change_set.digest == previous:
+            return False
+        latest = self.get_execution(execution.execution_id)
+        self.provenance.attribute(latest, change_set, PhaseId.DECISION)
+        paths = self._paths_between(execution.execution_id, previous, change_set)
+        ref = self.results.record_json(
+            latest,
+            PhaseId.DECISION,
+            {
+                "previousDigest": previous,
+                "currentDigest": change_set.digest,
+                "paths": paths,
+                "diffRef": change_set.diff_ref,
+            },
+            kind="out-of-band-change",
+            evidence_kind=EvidenceKind.CHANGESET,
+            summary=f"ChangeSet changed outside the run: {len(paths)} path(s)",
+            supports=(change_set.change_set_id,),
+        )
+        transition = self.state_machine.authorize_reverification(PhaseId.DECISION)
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.PENDING,
+                    "current_phase": transition.target,
+                    "gate_evaluation_id": None,
+                    "human_decision_id": None,
+                    "terminal_reason": None,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "verification.reverify.authorized",
+            {
+                "previousDigest": previous,
+                "currentDigest": change_set.digest,
+                "paths": paths,
+                "evidenceRef": ref,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+            },
+        )
+        return True
+
+    def _paths_between(self, execution_id: str, previous: str, change_set: ChangeSet) -> list[str]:
+        """The paths whose content differs between the run's ChangeSet ``previous`` and
+        ``change_set``."""
+        records = self.s.state.list("change_set", ChangeSet, execution_id=execution_id)
+        earlier = next((item for item in records if item.digest == previous), None)
+        before = {item.path: item.after_digest for item in (earlier.files if earlier else ())}
+        after = {item.path: item.after_digest for item in change_set.files}
+        return sorted(
+            path for path in before.keys() | after.keys() if before.get(path) != after.get(path)
+        )
+
     def _phase_closure(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         execution = self.get_execution(execution.execution_id)
         if not execution.human_decision_id or not execution.change_set_digest:
@@ -2917,24 +2995,7 @@ class RunEngine:
         limit = runtime.correction_limit
         failed_ids = [item.validator_id for item in failing]
         if used >= limit:
-            if limit > 0:
-                self.s.events.append(
-                    execution.execution_id,
-                    "correction.exhausted",
-                    {
-                        "trigger": "VERIFICATION_FAILED",
-                        "cycles": used,
-                        "maxCycles": limit,
-                        "failedValidators": failed_ids,
-                        "changeSetDigest": execution.change_set_digest,
-                    },
-                )
-            # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
-            if self.results.active and self.results.replan_after_failure(execution):
-                return True
-            if limit > 0:
-                self._stop_after_corrections(execution, used, failed_ids, validations)
-            return False
+            return self._corrections_exhausted(execution, used, limit, failed_ids, validations)
         feedback_ref: str | None = None
         if self._feedback_applies(execution.execution_id):
             findings = [
@@ -2987,6 +3048,36 @@ class RunEngine:
             # agentRouting (#44): a quality failure climbs the escalation ladder.
             self.results.escalate(execution, "VERIFICATION_FAILED")
         return True
+
+    def _corrections_exhausted(
+        self,
+        execution: Execution,
+        used: int,
+        limit: int,
+        failed_ids: list[str],
+        validations: list[ValidationResult],
+    ) -> bool:
+        """The correction budget is spent: the run returns to PLANNING when adaptive
+        granularity splits a coarse attempt (#39, #77) and stops otherwise. Returns whether
+        the run goes on."""
+        if limit > 0:
+            self.s.events.append(
+                execution.execution_id,
+                "correction.exhausted",
+                {
+                    "trigger": "VERIFICATION_FAILED",
+                    "cycles": used,
+                    "maxCycles": limit,
+                    "failedValidators": failed_ids,
+                    "changeSetDigest": execution.change_set_digest,
+                },
+            )
+        # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
+        if self.results.active and self.results.replan_after_failure(execution):
+            return True
+        if limit > 0:
+            self._stop_after_corrections(execution, used, failed_ids, validations)
+        return False
 
     def _stop_after_corrections(
         self,

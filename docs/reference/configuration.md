@@ -107,6 +107,7 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+  reverifyOnChange: true
   ladder:
     mode: enforce
     defaultLevel: L1
@@ -342,6 +343,7 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
 | `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes `agent` and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
+| `verification.reverifyOnChange` | `false` when absent; `init` writes `true` | `run continue` on a run waiting in DECISION whose ChangeSet changed outside the run records the change as evidence and runs VERIFICATION again on the new ChangeSet (#78). See [re-verification after a change outside the run](#re-verification-after-a-change-outside-the-run). |
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
@@ -768,6 +770,27 @@ stays recorded as an agent invocation. Repetitions count in `agent.transient_ret
 correction cycles or implementation attempts. The default patterns are `timed out`,
 `connection reset`, `went to sleep`, `overloaded`, `429`, `529`, `rate limit` and `usage limit`; a
 pattern that starts or ends with a digit does not match inside a longer number.
+
+## Re-verification after a change outside the run
+
+A file of the ChangeSet edited while the run waits in DECISION (after its gate was evaluated)
+changes the ChangeSet digest: the pending approval no longer applies (`approval.invalidated`).
+Without the key, `run continue` evaluates the gate of the new ChangeSet, which has no
+validation of it, so the gate is `INCONCLUSIVE` (`NO_MANDATORY_VALIDATIONS`) and the change needs
+a `REQUEST_CHANGES` or a new run, as in 1.0.0 (thesis flow 4, `scripts/demo_flows.py`).
+
+```yaml
+verification:
+  reverifyOnChange: true
+```
+
+With the key (written by `harness init`), `run continue` records the change first, as evidence
+of DECISION (`out-of-band-change`: both digests, the paths that differ and the new diff, plus the
+provenance of the edit when `provenance.agentSnapshots` is on), and the event
+`verification.reverify.authorized`; the run then returns to VERIFICATION on the new ChangeSet,
+the independent review runs again and DECISION asks for a decision bound to the new digest. A
+decision recorded for the earlier digest stays stale. A failed re-verification follows the usual
+correction rules. The key never applies to a run that is not in DECISION.
 
 ## Governance
 

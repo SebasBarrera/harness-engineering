@@ -35,6 +35,13 @@
     passing at once; stop the line keeps the frozen files of a run that can still be continued
     (`keptPaths` in the quarantine record) instead of deleting them, so the next verification
     does not report `acceptance.modified` (#81).
+  - Re-verification after a change outside the run (#78), behind the new key
+    `verification.reverifyOnChange`, which `harness init` writes as `true`. `run continue` on a
+    run waiting in DECISION whose ChangeSet changed after its gate was evaluated records the
+    change as evidence (`out-of-band-change`, event `verification.reverify.authorized`) and runs
+    VERIFICATION and the independent review again on the new ChangeSet, instead of leaving an
+    `INCONCLUSIVE` gate that forced a new run. A `project.yaml` without the key keeps that
+    fail-closed behaviour and its configuration digest.
 
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without

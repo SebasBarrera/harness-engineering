@@ -236,6 +236,7 @@ recorded decisions and suggests a table; nothing is applied.
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
+| `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |
 | `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
 | `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
 | `review.agentReview` | `tests/integration/test_agent_review.py` |

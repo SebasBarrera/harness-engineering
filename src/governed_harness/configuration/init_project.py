@@ -145,6 +145,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "secrets": "context",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
             "acceptanceTests": {"mode": "agent"},
+            "reverifyOnChange": True,
             "ladder": {
                 "mode": "enforce",
                 "defaultLevel": "L1",

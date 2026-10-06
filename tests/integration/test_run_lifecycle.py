@@ -1,6 +1,7 @@
 """The run lifecycle around the waits for a person (wave 9): the exit code of a decision
-recorded without continuing and a rejected run on ``run continue`` (#83), and a run whose
-corrections are spent by an agent that repeats its change (#77)."""
+recorded without continuing and a rejected run on ``run continue`` (#83), a run whose
+corrections are spent by an agent that repeats its change (#77) and ``run continue`` after a
+change made outside the run (#78)."""
 
 from __future__ import annotations
 
@@ -12,7 +13,7 @@ from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
 from governed_harness.cli.main import app
-from governed_harness.domain.enums import PhaseId, ResultStatus
+from governed_harness.domain.enums import DecisionKind, PhaseId, ResultStatus
 from tests.integration import test_decomposition as decomposition
 from tests.integration.test_friction import configure, risky_task
 from tests.integration.test_friction import start as start_task
@@ -177,3 +178,53 @@ def test_a_coarse_model_still_returns_to_planning(python_workspace: Path, tmp_pa
     execution = application.status(python_workspace, run)["execution"]
     assert execution["currentPhase"] == PhaseId.PLANNING
     assert execution["terminalReason"] is None
+
+
+# ----- #78: run continue after an out-of-band change ---------------------------------------------
+def edited_after_the_gate(workspace: Path, tmp_path: Path) -> tuple[HarnessApplication, str, str]:
+    """A run waiting in DECISION on a passed gate, then a manual edit of an owned file."""
+    application = HarnessApplication()
+    run = start(application, workspace, tmp_path, patch_task(GOOD))
+    evaluated = application.status(workspace, run)["execution"]["changeSetDigest"]
+    with (workspace / "src" / "sample" / "pricing.py").open("a", encoding="utf-8") as handle:
+        handle.write("# adjusted after review\n")
+    return application, run, evaluated
+
+
+def test_run_continue_verifies_an_out_of_band_change_again(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    set_keys(python_workspace, verification={"reverifyOnChange": True})
+    application, run, evaluated = edited_after_the_gate(python_workspace, tmp_path)
+    code, output = cli("--json", "run", "continue", "--path", str(python_workspace), "--run", run)
+    assert code == 4, output
+    status = application.status(python_workspace, run)
+    assert status["gate"]["status"] == "PASSED"
+    current = status["execution"]["changeSetDigest"]
+    assert current != evaluated
+    assert status["gate"]["changeSetDigest"] == current
+    [authorized] = events(application, python_workspace, run, "verification.reverify.authorized")
+    assert authorized.payload["paths"] == ["src/sample/pricing.py"]
+    assert authorized.payload["previousDigest"] == evaluated
+    with application._services(python_workspace) as services:
+        evidence = json.loads(services.artifacts.get(authorized.payload["evidenceRef"]))
+    assert evidence["currentDigest"] == current
+    _record, execution = application.decide_gate(
+        python_workspace,
+        execution_id=run,
+        decision=DecisionKind.APPROVE,
+        change_set_digest=current,
+        actor_id=ACTOR,
+        rationale="Verified again after the edit",
+    )
+    assert execution.status is ResultStatus.PASSED
+
+
+def test_without_the_key_the_changed_run_stays_inconclusive(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    application, run, _evaluated = edited_after_the_gate(python_workspace, tmp_path)
+    application.continue_run(python_workspace, run)
+    status = application.status(python_workspace, run)
+    assert status["gate"]["status"] == "INCONCLUSIVE"
+    assert not events(application, python_workspace, run, "verification.reverify.authorized")

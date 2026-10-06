@@ -77,6 +77,23 @@ class NormativeStateMachine:
             ),
         )
 
+    def authorize_reverification(self, phase: PhaseId) -> TransitionDecision:
+        """Since 2.0 (``verification.reverifyOnChange``, #78): a ChangeSet that changed outside
+        the run while it waited in DECISION is verified again; the gate and any decision on
+        the earlier ChangeSet stop counting."""
+        if phase is not PhaseId.DECISION:
+            raise InvalidTransition("a re-verification may only start from DECISION")
+        return TransitionDecision(
+            source=PhaseId.DECISION,
+            target=PhaseId.VERIFICATION,
+            invalidated=(
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
     def authorize_review_correction(self, phase: PhaseId) -> TransitionDecision:
         """Since 1.1 (``review.agentReview``, #38): blocking findings of the second reviewer
         return INDEPENDENT_REVIEW to IMPLEMENTATION within the correction budget."""

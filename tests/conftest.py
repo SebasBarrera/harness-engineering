@@ -53,6 +53,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "sarif",
         "riskFactors",
         "acceptanceTests",
+        "reverifyOnChange",
         "principles",
     ),
     "review": ("agentReview", "reviewer", "structuredChanges", "panel"),
