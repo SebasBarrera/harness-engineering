@@ -229,6 +229,27 @@
    "outcome": "None",
    "recorded": true
   },
+  "malformed-acceptance": {
+   "checks": [
+    {
+     "check": "approved after one retry of the failed call",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "the retry is recorded",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
   "review-fail": {
    "checks": [
     {

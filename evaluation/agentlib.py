@@ -179,6 +179,7 @@ def load_calls(directory: Path) -> list[dict[str, Any]]:
 
 
 RUN_ID = re.compile(r"\brun_[0-9a-f]{32}\b")
+TEMP_PATH = re.compile(r"(?:/private)?/(?:tmp|var/folders)/[^\s\"'\\]*")
 
 
 def anonymize(text: str, *roots: Path) -> str:
@@ -190,6 +191,8 @@ def anonymize(text: str, *roots: Path) -> str:
     home = os.environ.get("HOME", "")
     if home:
         text = text.replace(home, "~")
+    # Temporary directories (and a call record's truncated command) keep no machine path either.
+    text = TEMP_PATH.sub("<tmp>", text)
     return RUN_ID.sub("run", text)
 
 

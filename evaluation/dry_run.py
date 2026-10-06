@@ -199,6 +199,29 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
             ),
         ],
     ),
+    "malformed-acceptance": (
+        "run_eval",
+        [
+            "--scenario",
+            "greenfield",
+            "--condition",
+            "harness",
+            "--fake-mode",
+            "malformed-acceptance",
+        ],
+        [
+            (
+                "approved after one retry of the failed call",
+                lambda r: outcome(r) == "approved",
+                True,
+            ),
+            (
+                "the retry is recorded",
+                lambda r: "failed-call" in [w.get("wait") for w in r["harness"]["waits"]],
+                True,
+            ),
+        ],
+    ),
     "simulated-provider": (
         "run_eval",
         ["--scenario", "greenfield", "--condition", "harness", "--provider", "simulated"],

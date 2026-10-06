@@ -174,6 +174,14 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
                 }
             ]
         }
+    if (
+        "Write acceptance tests for the task below" in prompt
+        and _mode(cwd) == "malformed-acceptance"
+    ):
+        marker = cwd.parent / "fake-malformed-done"
+        if not marker.exists():
+            marker.write_text("1", encoding="utf-8")
+            return {"tests": "not a list"}  # malformed once, then a valid answer
     if "Write acceptance tests for the task below" in prompt:
         package = PACKAGE.get(_scenario(cwd) or "", "")
         directory = request.get("directory") or "tests/acceptance"

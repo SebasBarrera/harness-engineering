@@ -139,6 +139,7 @@ Two simulated actors, rules fixed in code before any run:
 | Plan or plan approval | APPROVE a decomposition whose sub-tasks have titles, or the recorded plan of a risky task, under the shown digest; else REJECT. |
 | Preflight UNAVAILABLE | `harness verification decide --continue-uncertified`. |
 | DECISION | The 0.9.0 rule: APPROVE when the gate PASSED (ticking the manual checklist and acknowledging the risk factors the brief requires); else REQUEST_CHANGES with the gate reasons and findings as feedback, at most two cycles; then REJECT. Never APPROVE_EXCEPTION. |
+| A read-only call failed or gave an unreadable answer | `harness run continue` once per phase (the call runs again); a second failure stops the run. Added after the pilot, where Haiku's acceptance answer was malformed JSON. |
 | Budget exceeded, deferred verification | Never acted on: the run stops (recorded). |
 
 Every act uses `--no-continue` and then `harness run continue`, except REJECT, which ends the run in

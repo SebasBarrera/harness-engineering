@@ -33,6 +33,8 @@ any run:
                           requiring it); otherwise REQUEST_CHANGES with the gate reasons and the
                           findings as feedback, at most two correction cycles; then REJECT. Never
                           APPROVE_EXCEPTION.
+  failed read-only call   ``harness run continue`` once per phase (the call runs again); a second
+                          failure stops the run.
   budget exceeded         never raised: the run stops (recorded).
   deferred verification   no evidence can be attached: recorded, never acted on.
   ======================  ===================================================================
@@ -57,6 +59,7 @@ REVIEWER_ACTOR = "human.reviewer-simulated"
 MAX_CORRECTIONS = 2
 MAX_CLARIFY_ROUNDS = 3
 MAX_WAITS = 20
+MAX_CALL_RETRIES = 1
 PROJECT_SETUP = {
     "project:testing": "conventional",
     "project:standards": "default",
@@ -123,6 +126,7 @@ class SimulatedPerson:
         self.gate_history: list[str] = []
         self.decisions: list[dict[str, Any]] = []
         self.corrections = 0
+        self.call_retries: dict[str, int] = {}
         self.seconds = 0.0
         """Time of the simulated person's own work (its harness commands, not the product owner's
         model calls, which are timed in po-calls)."""
@@ -221,6 +225,20 @@ class SimulatedPerson:
             if match:
                 entry["wait"] = kind
                 return getattr(self, "_" + kind.replace("-", "_"))(run_id, task_id, match, entry)
+        if re.search(
+            r"call did not answer|malformed result|tests are not valid|survey did not answer",
+            summary,
+        ):
+            # A read-only call failed or answered something the harness could not read: the person
+            # runs it again once per phase, as anyone would before giving up (pilot, 2026-10-06).
+            if self.call_retries.get(str(phase), 0) < MAX_CALL_RETRIES:
+                self.call_retries[str(phase)] = self.call_retries.get(str(phase), 0) + 1
+                entry["wait"] = "failed-call"
+                entry["action"] = "run continue (retry the call once)"
+                return self.resume(run_id)
+            entry["wait"] = "failed-call"
+            entry["action"] = "retry exhausted"
+            return None
         entry["wait"] = "budget" if "budget" in summary.lower() else None
         return None
 
