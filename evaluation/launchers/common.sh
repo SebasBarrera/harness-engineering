@@ -127,12 +127,16 @@ record_environment() {
   slot=$(make_slot env)
   local wheel=()
   [ -n "${EVAL_WHEEL:-}" ] && wheel=(--wheel "$EVAL_WHEEL")
-  if [ "$EVAL_DRY" != "1" ] && [ -z "${EVAL_WHEEL:-}" ]; then
+  local source=()
+  if [ -n "${EVAL_EXTRA_PATH:-}" ]; then
+    # A development source tree instead of the wheel (the pilot): its commit is recorded.
+    source=(--source "${EVAL_EXTRA_PATH%%:*}")
+  elif [ "$EVAL_DRY" != "1" ] && [ -z "${EVAL_WHEEL:-}" ]; then
     echo "ABORT: set EVAL_WHEEL to the v2.0.0 wheel the evaluation venv was installed from" >&2
     exit 5
   fi
   PATH="$(slot_path "$slot")" "$slot/bin/python" "$CODE/environment.py" "$EVAL_OUT/environment.json" \
-    ${wheel[@]+"${wheel[@]}"} --code "$CODE" --block "$1"
+    ${wheel[@]+"${wheel[@]}"} ${source[@]+"${source[@]}"} --code "$CODE" --block "$1"
   [ -n "${EVAL_EXTRA_PATH:-}" ] && echo "EVAL_EXTRA_PATH set: the harness comes from a source tree, not the wheel" \
     | tee -a "$EVAL_OUT/log.txt"
   unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT PYTHONPATH

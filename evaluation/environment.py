@@ -63,6 +63,12 @@ def main() -> int:
     parser.add_argument("--wheel", type=Path, default=None)
     parser.add_argument("--code", type=Path, default=None)
     parser.add_argument("--block", default="")
+    parser.add_argument(
+        "--source",
+        type=Path,
+        default=None,
+        help="a source tree used instead of a wheel (its Git commit)",
+    )
     parser.add_argument("--claude-bin", default=os.environ.get("EVAL_CLAUDE_BIN", "claude"))
     args = parser.parse_args()
     harness = shlex.split(os.environ.get("EVAL_HARNESS", "harness"))
@@ -72,6 +78,14 @@ def main() -> int:
         "harnessPackage": package("governed-agent-harness"),
         "wheel": {"name": args.wheel.name, "sha256": sha256_file(args.wheel)}
         if args.wheel
+        else None,
+        "source": {
+            "commit": version(["git", "-C", str(args.source), "rev-parse", "HEAD"]),
+            "dirty": bool(
+                version(["git", "-C", str(args.source), "status", "--porcelain", "--", "."])
+            ),
+        }
+        if args.source
         else None,
         "claudeCode": version([args.claude_bin, "--version"]),
         "python": platform.python_version(),
