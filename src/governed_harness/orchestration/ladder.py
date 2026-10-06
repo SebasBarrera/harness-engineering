@@ -514,7 +514,7 @@ class VerificationLadder:
                 friction.skips(execution, "mutation", PhaseId.VERIFICATION)
                 or friction.tests_exempt(execution, change_set, "light mutation") is not None
             )
-            else self.mutation.run(execution, phase, change_set, [*outputs, *added])
+            else self.mutation.run(execution, change_set, [*outputs, *added])
         )
         if mutation is not None:
             added.append(mutation)

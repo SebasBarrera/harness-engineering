@@ -33,7 +33,7 @@ from governed_harness.domain.enums import (
     ResultStatus,
     ValidationKind,
 )
-from governed_harness.domain.models import Actor, ChangeSet, Execution, Finding, PhaseExecution
+from governed_harness.domain.models import Actor, ChangeSet, Execution, Finding
 from governed_harness.ladder.hunks import Hunk, cosmetic, hunks, revert
 from governed_harness.orchestration.workspace_ops import Contents, materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
@@ -73,6 +73,29 @@ def looks_like_test(path: str, technologies: list[str]) -> bool:
     )
 
 
+def _test_class(before: ResultStatus | None, after: ResultStatus | None) -> str:
+    """``broken`` when the test fails on the change, ``discriminating`` when it failed on the
+    baseline sources, ``weak`` when it passed there too, else ``unknown``."""
+    if after is not ResultStatus.PASSED:
+        return "broken"
+    if before is ResultStatus.FAILED:
+        return "discriminating"
+    if before is ResultStatus.PASSED:
+        return "weak"
+    return "unknown"
+
+
+def _texts(contents: Contents, path: str, target: Path) -> tuple[str, str] | None:
+    """The baseline and current text of a changed source, when both are readable text."""
+    data = contents.content(path) if contents.existed(path) else b""
+    if data is None or not target.is_file():
+        return None
+    try:
+        return data.decode("utf-8"), target.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return None
+
+
 class Mutation:
     def __init__(self, ladder: LadderHost) -> None:
         self.ladder = ladder
@@ -101,14 +124,12 @@ class Mutation:
     def run(
         self,
         execution: Execution,
-        phase: PhaseExecution,
         change_set: ChangeSet,
         outputs: list[Any],
     ) -> ValidatorOutput | None:
         if not self.enabled:
             return None
-        hub = self.ladder
-        results = hub.engine.results
+        results = self.ladder.engine.results
         mandatory_failed = [
             item.result.validator_id
             for item in outputs
@@ -120,173 +141,226 @@ class Mutation:
             "mode": self.config.mode,
             "command": list(template or ()),
         }
-        if mandatory_failed or template is None:
-            reason = (
-                f"not run: mandatory validator(s) did not pass ({', '.join(mandatory_failed)})"
-                if mandatory_failed
-                else "not run: no selected profile declares a mutationCommand"
-            )
-            record["skipped"] = reason
-            ref = results.record_json(
-                execution, PhaseId.VERIFICATION, record, kind="mutation-report", summary=reason
-            )
-            result = results.record_validation(
+        if mandatory_failed:
+            return self._skipped(
                 execution,
-                validator_id=MUTATION_ID,
-                digest=change_set.digest,
-                status=ResultStatus.NOT_APPLICABLE,
-                kind=ValidationKind.SUCCESS,
-                mandatory=False,
-                summary=reason,
-                evidence_refs=(ref,),
+                change_set,
+                record,
+                f"not run: mandatory validator(s) did not pass ({', '.join(mandatory_failed)})",
             )
-            return ValidatorOutput(result, ())
-        technologies = [profile.technology for profile in hub.s.resolved.profiles]
+        if template is None:
+            return self._skipped(
+                execution,
+                change_set,
+                record,
+                "not run: no selected profile declares a mutationCommand",
+            )
+        technologies = [profile.technology for profile in self.ladder.s.resolved.profiles]
         contents = results.baseline_contents(execution)
         changed = [item for item in change_set.files if item.status != "DELETED"]
         tests = sorted(item.path for item in changed if looks_like_test(item.path, technologies))
         sources = sorted(
             item.path for item in changed if not looks_like_test(item.path, technologies)
         )
-        findings: list[Finding] = []
         severity = FindingSeverity.HIGH if self.config.mode == "enforce" else FindingSeverity.LOW
         started = time.monotonic()
-        deadline = started + self.config.time_limit
-        workspace = hub.s.paths.workspace
-        scratch = hub.s.paths.harness_dir / "tmp"
         classification: list[dict[str, Any]] = []
+        findings: list[Finding] = []
         if tests and contents is not None:
-            with materialized(workspace, scratch, contents, sources) as before:
-                for path in tests[:MAX_CLASSIFIED_FILES]:
-                    status_before = (
-                        self._run(execution, template, [path], before) if before else None
-                    )
-                    classification.append({"path": path, "before": status_before})
-            current = self._run(execution, template, tests[:MAX_CLASSIFIED_FILES], workspace)
-            for item in classification:
-                before_status = item["before"]
-                if current is not ResultStatus.PASSED:
-                    item["class"] = "broken"
-                elif before_status is ResultStatus.FAILED:
-                    item["class"] = "discriminating"
-                elif before_status is ResultStatus.PASSED:
-                    item["class"] = "weak"
-                else:
-                    item["class"] = "unknown"
-                item["before"] = before_status.value if before_status else None
-                item["after"] = current.value if current else None
-                if item["class"] in {"weak", "broken"}:
-                    findings.append(
-                        results.record_finding(
-                            execution,
-                            validator_id=MUTATION_ID,
-                            rule_id=WEAK_RULE if item["class"] == "weak" else BROKEN_RULE,
-                            category="test-quality",
-                            severity=FindingSeverity.LOW if item["class"] == "weak" else severity,
-                            message=(
-                                f"{item['path']} passes on the baseline too: it does not show "
-                                "the change"
-                                if item["class"] == "weak"
-                                else f"{item['path']} fails on the change"
-                            ),
-                            path=item["path"],
-                            recommendation=(
-                                "Add an assertion that fails without the change."
-                                if item["class"] == "weak"
-                                else "Fix the test or the change; the suite may not collect it."
-                            ),
-                        )
-                    )
-        relevant = tests or None
-        suite = None if relevant else self._suite()
-        mutated: list[dict[str, Any]] = []
-        skipped_hunks: list[str] = []
-        candidates: list[tuple[Hunk, str, str]] = []
-        for path in sources:
-            if contents is None:
-                break
-            data = contents.content(path) if contents.existed(path) else b""
-            target = workspace / path
-            if data is None or not target.is_file():
-                continue
-            try:
-                before_text = data.decode("utf-8")
-                after_text = target.read_text(encoding="utf-8")
-            except (UnicodeDecodeError, OSError):
-                continue
-            for hunk in hunks(path, before_text, after_text):
-                if not cosmetic(hunk, before_text, after_text):
-                    candidates.append((hunk, before_text, after_text))
-        for hunk, before_text, after_text in candidates:
-            if len(mutated) >= self.config.hunk_limit or time.monotonic() >= deadline:
-                skipped_hunks.append(hunk.label)
-                continue
-            reverted = revert(hunk, before_text, after_text).encode("utf-8")
-            single = _single_file(reverted)
-            with materialized(workspace, scratch, single, [hunk.path]) as copy:
-                if copy is None:
-                    status = None
-                elif relevant:
-                    status = self._run(execution, template, relevant, copy)
-                elif suite:
-                    status = self._run(execution, suite, [], copy)
-                else:
-                    status = None
-            exercised = status is ResultStatus.FAILED
-            mutated.append(
-                {
-                    **hunk.as_dict(),
-                    "status": status.value if status else None,
-                    "exercised": exercised,
-                }
+            classification = self._classify(execution, template, tests, sources, contents)
+            findings.extend(
+                self._test_finding(execution, item, severity)
+                for item in classification
+                if item["class"] in {"weak", "broken"}
             )
-            if status is ResultStatus.PASSED:
-                findings.append(
-                    results.record_finding(
-                        execution,
-                        validator_id=MUTATION_ID,
-                        rule_id=NOT_EXERCISED_RULE,
-                        category="test-quality",
-                        severity=severity,
-                        message=(
-                            f"Reverting the change at {hunk.path}:{hunk.after_start + 1} "
-                            "leaves every relevant test passing: no test exercises it"
-                        ),
-                        path=hunk.path,
-                        line=hunk.after_start + 1,
-                        recommendation="Add a test that fails without this change.",
-                    )
-                )
+        candidates = self._candidates(sources, contents) if contents is not None else []
+        mutated, skipped_hunks = self._mutate(
+            execution,
+            candidates,
+            (template, tests) if tests else (self._suite(), []),
+            deadline=started + self.config.time_limit,
+        )
+        findings.extend(
+            self._not_exercised(execution, hunk, severity)
+            for hunk, item in mutated
+            if item["status"] == ResultStatus.PASSED.value
+        )
         record.update(
             {
                 "testFiles": classification,
-                "hunks": mutated,
+                "hunks": [item for _, item in mutated],
                 "hunksLeftOut": skipped_hunks,
                 "maxHunks": self.config.hunk_limit,
                 "maxSeconds": self.config.time_limit,
                 "elapsedSeconds": round(time.monotonic() - started, 3),
             }
         )
+        return self._report(execution, change_set, record, classification, findings)
+
+    def _skipped(
+        self, execution: Execution, change_set: ChangeSet, record: dict[str, Any], reason: str
+    ) -> ValidatorOutput:
+        """The record of a mutation run that did not start, and its NOT_APPLICABLE result."""
+        results = self.ladder.engine.results
+        record["skipped"] = reason
+        ref = results.record_json(
+            execution, PhaseId.VERIFICATION, record, kind="mutation-report", summary=reason
+        )
+        result = results.record_validation(
+            execution,
+            validator_id=MUTATION_ID,
+            digest=change_set.digest,
+            status=ResultStatus.NOT_APPLICABLE,
+            kind=ValidationKind.SUCCESS,
+            mandatory=False,
+            summary=reason,
+            evidence_refs=(ref,),
+        )
+        return ValidatorOutput(result, ())
+
+    def _classify(
+        self,
+        execution: Execution,
+        template: tuple[str, ...],
+        tests: list[str],
+        sources: list[str],
+        contents: Contents,
+    ) -> list[dict[str, Any]]:
+        """Each new or changed test file on the baseline sources and on the change."""
+        hub = self.ladder
+        workspace = hub.s.paths.workspace
+        classification: list[dict[str, Any]] = []
+        with materialized(workspace, hub.s.paths.harness_dir / "tmp", contents, sources) as before:
+            for path in tests[:MAX_CLASSIFIED_FILES]:
+                status_before = self._run(execution, template, [path], before) if before else None
+                classification.append({"path": path, "before": status_before})
+        current = self._run(execution, template, tests[:MAX_CLASSIFIED_FILES], workspace)
+        for item in classification:
+            before_status = item["before"]
+            item["class"] = _test_class(before_status, current)
+            item["before"] = before_status.value if before_status else None
+            item["after"] = current.value if current else None
+        return classification
+
+    def _test_finding(
+        self, execution: Execution, item: dict[str, Any], severity: FindingSeverity
+    ) -> Finding:
+        weak = item["class"] == "weak"
+        if weak:
+            message = f"{item['path']} passes on the baseline too: it does not show the change"
+            recommendation = "Add an assertion that fails without the change."
+        else:
+            message = f"{item['path']} fails on the change"
+            recommendation = "Fix the test or the change; the suite may not collect it."
+        return self.ladder.engine.results.record_finding(
+            execution,
+            validator_id=MUTATION_ID,
+            rule_id=WEAK_RULE if weak else BROKEN_RULE,
+            category="test-quality",
+            severity=FindingSeverity.LOW if weak else severity,
+            message=message,
+            path=item["path"],
+            recommendation=recommendation,
+        )
+
+    def _candidates(self, sources: list[str], contents: Contents) -> list[tuple[Hunk, str, str]]:
+        """The hunks of the changed sources that are not blank or comment-only, in order."""
+        workspace = self.ladder.s.paths.workspace
+        candidates: list[tuple[Hunk, str, str]] = []
+        for path in sources:
+            texts = _texts(contents, path, workspace / path)
+            if texts is None:
+                continue
+            before_text, after_text = texts
+            candidates.extend(
+                (hunk, before_text, after_text)
+                for hunk in hunks(path, before_text, after_text)
+                if not cosmetic(hunk, before_text, after_text)
+            )
+        return candidates
+
+    def _mutate(
+        self,
+        execution: Execution,
+        candidates: list[tuple[Hunk, str, str]],
+        command: tuple[tuple[str, ...] | None, list[str]],
+        *,
+        deadline: float,
+    ) -> tuple[list[tuple[Hunk, dict[str, Any]]], list[str]]:
+        """Revert each hunk alone in a scratch copy and run the relevant tests (the changed test
+        files, else the mandatory test command), within ``maxHunks`` and ``maxSeconds``."""
+        hub = self.ladder
+        workspace = hub.s.paths.workspace
+        scratch = hub.s.paths.harness_dir / "tmp"
+        template, paths = command
+        mutated: list[tuple[Hunk, dict[str, Any]]] = []
+        skipped: list[str] = []
+        for hunk, before_text, after_text in candidates:
+            if len(mutated) >= self.config.hunk_limit or time.monotonic() >= deadline:
+                skipped.append(hunk.label)
+                continue
+            reverted = revert(hunk, before_text, after_text).encode("utf-8")
+            with materialized(workspace, scratch, _single_file(reverted), [hunk.path]) as copy:
+                status = None
+                if copy is not None and template:
+                    status = self._run(execution, template, paths, copy)
+            item = {
+                **hunk.as_dict(),
+                "status": status.value if status else None,
+                "exercised": status is ResultStatus.FAILED,
+            }
+            mutated.append((hunk, item))
+        return mutated, skipped
+
+    def _not_exercised(
+        self, execution: Execution, hunk: Hunk, severity: FindingSeverity
+    ) -> Finding:
+        return self.ladder.engine.results.record_finding(
+            execution,
+            validator_id=MUTATION_ID,
+            rule_id=NOT_EXERCISED_RULE,
+            category="test-quality",
+            severity=severity,
+            message=(
+                f"Reverting the change at {hunk.path}:{hunk.after_start + 1} "
+                "leaves every relevant test passing: no test exercises it"
+            ),
+            path=hunk.path,
+            line=hunk.after_start + 1,
+            recommendation="Add a test that fails without this change.",
+        )
+
+    def _report(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        record: dict[str, Any],
+        classification: list[dict[str, Any]],
+        findings: list[Finding],
+    ) -> ValidatorOutput:
+        results = self.ladder.engine.results
+        mutated = record["hunks"]
+        skipped_hunks = record["hunksLeftOut"]
         not_exercised = [item for item in mutated if item["status"] == ResultStatus.PASSED.value]
+        discriminating = sum(1 for item in classification if item.get("class") == "discriminating")
         summary = (
             f"{len(mutated)} hunk(s) reverted, {len(not_exercised)} not exercised; "
-            f"{sum(1 for item in classification if item.get('class') == 'discriminating')} of "
-            f"{len(classification)} new test file(s) discriminating"
-            + (f"; {len(skipped_hunks)} hunk(s) left out by the limits" if skipped_hunks else "")
+            f"{discriminating} of {len(classification)} new test file(s) discriminating"
         )
+        if skipped_hunks:
+            summary += f"; {len(skipped_hunks)} hunk(s) left out by the limits"
         ref = results.record_json(
             execution, PhaseId.VERIFICATION, record, kind="mutation-report", summary=summary
         )
-        blocking = self.config.mode == "enforce" and any(
-            item.severity is FindingSeverity.HIGH for item in findings
-        )
+        enforce = self.config.mode == "enforce"
+        blocking = enforce and any(item.severity is FindingSeverity.HIGH for item in findings)
         result = results.record_validation(
             execution,
             validator_id=MUTATION_ID,
             digest=change_set.digest,
             status=ResultStatus.FAILED if blocking else ResultStatus.PASSED,
             kind=ValidationKind.VALIDATION_FAILURE if blocking else ValidationKind.SUCCESS,
-            mandatory=self.config.mode == "enforce",
+            mandatory=enforce,
             summary=summary,
             findings=tuple(findings),
             evidence_refs=(ref,),
