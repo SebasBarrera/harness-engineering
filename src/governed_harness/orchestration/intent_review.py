@@ -138,7 +138,7 @@ class IntentReview:
             start += len(dangling)
         # intake.projectSetup (#56): architecture, testing strategy and standards, once per
         # project, for what neither the configuration nor the repository establishes.
-        setup = self.results.project_setup.questions(execution, phase, task, start)
+        setup = self.results.project_setup.questions(execution, phase, start)
         added.extend(setup)
         start += len(setup)
         if self.enabled and agent:

@@ -524,7 +524,7 @@ class ProjectSetupPort(Protocol):
     """The project setup questions as the intent review uses them."""
 
     def questions(
-        self, execution: Execution, phase: PhaseExecution, task: Task, start: int
+        self, execution: Execution, phase: PhaseExecution, start: int
     ) -> tuple[ClarificationQuestion, ...]:
         """The project setup questions to ask in INTENT."""
 

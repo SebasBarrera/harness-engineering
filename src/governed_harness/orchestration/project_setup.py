@@ -25,10 +25,9 @@ from governed_harness.domain.models import (
     ClarificationRecord,
     Execution,
     PhaseExecution,
-    Task,
     utc_now,
 )
-from governed_harness.intake.project_kind import detect_project_kind
+from governed_harness.intake.project_kind import ProjectKind, detect_project_kind
 from governed_harness.orchestration.engineering import SETUP_FLAG
 from governed_harness.standards import BUILTIN_PACKS, detect_packs
 
@@ -90,68 +89,20 @@ class ProjectSetup:
         return self.results.engineering.setup_record(project_id)
 
     def questions(
-        self, execution: Execution, phase: PhaseExecution, task: Task, start: int
+        self, execution: Execution, phase: PhaseExecution, start: int
     ) -> tuple[ClarificationQuestion, ...]:
         if not self.enabled:
             return ()
-        project = self.results.project
         workspace = self.results.s.paths.workspace
         kind = detect_project_kind(workspace)
         answered = self.record(execution.project_id)
-        technologies = self.results.engineering.technologies()
-        detected_packs = detect_packs(workspace, technologies)
-        items: list[tuple[str, str]] = []
-        architecture = project.architecture
-        architecture_known = (
-            bool(
-                architecture
-                and (architecture.style or architecture.layers or architecture.agent_enabled)
-            )
-            or "architecture" in answered
+        detected_packs = detect_packs(workspace, self.results.engineering.technologies())
+        asked = (
+            self._architecture_question(kind, answered),
+            self._testing_question(execution, kind, answered),
+            self._standards_question(kind, answered, detected_packs),
         )
-        if kind.new and not architecture_known:
-            items.append(
-                (
-                    "project:architecture",
-                    "This is a new project. Which architecture should it follow (ddd, "
-                    "hexagonal, clean, layered, modular-monolith, microservices, mvvm, mvi or "
-                    "custom), and which layers may depend on which?",
-                )
-            )
-        testing = project.testing
-        testing_known = bool(testing and testing.strategy not in {None, "auto"}) or (
-            "testing" in answered
-        )
-        if not testing_known:
-            strategy = self.results.engineering.strategy(execution.project_id)
-            if kind.new or strategy.strategy == "unknown":
-                items.append(
-                    (
-                        "project:testing",
-                        "Which testing strategy should this project follow: tdd (tests first, "
-                        "red-green-refactor checked by the harness), bdd (criteria as Gherkin "
-                        "scenarios a person approves) or conventional (tests with the code)?"
-                        + (
-                            f" Detected: {strategy.strategy}."
-                            if strategy.strategy != "unknown"
-                            else ""
-                        ),
-                    )
-                )
-        standards = project.standards
-        standards_known = bool(standards and standards.packs and "auto" not in standards.packs) or (
-            "standards" in answered
-        )
-        if not standards_known and (kind.new or not detected_packs):
-            suggestion = ", ".join(detected_packs) or "none detected"
-            items.append(
-                (
-                    "project:standards",
-                    "Which coding standards packs apply (python, javascript, typescript, node, "
-                    "react, angular, vue, java, kotlin, go, rust, swift, csharp, php, ruby)? "
-                    f"Answer 'default' for the detected ones ({suggestion}).",
-                )
-            )
+        items = [item for item in asked if item is not None]
         self.results.s.events.append(
             execution.execution_id,
             "project.setup.assessed",
@@ -175,6 +126,60 @@ class ProjectSetup:
                 }
             )
             for number, (target, text) in enumerate(items, start=start)
+        )
+
+    def _architecture_question(
+        self, kind: ProjectKind, answered: dict[str, Any]
+    ) -> tuple[str, str] | None:
+        """Asked for a new project whose architecture nothing settles yet."""
+        architecture = self.results.project.architecture
+        configured = bool(
+            architecture
+            and (architecture.style or architecture.layers or architecture.agent_enabled)
+        )
+        if not kind.new or configured or "architecture" in answered:
+            return None
+        return (
+            "project:architecture",
+            "This is a new project. Which architecture should it follow (ddd, "
+            "hexagonal, clean, layered, modular-monolith, microservices, mvvm, mvi or "
+            "custom), and which layers may depend on which?",
+        )
+
+    def _testing_question(
+        self, execution: Execution, kind: ProjectKind, answered: dict[str, Any]
+    ) -> tuple[str, str] | None:
+        """Asked when the testing strategy is neither configured nor answered, for a new
+        project or one whose strategy is not detected."""
+        testing = self.results.project.testing
+        if bool(testing and testing.strategy not in {None, "auto"}) or "testing" in answered:
+            return None
+        strategy = self.results.engineering.strategy(execution.project_id)
+        if not kind.new and strategy.strategy != "unknown":
+            return None
+        detected = f" Detected: {strategy.strategy}." if strategy.strategy != "unknown" else ""
+        return (
+            "project:testing",
+            "Which testing strategy should this project follow: tdd (tests first, "
+            "red-green-refactor checked by the harness), bdd (criteria as Gherkin "
+            "scenarios a person approves) or conventional (tests with the code)?" + detected,
+        )
+
+    def _standards_question(
+        self, kind: ProjectKind, answered: dict[str, Any], detected_packs: list[str]
+    ) -> tuple[str, str] | None:
+        """Asked when the standards packs are not settled, for a new project or one in which
+        no pack is detected."""
+        standards = self.results.project.standards
+        known = bool(standards and standards.packs and "auto" not in standards.packs)
+        if known or "standards" in answered or not (kind.new or not detected_packs):
+            return None
+        suggestion = ", ".join(detected_packs) or "none detected"
+        return (
+            "project:standards",
+            "Which coding standards packs apply (python, javascript, typescript, node, "
+            "react, angular, vue, java, kotlin, go, rust, swift, csharp, php, ruby)? "
+            f"Answer 'default' for the detected ones ({suggestion}).",
         )
 
     def store_answers(
