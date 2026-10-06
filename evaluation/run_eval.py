@@ -543,7 +543,11 @@ def main() -> int:
             result["coreCheck"] = conditions.check_core(workspace, harness, args.core_reference_src)
         record["harness"] = result
         record["productOwner"] = owner.rounds if owner else []
-        record["projectYamlFile"] = "project.yaml"
+        # The exact configuration of the run (also kept as project.yaml in the run directory).
+        saved = run_dir / "project.yaml"
+        record["projectConfig"] = (
+            yaml.safe_load(saved.read_text(encoding="utf-8")) if saved.exists() else None
+        )
         quarantine = ((result.get("state") or {}).get("measures") or {}).get("quarantine")
         record["quarantine"] = quarantine
         record["_run"] = run_id
@@ -604,7 +608,9 @@ def main() -> int:
         record["measures"]["measuredOn"] = "workspace"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.write(
+            agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
+        )
     summary = {
         k: record[k] for k in ("scenario", "condition", "prompt", "model", "rep", "wallSeconds")
     }

@@ -388,7 +388,10 @@ def main() -> int:
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.write(
+            agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE.parent, args.work)
+            + "\n"
+        )
     print(
         json.dumps({k: record[k] for k in ("condition", "model", "rep", "wallSeconds", "prompts")})
     )

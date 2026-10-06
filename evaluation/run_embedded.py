@@ -316,7 +316,9 @@ def main() -> int:
         record["measures"]["measuredOn"] = "workspace"
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.write(
+            agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
+        )
     print(
         json.dumps(
             {

@@ -178,6 +178,21 @@ def load_calls(directory: Path) -> list[dict[str, Any]]:
     return records
 
 
+RUN_ID = re.compile(r"\brun_[0-9a-f]{32}\b")
+
+
+def anonymize(text: str, *roots: Path) -> str:
+    """A record line without local paths or run identifiers: every root (the run directory, the
+    evaluation code) becomes ``<run>``/``<code>``, the home directory ``~`` and a run id ``run``."""
+    for label, root in zip(("<run>", "<code>", "<work>"), roots, strict=False):
+        for form in {str(root), str(root.resolve())}:
+            text = text.replace(form, label)
+    home = os.environ.get("HOME", "")
+    if home:
+        text = text.replace(home, "~")
+    return RUN_ID.sub("run", text)
+
+
 class AccountError(RuntimeError):
     """The Claude CLI is not on the evaluation account, or an override is set."""
 

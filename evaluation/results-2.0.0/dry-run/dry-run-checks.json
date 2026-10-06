@@ -1,0 +1,281 @@
+{
+ "cases": {
+  "casual-core": {
+   "checks": [
+    {
+     "check": "1.0.0 configuration refuses a task without criteria",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "task-refused-exit-2",
+   "recorded": true
+  },
+  "casual-harness": {
+   "checks": [
+    {
+     "check": "approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "criteria asked (C0) and answered by the product owner",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
+  "direct": {
+   "checks": [
+    {
+     "check": "hidden tests pass on the fake's reference change",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "one call, no harness",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "None",
+   "recorded": true
+  },
+  "embedded-init": {
+   "checks": [
+    {
+     "check": "the host session created the task",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "observed: the init configuration does not reach DECISION (session provider + frozen acceptance tests + stop the line)",
+     "ok": true,
+     "required": false
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "session-limit",
+   "recorded": true
+  },
+  "embedded-no-acceptance": {
+   "checks": [
+    {
+     "check": "the host session created the task",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "decisions by the simulated reviewer only",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
+  "harness": {
+   "checks": [
+    {
+     "check": "approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "read-only call kinds answered by the adapter",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "every model fixed to the cell's",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "eight 0.9.0 trace relations and every 2.0.0 relation present",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "harness verify passes on the record",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "the saved configuration routes every call to the cell's model (fixed)",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
+  "harness-core": {
+   "checks": [
+    {
+     "check": "approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "the configuration has only 1.0.0 keys",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "only implement calls (no read-only kind)",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "eight 0.9.0 trace relations present",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "configuration digest equal to 1.0.0's (with --core-reference-src)",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
+  "harness-tiered": {
+   "checks": [
+    {
+     "check": "approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "the router chose the models",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "plan approval of a risky task handled",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "approved",
+   "recorded": true
+  },
+  "longitudinal": {
+   "checks": [
+    {
+     "check": "session recorded with five increments",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "first increment approved",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "None",
+   "recorded": true
+  },
+  "review-fail": {
+   "checks": [
+    {
+     "check": "two REQUEST_CHANGES, then REJECT",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "rejected change measured on the quarantine copy",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "panel finding grouped by domain",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "rejected",
+   "recorded": true
+  },
+  "simulated-provider": {
+   "checks": [
+    {
+     "check": "no call to the adapter",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "the simulated provider changes nothing: the run stops",
+     "ok": true,
+     "required": true
+    },
+    {
+     "check": "no model call",
+     "ok": true,
+     "required": true
+    }
+   ],
+   "outcome": "stopped",
+   "recorded": true
+  }
+ },
+ "failedRequired": 0
+}
