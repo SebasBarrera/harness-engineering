@@ -322,7 +322,7 @@ class MemoryConfig(_Section):
 
 
 # ----- Routing (#44) -------------------------------------------------------------------------
-RoutingMode = Literal["fixed", "tiered"]
+RoutingMode = Literal["fixed", "tiered", "anchored"]
 SizeClass = Literal["S", "M", "L"]
 ProviderFamily = Literal["claude-code", "codex", "generic"]
 
@@ -373,9 +373,20 @@ class FamilyTable(_Section):
 class AgentRoutingConfig(_Section):
     """Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,
     ``tiered`` chooses from the tables by call kind and task size and escalates on quality
-    failures."""
+    failures.
+
+    Since #85 ``anchored`` uses the same tables with the invoking model as the ceiling: a rung
+    of a cheaper model is kept, a rung of the invoking model's tier uses the invoking model
+    with the rung's effort, a rung above it becomes the top rung allowed, and escalation climbs
+    only up to that model. The invoking model is ``anchorModel`` when set, else the ``model``
+    of the provider that answers the call (for the ``session`` provider, ``agentProvider``),
+    else the ``--model``/``-m`` value of its command or ``args``; when none is known every call
+    keeps the provider's own model."""
 
     mode: RoutingMode | None = None
+    anchor_model: str | None = Field(default=None, alias="anchorModel", min_length=1)
+    """Since #85: the invoking model of ``mode: anchored`` when the provider does not say it
+    (for example the model of an embedded agent session)."""
     thresholds: SizeThresholds | None = None
     families: dict[str, ProviderFamily] | None = None
     tables: dict[ProviderFamily, FamilyTable] | None = None

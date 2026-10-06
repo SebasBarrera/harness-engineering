@@ -20,7 +20,13 @@ from governed_harness.agents import (
     render_instructions,
 )
 from governed_harness.agents.requests import READ_ONLY_KINDS, REQUEST_SCHEMA_VERSION, CallKind
-from governed_harness.agents.routing import RoutingHistory, TaskSignals, provider_family, select
+from governed_harness.agents.routing import (
+    RoutingHistory,
+    TaskSignals,
+    invoking_model,
+    provider_family,
+    select,
+)
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.agent_results import AgentCallConfig, BudgetConfig
 from governed_harness.configuration.models import ProjectConfiguration
@@ -815,6 +821,14 @@ class AgentResults:
         # A built-in adapter (kind claude-code, codex, ...) names its family by its kind.
         return (*(configured.command or ()), configured.kind)
 
+    def invoking_model(self, provider_id: str) -> str | None:
+        """The invoking model, ceiling of ``agentRouting.mode: anchored`` (#85), of a call that
+        ``provider_id`` answers: ``agentRouting.anchorModel`` when set, else the provider's
+        ``model``, else the ``--model``/``-m`` value of its command or ``args``. The embedded
+        ``session`` provider stands for the project's ``agentProvider``, which answers the
+        read-only calls of a session run. ``None`` when nothing says it."""
+        return invoking_model(self.project, provider_id)
+
     def routing_for(
         self,
         execution: Execution,
@@ -841,6 +855,7 @@ class AgentResults:
             policy,
             family=family,
             override=override if has_override else None,
+            anchor=self.invoking_model(provider_id),
         )
         record = {**decision.as_dict(), "provider": provider_id, "phase": phase.phase_id}
         ref = self.record_json(
@@ -1139,7 +1154,7 @@ class AgentResults:
         from governed_harness.agents.routing import can_escalate
 
         policy = self.project.agent_routing
-        if policy is None or policy.mode != "tiered":
+        if policy is None or policy.mode not in {"tiered", "anchored"}:
             return
         history = RoutingHistory(escalations=self.escalations(execution))
         if not can_escalate(history, policy):
@@ -1165,7 +1180,7 @@ class AgentResults:
 
     def implement_model(self, execution: Execution, task: Task) -> str | None:
         """The model an implement call would use (no record): the router's choice under
-        ``agentRouting: tiered``, else the provider's configured model."""
+        ``agentRouting: tiered`` (or ``anchored``), else the provider's configured model."""
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
         configured = self.project.agent_providers.get(provider_id)
         policy = self.project.agent_routing
@@ -1179,6 +1194,7 @@ class AgentResults:
                 RoutingHistory(escalations=self.escalations(execution)),
                 policy,
                 family=family,
+                anchor=self.invoking_model(provider_id),
             )
             if decision.model:
                 return decision.model

@@ -153,3 +153,56 @@ def test_calibration_reports_cost_per_approved_task(python_workspace: Path, tmp_
     [group] = [item for item in report["groups"] if item["callKind"] == "implement"]
     assert group["approvedRuns"] == 1
     assert group["costPerApprovedTask"] == 0.25
+
+
+# ----- anchored at the invoking model (#85) ---------------------------------------------------
+def invoked_with(workspace: Path, model: str) -> None:
+    """The fixture provider invoked with ``--model`` (no ``model`` key): the anchor comes from
+    its command line."""
+    path = workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["agentProviders"]["fixture_agent"]["command"] = ["python", "agent.py", "--model", model]
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+
+
+ANCHORED = {**TIERED, "mode": "anchored"}
+
+
+def test_anchored_routing_never_goes_above_the_invoking_model(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    log = configure(python_workspace, tmp_path, failures=2, routing=ANCHORED)
+    invoked_with(python_workspace, "claude-haiku-4-5-20251001")
+    application, run = start(python_workspace, tmp_path)
+    calls = json.loads(log.read_text())
+    models = [item["routing"]["model"] for item in calls]
+    assert models == ["claude-haiku-4-5-20251001"] * 3
+    with application._services(python_workspace) as services:
+        decided = [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "agent.routing.decided"
+        ]
+    assert {item["anchor"] for item in decided} == {"claude-haiku-4-5-20251001"}
+    assert [item["rule"] for item in decided][:2] == [
+        "anchored:ceiling:implement:S",
+        "anchored:escalation:1:implement:S",
+    ]
+
+
+def test_anchored_routing_escalates_up_to_the_invoking_model(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    log = configure(python_workspace, tmp_path, failures=2, routing=ANCHORED)
+    invoked_with(python_workspace, "claude-sonnet-5-5")
+    application, run = start(python_workspace, tmp_path)
+    calls = json.loads(log.read_text())
+    rungs = [(item["routing"]["model"], item["routing"]["effort"]) for item in calls]
+    assert rungs == [
+        ("claude-sonnet-5-5", "medium"),
+        ("claude-sonnet-5-5", "high"),
+        ("claude-sonnet-5-5", "high"),
+    ]
+    assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
+        PhaseId.DECISION
+    )
