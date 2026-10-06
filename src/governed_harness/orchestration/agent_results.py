@@ -591,22 +591,9 @@ class AgentResults:
 
     # ----- agent calls (#37, #38, #39) -----------------------------------------------------
     def call_config(self, kind: CallKind) -> AgentCallConfig | None:
-        if kind == "clarify":
-            return self.project.intake.clarify_agent if self.project.intake else None
-        if kind == "review":
-            return self.project.review.reviewer if self.project.review else None
-        if kind == "plan":
-            return self.project.planning.planner if self.project.planning else None
-        if kind == "acceptance":
-            config = self.acceptance.config
-            return config.author if config else None
-        if kind == "locate":
-            context = self.project.context
-            return context.locate.agent if context and context.locate else None
-        if kind == "architecture":
-            architecture = self.project.architecture
-            return architecture.agent if architecture else None
-        return None
+        """The configuration of a read-only call kind (``None``: the provider's defaults)."""
+        read = _CALL_CONFIGS.get(kind)
+        return read(self) if read is not None else None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
         configured = self.call_config(kind)
@@ -1178,3 +1165,44 @@ class AgentResults:
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the configuration of each read-only call kind -----------------------------------------
+def _clarify_config(results: AgentResults) -> AgentCallConfig | None:
+    intake = results.project.intake
+    return intake.clarify_agent if intake else None
+
+
+def _review_config(results: AgentResults) -> AgentCallConfig | None:
+    review = results.project.review
+    return review.reviewer if review else None
+
+
+def _plan_config(results: AgentResults) -> AgentCallConfig | None:
+    planning = results.project.planning
+    return planning.planner if planning else None
+
+
+def _acceptance_config(results: AgentResults) -> AgentCallConfig | None:
+    config = results.acceptance.config
+    return config.author if config else None
+
+
+def _locate_config(results: AgentResults) -> AgentCallConfig | None:
+    context = results.project.context
+    return context.locate.agent if context and context.locate else None
+
+
+def _architecture_config(results: AgentResults) -> AgentCallConfig | None:
+    architecture = results.project.architecture
+    return architecture.agent if architecture else None
+
+
+_CALL_CONFIGS: dict[str, Callable[[AgentResults], AgentCallConfig | None]] = {
+    "clarify": _clarify_config,
+    "review": _review_config,
+    "plan": _plan_config,
+    "acceptance": _acceptance_config,
+    "locate": _locate_config,
+    "architecture": _architecture_config,
+}
