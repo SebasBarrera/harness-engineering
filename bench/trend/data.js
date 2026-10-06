@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791243672399,
+  "lastUpdate": 1791258037645,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -3131,6 +3131,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.392,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "81703e6250e3b617289f13191c14407f5734d38e",
+          "message": "Merge pull request #68 from test/large-project-experiment\n\nEvaluation tooling that was only on a local branch, needed to re-run the evaluation on 2.0.0.\n\n- Ride-hailing and food-delivery scenario: specification, hidden acceptance suite mapped to requirements, reference solution and its tests, runner with direct, stepwise, harness and clarify conditions, code-quality measures, rescoring and a blind code review per group.\n- Clarify condition: a simulated product owner answers the clarification questions; also added to the prompt-quality block.\n- Agent calls resume after usage limits and machine or network failures; resumed usage is counted once.\n- Online-store large-project pilot scenario, and a structured-task condition without the harness in the iterative sessions.\n- Scenarios can raise the agent time and budget limits.\n\nOnly evaluation/ changes; the package is untouched.\n\nCloses #67\n\nVerification on the PR head 5c7bd2b26a86: 54 check(s) passed, no blocking check failed.",
+          "timestamp": "2026-10-05T22:39:20-05:00",
+          "tree_id": "3be9d17bd054326c35c46e79ff43809fc724b823",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/81703e6250e3b617289f13191c14407f5734d38e"
+        },
+        "date": 1791258037108,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001223,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001924,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011191,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.073264,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.257043,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.879693,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.327056,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 4.112,
             "unit": "%"
           }
         ]
