@@ -9,6 +9,12 @@ by category, with the non-passed validations of the run that produced them).
 
 Descriptive values only: medians, ranges and counts.
 
+Since the 2.0.0 evaluation the runs of every governed condition are read (harness-core, harness,
+harness-tiered and the 0.9.0 harness runs), from the workspace's state database or from the run
+registry kept in the run directory, and each phase's seconds are split into the time of the agent
+calls made in it (``modelSecondsByPhase``, from the agent invocation records) and the harness's own
+process time (``processSecondsByPhase``), P15. Summaries are given per condition.
+
 Usage: python report_phases.py <runs-dir> <out.jsonl> <summary.json>
 """
 
@@ -24,9 +30,25 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-NAME = re.compile(r"^(greenfield|brownfield|security)-harness-(.+)-r(\d+)-\d{8}T\d{6}Z$")
-PHASES = ["INTENT", "DISCOVERY", "SPECIFICATION", "PLANNING", "IMPLEMENTATION", "VERIFICATION",
-          "INDEPENDENT_REVIEW", "DECISION", "CLOSURE"]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from harness_state import state_db  # noqa: E402
+
+NAME = re.compile(
+    r"^(greenfield|brownfield|security)(?:-(poor|casual))?-(harness-core|harness-tiered|harness|clarify)-(.+)"
+    r"-r(\d+)-\d{8}T\d{6}Z$"
+)
+PHASES = [
+    "INTENT",
+    "DISCOVERY",
+    "SPECIFICATION",
+    "PLANNING",
+    "IMPLEMENTATION",
+    "VERIFICATION",
+    "INDEPENDENT_REVIEW",
+    "DECISION",
+    "CLOSURE",
+]
 OPTIONAL_VALIDATORS = {"python.ruff", "python.mypy"}
 
 
@@ -35,16 +57,18 @@ def instant(value: str) -> datetime:
 
 
 def payloads(db: sqlite3.Connection, record_type: str) -> list[dict[str, Any]]:
-    rows = db.execute("select payload_json from records where record_type=? order by rowid", (record_type,))
+    rows = db.execute(
+        "select payload_json from records where record_type=? order by rowid", (record_type,)
+    )
     return [json.loads(payload) for (payload,) in rows]
 
 
 def extract(run_dir: Path) -> dict[str, Any] | None:
     match = NAME.match(run_dir.name)
-    state = run_dir / "ws" / ".harness" / "state.db"
-    if not match or not state.exists():
+    state = state_db(run_dir / "ws", run_dir) if match else None
+    if not match or state is None:
         return None
-    scenario, model, rep = match.groups()
+    scenario, prompt, condition, model, rep = match.groups()
     db = sqlite3.connect(state)
     seconds: dict[str, float] = defaultdict(float)
     attempts: Counter[str] = Counter()
@@ -53,29 +77,60 @@ def extract(run_dir: Path) -> dict[str, Any] | None:
             elapsed = instant(phase["finishedAt"]) - instant(phase["startedAt"])
             seconds[phase["phaseId"]] += elapsed.total_seconds()
             attempts[phase["phaseId"]] += 1
-    non_passed = sorted({(v["validatorId"], v["status"]) for v in payloads(db, "validation") if v["status"] != "PASSED"})
+    model_seconds: dict[str, float] = defaultdict(float)
+    for invocation in payloads(db, "agent_invocation"):
+        if invocation.get("startedAt") and invocation.get("finishedAt"):
+            elapsed = instant(invocation["finishedAt"]) - instant(invocation["startedAt"])
+            model_seconds[str(invocation.get("phaseId"))] += elapsed.total_seconds()
+    non_passed = sorted(
+        {
+            (v["validatorId"], v["status"])
+            for v in payloads(db, "validation")
+            if v["status"] != "PASSED"
+        }
+    )
     retrospectives = payloads(db, "retrospective")
     record = {
         "scenario": scenario,
+        "prompt": prompt or "full",
+        "condition": condition,
         "model": model,
         "rep": int(rep),
         "decisions": [d["decision"] for d in payloads(db, "decision")],
         "phaseSeconds": {p: round(seconds[p], 3) for p in PHASES if p in seconds},
         "phaseAttempts": {p: attempts[p] for p in PHASES if p in attempts},
+        "modelSecondsByPhase": {
+            p: round(model_seconds[p], 3) for p in PHASES if p in model_seconds
+        },
+        "processSecondsByPhase": {
+            p: round(max(0.0, seconds[p] - model_seconds.get(p, 0.0)), 3)
+            for p in PHASES
+            if p in seconds
+        },
         "nonPassedValidations": [{"validator": v, "status": s} for v, s in non_passed],
         "retrospectives": len(retrospectives),
         "recommendations": [
-            {"category": r["category"], "statement": r["statement"], "appliedAutomatically": x["appliedAutomatically"]}
+            {
+                "category": r.get("category"),
+                "statement": r.get("statement"),
+                "appliedAutomatically": x.get("appliedAutomatically"),
+            }
             for x in retrospectives
-            for r in x["recommendations"]
+            for r in x.get("recommendations") or []
         ],
     }
     db.close()
     return record
 
 
-def spread(values: list[float]) -> dict[str, float]:
-    return {"median": round(statistics.median(values), 3), "min": round(min(values), 3), "max": round(max(values), 3)}
+def spread(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"median": None, "min": None, "max": None}
+    return {
+        "median": round(statistics.median(values), 3),
+        "min": round(min(values), 3),
+        "max": round(max(values), 3),
+    }
 
 
 def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
@@ -83,7 +138,8 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     totals = [sum(r["phaseSeconds"].values()) for r in straight]
     implementation = [r["phaseSeconds"]["IMPLEMENTATION"] for r in straight]
     control = [
-        sum(s for p, s in r["phaseSeconds"].items() if p not in ("IMPLEMENTATION", "VERIFICATION")) for r in straight
+        sum(s for p, s in r["phaseSeconds"].items() if p not in ("IMPLEMENTATION", "VERIFICATION"))
+        for r in straight
     ]
     produced = [(r, rec) for r in records for rec in r["recommendations"]]
     by_category = Counter(rec["category"] for _, rec in produced)
@@ -92,15 +148,24 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
         "runs": len(records),
         "approvedWithoutCorrection": {
             "runs": len(straight),
-            "phaseSeconds": {p: spread([r["phaseSeconds"].get(p, 0.0) for r in straight]) for p in PHASES},
+            "phaseSeconds": {
+                p: spread([r["phaseSeconds"].get(p, 0.0) for r in straight]) for p in PHASES
+            },
             "totalPhaseSeconds": spread(totals),
-            "implementationShare": spread([i / t for i, t in zip(implementation, totals, strict=True)]),
+            "implementationShare": spread(
+                [i / t for i, t in zip(implementation, totals, strict=True)]
+            ),
             "phasesOtherThanImplementationAndVerificationSeconds": spread(control),
         },
         "retrospective": {
             "runsWithRetrospective": sum(1 for r in records if r["retrospectives"]),
             "runsWithoutRetrospective": [
-                {"scenario": r["scenario"], "model": r["model"], "rep": r["rep"], "decisions": r["decisions"]}
+                {
+                    "scenario": r["scenario"],
+                    "model": r["model"],
+                    "rep": r["rep"],
+                    "decisions": r["decisions"],
+                }
                 for r in records
                 if not r["retrospectives"]
             ],
@@ -109,7 +174,13 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             "appliedAutomatically": sum(1 for _, rec in produced if rec["appliedAutomatically"]),
             "byCategory": dict(sorted(by_category.items())),
             "byCategoryAndScenario": {
-                category: dict(sorted(Counter(r["scenario"] for r, rec in produced if rec["category"] == category).items()))
+                category: dict(
+                    sorted(
+                        Counter(
+                            r["scenario"] for r, rec in produced if rec["category"] == category
+                        ).items()
+                    )
+                )
                 for category in sorted(by_category)
             },
             "validationRecommendations": {
@@ -124,12 +195,53 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def summarize_v2(records: list[dict[str, Any]]) -> dict[str, Any]:
+    """P15 for one condition: phase seconds split into agent calls and the harness's own work, over
+    the runs approved without a correction; every run counted, none dropped."""
+    straight = [r for r in records if r["decisions"] == ["APPROVE"]]
+    other = [r for r in records if r["decisions"] != ["APPROVE"]]
+    total = [sum(r["phaseSeconds"].values()) for r in straight]
+    model = [sum(r["modelSecondsByPhase"].values()) for r in straight]
+    return {
+        "runs": len(records),
+        "approvedWithoutCorrection": len(straight),
+        "otherRuns": [
+            {k: r[k] for k in ("prompt", "scenario", "model", "rep", "decisions")} for r in other
+        ],
+        "phaseSeconds": {
+            p: spread([r["phaseSeconds"].get(p, 0.0) for r in straight]) for p in PHASES
+        },
+        "modelSecondsByPhase": {
+            p: spread([r["modelSecondsByPhase"].get(p, 0.0) for r in straight]) for p in PHASES
+        },
+        "processSecondsByPhase": {
+            p: spread([r["processSecondsByPhase"].get(p, 0.0) for r in straight]) for p in PHASES
+        },
+        "totalPhaseSeconds": spread(total),
+        "modelSeconds": spread(model),
+        "processSeconds": spread([t - m for t, m in zip(total, model, strict=True)]),
+        "recommendations": dict(
+            sorted(
+                Counter(rec["category"] for r in records for rec in r["recommendations"]).items()
+            )
+        ),
+        "runsWithRetrospective": sum(1 for r in records if r["retrospectives"]),
+    }
+
+
 def main() -> int:
     runs, out, summary = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-    records = [r for r in (extract(p) for p in sorted(runs.glob("*/*")) if p.is_dir()) if r]
-    records.sort(key=lambda r: (r["scenario"], r["model"], r["rep"]))
+    candidates = sorted({*runs.glob("*"), *runs.glob("*/*")})  # <runs>/<run> or <runs>/<model>/<run>
+    records = [r for r in (extract(p) for p in candidates if p.is_dir()) if r]
+    records.sort(key=lambda r: (r["condition"], r["prompt"], r["scenario"], r["model"], r["rep"]))
     out.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in records), encoding="utf-8")
-    data = summarize(records)
+    by_condition: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        by_condition[record["condition"]].append(record)
+    data = summarize(records) if len(by_condition) == 1 and "harness" in by_condition else {}
+    data["byCondition"] = {
+        condition: summarize_v2(rows) for condition, rows in sorted(by_condition.items())
+    }
     summary.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(data, indent=1, sort_keys=True))
     return 0
