@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- `harness init` no longer dirties the tree of an existing repository (closes #86). It appended
+  `.harness/` to the `.gitignore`, so the first run of a brownfield repository reported an
+  `environment.dirty-tree` finding about a change the harness itself had made (the fault probes
+  of the 2.0.0 evaluation left `.gitignore` changed in every probe). In a Git repository init now
+  writes the entry to the repository's `info/exclude` (`.git/info/exclude`; a linked worktree
+  shares its repository's file), which Git reads like a `.gitignore` but which is not part of the
+  tree; an entry already in `.gitignore` is left as it is, and outside a Git repository the
+  `.gitignore` is written as before. `--ignore-file gitignore` keeps the earlier behaviour. The
+  output gains `ignore` (`file`, `entry`, `status`); `gitignore` is still reported when the
+  `.gitignore` was the file. A change of `init` only: `project.yaml` and runs are unchanged.
 - A probe assertion's `variants` is honoured by every assertion kind (closes #74). Only `differs`
   read it: an `exitCode`, `jsonPath`, `order` or `text` assertion meant for one variant was checked
   on every variant, so a correct command line could come out `NOT_CERTIFIED` (seen in the ladder

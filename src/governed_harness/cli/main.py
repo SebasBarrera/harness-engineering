@@ -16,6 +16,7 @@ from governed_harness import __version__
 from governed_harness.application import HarnessApplication
 from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.application.hints import default_hint
+from governed_harness.application.onboarding import IgnoreFile
 from governed_harness.cli.render import render_human, wants_json
 from governed_harness.domain.enums import (
     DecisionKind,
@@ -234,8 +235,15 @@ def init(
     gitignore: bool = typer.Option(
         True,
         "--gitignore/--no-gitignore",
-        help="Add .harness/ to the project's .gitignore (state, artifacts and copies of the code "
-        "live there)",
+        help="Make Git ignore .harness/ (state, artifacts and copies of the code live there)",
+    ),
+    ignore_file: IgnoreFile = typer.Option(
+        IgnoreFile.EXCLUDE,
+        "--ignore-file",
+        case_sensitive=False,
+        help="Where the .harness/ entry goes: exclude writes the repository's .git/info/exclude, "
+        "so an existing repository's tree stays clean (the .gitignore outside a Git "
+        "repository); gitignore writes the project's .gitignore",
     ),
     example_task: bool = typer.Option(
         True,
@@ -251,8 +259,8 @@ def init(
     json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Create .harness/project.yaml for a repository, using the detected technology profiles,
-    add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
-    next commands."""
+    make Git ignore .harness/ (in .git/info/exclude, so the tree stays clean) and write an
+    example task. Prints the detected profiles and the next commands."""
     _emit(
         _call(
             lambda: HarnessApplication().init(
@@ -261,6 +269,7 @@ def init(
                 gitignore=gitignore,
                 example_task=example_task,
                 agent_skills=agent_skills,
+                ignore_file=ignore_file,
             )
         ),
         json_output,

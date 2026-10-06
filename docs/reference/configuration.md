@@ -297,9 +297,12 @@ api:
   users: []
 ```
 
-Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
+Since 1.1 the CLI `harness init` also makes Git ignore `.harness/` and writes
 `.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
-`notifications` section is never written, because it needs a URL.
+`notifications` section is never written, because it needs a URL. Since #86 the entry goes to
+the repository's `.git/info/exclude` in a Git repository, so the tree stays clean (an entry
+already in `.gitignore` is left as it is), and to `.gitignore` outside one or with
+`--ignore-file gitignore`.
 
 ## Fields
 
