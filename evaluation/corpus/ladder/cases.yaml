@@ -16,17 +16,21 @@ probes:
     assertions:
       - {kind: exitCode, equals: 0}
       - {kind: jsonPath, path: "$.items", equals: 2}
-  # One variant: an assertion's `variants` narrows only `differs` (src/governed_harness/ladder/
-  # probes.py, evaluate); a jsonPath assertion is checked on every variant of the probe.
+  # Two variants, each value assertion narrowed to its variant. Before wave 9 (#74) only `differs`
+  # honoured an assertion's `variants`, so this probe had one variant (stock) to avoid checking
+  # the stock values on the empty file; the empty-file part of the criterion is now probed too.
   cli_value:
     command: [python, -m, inventory.cli, value, "{file}"]
     output: json
     variants:
       - {name: stock, values: {file: fixtures/stock.json}, env: {PYTHONPATH: src}}
+      - {name: empty, values: {file: fixtures/empty.json}, env: {PYTHONPATH: src}}
     assertions:
       - {kind: exitCode, equals: 0}
-      - {kind: jsonPath, path: "$.items", equals: 2}
-      - {kind: jsonPath, path: "$.totalValue", equals: "6.02"}
+      - {kind: jsonPath, path: "$.items", equals: 2, variants: [stock]}
+      - {kind: jsonPath, path: "$.totalValue", equals: "6.02", variants: [stock]}
+      - {kind: jsonPath, path: "$.items", equals: 0, variants: [empty]}
+      - {kind: jsonPath, path: "$.totalValue", equals: "0.00", variants: [empty]}
 
 parts:
   c:
