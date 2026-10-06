@@ -46,6 +46,25 @@ def kinds(r: dict[str, Any]) -> set[str]:
     return set((r.get("agentByKind") or {}).keys())
 
 
+def waits(r: dict[str, Any]) -> list[dict[str, Any]]:
+    return list((r.get("harness") or {}).get("waits") or [])
+
+
+def provider_granted(r: dict[str, Any], key: str) -> bool:
+    """Wave 9 (#87): exactly the provider's command line is granted under ``key`` and
+    ``harness config validate`` warns about no provider command."""
+    command = r["projectConfig"]["agentProviders"]["claude"]["command"]
+    rule = {"capability": "process.execute", "scope": [" ".join(command)]}
+    check = r["harness"]["grantCheck"]
+    return rule in (check.get(key) or []) and check["providerWarnings"] == []
+
+
+def inbox_answered(r: dict[str, Any]) -> bool:
+    """Every wait before DECISION the person answered was read from the inbox (#73)."""
+    acted = [w for w in waits(r) if w.get("action") and w.get("wait") != "clarification"]
+    return bool(acted) and all(w.get("source") == "inbox" for w in acted)
+
+
 CASES: dict[str, tuple[str, list[str], list[Check]]] = {
     "direct": (
         "run_eval",
@@ -78,6 +97,13 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
             (
                 "configuration digest equal to 1.0.0's (with --core-reference-src)",
                 lambda r: r["harness"]["coreCheck"].get("digestEqual", True),
+                True,
+            ),
+            (
+                "the provider command is granted in capabilities.grants (the 1.0.0 key)",
+                lambda r: (
+                    provider_granted(r, "grants") and r["harness"]["grantCheck"]["extend"] is None
+                ),
                 True,
             ),
         ],
@@ -122,26 +148,62 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
                 lambda r: r["projectConfig"]["agentRouting"]["mode"] == "fixed",
                 True,
             ),
+            (
+                "the provider command is granted in capabilities.extend, nothing wider (#87)",
+                lambda r: (
+                    provider_granted(r, "extend")
+                    and len(r["projectConfig"]["capabilities"]["extend"]) == 1
+                ),
+                True,
+            ),
+            ("every answered wait read from the inbox (#73)", inbox_answered, True),
         ],
     ),
-    "harness-tiered": (
+    "harness-anchored": (
         "run_eval",
-        ["--scenario", "brownfield", "--condition", "harness-tiered"],
+        ["--scenario", "brownfield", "--condition", "harness-anchored"],
         [
             ("approved", lambda r: outcome(r) == "approved", True),
             (
-                "the router chose the models",
-                lambda r: any(
-                    d.get("mode") == "tiered"
-                    for d in r["harness"]["state"]["measures"]["routingDecisions"]
+                "init's anchored routing with the cell's model as the anchor",
+                lambda r: (
+                    r["projectConfig"]["agentRouting"]["mode"] == "anchored"
+                    and r["projectConfig"]["agentRouting"]["anchorModel"] == MODEL
                 ),
                 True,
             ),
             (
-                "plan approval of a risky task handled",
-                lambda r: "plan-approval" in [w.get("wait") for w in r["harness"]["waits"]],
+                "every routed call anchored at the cell's model (#85)",
+                lambda r: (
+                    bool(r["harness"]["state"]["measures"]["routingDecisions"])
+                    and all(
+                        d.get("mode") == "anchored" and d.get("anchor") == MODEL
+                        for d in r["harness"]["state"]["measures"]["routingDecisions"]
+                    )
+                ),
                 True,
             ),
+            (
+                "invoked with Haiku, every call runs on Haiku (the ceiling)",
+                lambda r: (
+                    set(
+                        m
+                        for k in r["harness"]["state"]["measures"]["invocationsByKind"].values()
+                        for m in k["models"]
+                    )
+                    == {MODEL}
+                ),
+                True,
+            ),
+            (
+                "plan approval of a risky task answered, plan decide --no-continue exits 0 (#83)",
+                lambda r: any(
+                    w.get("wait") == "plan-approval" and str(w.get("action", "")).endswith("-> 0")
+                    for w in waits(r)
+                ),
+                True,
+            ),
+            ("every answered wait read from the inbox (#73)", inbox_answered, True),
         ],
     ),
     "casual-harness": (
@@ -183,6 +245,15 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
                 True,
             ),
             (
+                "the rejected run stays closed: run continue exits 6 (#83)",
+                lambda r: (
+                    outcome(r) == "rejected"
+                    and r["harness"]["decisions"][-1]["continueAfterReject"] == 6
+                    and r["harness"]["finalStatus"] == "FAILED"
+                ),
+                True,
+            ),
+            (
                 "rejected change measured on the quarantine copy",
                 lambda r: (
                     r["measures"].get("measuredOn") == "quarantine-copy"
@@ -211,13 +282,19 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
         ],
         [
             (
-                "approved after one retry of the failed call",
+                "approved: the harness sent the broken acceptance answer once more (#80)",
                 lambda r: outcome(r) == "approved",
                 True,
             ),
             (
-                "the retry is recorded",
-                lambda r: "failed-call" in [w.get("wait") for w in r["harness"]["waits"]],
+                "the retry is the harness's (agent.call.contract-retry), not the person's",
+                lambda r: (
+                    r["harness"]["state"]["measures"]["eventTypes"].get(
+                        "agent.call.contract-retry", 0
+                    )
+                    == 1
+                    and "failed-call" not in [w.get("wait") for w in waits(r)]
+                ),
                 True,
             ),
         ],
@@ -272,9 +349,9 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
         [
             ("the host session created the task", lambda r: r["taskCreatedBySession"], True),
             (
-                "observed: the init configuration does not reach DECISION (session provider + frozen acceptance "
-                "tests + stop the line)",
-                lambda r: outcome(r) != "approved",
+                "observed: the init configuration (session provider + frozen acceptance tests + stop "
+                "the line) is approved since wave 9 (#81)",
+                lambda r: outcome(r) == "approved",
                 False,
             ),
         ],

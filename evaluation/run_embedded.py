@@ -210,8 +210,9 @@ def main() -> int:
         claude_bin=claude_bin,
     )
     if args.variant == "no-acceptance":
-        # With the session provider, the frozen acceptance files the harness writes count as the
-        # session's edits, and a failed verification is quarantined with them (see README).
+        # Before wave 9 (#81), with the session provider, the frozen acceptance files the harness
+        # writes counted as the session's edits, and a failed verification quarantined them (see
+        # README); the variant is kept to compare with the init configuration.
         path = workspace / ".harness" / "project.yaml"
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         config.get("verification", {}).pop("acceptanceTests", None)
