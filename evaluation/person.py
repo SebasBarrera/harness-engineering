@@ -33,15 +33,25 @@ any run:
                           requiring it); otherwise REQUEST_CHANGES with the gate reasons and the
                           findings as feedback, at most two correction cycles; then REJECT. Never
                           APPROVE_EXCEPTION.
-  failed read-only call   ``harness run continue`` once per phase (the call runs again); a second
-                          failure stops the run.
+  failed read-only call   not acted on: the run stops (recorded as ``failed-call``). Since wave 9
+                          the harness itself sends a broken read-only answer once more
+                          (``runtime.contractRetry``, #80); the evaluation no longer retries.
+  refused command         not acted on: the run stops (``policy-refusal``): a provider command
+                          outside the grants (#87) or a destructive one (#76) blocks the run.
   budget exceeded         never raised: the run stops (recorded).
   deferred verification   no evidence can be attached: recorded, never acted on.
   ======================  ===================================================================
 
+Which wait a run is in is read from ``harness inbox --json`` (since wave 9, #73, it lists every
+wait before DECISION with its ``kind``, the ``digest`` the answer binds to and the command that
+answers it); the phase summary is a fallback for a wait the inbox does not list. Clarification
+rounds are bounded by the harness (``intake.ambiguityReview.maxRounds``, #79, after which it
+records assumptions and continues); the person's own cap is only a guard above that bound.
+
 Every act uses ``--no-continue`` and then ``harness run continue`` so the exit code of the run is
-read in one place. Every wait is logged with what the harness showed (inbox kinds, the phase
-summary) and the command answered.
+read in one place (since #83 ``plan decide --no-continue`` exits 0 once recorded, and
+``run continue`` on a rejected run reports it closed, exit 6). Every wait is logged with what the
+harness showed (inbox kinds, the phase summary) and the command answered.
 """
 
 from __future__ import annotations
@@ -57,9 +67,10 @@ import yaml
 
 REVIEWER_ACTOR = "human.reviewer-simulated"
 MAX_CORRECTIONS = 2
-MAX_CLARIFY_ROUNDS = 3
+# A guard, not the rule: the harness bounds the agent's rounds (``maxRounds`` 3 as init writes
+# it, rule A1 only); the project-setup (P1) and deterministic (C0-C3, T1) rounds come on top.
+MAX_CLARIFY_ROUNDS = 6
 MAX_WAITS = 20
-MAX_CALL_RETRIES = 1
 PROJECT_SETUP = {
     "project:testing": "conventional",
     "project:standards": "default",
@@ -86,10 +97,31 @@ _DECIDE = {
 
 
 def recorded(proc: Any) -> bool:
-    """A decision command recorded the act. With ``--no-continue`` a command that reports the run
-    (``plan decide`` on the plan-approval checkpoint) exits with the code of the still-blocked run
-    (6) after recording; refusals are 5, unknown runs 3, configuration errors 2, crashes 1."""
+    """A decision command recorded the act: 0 (since #83 also ``plan decide --no-continue`` on
+    the plan-approval checkpoint, which exited 6 before), 4 or 6 for a command that reports the
+    run it recorded on (a REJECT ends the run: 6); refusals are 5, unknown runs 3, configuration
+    errors 2, crashes 1."""
     return int(proc.returncode) in (0, 4, 6)
+
+
+# The inbox kind of a wait before DECISION (#73) and the person's handler for it.
+INBOX_KINDS = {
+    "contract": "contract",
+    "architecture": "architecture",
+    "acceptance": "acceptance",
+    "decomposition": "plan",
+    "plan": "plan",
+    "preflight": "preflight",
+}
+POLICY_REFUSAL = re.compile(
+    r"CommandRefused|DestructiveActionDenied|capabilities\.command-denied"
+    r"|capabilities\.destructive-denied|sandbox\.unavailable",
+)
+FAILED_CALL = re.compile(
+    r"call did not answer|malformed result|tests are not valid|survey did not answer"
+    r"|broke its contract|contract retry",
+    re.IGNORECASE,
+)
 
 
 def _json(proc: Any) -> Any:
@@ -126,7 +158,6 @@ class SimulatedPerson:
         self.gate_history: list[str] = []
         self.decisions: list[dict[str, Any]] = []
         self.corrections = 0
-        self.call_retries: dict[str, int] = {}
         self.seconds = 0.0
         """Time of the simulated person's own work (its harness commands, not the product owner's
         model calls, which are timed in po-calls)."""
@@ -195,12 +226,12 @@ class SimulatedPerson:
         for item in status.get("phases") or []:
             if item.get("phaseId") == phase:
                 summary = item.get("summary") or ""
-        inbox = self.hj("inbox", "--json") or []
+        inbox = [i for i in self.hj("inbox", "--json") or [] if i.get("executionId") == run_id]
         entry: dict[str, Any] = {
             "phase": phase,
             "status": state,
             "summary": summary[:600],
-            "inboxKinds": sorted({i.get("kind") for i in inbox if i.get("executionId") == run_id}),
+            "inboxKinds": sorted({str(i.get("kind")) for i in inbox}),
         }
         self.waits.append(entry)
         if (
@@ -220,27 +251,54 @@ class SimulatedPerson:
             if questions.get("openRequest"):
                 entry["wait"] = "clarification"
                 return self.clarify(run_id, task_id, questions["openRequest"], entry)
+        for item in inbox:
+            handler = INBOX_KINDS.get(str(item.get("kind")))
+            if handler is None or (handler != "preflight" and not item.get("digest")):
+                continue
+            entry["source"] = "inbox"
+            return self._answer(run_id, task_id, handler, str(item.get("digest")), item, entry)
         for kind, pattern in _DECIDE.items():
             match = pattern.search(summary)
             if match:
-                entry["wait"] = kind
-                return getattr(self, "_" + kind.replace("-", "_"))(run_id, task_id, match, entry)
-        if re.search(
-            r"call did not answer|malformed result|tests are not valid|survey did not answer",
-            summary,
-        ):
-            # A read-only call failed or answered something the harness could not read: the person
-            # runs it again once per phase, as anyone would before giving up (pilot, 2026-10-06).
-            if self.call_retries.get(str(phase), 0) < MAX_CALL_RETRIES:
-                self.call_retries[str(phase)] = self.call_retries.get(str(phase), 0) + 1
-                entry["wait"] = "failed-call"
-                entry["action"] = "run continue (retry the call once)"
-                return self.resume(run_id)
+                # A wait the inbox does not list: the phase summary names the command.
+                entry["source"] = "summary"
+                digest = match.group(1) if match.groups() else ""
+                handler = "architecture" if kind.startswith("architecture") else kind
+                return self._answer(run_id, task_id, handler, digest, {}, entry)
+        # Stops the person does not act on, labelled for the report.
+        if POLICY_REFUSAL.search(summary):
+            entry["wait"] = "policy-refusal"
+        elif FAILED_CALL.search(summary):
             entry["wait"] = "failed-call"
-            entry["action"] = "retry exhausted"
-            return None
-        entry["wait"] = "budget" if "budget" in summary.lower() else None
+        else:
+            entry["wait"] = "budget" if "budget" in summary.lower() else None
         return None
+
+    def _answer(
+        self,
+        run_id: str,
+        task_id: str,
+        handler: str,
+        digest: str,
+        item: dict[str, Any],
+        entry: dict[str, Any],
+    ) -> int | None:
+        """Answer one wait before DECISION, bound to the digest the harness showed."""
+        entry["wait"] = str(item.get("kind") or handler)
+        if handler == "architecture":
+            text = f"{item.get('next', '')} {item.get('summary', '')} {entry['summary']}"
+            if "--option" in text or "architecture option" in text:
+                entry["wait"] = "architecture-options"
+                return self._architecture_options(run_id, digest, entry)
+            entry["wait"] = "architecture-rules"
+            return self._architecture_rules(run_id, digest, item, entry)
+        if handler == "plan":
+            return self._plan(run_id, digest, entry)
+        if handler == "acceptance":
+            return self._acceptance(run_id, digest, entry)
+        if handler == "contract":
+            return self._contract(run_id, task_id, digest, entry)
+        return self._preflight(run_id, entry)
 
     def clarify(
         self, run_id: str, task_id: str, request: dict[str, Any], entry: dict[str, Any]
@@ -310,7 +368,9 @@ class SimulatedPerson:
             return None
         return self.resume(run_id)
 
-    def _contract(self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]) -> int | None:
+    def _contract(
+        self, run_id: str, task_id: str, digest: str, entry: dict[str, Any]
+    ) -> int | None:
         proc = self.h(
             "task",
             "confirm",
@@ -319,47 +379,42 @@ class SimulatedPerson:
             "--task",
             task_id,
             "--digest",
-            match.group(1),
+            digest,
             "--actor",
             REVIEWER_ACTOR,
         )
         entry["action"] = f"task confirm -> {proc.returncode}"
         return self.resume(run_id) if recorded(proc) else None
 
-    def _acceptance(
-        self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]
-    ) -> int | None:
+    def _acceptance(self, run_id: str, digest: str, entry: dict[str, Any]) -> int | None:
         shown = self.hj("acceptance", "show", "--run", run_id) or {}
         tests = shown.get("tests") or []
         complete = (
             bool(tests)
             and all(t.get("path") and t.get("content") for t in tests)
-            and shown.get("digest") == match.group(1)
+            and shown.get("digest") == digest
         )
-        entry["evidence"] = {
-            "files": len(tests),
-            "digestMatches": shown.get("digest") == match.group(1),
-        }
+        entry["evidence"] = {"files": len(tests), "digestMatches": shown.get("digest") == digest}
         return self._decide_proposal(
             run_id,
             "acceptance",
-            match.group(1),
+            digest,
             complete,
             entry,
             "Acceptance tests proposed for every criterion; evidence complete.",
         )
 
-    def _plan(self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]) -> int | None:
+    def _plan(self, run_id: str, digest: str, entry: dict[str, Any]) -> int | None:
         shown = self.hj("plan", "show", "--run", run_id) or {}
         approval = shown.get("approval") if isinstance(shown.get("approval"), dict) else None
         if approval is not None and approval.get("status") == "PENDING":
             # The plan-approval checkpoint (friction.planApproval: risk): the recorded plan of a
             # task with a risk flag, bound to its digest.
-            complete = approval.get("digest") == match.group(1) and bool(approval.get("planRef"))
+            complete = approval.get("digest") == digest and bool(approval.get("planRef"))
             entry["wait"] = "plan-approval"
             entry["evidence"] = {
                 "reasons": approval.get("reasons"),
-                "digestMatches": approval.get("digest") == match.group(1),
+                "digestMatches": approval.get("digest") == digest,
             }
             why = "The plan is recorded and bound to its digest; the risk flags are listed."
         else:
@@ -367,14 +422,15 @@ class SimulatedPerson:
             complete = (
                 bool(subtasks)
                 and all(s.get("title") for s in subtasks)
-                and shown.get("digest") == match.group(1)
+                and shown.get("digest") == digest
             )
+            entry["wait"] = "decomposition"
             entry["evidence"] = {
                 "subtasks": len(subtasks),
-                "digestMatches": shown.get("digest") == match.group(1),
+                "digestMatches": shown.get("digest") == digest,
             }
             why = "Decomposition partitions the requirements; evidence complete."
-        return self._decide_proposal(run_id, "plan", match.group(1), complete, entry, why)
+        return self._decide_proposal(run_id, "plan", digest, complete, entry, why)
 
     def _decide_proposal(
         self,
@@ -407,9 +463,7 @@ class SimulatedPerson:
         entry["action"] = f"{command} decide {decision} -> {proc.returncode}"
         return self.resume(run_id) if recorded(proc) else None
 
-    def _architecture_options(
-        self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]
-    ) -> int | None:
+    def _architecture_options(self, run_id: str, digest: str, entry: dict[str, Any]) -> int | None:
         shown = self.hj("architecture", "show", "--json") or {}
         options = _find_options(shown)
         if not options:
@@ -431,7 +485,7 @@ class SimulatedPerson:
             "--option",
             str(chosen.get("id")),
             "--digest",
-            match.group(1),
+            digest,
             "--rationale",
             "The option the proposal recommends.",
             "--actor",
@@ -442,12 +496,15 @@ class SimulatedPerson:
         return self.resume(run_id) if recorded(proc) else None
 
     def _architecture_rules(
-        self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]
+        self, run_id: str, digest: str, item: dict[str, Any], entry: dict[str, Any]
     ) -> int | None:
-        layers = re.search(r"inferred (\d+) layer", entry["summary"])
-        decision = "APPROVE" if layers and int(layers.group(1)) > 0 else "REJECT"
-        if "rules wait for a person" in entry["summary"]:
-            decision = "APPROVE"
+        # The inbox says "N inferred layer rule(s) to approve"; the phase summary "inferred N
+        # layer(s)" (or that the rules wait for a person).
+        text = f"{item.get('summary', '')} {entry['summary']}"
+        layers = re.search(r"(\d+) inferred layer|inferred (\d+) layer", text)
+        count = int(next(g for g in layers.groups() if g)) if layers else 0
+        decision = "APPROVE" if count > 0 or "rules wait for a person" in text else "REJECT"
+        entry["evidence"] = {"layers": count}
         proc = self.h(
             "architecture",
             "decide",
@@ -458,7 +515,7 @@ class SimulatedPerson:
             "--decision",
             decision,
             "--digest",
-            match.group(1),
+            digest,
             "--rationale",
             "The inferred layer rules match the survey.",
             "--actor",
@@ -468,9 +525,7 @@ class SimulatedPerson:
         entry["action"] = f"architecture decide {decision} -> {proc.returncode}"
         return self.resume(run_id) if recorded(proc) else None
 
-    def _preflight(
-        self, run_id: str, task_id: str, match: Any, entry: dict[str, Any]
-    ) -> int | None:
+    def _preflight(self, run_id: str, entry: dict[str, Any]) -> int | None:
         proc = self.h(
             "verification",
             "decide",
@@ -529,9 +584,7 @@ class SimulatedPerson:
             REVIEWER_ACTOR,
             "--rationale",
             rationale,
-            # REJECT ends the run in the same command: after a REJECT recorded with --no-continue,
-            # run continue re-evaluates the restored workspace and asks for a decision again.
-            *(["--no-continue"] if decision != "REJECT" else []),
+            "--no-continue",
             *extra,
         )
         self.decisions.append(
@@ -549,7 +602,11 @@ class SimulatedPerson:
         if decision == "REQUEST_CHANGES":
             self.corrections += 1
         if decision == "REJECT":
-            return proc.returncode, "rejected"
+            # Since #83 a rejected run stays closed: run continue reports it (FAILED, exit 6)
+            # instead of evaluating the restored baseline and asking for a decision again.
+            closed = self.resume(run_id)
+            self.decisions[-1]["continueAfterReject"] = closed
+            return closed, "rejected" if closed == 6 else f"rejected-continue-exit-{closed}"
         if decision == "REQUEST_CHANGES" and self.session is not None:
             # The session provider passes as soon as the workspace differs from the baseline: the
             # session must make the changes before the run continues.
