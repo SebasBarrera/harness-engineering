@@ -106,12 +106,18 @@ class SimulatedPerson:
         run_dir: Path,
         clarifier: Any = None,
         feedback: Callable[[str, dict[str, Any]], str] | None = None,
+        session: Callable[[str, str], int] | None = None,
     ) -> None:
         self.harness = harness
         self.workspace = workspace
         self.run_dir = run_dir
         self.clarifier = clarifier
         self.feedback = feedback
+        self.session = session
+        """Embedded mode: the host session that implements (``run_embedded.py``). It is resumed with
+        a message when the run waits for its edits (and after REQUEST_CHANGES or a failed
+        verification, which the session provider does not correct on its own); it returns the
+        exit code of the run afterwards."""
         self.waits: list[dict[str, Any]] = []
         self.clarification: list[dict[str, Any]] = []
         self.gate_history: list[str] = []
@@ -193,6 +199,15 @@ class SimulatedPerson:
             "inboxKinds": sorted({i.get("kind") for i in inbox if i.get("executionId") == run_id}),
         }
         self.waits.append(entry)
+        if (
+            self.session is not None
+            and phase in ("IMPLEMENTATION", "VERIFICATION")
+            and ("Waiting for the agent session" in summary or state in ("BLOCKED", "FAILED"))
+        ):
+            # Embedded mode: the session implements and corrects; the person does not.
+            entry["wait"] = "session"
+            entry["action"] = "session resumed"
+            return self.session(run_id, summary)
         if state != "BLOCKED":
             entry["wait"] = None
             return None
@@ -517,6 +532,15 @@ class SimulatedPerson:
             self.corrections += 1
         if decision == "REJECT":
             return proc.returncode, "rejected"
+        if decision == "REQUEST_CHANGES" and self.session is not None:
+            # The session provider passes as soon as the workspace differs from the baseline: the
+            # session must make the changes before the run continues.
+            feedback = (
+                (self.run_dir / "feedback.md").read_text(encoding="utf-8")
+                if (self.run_dir / "feedback.md").exists()
+                else CHANGES_RATIONALE
+            )
+            return self.session(run_id, "The person requested changes:\n" + feedback), None
         code = self.resume(run_id)
         if decision == "APPROVE":
             return code, "approved" if code == 0 else f"approved-closure-exit-{code}"

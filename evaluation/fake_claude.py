@@ -241,10 +241,94 @@ def _product_owner(prompt: str) -> str | None:
     return "\n".join(lines)
 
 
+class _Mcp:
+    """A minimal MCP client over stdio: the fake host's connection to ``harness mcp serve``."""
+
+    def __init__(self, config: str) -> None:
+        import os
+        import subprocess
+
+        path = Path(config)
+        servers = json.loads(path.read_text(encoding="utf-8") if path.is_file() else config)[
+            "mcpServers"
+        ]
+        server = servers["harness"]
+        env = {**os.environ, **(server.get("env") or {})}
+        self.proc = subprocess.Popen(
+            [server["command"], *server.get("args", [])],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            env=env,
+        )
+        self.next_id = 0
+        self.request("initialize", {"protocolVersion": "2025-06-18"})
+
+    def request(self, method: str, params: dict[str, Any]) -> Any:
+        self.next_id += 1
+        assert self.proc.stdin and self.proc.stdout
+        self.proc.stdin.write(
+            json.dumps({"jsonrpc": "2.0", "id": self.next_id, "method": method, "params": params})
+            + "\n"
+        )
+        self.proc.stdin.flush()
+        return json.loads(self.proc.stdout.readline()).get("result")
+
+    def tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        result = self.request("tools/call", {"name": name, "arguments": arguments}) or {}
+        return result.get("structuredContent") or {}
+
+    def close(self) -> None:
+        if self.proc.stdin:
+            self.proc.stdin.close()
+        self.proc.wait(timeout=60)
+
+
+def _host(prompt: str, cwd: Path, config: str) -> str:
+    """A host session (embedded mode): create the task and start the run on the first prompt,
+    implement and continue whenever the run waits for the session."""
+    mcp = _Mcp(config)
+    steps = []
+    first = cwd.parent / "fake-host-prompt.txt"
+    if not first.exists():
+        first.write_text(prompt, encoding="utf-8")
+    starting = "harness_task_create, passing exactly" in prompt
+    prompt = prompt + "\n" + first.read_text(encoding="utf-8")  # the task's ids for the tests
+    try:
+        match = re.search(r"```json\n(.*?)\n```", prompt, re.DOTALL)
+        if starting and match:
+            task = mcp.tool("harness_task_create", {"task": json.loads(match.group(1))})
+            run = mcp.tool("harness_run_start", {"taskId": task.get("taskId")})
+            steps.append(
+                f"started {run.get('executionId')} ({run.get('status')} {run.get('currentPhase')})"
+            )
+        status = mcp.tool("harness_status", {"run": "latest"})
+        execution = status.get("execution") or {}
+        if execution.get("currentPhase") in ("IMPLEMENTATION", "VERIFICATION") and execution.get(
+            "status"
+        ) in ("BLOCKED", "FAILED"):
+            steps.append(_implement(cwd, prompt))
+            mcp.tool("harness_check", {"run": execution.get("executionId")})
+            after = mcp.tool("harness_run_continue", {"run": execution.get("executionId")})
+            steps.append(
+                f"continued: {after.get('status')} {after.get('currentPhase')} exit {after.get('exitCode')}"
+            )
+        else:
+            steps.append(
+                f"waiting for a person: {execution.get('status')} {execution.get('currentPhase')}"
+            )
+    finally:
+        mcp.close()
+    return "; ".join(steps)
+
+
 def main(argv: list[str]) -> int:
     prompt = _arg(argv, "-p") or sys.stdin.read()
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
+    if "--mcp-config" in argv:
+        text = _host(prompt, cwd, _arg(argv, "--mcp-config") or "{}")
+        return _print(text, model)
     text = _product_owner(prompt)
     if text is None:
         result = _call(prompt, cwd)
@@ -252,6 +336,10 @@ def main(argv: list[str]) -> int:
             text = json.dumps({"status": "PASSED", "summary": "Dry-run answer.", "result": result})
         else:
             text = _implement(cwd, prompt)
+    return _print(text, model)
+
+
+def _print(text: str, model: str) -> int:
     usage = {
         "input_tokens": 0,
         "output_tokens": 0,

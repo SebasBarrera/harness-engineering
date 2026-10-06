@@ -339,6 +339,19 @@ def run_measures(
         },
         "panel": panel_events,
         "unsupportedClaims": sum(rule_counts[r] for r in CLAIM_RULES),
+        # Who decided and who answered: a human actor id only (agent.* is refused by the harness).
+        "decisionActors": dict(
+            Counter(
+                str((d.get("actor") or {}).get("actorId"))
+                for d in state.records("decision", run_id)
+            )
+        ),
+        "clarificationActors": dict(
+            Counter(
+                str((c.get("actor") or {}).get("actorId"))
+                for c in state.records("clarification", run_id)
+            )
+        ),
         "writeFindings": {
             r: n for r, n in sorted(rule_counts.items()) if any(k in r for k in WRITE_RULES)
         },
