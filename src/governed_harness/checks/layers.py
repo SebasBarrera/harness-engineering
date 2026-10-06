@@ -137,12 +137,12 @@ def _glob(path: str, pattern: str) -> bool:
     if pattern.startswith("**/") and fnmatchcase(path, pattern[3:]):
         return True
     # "src/domain/**" also matches the directory itself and an extension-less import target.
-    return pattern.endswith("/**") and path == pattern[:-3]
+    return pattern == f"{path}/**"
 
 
 # ----- imports per language ----------------------------------------------------------------------
 _JS_IMPORT = re.compile(
-    r"""(?:\bfrom\s+|\bimport\s*\(\s*|\brequire\s*\(\s*|^\s*import\s+)(['"])(?P<target>[^'"]+)\1"""
+    r"""(?:\bfrom\s+|\b(?:import|require)\s*\(\s*|^\s*import\s+)(['"])(?P<target>[^'"]+)\1"""
 )
 _JVM_IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?(?P<target>[\w.]+)")
 _CS_USING = re.compile(r"^\s*(?:global\s+)?using\s+(?:static\s+)?(?P<target>[A-Z][\w.]*)\s*;")
@@ -151,7 +151,7 @@ _GO_IMPORT = re.compile(r'^\s*(?:import\s+)?(?:[\w.]+\s+)?"(?P<target>[^"]+)"')
 _RUST_USE = re.compile(r"^\s*(?:pub\s+)?use\s+(?P<target>(?:crate|super|self)(?:::\w+)+)")
 _SWIFT_IMPORT = re.compile(r"^\s*(?:@testable\s+)?import\s+(?P<target>\w+)")
 _RUBY_REQUIRE = re.compile(
-    r"""^\s*require(?P<relative>_relative)?\s*\(?\s*(['"])(?P<target>[^'"]+)\2"""
+    r"""^\s*require(?P<relative>_relative)?\s*(?:\(\s*)?(['"])(?P<target>[^'"]+)\2"""
 )
 
 
@@ -168,7 +168,12 @@ _SINGLE_LINE: dict[str, tuple[re.Pattern[str], str]] = {
 """Languages with one import per line: the pattern and the separator to turn into dots."""
 
 
-def imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
+_JS_SUFFIXES = frozenset({"js", "mjs", "cjs", "jsx", "ts", "tsx", "vue"})
+
+_Import = tuple[int, str, str]
+
+
+def imports(path: str, text: str) -> Iterator[_Import]:
     """``(line, kind, target)`` of every import of a file; ``kind`` is ``path`` (a workspace
     path) or ``module`` (a dotted or package name)."""
     suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
@@ -176,44 +181,62 @@ def imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
         yield from _python_imports(path, text)
         return
     directory = posixpath.dirname(path)
-    single = _SINGLE_LINE.get(suffix)
-    in_go_block = False
-    for number, line in enumerate(text.splitlines(), start=1):
-        if suffix in {"js", "mjs", "cjs", "jsx", "ts", "tsx", "vue"}:
-            for found in _JS_IMPORT.finditer(line):
-                target = found["target"]
-                if target.startswith("."):
-                    yield number, "path", posixpath.normpath(posixpath.join(directory, target))
-                else:
-                    yield number, "module", target
+    lines = text.splitlines()
+    if suffix in _JS_SUFFIXES:
+        yield from _js_imports(lines, directory)
+    elif suffix == "go":
+        yield from _go_imports(lines)
+    elif suffix == "rb":
+        yield from _ruby_imports(lines, directory)
+    elif suffix in _SINGLE_LINE:
+        yield from _single_line_imports(lines, *_SINGLE_LINE[suffix])
+
+
+def _js_imports(lines: list[str], directory: str) -> Iterator[_Import]:
+    for number, line in enumerate(lines, start=1):
+        for found in _JS_IMPORT.finditer(line):
+            target = found["target"]
+            if target.startswith("."):
+                yield number, "path", posixpath.normpath(posixpath.join(directory, target))
+            else:
+                yield number, "module", target
+
+
+def _go_imports(lines: list[str]) -> Iterator[_Import]:
+    in_block = False
+    for number, line in enumerate(lines, start=1):
+        stripped = line.strip()
+        if stripped.startswith("import ("):
+            in_block = True
             continue
-        if suffix == "go":
-            stripped = line.strip()
-            if stripped.startswith("import ("):
-                in_go_block = True
-                continue
-            if in_go_block and stripped == ")":
-                in_go_block = False
-                continue
-            go_match = _GO_IMPORT.match(line)
-            if go_match is not None and (in_go_block or stripped.startswith("import ")):
-                yield number, "module", go_match["target"]
+        if in_block and stripped == ")":
+            in_block = False
             continue
-        if suffix == "rb":
-            ruby = _RUBY_REQUIRE.match(line)
-            if ruby is not None:
-                if ruby["relative"]:
-                    joined = posixpath.join(directory, ruby["target"])
-                    yield number, "path", posixpath.normpath(joined)
-                else:
-                    yield number, "module", ruby["target"]
+        found = _GO_IMPORT.match(line)
+        if found is not None and (in_block or stripped.startswith("import ")):
+            yield number, "module", found["target"]
+
+
+def _ruby_imports(lines: list[str], directory: str) -> Iterator[_Import]:
+    for number, line in enumerate(lines, start=1):
+        ruby = _RUBY_REQUIRE.match(line)
+        if ruby is None:
             continue
-        if single is not None:
-            pattern, separator = single
-            other = pattern.match(line)
-            if other is not None:
-                target = other["target"]
-                yield number, "module", target.replace(separator, ".") if separator else target
+        if ruby["relative"]:
+            yield number, "path", posixpath.normpath(posixpath.join(directory, ruby["target"]))
+        else:
+            yield number, "module", ruby["target"]
+
+
+def _single_line_imports(
+    lines: list[str], pattern: re.Pattern[str], separator: str
+) -> Iterator[_Import]:
+    """One import per line (Java, Kotlin, Scala, C#, PHP, Rust, Swift)."""
+    for number, line in enumerate(lines, start=1):
+        found = pattern.match(line)
+        if found is not None:
+            target = found["target"]
+            yield number, "module", target.replace(separator, ".") if separator else target
 
 
 def _python_imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
@@ -230,8 +253,10 @@ def _python_imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
 
 
 # ----- the check -----------------------------------------------------------------------------------
+# Blanks within the line only (``[^\S\n]``) and one optional terminator: linear on any text.
 _DECLARATION = re.compile(
-    r"^\s*(?:package|namespace)\s+(?P<name>[A-Za-z_][\w.\\]*)\s*[;{]?\s*$", re.MULTILINE
+    r"^[^\S\n]*(?:package|namespace)\s+(?P<name>[A-Za-z_][\w.\\]*)[^\S\n]*(?:[;{][^\S\n]*)?$",
+    re.MULTILINE,
 )
 
 
@@ -249,14 +274,25 @@ def source_layer(rules: LayerRules, path: str, text: str = "") -> str | None:
         layer = rules.layer_of_module(declared["name"].replace("\\", "."))
         if layer is not None:
             return layer
+    return _layer_of_directories(rules, path)
+
+
+def _layer_of_directories(rules: LayerRules, path: str) -> str | None:
+    """The first layer with a module prefix whose segments appear in the file's directories."""
     parts = [item for item in path.replace("\\", "/").split("/")[:-1] if item]
     for layer_item in rules.layers:
         for prefix in layer_item.modules:
             wanted = [item for item in _SEPARATORS.split(prefix) if item]
-            for start in range(len(parts) - len(wanted) + 1):
-                if wanted and parts[start : start + len(wanted)] == wanted:
-                    return layer_item.name
+            if wanted and _contains(parts, wanted):
+                return layer_item.name
     return None
+
+
+def _contains(parts: list[str], wanted: list[str]) -> bool:
+    return any(
+        parts[start : start + len(wanted)] == wanted
+        for start in range(len(parts) - len(wanted) + 1)
+    )
 
 
 def check_layers(
@@ -274,33 +310,38 @@ def check_layers(
         if is_test_path(path):
             continue
         source = source_layer(rules, path, files[path])
-        if source is None:
-            continue
-        reported: set[tuple[int, str]] = set()
-        for line, kind, target in imports(path, files[path]):
-            layer = rules.layer_of_path(target) if kind == "path" else rules.layer_of_module(target)
-            if layer is None or rules.allowed(source, layer) or (line, layer) in reported:
-                continue
-            reported.add((line, layer))
-            allowed = ", ".join(rules.allow.get(source, ())) or "no other layer"
-            issues.append(
-                Issue(
-                    rule_id=RULE_ID,
-                    severity=severity,
-                    message=(
-                        f"{path} is in layer {source} and imports {target} (layer {layer}); "
-                        f"{source} may depend on {allowed}"
-                    ),
-                    path=path,
-                    line=line,
-                    category=_CATEGORY,
-                    recommendation=(
-                        f"Invert the dependency (an interface in {source} that {layer} "
-                        "implements) or move the code to the layer it belongs to."
-                    ),
-                )
-            )
+        if source is not None:
+            issues.extend(_violations(rules, path, files[path], source, severity))
     return issues
+
+
+def _violations(
+    rules: LayerRules, path: str, text: str, source: str, severity: FindingSeverity
+) -> Iterator[Issue]:
+    """The imports of one file that reach a layer ``source`` may not depend on, one issue per
+    line and layer."""
+    reported: set[tuple[int, str]] = set()
+    allowed = ", ".join(rules.allow.get(source, ())) or "no other layer"
+    for line, kind, target in imports(path, text):
+        layer = rules.layer_of_path(target) if kind == "path" else rules.layer_of_module(target)
+        if layer is None or rules.allowed(source, layer) or (line, layer) in reported:
+            continue
+        reported.add((line, layer))
+        yield Issue(
+            rule_id=RULE_ID,
+            severity=severity,
+            message=(
+                f"{path} is in layer {source} and imports {target} (layer {layer}); "
+                f"{source} may depend on {allowed}"
+            ),
+            path=path,
+            line=line,
+            category=_CATEGORY,
+            recommendation=(
+                f"Invert the dependency (an interface in {source} that {layer} "
+                "implements) or move the code to the layer it belongs to."
+            ),
+        )
 
 
 __all__ = ["RULE_ID", "Layer", "LayerRules", "check_layers", "imports", "source_layer"]
