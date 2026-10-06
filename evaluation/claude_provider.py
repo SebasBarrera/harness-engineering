@@ -18,7 +18,7 @@ configuration); only the prompt depends on the request:
   object with a ``result`` key in the answer, as the built-in ``claude-code`` adapter does.
 
 The answer carries the usage Claude Code reports (tokens with their cache part, cost), as the
-built-in adapter reports it. Model: ``--model`` for every call; with ``--honor-routing`` (the tiered
+built-in adapter reports it. Model: ``--model`` for every call; with ``--honor-routing`` (the anchored
 condition) the model and effort the router put in ``routing`` replace it for that call. Every call
 leaves a usage record ``call-N.json`` (with ``kind``, model, effort and what routing asked for), the
 request and the prompt next to the workspace (``../agent-calls``, or ``--calls-dir``). Without a
@@ -113,7 +113,7 @@ def main() -> int:
     parser.add_argument(
         "--honor-routing",
         action="store_true",
-        help="use the model and effort of the request's routing (tiered condition)",
+        help="use the model and effort of the request's routing (anchored condition)",
     )
     parser.add_argument("--calls-dir", type=Path, default=None)
     parser.add_argument(

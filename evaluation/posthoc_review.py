@@ -6,7 +6,7 @@ review. Scanning the final change of both conditions with the same rules shows w
 delivers. For harness runs, the findings raised during the run are also listed with their file.
 
 Since the 2.0.0 evaluation the run directories of every condition are read (direct, harness-core,
-harness, harness-tiered and the 0.9.0 names), with the prompt level, from ``<runs>/<run>`` or
+harness, harness-anchored, harness-tiered and the 0.9.0 names), with the prompt level, from ``<runs>/<run>`` or
 ``<runs>/<model>/<run>``; the findings raised during a run are read from the workspace's state
 database or from the run registry in the run directory. A stopped run whose change was quarantined is
 scanned on its quarantine copy when ``run_eval.py`` left one.
@@ -32,7 +32,7 @@ from harness_state import state_db  # noqa: E402
 
 NAME = re.compile(
     r"^(greenfield|brownfield|security)(?:-(poor|casual))?"
-    r"-(baseline|direct|harness-core|harness-tiered|harness|clarify)-(.+)-r(\d+)-\d{8}T\d{6}Z$"
+    r"-(baseline|direct|harness-core|harness-anchored|harness-tiered|harness|clarify)-(.+)-r(\d+)-\d{8}T\d{6}Z$"
 )
 GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 

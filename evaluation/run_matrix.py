@@ -6,7 +6,7 @@ first. Each run is independent (fresh repository, fresh harness state); a failin
 and the matrix continues. A run already in the output file (same scenario, condition, prompt and
 repetition) is skipped, so a matrix that stopped resumes where it left off.
 
-2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-tiered`` (``baseline`` is the
+2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-anchored`` (``baseline`` is the
 0.9.0 name of ``direct``). ``--dry-run`` and ``--provider`` are passed to every run (see run_eval.py).
 """
 

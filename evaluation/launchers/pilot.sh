@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Pilot of the 2.0.0 evaluation: one scenario, one model, one repetition per condition, one run at a
-# time: full prompt x {direct, harness-core, harness, harness-tiered}, then the casual prompt under
+# time: full prompt x {direct, harness-core, harness, harness-anchored}, then the casual prompt under
 # the harness with the simulated product owner (block B). At most five runs.
 # EVAL_PILOT_MODEL (default claude-haiku-4-5-20251001), EVAL_PILOT_SCENARIO (default brownfield),
 # EVAL_PILOT_RUNS (default: all five, as "prompt:condition" words).
@@ -16,7 +16,7 @@ record_environment pilot
 MODEL="${EVAL_PILOT_MODEL:-claude-haiku-4-5-20251001}"
 SC="${EVAL_PILOT_SCENARIO:-brownfield}"
 SLOT=$(make_slot p1)
-for RUN in ${EVAL_PILOT_RUNS:-full:direct full:harness-core full:harness full:harness-tiered casual:harness}; do
+for RUN in ${EVAL_PILOT_RUNS:-full:direct full:harness-core full:harness full:harness-anchored casual:harness}; do
   PROMPT="${RUN%%:*}"
   CONDITION="${RUN##*:}"
   if [ -f "$EVAL_OUT/pilot.jsonl" ] && "$SLOT/bin/python" - "$EVAL_OUT/pilot.jsonl" "$PROMPT" "$CONDITION" << 'PY'; then

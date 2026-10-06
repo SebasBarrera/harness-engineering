@@ -290,7 +290,7 @@ def summarize_probes(path: Path) -> dict[str, Any]:
 
 
 # ----- 2.0.0 evaluation (blocks A and B) -------------------------------------------------------
-GOVERNED_V2 = ("harness-core", "harness", "harness-tiered", "clarify")
+GOVERNED_V2 = ("harness-core", "harness", "harness-anchored", "harness-tiered", "clarify")
 BLOCKS_V2 = {"full": "A", "poor": "B", "casual": "B"}
 
 
@@ -466,7 +466,7 @@ def summarize_cell_v2(runs: list[dict[str, Any]]) -> dict[str, Any]:
             f"{d.get('callKind')}:{d.get('model')}:{d.get('effort')}"
             for x in hm
             for d in x.get("routingDecisions") or []
-            if d.get("mode") == "tiered"
+            if d.get("mode") in ("tiered", "anchored")
         )
         cell["harness"] = {
             "outcomes": dict(outcomes),

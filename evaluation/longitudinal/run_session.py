@@ -215,12 +215,12 @@ def main() -> int:
             "structured",
             "harness",
             "harness-core",
-            "harness-tiered",
+            "harness-anchored",
             "harness-legacy",
         ],
         required=True,
         help="baseline: casual prompts; structured: the structured tasks without the harness; harness, "
-        "harness-core, harness-tiered: the 2.0.0 conditions of run_eval.py; harness-legacy: the "
+        "harness-core, harness-anchored: the 2.0.0 conditions of run_eval.py; harness-legacy: the "
         "configuration of the 0.9.0 sessions (harness init + provider)",
     )
     parser.add_argument("--model", required=True)

@@ -5,7 +5,7 @@ Usage: python report_prompts.py <results-dir> <out.json> [<figures-dir>]      (0
        python report_prompts.py --v2 <results-dir> <out.json>                  (2.0.0 block B)
 Descriptive counts only; a delivered run is any run without the harness (baseline, direct) or an
 approved governed run. The 2.0.0 flows add the casual prompt under the harness (2.0.0 asks for its
-criteria instead of refusing it) and the conditions harness-core and harness-tiered; a flow with no
+criteria instead of refusing it) and the conditions harness-core and harness-anchored; a flow with no
 run is left out.
 """
 
@@ -25,11 +25,11 @@ FLOWS = [
     ("full", "baseline"),
     ("full", "harness"),
 ]
-GOVERNED = ("harness", "harness-core", "harness-tiered", "clarify")
+GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "clarify")
 FLOWS_V2 = [
     (prompt, condition)
     for prompt in ("casual", "poor", "full")
-    for condition in ("direct", "harness-core", "harness", "harness-tiered")
+    for condition in ("direct", "harness-core", "harness", "harness-anchored", "harness-tiered")
 ]
 LABELS = {
     ("casual", "baseline"): "Casual\nsin harness",

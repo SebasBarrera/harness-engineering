@@ -197,16 +197,17 @@ def trace_completeness(
             "review" in str(v.get("validatorId", "")) and v.get("changeSetDigest") == digest
             for v in validations
         )
-    tiered = [
+    routed = [
         e
         for e in events
-        if e["type"] == "agent.routing.decided" and e["payload"].get("mode") == "tiered"
+        if e["type"] == "agent.routing.decided"
+        and e["payload"].get("mode") in ("tiered", "anchored")
     ]
-    if tiered:
+    if routed:
         # Every call the router decides is recorded; the review panel's reviewers take their model
         # from the reviewer table and are counted apart (reviewerCalls in run_measures).
         req2.append("routingRecorded")
-        routed_kinds = Counter(str(e["payload"].get("callKind")) for e in tiered)
+        routed_kinds = Counter(str(e["payload"].get("callKind")) for e in routed)
         called = Counter(
             str(i.get("callKind") or "implement")
             for i in invocations
@@ -309,6 +310,7 @@ def run_measures(
                     "model",
                     "effort",
                     "escalations",
+                    "anchor",
                     "warning",
                 )
             }

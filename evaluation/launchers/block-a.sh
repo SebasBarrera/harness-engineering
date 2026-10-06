@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Block A (P09 + P10 + N10): the complete task x {direct, harness} x models x scenarios x EVAL_REPS,
-# then harness-tiered x the same models as invoking models x scenarios x EVAL_TIERED_REPS (default 2).
+# then harness-anchored x the same models as invoking (anchor) models x scenarios x EVAL_ANCHORED_REPS
+# (default 2).
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-a.sh
 source "$(dirname "$0")/common.sh"
 keep_awake "$0" "$@"
@@ -33,7 +34,7 @@ run_part() {  # conditions reps tag
   done
 }
 run_part "${EVAL_CONDITIONS:-direct,harness}" "$EVAL_REPS" main
-run_part harness-tiered "${EVAL_TIERED_REPS:-2}" tiered
+run_part harness-anchored "${EVAL_ANCHORED_REPS:-2}" anchored
 SLOT=$(make_slot a1)
 "$SLOT/bin/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
 log "BLOCK-A-DONE"

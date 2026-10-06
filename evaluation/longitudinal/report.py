@@ -6,7 +6,7 @@ Reads <results-dir>/longitudinal-*.jsonl. Descriptive values only: medians, rang
 A session is valid when its final oracle ran the 25 hidden checks.
 
 2.0.0 sessions (block D) add the conditions ``structured`` and the governed ``harness``,
-``harness-core`` and ``harness-tiered``; each cell reports the dispersion (min, median, max) of its
+``harness-core`` and ``harness-anchored``; each cell reports the dispersion (min, median, max) of its
 sessions, the governance calls apart from the implementation calls, the increments the harness did not
 deliver and every session's outcome per increment, so no aggregate hides a stopped increment.
 """
@@ -30,7 +30,7 @@ CONDITIONS = [
     ("baseline", "Prompts casuales, sin harness", "#9a9a9a"),
     ("harness", "Tareas estructuradas, con harness", "#2f4f6f"),
 ]
-GOVERNED = ("harness", "harness-core", "harness-tiered", "harness-legacy")
+GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "harness-legacy")
 HIDDEN_TOTAL = 25
 
 

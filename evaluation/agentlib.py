@@ -234,7 +234,7 @@ def _command(
         prompt,
         "--model",
         model,
-        # Only the routed calls of the tiered condition carry an effort; every other call keeps the
+        # Only the routed calls of the anchored condition carry an effort; every other call keeps the
         # command line of the direct condition.
         *(["--effort", effort] if effort else []),
         "--output-format",
@@ -268,7 +268,7 @@ def run_claude(
 
     The large-project scenario raises the time and budget limits and makes the call resumable; every
     other scenario uses the defaults (one call, no session kept). ``effort`` is passed only for the
-    calls the tiered router sends with an effort.
+    calls the anchored router sends with an effort.
     """
     if resumable:
         return _run_resumable(

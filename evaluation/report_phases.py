@@ -10,9 +10,9 @@ by category, with the non-passed validations of the run that produced them).
 Descriptive values only: medians, ranges and counts.
 
 Since the 2.0.0 evaluation the runs of every governed condition are read (harness-core, harness,
-harness-tiered and the 0.9.0 harness runs), from the workspace's state database or from the run
-registry kept in the run directory, and each phase's seconds are split into the time of the agent
-calls made in it (``modelSecondsByPhase``, from the agent invocation records) and the harness's own
+harness-anchored, harness-tiered of the first pilot and the 0.9.0 harness runs), from the
+workspace's state database or from the run registry kept in the run directory, and each phase's
+seconds are split into the time of the agent calls made in it (``modelSecondsByPhase``, from the agent invocation records) and the harness's own
 process time (``processSecondsByPhase``), P15. Summaries are given per condition.
 
 Usage: python report_phases.py <runs-dir> <out.jsonl> <summary.json>
@@ -35,7 +35,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from harness_state import state_db  # noqa: E402
 
 NAME = re.compile(
-    r"^(greenfield|brownfield|security)(?:-(poor|casual))?-(harness-core|harness-tiered|harness|clarify)-(.+)"
+    r"^(greenfield|brownfield|security)(?:-(poor|casual))?-(harness-core|harness-anchored|harness-tiered|harness|clarify)-(.+)"
     r"-r(\d+)-\d{8}T\d{6}Z$"
 )
 PHASES = [
@@ -231,7 +231,8 @@ def summarize_v2(records: list[dict[str, Any]]) -> dict[str, Any]:
 
 def main() -> int:
     runs, out, summary = Path(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3])
-    candidates = sorted({*runs.glob("*"), *runs.glob("*/*")})  # <runs>/<run> or <runs>/<model>/<run>
+    # <runs>/<run> or <runs>/<model>/<run>
+    candidates = sorted({*runs.glob("*"), *runs.glob("*/*")})
     records = [r for r in (extract(p) for p in candidates if p.is_dir()) if r]
     records.sort(key=lambda r: (r["condition"], r["prompt"], r["scenario"], r["model"], r["rep"]))
     out.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in records), encoding="utf-8")
