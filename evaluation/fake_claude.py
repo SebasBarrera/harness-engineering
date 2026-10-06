@@ -46,6 +46,8 @@ def _scenario(cwd: Path) -> str | None:
     if (cwd / "src" / "itsdangerous").is_dir():
         return "brownfield"
     spec = (cwd / "SPEC.md").read_text(encoding="utf-8") if (cwd / "SPEC.md").is_file() else ""
+    if "Inventory library" in spec:
+        return "inventory"
     if "`alerts`" in spec:
         return "security"
     if "shipping" in spec:
@@ -53,7 +55,18 @@ def _scenario(cwd: Path) -> str | None:
     return None
 
 
-PACKAGE = {"greenfield": "shipping", "security": "alerts", "brownfield": "itsdangerous"}
+def _mode(cwd: Path) -> str:
+    """The dry run's fault, written by run_eval.py --fake-mode next to the workspace."""
+    path = cwd.parent / "fake-mode"
+    return path.read_text(encoding="utf-8").strip() if path.is_file() else ""
+
+
+PACKAGE = {
+    "greenfield": "shipping",
+    "security": "alerts",
+    "brownfield": "itsdangerous",
+    "inventory": "inventory",
+}
 
 
 def _ids(text: str) -> list[str]:
@@ -66,6 +79,9 @@ def _implement(cwd: Path, prompt: str) -> str:
         shutil.copy2(
             REFERENCE / "brownfield-itsdangerous-encoding.py", cwd / "src/itsdangerous/encoding.py"
         )
+    elif scenario == "inventory":
+        source = HERE / "longitudinal" / "reference" / "inventory"
+        shutil.copytree(source, cwd / "src" / "inventory", dirs_exist_ok=True)
     elif scenario in ("greenfield", "security"):
         source = REFERENCE / f"greenfield-{'shipping' if scenario == 'greenfield' else 'alerts'}"
         for package in source.iterdir():
@@ -87,8 +103,7 @@ def _implement(cwd: Path, prompt: str) -> str:
     (tests / "test_fake_dry_run.py").write_text(
         "\n".join(body).rstrip("\n") + "\n", encoding="utf-8"
     )
-    mode = cwd.parent / "fake-mode"
-    if mode.is_file() and mode.read_text(encoding="utf-8").strip() == "broken":
+    if _mode(cwd) == "broken":
         # A change whose own test fails: verification fails, the corrections change nothing and
         # the run stops (stop the line quarantines it).
         (tests / "test_fake_broken.py").write_text(
@@ -115,6 +130,32 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
             ]
         }
     if '"verdict": "PASS"' in prompt:
+        if _mode(cwd) == "review-fail":
+            # One blocking finding whose evidence quotes the first line the change added.
+            diff = (request.get("slice") or {}).get("diff") or ""
+            path, line, text = None, 0, ""
+            for row in diff.splitlines():
+                if row.startswith("+++ "):
+                    path, line = row[6:] if row.startswith("+++ b/") else None, 0
+                elif row.startswith("@@"):
+                    line = int(row.split("+", 1)[1].split(" ", 1)[0].split(",")[0]) - 1
+                elif row.startswith("+") and path:
+                    line, text = line + 1, row[1:]
+                    if text.strip():
+                        break
+                elif not row.startswith("-"):
+                    line += 1
+            if path and text.strip():
+                finding = {
+                    "file": path,
+                    "side": "new",
+                    "line": line,
+                    "rule": "quality.dry-run",
+                    "severity": "error",
+                    "issue": "Dry run: a blocking finding.",
+                    "evidence": text.strip(),
+                }
+                return {"verdict": "FAIL", "findings": [finding], "summary": "Dry run: one error."}
         return {"verdict": "PASS", "findings": [], "summary": "Dry run: no finding."}
     if "You are an independent reviewer" in prompt:
         return {"findings": []}
@@ -141,7 +182,8 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
             f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r})\n"
             for cid in criteria
         )
-        return {"tests": [{"path": f"{directory}/test_acceptance_dry_run.py", "content": content}]}
+        name = f"{directory}/test_acceptance_{criteria[0]}.py"  # one file per task: no overwrite
+        return {"tests": [{"path": name, "content": content}]}
     if "Find where the task below must be implemented" in prompt:
         return {"locations": [], "questions": []}
     if "Survey the architecture of the existing project" in prompt:

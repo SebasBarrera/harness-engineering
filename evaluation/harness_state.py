@@ -47,6 +47,17 @@ WRITE_RULES = (
 CLAIM_RULES = ("agent.unsupported-claim",)
 
 
+def review_domain(rule_id: str) -> str:
+    """The domain of a review finding: ``review.panel.DOMAIN.rule`` for the panel's reviewers,
+    ``review-rule`` for the deterministic review rules (``review.todo``, ...)."""
+    parts = rule_id.split(".")
+    if rule_id.startswith("review.panel.") and len(parts) > 2:
+        return parts[2]
+    if rule_id.startswith("review.agent") or rule_id.startswith("review.single"):
+        return "single-reviewer"
+    return "review-rule" if rule_id.startswith("review.") else parts[0]
+
+
 def state_db(workspace: Path, run_dir: Path) -> Path | None:
     """The state database of the run: the workspace's (1.0.0 layout) or the external registry."""
     local = workspace / ".harness" / "state.db"
@@ -322,12 +333,7 @@ def run_measures(
         "riskFactors": (brief or {}).get("riskFactors"),
         "reviewFindings": {
             "total": len(review),
-            "byDomain": dict(
-                Counter(
-                    str(f["ruleId"]).split(".")[0] if "." in str(f["ruleId"]) else str(f["ruleId"])
-                    for f in review
-                )
-            ),
+            "byDomain": dict(Counter(review_domain(str(f["ruleId"])) for f in review)),
             "bySeverity": dict(Counter(f["severity"] for f in review)),
             "byValidator": dict(Counter(str(f.get("validatorId")) for f in review)),
         },

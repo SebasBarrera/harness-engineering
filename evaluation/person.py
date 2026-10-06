@@ -496,7 +496,9 @@ class SimulatedPerson:
             REVIEWER_ACTOR,
             "--rationale",
             rationale,
-            "--no-continue",
+            # REJECT ends the run in the same command: after a REJECT recorded with --no-continue,
+            # run continue re-evaluates the restored workspace and asks for a decision again.
+            *(["--no-continue"] if decision != "REJECT" else []),
             *extra,
         )
         self.decisions.append(
@@ -513,9 +515,9 @@ class SimulatedPerson:
             return proc.returncode, "decision-refused"
         if decision == "REQUEST_CHANGES":
             self.corrections += 1
-        code = self.resume(run_id)
         if decision == "REJECT":
-            return code, "rejected"
+            return proc.returncode, "rejected"
+        code = self.resume(run_id)
         if decision == "APPROVE":
             return code, "approved" if code == 0 else f"approved-closure-exit-{code}"
         return code, None
