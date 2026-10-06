@@ -62,7 +62,8 @@ def test_gitlab_origin_publish_create_and_status(python_workspace: Path) -> None
     assert report["comment"]["action"] == "created"
     method, path, body = transport.calls[1]
     assert (method, path) == ("POST", "projects/team%2Fshop/merge_requests/7/notes")
-    assert marker(run) in body["body"] and digest in body["body"]
+    assert marker(run) in body["body"]
+    assert digest in body["body"]
     assert report["reports"]["status"] == "SKIPPED"
 
     transport = Recorder()

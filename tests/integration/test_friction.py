@@ -158,7 +158,8 @@ def test_small_task_takes_the_fast_lane_and_skips_agent_steps(
             [replace("src/sample/pricing.py", GOOD), replace("tests/test_pricing.py", TEST)],
         ),
     )
-    assert run.current_phase is PhaseId.DECISION and run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.DECISION
+    assert run.status is ResultStatus.BLOCKED
     chain = events(python_workspace, run.execution_id)
     classified = of_type(chain, "lane.classified")
     assert classified[0].payload["lane"] == "fast"
@@ -170,7 +171,8 @@ def test_small_task_takes_the_fast_lane_and_skips_agent_steps(
         item.call_kind
         for item in records(python_workspace, "agent_invocation", AgentInvocation, run.execution_id)
     ]
-    assert "clarify" not in kinds and "review" not in kinds
+    assert "clarify" not in kinds
+    assert "review" not in kinds
     assert of_type(chain, "plan.approval.skipped")[0].payload["reason"] == (
         "size S and no risk flag"
     )
@@ -196,7 +198,8 @@ def test_large_task_takes_the_full_lane(python_workspace: Path, tmp_path: Path) 
     )
     chain = events(python_workspace, run.execution_id)
     lane = of_type(chain, "lane.classified")[0].payload
-    assert lane["lane"] == "full" and lane["size"] == "M"
+    assert lane["lane"] == "full"
+    assert lane["size"] == "M"
     assert lane["reasons"][0].startswith("size M (requirements=6>5")
     assert not of_type(chain, "lane.step.skipped")
 
@@ -233,7 +236,8 @@ def test_a_risk_factor_takes_the_run_out_of_the_fast_lane(
     )
     chain = events(python_workspace, run.execution_id)
     escalated = of_type(chain, "lane.escalated")
-    assert escalated and escalated[0].payload["reasons"] == ["risk factor authentication"]
+    assert escalated
+    assert escalated[0].payload["reasons"] == ["risk factor authentication"]
     assert of_type(chain, "review.agent.signals")
     kinds = [
         item.call_kind
@@ -321,7 +325,8 @@ def test_an_expired_pre_authorisation_asks_the_person(
             },
         ),
     )
-    assert run.current_phase is PhaseId.INTENT and run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.INTENT
+    assert run.status is ResultStatus.BLOCKED
     contract = application.list_clarifications(python_workspace, "task_expiring")
     digest = next(
         event.payload["digest"]
@@ -349,7 +354,8 @@ def test_an_expired_pre_authorisation_asks_the_person(
     later = utc_now() + timedelta(hours=2)
     monkeypatch.setattr(friction_module, "utc_now", lambda: later)
     execution = application.continue_run(python_workspace, run.execution_id)
-    assert execution.current_phase is PhaseId.DECISION and execution.status is ResultStatus.BLOCKED
+    assert execution.current_phase is PhaseId.DECISION
+    assert execution.status is ResultStatus.BLOCKED
     refused = of_type(
         events(python_workspace, run.execution_id), "decision.preauthorization.not-applied"
     )
@@ -388,7 +394,8 @@ def test_a_risky_task_waits_for_its_plan_to_be_approved(
 ) -> None:
     configure(python_workspace)
     application, run = start(python_workspace, tmp_path, risky_task("task_plan"))
-    assert run.current_phase is PhaseId.PLANNING and run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.PLANNING
+    assert run.status is ResultStatus.BLOCKED
     shown = application.plan(python_workspace, run.execution_id)
     approval = shown["approval"]
     assert approval["status"] == "PENDING"
@@ -446,7 +453,8 @@ def test_a_pre_authorisation_covers_the_plan_approval(python_workspace: Path) ->
     run = result["run"]["executionId"]
     chain = events(python_workspace, run)
     covered = of_type(chain, "plan.approval.covered")
-    assert covered and covered[0].payload["actorId"] == "human.tester"
+    assert covered
+    assert covered[0].payload["actorId"] == "human.tester"
     # The task carries a risk flag, so the final approval is the person's as usual.
     assert result["run"]["currentPhase"] == "DECISION"
 
@@ -473,7 +481,8 @@ def test_batch_decisions_are_each_bound_to_their_digest(
         rationale="Reviewed in the inbox",
         actor_id="human.tester",
     )
-    assert result["recorded"] == 1 and result["refused"] == 1
+    assert result["recorded"] == 1
+    assert result["refused"] == 1
     assert result["results"][0]["execution"]["status"] == "PASSED"
 
 

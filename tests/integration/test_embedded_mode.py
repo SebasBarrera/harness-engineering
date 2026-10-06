@@ -40,7 +40,8 @@ def call(server: McpServer, name: str, arguments: dict[str, object]) -> dict:
 
 def test_no_tool_decides_for_a_person() -> None:
     names = {tool["name"] for tool in TOOLS}
-    assert "harness_run_start" in names and "harness_task_clarify" in names
+    assert "harness_run_start" in names
+    assert "harness_task_clarify" in names
     assert not any("decide" in name or "approve" in name or "raise" in name for name in names)
     for tool in TOOLS:
         assert tool["inputSchema"]["type"] == "object"
@@ -74,7 +75,8 @@ def test_session_drives_a_governed_run_over_mcp(python_workspace: Path) -> None:
     brief = call(server, "harness_review", {"run": started["executionId"]})
     assert brief["structuredContent"]["run"]["awaitingDecision"] is True
     missing = call(server, "harness_status", {"run": "run_does_not_exist"})
-    assert missing["isError"] is True and missing["structuredContent"]["exitCode"] == 3
+    assert missing["isError"] is True
+    assert missing["structuredContent"]["exitCode"] == 3
     unknown = rpc(server, "resources/list")
     assert unknown["error"]["code"] == -32601
 
@@ -101,7 +103,8 @@ def test_stdio_framing_and_cli(python_workspace: Path) -> None:
     assert [item.get("id") for item in replies] == [1, None, 2]
     assert replies[1]["error"]["code"] == -32700
     cards = replies[2]["result"]["structuredContent"]["selection"]["implement"]
-    assert cards and cards[0]["id"].startswith("python.")
+    assert cards
+    assert cards[0]["id"].startswith("python.")
     result = CliRunner().invoke(
         app,
         ["mcp", "serve", "--path", str(python_workspace)],
@@ -156,7 +159,8 @@ def test_read_only_reports_through_the_cli(python_workspace: Path, tmp_path: Pat
     assert alone.exit_code == 0, alone.output
     report = json.loads(alone.output)
     assert report["configured"] is False
-    assert report["packs"][0]["pack"] == "go" and report["packs"][0]["cards"]
+    assert report["packs"][0]["pack"] == "go"
+    assert report["packs"][0]["cards"]
     here = ["--path", str(python_workspace)]
     project = runner.invoke(app, ["--json", "project", "show", *here])
     assert project.exit_code == 0, project.output
@@ -165,4 +169,5 @@ def test_read_only_reports_through_the_cli(python_workspace: Path, tmp_path: Pat
     assert shown.exit_code == 0, shown.output
     assert json.loads(shown.output)["rules"] is None
     refreshed = runner.invoke(app, ["--json", "architecture", "refresh", *here])
-    assert refreshed.exit_code == 0 and json.loads(refreshed.output)["status"] == "NONE"
+    assert refreshed.exit_code == 0
+    assert json.loads(refreshed.output)["status"] == "NONE"
