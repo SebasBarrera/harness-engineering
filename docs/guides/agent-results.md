@@ -80,7 +80,10 @@ harness acceptance decide --run <runId> --decision APPROVE --digest <digest> --r
 
 Approval writes the files, freezes their digests and runs them once on the workspace before the
 change (passing there is a MEDIUM `acceptance.passes-before` finding). Every later VERIFICATION
-fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass.
+fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass. A proposed
+path where a file already exists, for example the frozen test of an earlier run in the same
+workspace, is never overwritten: the file is written next to it with the run's suffix
+(`test_ac_1_<run>.py`), and `acceptance show` lists the new name under `renamed` (#82).
 
 ## PLANNING: decomposition of large tasks (#39)
 

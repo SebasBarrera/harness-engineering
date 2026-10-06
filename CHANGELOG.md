@@ -25,6 +25,11 @@
     its change (`agent.empty-correction`) looped through decomposition (#77). It now stops in
     VERIFICATION with a `terminalReason` naming the failing validators and the empty
     correction. A run that moves on after a stop no longer keeps the earlier `terminalReason`.
+  - An approved acceptance test whose proposed path already holds a file (the frozen test of an
+    earlier run in the same workspace, or a file of the project) is written under a run-unique
+    name next to it (`renamed` in `acceptance show` and in `acceptance.tests.decided`) instead
+    of overwriting it; the later run overwrote the earlier frozen file and its agent was blamed
+    with a HIGH `weakened.test-deleted` (#82).
 
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
