@@ -780,7 +780,8 @@ def plan_decide(
 ) -> None:
     """Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
     sub-tasks in order, each with its own verification and gate; REJECT keeps the task whole.
-    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5."""
+    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5. An
+    APPROVE with --no-continue exits 0 once it is recorded, as gate decide does."""
     result = _call(
         lambda: _acting().decide_plan(
             path,
@@ -794,7 +795,10 @@ def plan_decide(
     )
     _emit(result, kind="plan")
     execution = result.get("execution")
-    if execution:
+    if execution and (continue_after or decision is not DecisionKind.APPROVE):
+        # An APPROVE with --no-continue does not resume the run: the decision is recorded and
+        # the run still shows the wait it was in, which is not a failure of this command (#83).
+        # A REJECT ends the run (exit 6), as gate decide REJECT does.
         _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Run lifecycle, wave 9 (findings of the 2.0.0 evaluation). Fixes that restore the documented
+  behaviour apply to every project:
+  - `harness plan decide --decision APPROVE --no-continue` exits 0 once the approval is recorded,
+    as `gate decide --no-continue` does; it exited 6 because the run still showed its wait in
+    PLANNING (#83). A `REJECT` still ends the run and exits 6.
+  - `harness run continue` on a run a person rejected reports the closed run (`FAILED`, exit 6)
+    instead of evaluating again the baseline that stop the line restored and asking for a new
+    decision (#83).
+
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

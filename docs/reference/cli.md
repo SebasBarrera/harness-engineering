@@ -990,7 +990,8 @@ harness plan show [OPTIONS]
 
 Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
 sub-tasks in order, each with its own verification and gate; REJECT keeps the task whole.
-A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5.
+A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5. An
+APPROVE with --no-continue exits 0 once it is recorded, as gate decide does.
 
 ```text
 harness plan decide [OPTIONS]

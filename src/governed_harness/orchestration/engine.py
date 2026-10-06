@@ -417,7 +417,9 @@ class RunEngine:
 
     def _continue_execution(self, execution_id: str) -> Execution:
         execution = self.get_execution(execution_id)
-        if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
+        if not run_is_open(execution):
+            # Closed, cancelled or rejected (#83): a rejected run is reported as it ended, not
+            # evaluated again on the baseline stop the line restored.
             return execution
         if self.is_cancelled(execution_id):
             return self._cancel_execution(execution)
