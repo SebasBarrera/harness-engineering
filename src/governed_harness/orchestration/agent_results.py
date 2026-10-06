@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
-from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -662,7 +661,14 @@ class AgentResults:
             instruction_values=instruction_values,
             instructions_suffix=instructions_suffix,
         )
-        return replace(second, evidence_refs=(*first.evidence_refs, *second.evidence_refs))
+        return AgentCallOutcome(
+            status=second.status,
+            summary=second.summary,
+            result=second.result,
+            invocation_id=second.invocation_id,
+            evidence_refs=(*first.evidence_refs, *second.evidence_refs),
+            protocol_error=second.protocol_error,
+        )
 
     def _record_contract_retry(
         self,

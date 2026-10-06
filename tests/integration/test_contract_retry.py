@@ -245,5 +245,6 @@ def test_an_unknown_fallback_provider_is_a_configuration_error(
         broken=0,
         retry={"mode": "once", "fallbackProvider": "nowhere"},
     )
+    app = HarnessApplication()
     with pytest.raises(ConfigurationError, match="fallbackProvider"):
-        HarnessApplication().validate_config(python_workspace)
+        app.validate_config(python_workspace)
