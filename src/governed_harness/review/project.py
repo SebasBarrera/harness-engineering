@@ -197,7 +197,7 @@ def consistency_runner(
                     grants=grants,
                     cancellation=CancellationToken(cancelled),
                 )
-            except (PermissionError, OSError, ValueError) as error:
+            except (OSError, ValueError) as error:
                 results.append({"id": check.check_id, "status": "BLOCKED", "summary": f"{error}"})
                 continue
             tail = (outcome.stdout + outcome.stderr).decode("utf-8", "replace")[-_OUTPUT_TAIL:]
@@ -251,7 +251,7 @@ def linter_runner(
                     actor=TOOLS_ACTOR,
                     grants=grants,
                 )
-            except (PermissionError, OSError, ValueError):
+            except (OSError, ValueError):
                 continue
             findings.extend(
                 _tool_findings(pack_tool, wanted[pack_tool.tool_id], outcome, workspace, locations)
