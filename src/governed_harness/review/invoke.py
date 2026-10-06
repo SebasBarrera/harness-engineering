@@ -35,7 +35,7 @@ from governed_harness.orchestration.workspace_ops import (
 from governed_harness.review.panel import ReviewerAnswer, ReviewerCall
 from governed_harness.runtime import CancellationToken, PatchApplier, WorkspaceSnapshotter
 from governed_harness.runtime.process_runner import SafeProcessRunner
-from governed_harness.runtime.workspace import WorkspaceDiff
+from governed_harness.runtime.workspace import WorkspaceDiff, WorkspaceSnapshot
 
 
 class CallingProvider(Protocol):
@@ -110,10 +110,9 @@ class ProviderInvoker:
     def invoke(self, calls: Sequence[ReviewerCall], workers: int) -> list[ReviewerAnswer]:
         if not calls:
             return []
-        if self.before is not None:
-            blocked = self.before(calls)
-            if blocked is not None:
-                return [ReviewerAnswer("ERROR", None, blocked, call.provider) for call in calls]
+        blocked = self.before(calls) if self.before is not None else None
+        if blocked is not None:
+            return [ReviewerAnswer("ERROR", None, blocked, call.provider) for call in calls]
         request_refs = [
             self.record_request(call) if self.record_request is not None else None for call in calls
         ]
@@ -127,107 +126,116 @@ class ProviderInvoker:
         snapshot = WorkspaceSnapshotter(self.workspace).snapshot() if self.guard_workspace else None
 
         def run(index: int) -> AgentCallResult | str:
-            target = built[index]
-            if isinstance(target, str):
-                return target
-            call = calls[index]
-            context = SimulatedAgentContext(
-                execution_id=self.execution_id,
-                workspace=self.workspace,
-                grants=grants[index],
-                artifact_store=self.artifacts,
-                process_runner=self.runner,
-                patch_applier=PatchApplier(self.workspace),
-                provenance=self.provenance.model_copy(update={"actor": target.actor}),
-                timeout_seconds=(
-                    min(call.timeout_seconds, self.default_timeout)
-                    if call.timeout_seconds
-                    else self.default_timeout
-                ),
-                max_output_bytes=self.max_output_bytes,
-                cancellation=CancellationToken(self.cancelled),
-            )
-            request = call.request
-            isolation = request.get("isolation")
-            if isinstance(isolation, dict):
-                # The definitions of the allowed MCP servers reach the provider process only;
-                # the recorded request keeps their names.
-                names = [str(item) for item in isolation.get("mcpServers") or []]
-                request = {
-                    **request,
-                    "isolation": {
-                        **isolation,
-                        "mcpConfig": {
-                            name: self.mcp_servers[name]
-                            for name in names
-                            if name in self.mcp_servers
-                        },
-                    },
-                }
-            try:
-                return target.provider.call("review", request, context, phase_id=self.phase_id)
-            except Exception as error:  # a provider that raises is an answer that never came
-                return f"the provider raised {type(error).__name__}: {error}"
+            return self._call(calls[index], built[index], grants[index])
 
         with ThreadPoolExecutor(max_workers=max(1, min(workers, len(calls)))) as pool:
             # Each worker runs in a copy of this context: the policies of the running phase
             # (capabilities, destructive commands) reach the provider processes it starts.
             parent = contextvars.copy_context()
             results = list(pool.map(lambda index: parent.copy().run(run, index), range(len(calls))))
-        answers: list[ReviewerAnswer] = []
-        for call, result, request_ref, target in zip(
-            calls, results, request_refs, built, strict=True
-        ):
-            if isinstance(result, str):
-                answers.append(ReviewerAnswer("ERROR", None, result, call.provider))
-                continue
-            if self.after is not None:
-                self.after(call, result)
-            refs = tuple(
-                item
-                for item in (
-                    request_ref,
-                    *(target.refs if isinstance(target, BuiltProvider) else ()),
-                    result.execution.output_ref,
-                )
-                if item
+        answers = [
+            self._answer(call, result, request_ref, target)
+            for call, result, request_ref, target in zip(
+                calls, results, request_refs, built, strict=True
             )
-            passed = result.execution.status is ResultStatus.PASSED
-            answers.append(
-                ReviewerAnswer(
-                    "ANSWERED" if passed and isinstance(result.response, dict) else "ERROR",
-                    result.response if passed and isinstance(result.response, dict) else None,
-                    result.execution.summary,
-                    call.provider,
-                    model=result.execution.invocation.model,
-                    tokens=usage_tokens(result),
-                    invocation_id=result.execution.invocation.invocation_id,
-                    evidence_refs=refs,
-                )
-            )
+        ]
         if snapshot is not None:
-            diff = changes_since(self.workspace, snapshot)
-            if diff.changes:
-                restored, unrestorable = restore_changes(
-                    self.workspace, snapshot_contents(snapshot), diff
-                )
-                if self.on_violation is not None:
-                    self.on_violation(diff, len(restored), len(unrestorable))
-                answers = [
-                    ReviewerAnswer(
-                        "ERROR",
-                        None,
-                        f"a read-only review call changed {len(diff.changes)} path(s); the "
-                        "batch's answers were discarded",
-                        item.provider,
-                        model=item.model,
-                        tokens=item.tokens,
-                        invocation_id=item.invocation_id,
-                        evidence_refs=item.evidence_refs,
-                    )
-                    for item in answers
-                ]
+            answers = self._guarded(snapshot, answers)
         return answers
+
+    def _call(
+        self, call: ReviewerCall, target: BuiltProvider | str, grants: list[CapabilityGrant]
+    ) -> AgentCallResult | str:
+        """One reviewer call on a worker; a provider that cannot start or raises is the reason
+        its answer never came."""
+        if isinstance(target, str):
+            return target
+        timeout = self.default_timeout
+        if call.timeout_seconds:
+            timeout = min(call.timeout_seconds, self.default_timeout)
+        context = SimulatedAgentContext(
+            execution_id=self.execution_id,
+            workspace=self.workspace,
+            grants=grants,
+            artifact_store=self.artifacts,
+            process_runner=self.runner,
+            patch_applier=PatchApplier(self.workspace),
+            provenance=self.provenance.model_copy(update={"actor": target.actor}),
+            timeout_seconds=timeout,
+            max_output_bytes=self.max_output_bytes,
+            cancellation=CancellationToken(self.cancelled),
+        )
+        try:
+            return target.provider.call(
+                "review", self._with_mcp(call.request), context, phase_id=self.phase_id
+            )
+        except Exception as error:  # a provider that raises is an answer that never came
+            return f"the provider raised {type(error).__name__}: {error}"
+
+    def _with_mcp(self, request: dict[str, Any]) -> dict[str, Any]:
+        """The definitions of the allowed MCP servers reach the provider process only; the
+        recorded request keeps their names."""
+        isolation = request.get("isolation")
+        if not isinstance(isolation, dict):
+            return request
+        names = [str(item) for item in isolation.get("mcpServers") or []]
+        config = {name: self.mcp_servers[name] for name in names if name in self.mcp_servers}
+        return {**request, "isolation": {**isolation, "mcpConfig": config}}
+
+    def _answer(
+        self,
+        call: ReviewerCall,
+        result: AgentCallResult | str,
+        request_ref: str | None,
+        target: BuiltProvider | str,
+    ) -> ReviewerAnswer:
+        if isinstance(result, str):
+            return ReviewerAnswer("ERROR", None, result, call.provider)
+        if self.after is not None:
+            self.after(call, result)
+        built_refs = target.refs if isinstance(target, BuiltProvider) else ()
+        refs = tuple(
+            item for item in (request_ref, *built_refs, result.execution.output_ref) if item
+        )
+        answered = result.execution.status is ResultStatus.PASSED and isinstance(
+            result.response, dict
+        )
+        return ReviewerAnswer(
+            "ANSWERED" if answered else "ERROR",
+            result.response if answered else None,
+            result.execution.summary,
+            call.provider,
+            model=result.execution.invocation.model,
+            tokens=usage_tokens(result),
+            invocation_id=result.execution.invocation.invocation_id,
+            evidence_refs=refs,
+        )
+
+    def _guarded(
+        self, snapshot: WorkspaceSnapshot, answers: list[ReviewerAnswer]
+    ) -> list[ReviewerAnswer]:
+        """When a read-only call changed the workspace: restore it, report it and discard the
+        batch's answers."""
+        diff = changes_since(self.workspace, snapshot)
+        if not diff.changes:
+            return answers
+        restored, unrestorable = restore_changes(self.workspace, snapshot_contents(snapshot), diff)
+        if self.on_violation is not None:
+            self.on_violation(diff, len(restored), len(unrestorable))
+        return [
+            ReviewerAnswer(
+                "ERROR",
+                None,
+                f"a read-only review call changed {len(diff.changes)} path(s); the "
+                "batch's answers were discarded",
+                item.provider,
+                model=item.model,
+                tokens=item.tokens,
+                invocation_id=item.invocation_id,
+                evidence_refs=item.evidence_refs,
+            )
+            for item in answers
+        ]
 
 
 __all__ = ["BuiltProvider", "CallingProvider", "ProviderInvoker", "usage_tokens"]
