@@ -133,7 +133,8 @@ def test_a_missing_variable_or_tool_stops_discovery(
         },
     )
     _application, other = start(python_workspace, tmp_path, task={"taskId": "task_tool"})
-    assert other.current_phase is PhaseId.DISCOVERY and other.status is ResultStatus.BLOCKED
+    assert other.current_phase is PhaseId.DISCOVERY
+    assert other.status is ResultStatus.BLOCKED
 
 
 @POSIX
@@ -208,7 +209,8 @@ def test_the_registry_lives_outside_the_workspace(python_workspace: Path, tmp_pa
     assert execution.current_phase is PhaseId.DECISION
     assert not (python_workspace / ".harness" / "state.db").exists()
     databases = list(state.glob("*/state.db"))
-    assert len(databases) == 1 and (databases[0].parent / "registry.json").is_file()
+    assert len(databases) == 1
+    assert (databases[0].parent / "registry.json").is_file()
     assert local_database(python_workspace) == databases[0]
     services = EngineServices.open(ConfigurationResolver().resolve(python_workspace))
     try:
@@ -268,7 +270,8 @@ def test_an_isolated_run_works_in_its_own_worktree(python_workspace: Path, tmp_p
         application.cleanup_run(python_workspace, run)
     (worktree / "scratch.txt").unlink()
     removed = application.cleanup_run(python_workspace, run)
-    assert removed["status"] == "REMOVED" and not worktree.exists()
+    assert removed["status"] == "REMOVED"
+    assert not worktree.exists()
     assert git(python_workspace, "branch", "--list", f"harness/task_hygiene-{run}")
 
 
@@ -354,8 +357,10 @@ def test_push_pull_request_and_comment_follow_the_contract(
     assert ("POST", "repos/owner/name/issues/7/labels") in posted
     assert ("POST", "repos/owner/name/issues/7/comments") in posted
     pull = next(body for method, path, body in forge.calls if path == "repos/owner/name/pulls")
-    assert pull["head"] == "feature/discount" and pull["base"] == "main"
-    assert pull["body"].startswith("## Why\n") and pull["draft"] is True
+    assert pull["head"] == "feature/discount"
+    assert pull["base"] == "main"
+    assert pull["body"].startswith("## Why\n")
+    assert pull["draft"] is True
 
 
 @POSIX
@@ -369,9 +374,11 @@ def test_a_hook_that_refuses_the_push_stops_closure(python_workspace: Path, tmp_
     configure(python_workspace, delivery={"closureCommit": "branch", "push": True})
     application, execution = start(python_workspace, tmp_path)
     _record, closed = approve(application, python_workspace, execution.execution_id)
-    assert closed.current_phase is PhaseId.CLOSURE and closed.status is ResultStatus.BLOCKED
+    assert closed.current_phase is PhaseId.CLOSURE
+    assert closed.status is ResultStatus.BLOCKED
     reason = application.status(python_workspace, execution.execution_id)["phases"][-1]["summary"]
-    assert "Push of harness/" in reason and "pre-push says no" in reason
+    assert "Push of harness/" in reason
+    assert "pre-push says no" in reason
     assert not git(python_workspace, "ls-remote", "--heads", str(remote))
 
 

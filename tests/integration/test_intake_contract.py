@@ -82,7 +82,8 @@ def test_batch_puts_the_contract_in_the_one_clarification_message(
     request = application.list_clarifications(python_workspace, "task_vague")["openRequest"]
     assert [item["ruleId"] for item in request["questions"]] == ["C1", "T1"]
     contract = request["contract"]
-    assert contract["mode"] == "batch" and contract["confirmed"] is False
+    assert contract["mode"] == "batch"
+    assert contract["confirmed"] is False
     assert "verificationLevel" in contract["missing"]
     answers = tmp_path / "answers.yaml"
     answers.write_text(
@@ -111,12 +112,11 @@ def test_batch_puts_the_contract_in_the_one_clarification_message(
     resumed = application.continue_run(python_workspace, execution.execution_id)
     assert resumed.current_phase is PhaseId.DECISION
     brief = application.review(python_workspace, execution.execution_id)
-    assert (
-        brief["contract"]["confirmed"] is True
-        and brief["contract"]["confirmedBy"] == "human.author"
-    )
+    assert brief["contract"]["confirmed"] is True
+    assert brief["contract"]["confirmedBy"] == "human.author"
     kinds = [item.event_type for item in events(python_workspace, execution.execution_id)]
-    assert "contract.confirmed" in kinds and kinds.count("contract.summarized") == 2
+    assert "contract.confirmed" in kinds
+    assert kinds.count("contract.summarized") == 2
 
 
 def test_batch_asks_nothing_when_intent_asks_nothing(
@@ -139,9 +139,11 @@ def test_enforce_waits_for_a_complete_and_confirmed_contract(
     configure(python_workspace, {"operationalContract": "enforce"})
     application = create(python_workspace, tmp_path, CLEAR)
     execution = application.start_run(python_workspace, "task_clear")
-    assert execution.current_phase is PhaseId.INTENT and execution.status is ResultStatus.BLOCKED
+    assert execution.current_phase is PhaseId.INTENT
+    assert execution.status is ResultStatus.BLOCKED
     request = application.list_clarifications(python_workspace, "task_clear")["openRequest"]
-    assert request["questions"] == [] and request["contract"]["missing"]
+    assert request["questions"] == []
+    assert request["contract"]["missing"]
     answers = tmp_path / "contract.yaml"
     answers.write_text(
         yaml.safe_dump(
@@ -165,7 +167,8 @@ def test_enforce_waits_for_a_complete_and_confirmed_contract(
     blocked = application.continue_run(python_workspace, execution.execution_id)
     assert blocked.status is ResultStatus.BLOCKED
     contract = application.review(python_workspace, execution.execution_id)["contract"]
-    assert contract["missing"] == [] and contract["confirmed"] is False
+    assert contract["missing"] == []
+    assert contract["confirmed"] is False
     with pytest.raises(PolicyViolationError, match="does not match"):
         application.confirm_contract(
             python_workspace, task_id="task_clear", digest="sha256:0", actor_id="human.author"
@@ -180,12 +183,12 @@ def test_enforce_waits_for_a_complete_and_confirmed_contract(
     assert confirmed["digest"] == contract["digest"]
     resumed = application.continue_run(python_workspace, execution.execution_id)
     assert resumed.current_phase is PhaseId.DECISION
+    bad = tmp_path / "bad.yaml"
+    bad.write_text("contract:\n  favourite: blue\n", encoding="utf-8")
+    create(python_workspace, tmp_path, {**CLEAR, "taskId": "task_other"})
+    other = application.start_run(python_workspace, "task_other")
+    assert other.status is ResultStatus.BLOCKED
     with pytest.raises(ConfigurationError, match="unknown contract item"):
-        bad = tmp_path / "bad.yaml"
-        bad.write_text("contract:\n  favourite: blue\n", encoding="utf-8")
-        create(python_workspace, tmp_path, {**CLEAR, "taskId": "task_other"})
-        other = application.start_run(python_workspace, "task_other")
-        assert other.status is ResultStatus.BLOCKED
         application.clarify_task(
             python_workspace, task_id="task_other", answers_file=bad, actor_id="human.author"
         )
@@ -208,7 +211,8 @@ def test_interruptions_are_counted_and_stop_conditions_recorded(
     again = application.continue_run(python_workspace, execution.execution_id)
     assert again.status is ResultStatus.BLOCKED
     interruptions = application.review(python_workspace, execution.execution_id)["interruptions"]
-    assert interruptions["count"] == 1 and interruptions["overBudget"] is True
+    assert interruptions["count"] == 1
+    assert interruptions["overBudget"] is True
     assert interruptions["byKind"] == {"clarification": 1}
     assert [item["condition"] for item in interruptions["stops"]] == ["unresolvable-ambiguity"]
 
@@ -366,7 +370,8 @@ def test_one_message_carries_intent_project_setup_and_contract(tmp_path: Path) -
     assert len(clarifications["requests"]) == 1
     request = clarifications["openRequest"]
     rules = [item["ruleId"] for item in request["questions"]]
-    assert {"C1", "T1"} <= set(rules) and rules.count("P1") == 3
+    assert {"C1", "T1"} <= set(rules)
+    assert rules.count("P1") == 3
     assert request["contract"]["mode"] == "batch"
     targets = {item["target"]: item["questionId"] for item in request["questions"]}
     answers = {

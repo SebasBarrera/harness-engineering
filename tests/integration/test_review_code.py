@@ -192,7 +192,8 @@ def test_unknown_reviewer_is_retried_then_blocks(workspace: Path) -> None:
     report = json.loads(result.stdout)
     assert report["verdict"] == "UNKNOWN"
     unknown = [item for item in report["reviewers"] if item["status"] == "UNKNOWN"]
-    assert unknown and all(item["attempts"] == 2 for item in unknown)
+    assert unknown
+    assert all(item["attempts"] == 2 for item in unknown)
 
 
 def test_cache_hit_skips_the_reviewers(workspace: Path) -> None:
@@ -261,7 +262,8 @@ def test_one_comment_per_passing_result(workspace: Path) -> None:
     )
     assert report["comment"]["status"] == "PASSED"
     posts = [call for call in transport.calls if call[0] == "POST"]
-    assert len(posts) == 1 and posts[0][1] == "repos/acme/shop/issues/12/comments"
+    assert len(posts) == 1
+    assert posts[0][1] == "repos/acme/shop/issues/12/comments"
     assert "Review panel: PASS" in posts[0][2]["body"]
     again = application.review_code(
         workspace, comment=True, pull_request=12, transport_override=transport
@@ -292,7 +294,8 @@ def test_rules_sync_and_check(workspace: Path) -> None:
     assert check.exit_code == 6
     assert json.loads(check.stdout)["drift"][0]["reviewer"] == "pricing"
     sync = runner.invoke(app, ["--json", "review", "rules", "sync", "--path", str(workspace)])
-    assert sync.exit_code == 0 and json.loads(sync.stdout)["reviewers"][0]["status"] == "updated"
+    assert sync.exit_code == 0
+    assert json.loads(sync.stdout)["reviewers"][0]["status"] == "updated"
     again = runner.invoke(
         app, ["--json", "review", "rules", "sync", "--check", "--path", str(workspace)]
     )
@@ -304,7 +307,8 @@ def test_hook_install(workspace: Path) -> None:
     installed = application.review_hook_install(workspace)
     hook = Path(installed["hook"])
     text = hook.read_text()
-    assert HOOK_MARKER in text and "review-code --mode hook" in text
+    assert HOOK_MARKER in text
+    assert "review-code --mode hook" in text
     application.review_hook_install(workspace)  # its own hook is replaced
     hook.write_text("#!/bin/sh\necho mine\n")
     with pytest.raises(ConfigurationError):
@@ -318,7 +322,8 @@ def test_variance_of_identical_reviews(workspace: Path) -> None:
     variance = HarnessApplication().review_variance(workspace, runs=2, provider="finder")
     assert variance["runs"] == 2
     assert variance["verdicts"] == {"PASS": 2}
-    assert variance["verdictStability"] == 1.0 and variance["meanJaccard"] == 1.0
+    assert variance["verdictStability"] == 1.0
+    assert variance["meanJaccard"] == 1.0
 
 
 def _panel(root: Path, **values: Any) -> None:

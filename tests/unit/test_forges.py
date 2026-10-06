@@ -66,7 +66,8 @@ def test_remote_detection(url: str, kind: str, repository: str, api: str) -> Non
 def test_unknown_host_needs_the_kind() -> None:
     assert parse_remote("https://code.example.com/team/app.git") is None
     forced = parse_remote("https://code.example.com/team/app.git", "gitea")
-    assert forced is not None and forced.api_url == "https://code.example.com/api/v1"
+    assert forced is not None
+    assert forced.api_url == "https://code.example.com/api/v1"
 
 
 class Recorder:
@@ -146,7 +147,8 @@ def test_bitbucket_comments_code_insights_and_status() -> None:
     assert put[1] == "repositories/ws/repo/commit/c0ffee/reports/governed-harness"
     assert put[2]["result"] == "FAILED"
     annotations = transport.calls[-1][2]
-    assert annotations[0]["severity"] == "HIGH" and annotations[0]["line"] == 3
+    assert annotations[0]["severity"] == "HIGH"
+    assert annotations[0]["line"] == 3
     created = forge.create_pull_request(head="h", base="main", title="T", body="B", labels=("x",))
     assert created["labelsIgnored"] == ["x"]
     assert forge.set_status(commit_sha="c", state="success", description="ok")["state"] == (

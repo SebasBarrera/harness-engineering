@@ -127,7 +127,8 @@ def test_git_headers_binary_and_empty_files() -> None:
     )
     files = parse_diff(text)
     by_path = {item.path: item for item in files}
-    assert by_path["img.png"].binary and by_path["img.png"].is_added
+    assert by_path["img.png"].binary
+    assert by_path["img.png"].is_added
     assert by_path["empty.txt"].is_deleted
     assert by_path["a.py"].added[0].number == 1
     assert by_path["data.bin"].binary
@@ -184,7 +185,8 @@ def test_project_rules_markdown_is_parsed(tmp_path: Path) -> None:
         "C",
     )
     assert rule.exceptions == ("health probes", "local stubs")
-    assert rule.bad == ("client.get(url)",) and rule.good == ("client.get(url, timeout=5)",)
+    assert rule.bad == ("client.get(url)",)
+    assert rule.good == ("client.get(url, timeout=5)",)
     assert rule.budget.max_reads == 1
     assert rule.rule == "Every call through the service client passes an explicit timeout."
 
@@ -249,7 +251,8 @@ def test_builtin_reviewers_get_their_rules_block(tmp_path: Path) -> None:
     reviewers = {item.reviewer_id: item for item in load_reviewers(tmp_path, catalog)}
     assert set(reviewers) == DOMAINS
     block = reviewers["tests"].block()
-    assert block is not None and "`tests.mock-of-subject` (blocking" in block
+    assert block is not None
+    assert "`tests.mock-of-subject` (blocking" in block
     # A rule verified by a tool is never sent to a model.
     assert "tests.tautological-assertion" not in block
     assert "pipeline-security.weakened-gate" not in (reviewers["pipeline-security"].block() or "")
@@ -288,12 +291,14 @@ def test_project_reviewer_replaces_the_builtin_one(tmp_path: Path) -> None:
 def test_slices_and_signals(tmp_path: Path) -> None:
     files = parse_diff(DIFF)
     assert in_slice("tests/test_service.py", "tests")
-    assert in_slice(".github/workflows/ci.yml", "pipeline") and in_slice("scripts/x.py", "pipeline")
+    assert in_slice(".github/workflows/ci.yml", "pipeline")
+    assert in_slice("scripts/x.py", "pipeline")
     assert not in_slice("tests/test_service.py", "sources")
     reviewers = {item.reviewer_id: item for item in load_reviewers(tmp_path, _catalog(tmp_path))}
     sources = slice_files(files, "sources")
     concurrency = activation(reviewers["concurrency"], sources, ("python",))
-    assert concurrency.active and concurrency.signals == ("concurrency@src/app/service.py",)
+    assert concurrency.active
+    assert concurrency.signals == ("concurrency@src/app/service.py",)
     # The same change without a concurrency primitive does not activate the reviewer.
     quiet = parse_diff("--- a/src/a.py\n+++ b/src/a.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n")
     assert not activation(
@@ -338,15 +343,9 @@ def test_contract_rejects_malformed_answers() -> None:
         {"verdict": "PASS", "findings": [_finding(side="both")], "summary": "s"},
         {"verdict": "PASS", "findings": [_finding(line=0)], "summary": "s"},
     ):
+        locations = reportable_locations([])
         with pytest.raises(ContractError):
-            normalize(
-                "x",
-                answer,
-                rules={},
-                locations=reportable_locations([]),
-                changes={},
-                limit=5,
-            )
+            normalize("x", answer, rules={}, locations=locations, changes={}, limit=5)
 
 
 def test_contract_drops_downgrades_orders_and_caps() -> None:
@@ -370,7 +369,8 @@ def test_contract_drops_downgrades_orders_and_caps() -> None:
         "made.up-too",
     ]
     capped = _normalize([_finding(), _finding(line=2, rule="quality.dead-code")], limit=1)
-    assert capped.truncated == 1 and capped.findings[0].severity == "error"
+    assert capped.truncated == 1
+    assert capped.findings[0].severity == "error"
     assert verdict_of(normalized.findings) == "FAIL"
     assert verdict_of([item for item in normalized.findings if not item.blocking]) == "PASS_WARN"
     assert verdict_of([]) == "PASS"
@@ -498,13 +498,15 @@ def test_panel_runs_reviewers_on_signals_and_never_sends_tool_rules(tmp_path: Pa
     for call in invoker.calls:
         assert "tests.tautological-assertion" not in call.request["instructions"]
         assert "weakened-gate" not in call.request["instructions"]
-        assert call.request["readOnly"] is True and call.request["outputContract"]
+        assert call.request["readOnly"] is True
+        assert call.request["outputContract"]
     # The deterministic rules found what they verify, without any model.
     assert {(item.rule, item.source) for item in report.findings} == {
         ("tests.tautological-assertion", "tool:harness:tautological-assertion"),
         ("pipeline-security.weakened-gate", "tool:harness:weakened-gates"),
     }
-    assert report.verdict == "FAIL" and report.blocking
+    assert report.verdict == "FAIL"
+    assert report.blocking
     assert invoker.workers == [4]
 
 
@@ -527,9 +529,11 @@ def test_unknown_answer_is_retried_on_the_fallback_and_then_blocks(tmp_path: Pat
         (call.provider, call.attempt) for call in invoker.calls if call.reviewer == "quality"
     ]
     assert attempts == [("primary", 1), ("secondary", 2)]
-    assert report.verdict == "UNKNOWN" and report.blocking
+    assert report.verdict == "UNKNOWN"
+    assert report.blocking
     outcome = next(item for item in report.reviewers if item.reviewer == "quality")
-    assert outcome.status == "UNKNOWN" and outcome.attempts == 2
+    assert outcome.status == "UNKNOWN"
+    assert outcome.attempts == 2
 
 
 def test_failed_consistency_check_calls_no_model(tmp_path: Path) -> None:
@@ -552,12 +556,16 @@ def test_caches_skip_repeated_calls_and_share_answers_across_modes(tmp_path: Pat
     invoker = FakeInvoker()
     first = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache))
     calls = len(invoker.calls)
-    assert first.verdict == "PASS" and first.cache == "miss" and calls == 1
+    assert first.verdict == "PASS"
+    assert first.cache == "miss"
+    assert calls == 1
     again = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache))
-    assert again.cache == "hit" and len(invoker.calls) == calls
+    assert again.cache == "hit"
+    assert len(invoker.calls) == calls
     assert again.digest == first.digest
     hook = run_panel(_inputs(tmp_path, invoker, diff_text=quiet, cache=cache, mode="hook"))
-    assert hook.cache == "miss" and hook.reviewer_cache_hits == 1
+    assert hook.cache == "miss"
+    assert hook.reviewer_cache_hits == 1
     assert len(invoker.calls) == calls  # every reviewer answer reused
 
 
@@ -570,7 +578,8 @@ def test_report_is_deterministic(tmp_path: Path) -> None:
     }
     first = run_panel(_inputs(tmp_path, FakeInvoker(answers)))
     second = run_panel(_inputs(tmp_path, FakeInvoker(answers)))
-    assert first.body() == second.body() and first.digest == second.digest
+    assert first.body() == second.body()
+    assert first.digest == second.digest
     restored = PanelReport.from_dict(first.as_dict())
     assert restored.digest == first.digest
 

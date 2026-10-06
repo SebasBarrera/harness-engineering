@@ -152,7 +152,8 @@ def test_the_start_token_comes_from_its_variable_or_is_generated() -> None:
     taken = start_token(settings, {"MY_API_TOKEN": chosen})
     assert taken == StartToken(value=chosen, generated=False, source="MY_API_TOKEN")
     generated = start_token(settings, {})
-    assert generated.generated and generated.source == "generated"
+    assert generated.generated
+    assert generated.source == "generated"
     assert len(generated.value) >= 32
     assert start_token(settings, {}).value != generated.value
     with pytest.raises(ConfigurationError, match="MY_API_TOKEN"):

@@ -65,7 +65,8 @@ def test_change_type() -> None:
     assert change_type(["README.md", "setup.cfg"]) == "documentation-configuration"
     assert change_type(["README.md", "src/a.py"]) == "code"
     assert change_type([]) == "code"
-    assert exempt_from_tests("documentation") and not exempt_from_tests("code")
+    assert exempt_from_tests("documentation")
+    assert not exempt_from_tests("code")
 
 
 def test_affected_python_tests(tmp_path: Path) -> None:
@@ -111,7 +112,8 @@ def test_plan_digest_ignores_identifiers() -> None:
 def test_friction_section_is_left_out_when_absent(tmp_path: Path) -> None:
     path = initialize_project(tmp_path)
     written = load_project_config(path)
-    assert written.friction is not None and written.friction.fast_lane is not None
+    assert written.friction is not None
+    assert written.friction.fast_lane is not None
     assert written.friction.fast_lane.skipped == DEFAULT_FAST_LANE_SKIP
     raw = yaml.safe_load(path.read_text(encoding="utf-8"))
     raw.pop("friction")
@@ -119,7 +121,8 @@ def test_friction_section_is_left_out_when_absent(tmp_path: Path) -> None:
     plain = load_project_config(path)
     assert plain.friction is None
     dumped = plain.model_dump(mode="json", by_alias=True)
-    assert "friction" not in dumped and "metrics" not in dumped
+    assert "friction" not in dumped
+    assert "metrics" not in dumped
     assert FrictionConfig().model_dump(by_alias=True) == {}
     assert FastLaneConfig.model_validate({"mode": False}).mode == "off"
 

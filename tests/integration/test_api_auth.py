@@ -164,7 +164,8 @@ def test_admin_reads_the_effective_configuration(secured: TestClient) -> None:
     assert api["auth"] == "token"
     assert api["tokenUser"] == "human.owner"
     assert [user["id"] for user in api["users"]] == ["alice", "bob"]
-    assert ADMIN not in response.text and REVIEWER not in response.text
+    assert ADMIN not in response.text
+    assert REVIEWER not in response.text
 
 
 def test_the_authenticated_reviewer_is_the_decider_and_the_decision_is_audited(

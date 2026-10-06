@@ -173,7 +173,8 @@ def test_standards_cards_reach_the_implement_request_and_the_review_checklist(
     assert run.current_phase.value == "DECISION"
     implement = calls(log, "implement")[0]
     cards = implement["standards"]["cards"]
-    assert 0 < len(cards) <= 4 and all(item["id"].startswith("python.") for item in cards)
+    assert 0 < len(cards) <= 4
+    assert all(item["id"].startswith("python.") for item in cards)
     assert "rationale" not in json.dumps(cards)
     assert "standards cards" in implement["instructions"]
     review = calls(log, "review")[0]
@@ -194,7 +195,8 @@ def test_standards_cards_reach_the_implement_request_and_the_review_checklist(
         for item in events(python_workspace, second.execution_id)
         if item["eventType"] == "standards.cards.selected"
     ]
-    assert selected and selected[0]["reused"] is True
+    assert selected
+    assert selected[0]["reused"] is True
 
 
 def test_survey_once_then_approved_layers_are_enforced(
@@ -242,7 +244,8 @@ def test_survey_once_then_approved_layers_are_enforced(
         for item in findings(python_workspace, run.execution_id)
         if item.rule_id == "architecture.layer-violation"
     ]
-    assert violation and violation[0].location is not None
+    assert violation
+    assert violation[0].location is not None
     assert violation[0].location.path == "src/sample/pricing.py"
     # The second run reuses the cached survey: no second architecture call.
     application.start_run(python_workspace, task)
@@ -310,7 +313,8 @@ def test_new_project_options_choice_and_adr(tmp_path: Path) -> None:
     run = application.start_run(root, task)
     assert (run.current_phase.value, run.status.value) == ("INTENT", "BLOCKED")
     state = application.architecture(root)["state"]
-    assert state["status"] == "OPTIONS" and len(state["options"]) == 2
+    assert state["status"] == "OPTIONS"
+    assert len(state["options"]) == 2
     decided = application.decide_architecture(
         root,
         execution_id=run.execution_id,
@@ -393,14 +397,16 @@ def test_tdd_red_green_refactor_evidence(python_workspace: Path, tmp_path: Path)
         for item in validations(python_workspace, run.execution_id)
         if item.validator_id == "harness.tdd"
     ]
-    assert tdd and tdd[-1].status.value == "PASSED"
+    assert tdd
+    assert tdd[-1].status.value == "PASSED"
     evidence = [
         item["payload"]
         for item in events(python_workspace, run.execution_id)
         if item["eventType"] == "evidence.recorded"
         and "TDD:" in str(item["payload"].get("summary"))
     ]
-    assert evidence and "red FAILED" in evidence[0]["summary"]
+    assert evidence
+    assert "red FAILED" in evidence[0]["summary"]
     assert "green PASSED" in evidence[0]["summary"]
 
 

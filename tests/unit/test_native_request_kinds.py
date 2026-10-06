@@ -82,14 +82,18 @@ def test_a_reviewer_runs_isolated_on_the_built_in_adapters() -> None:
     claude = provider("claude-code")
     argv, stdin, recorded = claude.process_input(request, cast(Any, None))
     assert argv[argv.index("--allowedTools") + 1] == "Read,Grep"
-    assert "--strict-mcp-config" in argv and "acceptEdits" not in argv
+    assert "--strict-mcp-config" in argv
+    assert "acceptEdits" not in argv
     assert argv[argv.index("--setting-sources") + 1] == "project"
     assert json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]["docs"]
     assert recorded[recorded.index("--mcp-config") + 1] == "<mcp-config>"
-    assert stdin is not None and b"docs-server" not in stdin
+    assert stdin is not None
+    assert b"docs-server" not in stdin
     codex = provider("codex")
     argv, _, _ = codex.process_input(request, cast(Any, None))
-    assert argv[argv.index("--sandbox") + 1] == "read-only" and "--full-auto" not in argv
+    assert argv[argv.index("--sandbox") + 1] == "read-only"
+    assert "--full-auto" not in argv
     # Without isolation the base arguments are unchanged.
     argv, _, _ = claude.process_input(REQUEST, cast(Any, None))
-    assert "acceptEdits" in argv and "--allowedTools" not in argv
+    assert "acceptEdits" in argv
+    assert "--allowedTools" not in argv
