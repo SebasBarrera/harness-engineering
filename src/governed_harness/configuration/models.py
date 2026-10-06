@@ -781,8 +781,10 @@ class GovernanceConfig(ConfigModel):
     * ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a
       project narrows, never widens, a profile), every grant made while a phase runs keeps only
       the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call
-      outside IMPLEMENTATION is read-only and may start only its own command, and the resolved
-      grants of each phase attempt are recorded as evidence.
+      outside IMPLEMENTATION is read-only and may start only its own command, an agent's own
+      command is started only when a ``process.execute`` grant allows it (otherwise a ``HIGH``
+      ``capabilities.command-denied`` finding blocks the phase, #87), and the resolved grants of
+      each phase attempt are recorded as evidence.
     * ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes
       repository content (instruction files included) quoted, untrusted context of every agent
       request with a prompt-injection notice, and the review panel flags instructions in changed

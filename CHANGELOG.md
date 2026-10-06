@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A provider command outside the grants is refused again under `governance.phaseCapabilities`
+  (closes #87, security). The phase policy gave every configured provider an implicit
+  `process.execute` grant for its own command, so a provider command no grant allowed (the
+  `unauthorized-command` fault probe, `sh -c ...` in a Python project) was started, which 0.9.0
+  refused. Now the agent `agent.ID` keeps the grant for its own command (that provider's
+  `command`, or a built-in adapter's executable) only when one of the run's `process.execute`
+  grants allows it (`capabilities.extend` grants a command outside the profiles); otherwise the
+  command is refused before it starts, recorded as a `HIGH` `capabilities.command-denied`
+  finding, and the phase stops `BLOCKED` with a reason naming the agent, the command and
+  `capabilities.extend` (`run start` exits with 6). `harness config validate` warns about each
+  provider whose command no grant allows. Applies only under `governance.phaseCapabilities`, a
+  security fix with no new key; without the key a refused provider command still ends the run
+  as `ERROR` (exit 1) as in 0.9.0. A project under the key whose provider command (`claude`,
+  `codex`, a wrapper) was granted only implicitly must now grant it in `capabilities.extend`.
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

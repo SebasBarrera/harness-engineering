@@ -31,7 +31,7 @@ from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
-from governed_harness.capabilities.phase import PhasePolicy, phase_scope
+from governed_harness.capabilities.phase import CommandRefused, PhasePolicy, phase_scope
 from governed_harness.capabilities.repository import (
     DestructivePolicy,
     destructive_scope,
@@ -825,33 +825,7 @@ class RunEngine:
             {"phaseId": phase_id, "attempt": attempt},
             phase_execution_id=phase.phase_execution_id,
         )
-        try:
-            if self.is_cancelled(execution.execution_id):
-                outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
-            else:
-                with (
-                    phase_scope(self._phase_policy(running, phase)),
-                    destructive_scope(self._destructive_policy(running)),
-                ):
-                    outcome = handler(running, phase)
-        except (KeyboardInterrupt, SystemExit) as interruption:
-            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
-            # record the phase as interrupted so that a later run continue recovers it.
-            if self._leases_workspace():
-                self._mark_interrupted(
-                    execution.execution_id,
-                    phase,
-                    f"The harness was interrupted ({type(interruption).__name__})",
-                )
-            raise
-        except Exception as error:
-            outcome = PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
-            self.s.events.append(
-                execution.execution_id,
-                "phase.error",
-                {"phaseId": phase_id, "errorType": type(error).__name__, "message": str(error)},
-                phase_execution_id=phase.phase_execution_id,
-            )
+        outcome = self._execute_handler(running, phase, handler)
         if definition is not None:
             outcome = self._apply_phase_settings(definition, phase, outcome)
         exit_checks: list[ExitGateCheck] = []
@@ -905,33 +879,79 @@ class RunEngine:
             completed_payload,
             phase_execution_id=phase.phase_execution_id,
         )
-        latest = self.get_execution(execution.execution_id)
-        if outcome.status is ResultStatus.PASSED:
-            if phase_id is PhaseId.CLOSURE:
-                updated = latest.model_copy(
-                    update={"status": ResultStatus.PASSED, "updated_at": utc_now()}
+        self._save_execution(self._after_phase(execution.execution_id, phase_id, outcome))
+        return outcome
+
+    def _execute_handler(
+        self,
+        running: Execution,
+        phase: PhaseExecution,
+        handler: Callable[[Execution, PhaseExecution], PhaseOutcome],
+    ) -> PhaseOutcome:
+        """Run the phase's work under the policies of the phase. A provider command no grant
+        allows, refused before it starts under ``governance.phaseCapabilities`` (#87), blocks
+        the phase with the finding the refusal recorded; any other exception is an ``ERROR``."""
+        execution_id = running.execution_id
+        try:
+            if self.is_cancelled(execution_id):
+                return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+            with (
+                phase_scope(self._phase_policy(running, phase)),
+                destructive_scope(self._destructive_policy(running)),
+            ):
+                return handler(running, phase)
+        except (KeyboardInterrupt, SystemExit) as interruption:
+            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
+            # record the phase as interrupted so that a later run continue recovers it.
+            if self._leases_workspace():
+                self._mark_interrupted(
+                    execution_id,
+                    phase,
+                    f"The harness was interrupted ({type(interruption).__name__})",
                 )
-            else:
-                transition = self.state_machine.advance(phase_id, ResultStatus.PASSED)
-                updated = latest.model_copy(
-                    update={
-                        "status": ResultStatus.PENDING,
-                        "current_phase": self._next_phase(phase_id, transition.target),
-                        "updated_at": utc_now(),
-                    }
-                )
-        else:
-            updated = latest.model_copy(
+            raise
+        except CommandRefused as refusal:
+            return PhaseOutcome(ResultStatus.BLOCKED, f"{type(refusal).__name__}: {refusal}")
+        except Exception as error:
+            self.s.events.append(
+                execution_id,
+                "phase.error",
+                {
+                    "phaseId": phase.phase_id,
+                    "errorType": type(error).__name__,
+                    "message": str(error),
+                },
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
+
+    def _after_phase(
+        self, execution_id: str, phase_id: PhaseId, outcome: PhaseOutcome
+    ) -> Execution:
+        """The run after a phase attempt: the next phase when it passed, otherwise the
+        attempt's status (with the reason of an error or a cancellation)."""
+        latest = self.get_execution(execution_id)
+        if outcome.status is not ResultStatus.PASSED:
+            stopped = outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED}
+            return latest.model_copy(
                 update={
                     "status": outcome.status,
-                    "terminal_reason": outcome.summary
-                    if outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED}
-                    else None,
+                    "terminal_reason": outcome.summary if stopped else None,
                     "updated_at": utc_now(),
                 }
             )
-        self._save_execution(updated)
-        return outcome
+        if phase_id is PhaseId.CLOSURE:
+            return latest.model_copy(
+                update={"status": ResultStatus.PASSED, "updated_at": utc_now()}
+            )
+        transition = self.state_machine.advance(phase_id, ResultStatus.PASSED)
+        return latest.model_copy(
+            update={
+                "status": ResultStatus.PENDING,
+                "current_phase": self._next_phase(phase_id, transition.target),
+                "updated_at": utc_now(),
+            }
+        )
 
     def _phase_intent(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
@@ -1564,15 +1584,36 @@ class RunEngine:
         definition = next(
             (item for item in resolved.workflow.phases if item.phase_id is phase.phase_id), None
         )
+        # Each configured provider's actor (agent.ID) may start its own command, and only when
+        # the run's process.execute grants allow it (#87).
         launch = {
-            f"agent.{provider_id}": (" ".join(config.effective_command),)
+            f"agent.{provider_id}": tuple(config.effective_command)
             for provider_id, config in resolved.project.agent_providers.items()
             if config.effective_command
         }
+
+        def refused(actor: Actor, argv: Sequence[str]) -> None:
+            self.results.record_finding(
+                execution,
+                validator_id="harness.capabilities",
+                rule_id="capabilities.command-denied",
+                category="security",
+                severity=FindingSeverity.HIGH,
+                message=(
+                    f"{actor.actor_id} tried to start a command no process.execute grant allows "
+                    f"in {phase.phase_id.value}: {' '.join(argv)[:200]}"
+                ),
+                recommendation=(
+                    "Grant the command with capabilities.extend (process.execute) in "
+                    "project.yaml if it is intended (governance.phaseCapabilities)."
+                ),
+            )
+
         policy = PhasePolicy(
             phase=phase.phase_id.value,
             allowed=frozenset(definition.allowed_capabilities if definition else ()),
             launch=launch,
+            on_refused=refused,
         )
         provider = self.s.state.get_flag(f"provider:{execution.execution_id}")
         description = policy.describe(

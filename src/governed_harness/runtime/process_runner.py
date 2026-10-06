@@ -14,6 +14,7 @@ from typing import IO, Protocol
 
 from governed_harness.capabilities.authorizer import (
     CapabilityAuthorizer,
+    CapabilityDenied,
     contained_path,
 )
 from governed_harness.domain.enums import ResultStatus
@@ -125,6 +126,31 @@ class SafeProcessRunner:
         self.observer = observer
         self.terminate_on_exit = terminate_on_exit
 
+    def _authorize(self, spec: CommandSpec, actor: Actor, grants: list[CapabilityGrant]) -> Path:
+        """Check the command against the grants and the policies before it starts; returns the
+        working directory, contained in the workspace."""
+        if not spec.argv or any("\x00" in part for part in (*spec.argv, *spec.sandbox_prefix)):
+            raise ValueError("argv must be a non-empty, NUL-free vector")
+        try:
+            self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
+        except CapabilityDenied as error:
+            from governed_harness.capabilities.phase import current_policy
+
+            policy = current_policy()
+            if policy is not None:
+                # governance.phaseCapabilities (#87): an agent's refused command is a finding
+                # and blocks the phase.
+                policy.refuse(actor, spec.argv, error)
+            raise
+        cwd = contained_path(self.workspace_root, spec.cwd)
+        from governed_harness.capabilities.repository import current_destructive
+
+        destructive = current_destructive()
+        if destructive is not None:
+            # governance.applyRepositoryPolicies, destructiveActionsDefault: deny (#5).
+            destructive.check(spec.argv, cwd, actor, grants)
+        return cwd
+
     def run(
         self,
         spec: CommandSpec,
@@ -134,16 +160,7 @@ class SafeProcessRunner:
         extra_env: Mapping[str, str] | None = None,
         cancellation: CancellationToken | None = None,
     ) -> ProcessResult:
-        if not spec.argv or any("\x00" in part for part in (*spec.argv, *spec.sandbox_prefix)):
-            raise ValueError("argv must be a non-empty, NUL-free vector")
-        self.authorizer.authorize_command(actor=actor, argv=spec.argv, grants=grants)
-        cwd = contained_path(self.workspace_root, spec.cwd)
-        from governed_harness.capabilities.repository import current_destructive
-
-        destructive = current_destructive()
-        if destructive is not None:
-            # governance.applyRepositoryPolicies, destructiveActionsDefault: deny (#5).
-            destructive.check(spec.argv, cwd, actor, grants)
+        cwd = self._authorize(spec, actor, grants)
         environment = self._environment(spec, extra_env)
         start = time.perf_counter()
         process = subprocess.Popen(  # nosec B603 - executable resolved and checked by policy, shell=False
