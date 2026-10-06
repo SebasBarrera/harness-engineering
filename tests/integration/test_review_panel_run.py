@@ -1,6 +1,10 @@
 """The review panel in INDEPENDENT_REVIEW of a governed run (review.panel, #57): reviewers by
 domain, the report as evidence, scoped auto-fix by provenance and a reviewer that never answers.
-The provider is a fixture command that calls no model."""
+The provider is a fixture command that calls no model.
+
+The reviewers of a panel run in parallel, so the fixture records each call in a file of its own
+(renamed into place when complete) instead of rewriting one shared log: a shared read-modify-write
+lost a reviewer's call or left a torn file whenever two reviewers wrote at once."""
 
 from __future__ import annotations
 
@@ -26,14 +30,16 @@ TASK = (
 )
 
 AGENT = """\
-import json, sys
+import json, os, sys, time
 from pathlib import Path
 
 request = json.load(sys.stdin)
 log = Path(LOG)
-calls = json.loads(log.read_text()) if log.exists() else []
-calls.append(request)
-log.write_text(json.dumps(calls))
+log.mkdir(exist_ok=True)
+name = f"{time.time_ns():020d}-{os.getpid()}"
+(log / f"{name}.tmp").write_text(json.dumps(request))
+os.replace(log / f"{name}.tmp", log / f"{name}.json")
+calls = [json.loads(path.read_text()) for path in sorted(log.glob("*.json"))]
 kind = request.get("kind", "implement")
 if kind == "review":
     reviewer = (request.get("reviewer") or {}).get("id")
@@ -73,7 +79,7 @@ print(json.dumps({"status": "PASSED", "summary": "implemented"}))
 
 
 def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
-    log = tmp_path / f"calls-{mode}.json"
+    log = tmp_path / f"calls-{mode}"
     script = AGENT.replace("LOG", repr(str(log))).replace("MODE", repr(mode))
     (workspace / "agent.py").write_text(script, encoding="utf-8")
     path = workspace / ".harness" / "project.yaml"
@@ -104,7 +110,9 @@ def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
 
 
 def requests(log: Path, kind: str) -> list[dict[str, Any]]:
-    return [item for item in json.loads(log.read_text()) if item.get("kind", "implement") == kind]
+    """The recorded calls of ``kind``, in the order they were made."""
+    calls = [json.loads(path.read_text()) for path in sorted(log.glob("*.json"))]
+    return [item for item in calls if item.get("kind", "implement") == kind]
 
 
 def start(workspace: Path, tmp_path: Path) -> tuple[HarnessApplication, str]:

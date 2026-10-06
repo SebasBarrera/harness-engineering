@@ -273,6 +273,64 @@ def _budget(value: str) -> dict[str, Any]:
     }
 
 
+class _Section:
+    """One ``## rule-id: Title`` section read line by line: the leading ``- key: value``
+    fields, the rule's paragraph and the code blocks under ``Good:`` and ``Bad:``."""
+
+    def __init__(self, rule_id: str, title: str, domain: str) -> None:
+        self.data: dict[str, Any] = {"id": rule_id, "domain": domain, "title": title}
+        self.paragraph: list[str] = []
+        self.examples: dict[str, list[str]] = {"good": [], "bad": []}
+        self.target: str | None = None
+        self.block: list[str] | None = None
+
+    def feed(self, line: str) -> None:
+        stripped = line.strip()
+        if self.block is not None:
+            self._block_line(self.block, line, stripped)
+            return
+        if stripped.startswith("```"):
+            self.block = []
+            return
+        lowered = stripped.lower().rstrip(":")
+        if lowered in {"good", "bad"} and stripped.endswith(":"):
+            self.target = lowered
+            return
+        field = _FIELD.match(stripped)
+        if field and not self.paragraph:
+            self._field(field.group(1), field.group(2).strip())
+            return
+        if stripped and self.target is None:
+            self.paragraph.append(stripped)
+
+    def _block_line(self, block: list[str], line: str, stripped: str) -> None:
+        if not stripped.startswith("```"):
+            block.append(line)
+            return
+        if self.target is not None:
+            self.examples[self.target].append("\n".join(block))
+        self.block = None
+
+    def _field(self, name: str, value: str) -> None:
+        key = _ALIASES.get(name, name)
+        if key in _LIST_FIELDS:
+            self.data[key] = _split_list(value)
+        elif key == "budget":
+            self.data["budget"] = _budget(value)
+        elif key == "priority":
+            self.data["priority"] = int(value)
+        else:
+            self.data[key] = value
+
+    def as_data(self) -> dict[str, Any]:
+        return {
+            **self.data,
+            "rule": " ".join(self.paragraph),
+            "good": self.examples["good"],
+            "bad": self.examples["bad"],
+        }
+
+
 def parse_rules_markdown(text: str, *, domain: str, source: str) -> list[Rule]:
     """The rules of one project file: a ``## rule-id: Title`` section per rule, ``- key: value``
     fields (severity, priority, when, exceptions, appliesTo, verifiedBy, supersedes, requires,
@@ -288,48 +346,11 @@ def parse_rules_markdown(text: str, *, domain: str, source: str) -> list[Rule]:
             sections[-1][2].append(line)
     rules: list[Rule] = []
     for rule_id, title, lines in sections:
-        data: dict[str, Any] = {"id": rule_id, "domain": domain, "title": title}
-        paragraph: list[str] = []
-        examples: dict[str, list[str]] = {"good": [], "bad": []}
-        target: str | None = None
-        block: list[str] | None = None
+        section = _Section(rule_id, title, domain)
         for line in lines:
-            stripped = line.strip()
-            if block is not None:
-                if stripped.startswith("```"):
-                    if target is not None:
-                        examples[target].append("\n".join(block))
-                    block = None
-                else:
-                    block.append(line)
-                continue
-            if stripped.startswith("```"):
-                block = []
-                continue
-            lowered = stripped.lower().rstrip(":")
-            if lowered in {"good", "bad"} and stripped.endswith(":"):
-                target = lowered
-                continue
-            field = _FIELD.match(stripped)
-            if field and not paragraph:
-                key = _ALIASES.get(field.group(1), field.group(1))
-                value = field.group(2).strip()
-                if key in _LIST_FIELDS:
-                    data[key] = _split_list(value)
-                elif key == "budget":
-                    data["budget"] = _budget(value)
-                elif key == "priority":
-                    data["priority"] = int(value)
-                else:
-                    data[key] = value
-                continue
-            if stripped and target is None:
-                paragraph.append(stripped)
-        data["rule"] = " ".join(paragraph)
-        data["good"] = examples["good"]
-        data["bad"] = examples["bad"]
+            section.feed(line)
         try:
-            rules.append(Rule.model_validate({**data, "layer": "C", "source": source}))
+            rules.append(Rule.model_validate({**section.as_data(), "layer": "C", "source": source}))
         except ValidationError as error:
             raise ConfigurationError(
                 f"invalid review rule {rule_id} in {source}: {error}"
@@ -369,12 +390,8 @@ def merge(
         current = by_id.get(rule.rule_id)
         if current is None or _LAYER_RANK[rule.layer] >= _LAYER_RANK[current.layer]:
             by_id[rule.rule_id] = rule
+    superseded = _superseded(by_id)
     inactive: list[InactiveRule] = []
-    superseded: dict[str, str] = {}
-    for rule in by_id.values():
-        for target in rule.supersedes:
-            if target in by_id and target != rule.rule_id:
-                superseded.setdefault(target, rule.rule_id)
     active: list[Rule] = []
     for rule_id in sorted(by_id):
         rule = by_id[rule_id]
@@ -386,6 +403,16 @@ def merge(
         else:
             active.append(rule)
     return Catalog(tuple(active), tuple(inactive))
+
+
+def _superseded(by_id: dict[str, Rule]) -> dict[str, str]:
+    """``rule id -> the rule that supersedes it`` (the first one, in merge order)."""
+    superseded: dict[str, str] = {}
+    for rule in by_id.values():
+        for target in rule.supersedes:
+            if target in by_id and target != rule.rule_id:
+                superseded.setdefault(target, rule.rule_id)
+    return superseded
 
 
 def _missing_input(

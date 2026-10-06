@@ -33,7 +33,7 @@ from governed_harness.intake import task_digest
 from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 MALFORMED_RULE = "intake.agent-review-malformed"
 MAX_AGENT_QUESTIONS = 40
@@ -104,7 +104,7 @@ def _numbered(
 
 
 class IntentReview:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -138,7 +138,7 @@ class IntentReview:
             start += len(dangling)
         # intake.projectSetup (#56): architecture, testing strategy and standards, once per
         # project, for what neither the configuration nor the repository establishes.
-        setup = self.results.project_setup.questions(execution, phase, task, start)
+        setup = self.results.project_setup.questions(execution, phase, start)
         added.extend(setup)
         start += len(setup)
         if self.enabled and agent:

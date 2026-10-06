@@ -78,15 +78,16 @@ class LadderIntake:
         coverage = None
         if verification and verification.test_quality and verification.test_quality.diff_coverage:
             coverage = verification.test_quality.diff_coverage
+        branch_template: str | None
+        if isolation and isolation.effective_mode == "worktree":
+            branch_template = isolation.branch_template
+        else:
+            branch_template = delivery.branch_template if delivery.mode == "branch" else None
         values: dict[str, Any] = {
             "verificationLevel": ladder.required_default.value
             if ladder and ladder.enabled
             else None,
-            "branch": (
-                isolation.branch_template
-                if isolation and isolation.effective_mode == "worktree"
-                else (delivery.branch_template if delivery.mode == "branch" else None)
-            ),
+            "branch": branch_template,
             "push": delivery.push,
             "createPullRequest": delivery.pull_request.create if delivery.pull_request else None,
             "comment": delivery.comment,

@@ -82,94 +82,127 @@ def _side_path(value: str, prefix: str) -> str | None:
 
 def parse_diff(text: str) -> list[FileChange]:
     """The files of a unified diff, in diff order."""
-    files: list[FileChange] = []
-    current: FileChange | None = None
-    old_left = new_left = 0
-    old_line = new_line = 0
-    open_header = False
-    lines = text.splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        in_hunk = current is not None and (old_left > 0 or new_left > 0)
-        if in_hunk and current is not None:
-            current.lines.append(line)
-            if line.startswith("+"):
-                current.added.append(DiffLine(new_line, line[1:]))
-                new_line += 1
-                new_left -= 1
-            elif line.startswith("-"):
-                current.removed.append(DiffLine(old_line, line[1:]))
-                old_line += 1
-                old_left -= 1
-            elif line.startswith("\\"):
-                pass
-            else:
-                old_line += 1
-                new_line += 1
-                old_left -= 1
-                new_left -= 1
-            index += 1
-            continue
+    return _DiffParser(text.splitlines()).parse()
+
+
+class _DiffParser:
+    """A single pass over the lines of a unified diff. Inside a hunk the counters of its header
+    decide what a line is; outside, each header kind is tried in turn."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.lines = lines
+        self.files: list[FileChange] = []
+        self.current: FileChange | None = None
+        self.old_left = self.new_left = 0
+        self.old_line = self.new_line = 0
+        self.open_header = False
+
+    def parse(self) -> list[FileChange]:
+        index = 0
+        while index < len(self.lines):
+            index += self._step(index)
+        return self.files
+
+    def _step(self, index: int) -> int:
+        """Read the line at ``index``; the number of lines it consumed."""
+        line = self.lines[index]
+        if self.current is not None and (self.old_left > 0 or self.new_left > 0):
+            self._hunk_line(self.current, line)
+            return 1
+        for header in (self._git_header, self._file_header, self._mode, self._binary, self._hunk):
+            used = header(index)
+            if used:
+                return used
+        if self.current is not None:
+            self.current.lines.append(line)
+        return 1
+
+    def _hunk_line(self, current: FileChange, line: str) -> None:
+        current.lines.append(line)
+        if line.startswith("+"):
+            current.added.append(DiffLine(self.new_line, line[1:]))
+            self.new_line += 1
+            self.new_left -= 1
+        elif line.startswith("-"):
+            current.removed.append(DiffLine(self.old_line, line[1:]))
+            self.old_line += 1
+            self.old_left -= 1
+        elif not line.startswith("\\"):
+            self.old_line += 1
+            self.new_line += 1
+            self.old_left -= 1
+            self.new_left -= 1
+
+    def _git_header(self, index: int) -> int:
+        line = self.lines[index]
         git_header = _GIT_HEADER.match(line)
-        if git_header:
-            current = FileChange(git_header.group(1), git_header.group(2), lines=[line])
-            files.append(current)
-            open_header = True
-            index += 1
-            continue
-        if (
-            line.startswith("--- ")
-            and index + 1 < len(lines)
-            and lines[index + 1].startswith("+++ ")
-        ):
-            old_path = _side_path(line[4:], "a/")
-            new_path = _side_path(lines[index + 1][4:], "b/")
-            if current is not None and open_header:
-                current.old_path, current.new_path = old_path, new_path
-            else:
-                current = FileChange(old_path, new_path)
-                files.append(current)
-            open_header = False
-            current.lines.extend((line, lines[index + 1]))
-            index += 2
-            continue
-        if current is not None and line.startswith(("new file mode", "deleted file mode")):
-            current.lines.append(line)
-            if line.startswith("new file mode"):
-                current.old_path = None
-            else:
-                current.new_path = None
-            index += 1
-            continue
-        binary = _GIT_BINARY.match(line) or _HARNESS_BINARY.match(line)
-        if binary:
-            open_header = False
-            if _HARNESS_BINARY.match(line):
-                current = FileChange(binary.group(1), binary.group(1), binary=True, lines=[line])
-                files.append(current)
-            elif current is not None:
-                current.binary = True
-                current.lines.append(line)
-                if binary.group(1) == "/dev/null":
-                    current.old_path = None
-                if binary.group(2) == "/dev/null":
-                    current.new_path = None
-            index += 1
-            continue
+        if not git_header:
+            return 0
+        self.current = FileChange(git_header.group(1), git_header.group(2), lines=[line])
+        self.files.append(self.current)
+        self.open_header = True
+        return 1
+
+    def _file_header(self, index: int) -> int:
+        """A ``---``/``+++`` pair: the paths of the file the ``diff --git`` line opened, or a
+        new file of a diff without such lines."""
+        line = self.lines[index]
+        following = self.lines[index + 1] if index + 1 < len(self.lines) else ""
+        if not (line.startswith("--- ") and following.startswith("+++ ")):
+            return 0
+        old_path = _side_path(line[4:], "a/")
+        new_path = _side_path(following[4:], "b/")
+        if self.current is not None and self.open_header:
+            self.current.old_path, self.current.new_path = old_path, new_path
+        else:
+            self.current = FileChange(old_path, new_path)
+            self.files.append(self.current)
+        self.open_header = False
+        self.current.lines.extend((line, following))
+        return 2
+
+    def _mode(self, index: int) -> int:
+        line = self.lines[index]
+        current = self.current
+        if current is None or not line.startswith(("new file mode", "deleted file mode")):
+            return 0
+        current.lines.append(line)
+        if line.startswith("new file mode"):
+            current.old_path = None
+        else:
+            current.new_path = None
+        return 1
+
+    def _binary(self, index: int) -> int:
+        line = self.lines[index]
+        harness = _HARNESS_BINARY.match(line)
+        binary = _GIT_BINARY.match(line) or harness
+        if not binary:
+            return 0
+        self.open_header = False
+        if harness:
+            self.current = FileChange(binary.group(1), binary.group(1), binary=True, lines=[line])
+            self.files.append(self.current)
+        elif self.current is not None:
+            self.current.binary = True
+            self.current.lines.append(line)
+            if binary.group(1) == "/dev/null":
+                self.current.old_path = None
+            if binary.group(2) == "/dev/null":
+                self.current.new_path = None
+        return 1
+
+    def _hunk(self, index: int) -> int:
+        line = self.lines[index]
         hunk = _HUNK.match(line)
-        if hunk and current is not None:
-            open_header = False
-            old_line, new_line = int(hunk.group(1)), int(hunk.group(3))
-            old_left = int(hunk.group(2)) if hunk.group(2) is not None else 1
-            new_left = int(hunk.group(4)) if hunk.group(4) is not None else 1
-            current.lines.append(line)
-            index += 1
-            continue
-        if current is not None:
-            current.lines.append(line)
-        index += 1
-    return files
+        if not hunk or self.current is None:
+            return 0
+        self.open_header = False
+        self.old_line, self.new_line = int(hunk.group(1)), int(hunk.group(3))
+        self.old_left = int(hunk.group(2)) if hunk.group(2) is not None else 1
+        self.new_left = int(hunk.group(4)) if hunk.group(4) is not None else 1
+        self.current.lines.append(line)
+        return 1
 
 
 # ----- reportable locations ---------------------------------------------------------------------

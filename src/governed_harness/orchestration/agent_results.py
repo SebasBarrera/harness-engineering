@@ -9,7 +9,6 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -51,6 +50,9 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
+from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import (
     Contents,
     changes_since,
@@ -67,7 +69,8 @@ from governed_harness.runtime.snapshots import StoredSnapshot
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 _SECURITY_WORDS = (
     "password",
@@ -81,25 +84,12 @@ _SECURITY_WORDS = (
     "encrypt",
 )
 
-READ_ONLY_RULE = "agent.read-only-violation"
 BUDGET_EXCEEDED_RULE = "budget.exceeded"
 BUDGET_WARNING_RULE = "budget.warning"
 
 
-@dataclass(frozen=True)
-class AgentCallOutcome:
-    """What a read-only agent call returned: its status, the structured result when it passed
-    and the evidence it left."""
-
-    status: ResultStatus
-    summary: str
-    result: dict[str, Any] | None
-    invocation_id: str | None
-    evidence_refs: tuple[str, ...]
-
-
 class AgentResults:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         from governed_harness.orchestration.acceptance import AcceptanceTests
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
@@ -512,8 +502,6 @@ class AgentResults:
     ) -> PhaseOutcome | None:
         """Fail closed before an agent call when a limit is already crossed (or a call crossed
         its per-call limit and no person raised it since)."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -603,22 +591,9 @@ class AgentResults:
 
     # ----- agent calls (#37, #38, #39) -----------------------------------------------------
     def call_config(self, kind: CallKind) -> AgentCallConfig | None:
-        if kind == "clarify":
-            return self.project.intake.clarify_agent if self.project.intake else None
-        if kind == "review":
-            return self.project.review.reviewer if self.project.review else None
-        if kind == "plan":
-            return self.project.planning.planner if self.project.planning else None
-        if kind == "acceptance":
-            config = self.acceptance.config
-            return config.author if config else None
-        if kind == "locate":
-            context = self.project.context
-            return context.locate.agent if context and context.locate else None
-        if kind == "architecture":
-            architecture = self.project.architecture
-            return architecture.agent if architecture else None
-        return None
+        """The configuration of a read-only call kind (``None``: the provider's defaults)."""
+        read = _CALL_CONFIGS.get(kind)
+        return read(self) if read is not None else None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
         configured = self.call_config(kind)
@@ -950,7 +925,7 @@ class AgentResults:
                 else []
             )
             paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, task, paths)
+            engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
             extra.update(engineering)
         if not extra:
             return None
@@ -1190,3 +1165,44 @@ class AgentResults:
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the configuration of each read-only call kind -----------------------------------------
+def _clarify_config(results: AgentResults) -> AgentCallConfig | None:
+    intake = results.project.intake
+    return intake.clarify_agent if intake else None
+
+
+def _review_config(results: AgentResults) -> AgentCallConfig | None:
+    review = results.project.review
+    return review.reviewer if review else None
+
+
+def _plan_config(results: AgentResults) -> AgentCallConfig | None:
+    planning = results.project.planning
+    return planning.planner if planning else None
+
+
+def _acceptance_config(results: AgentResults) -> AgentCallConfig | None:
+    config = results.acceptance.config
+    return config.author if config else None
+
+
+def _locate_config(results: AgentResults) -> AgentCallConfig | None:
+    context = results.project.context
+    return context.locate.agent if context and context.locate else None
+
+
+def _architecture_config(results: AgentResults) -> AgentCallConfig | None:
+    architecture = results.project.architecture
+    return architecture.agent if architecture else None
+
+
+_CALL_CONFIGS: dict[str, Callable[[AgentResults], AgentCallConfig | None]] = {
+    "clarify": _clarify_config,
+    "review": _review_config,
+    "plan": _plan_config,
+    "acceptance": _acceptance_config,
+    "locate": _locate_config,
+    "architecture": _architecture_config,
+}

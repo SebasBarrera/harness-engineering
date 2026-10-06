@@ -3,13 +3,12 @@ from __future__ import annotations
 import contextlib
 import json
 import socket
-import subprocess
+import subprocess  # nosec B404 - only SubprocessError: the engine starts no process here
 import threading
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_for_futures
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cached_property, partial
 from pathlib import Path
@@ -27,7 +26,6 @@ from governed_harness.agents import (
 from governed_harness.agents.environment import (
     ProviderEnvironment,
     provider_environment,
-    secret_values,
 )
 from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
@@ -41,7 +39,6 @@ from governed_harness.capabilities.repository import (
 )
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
-    ResolvedConfiguration,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
@@ -99,8 +96,8 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
-from governed_harness.events import AnchorStore, SQLiteEventStore
-from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
+from governed_harness.events import AnchorStore
+from governed_harness.evidence import sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
@@ -112,6 +109,9 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths
+from governed_harness.orchestration.engine_types import EngineServices as EngineServices
+from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
 from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
@@ -121,6 +121,9 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
+from governed_harness.orchestration.intent_review import ReviewOutcome as IntentReviewOutcome
+from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
@@ -150,7 +153,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
-from governed_harness.runtime.state_location import isolation_marker, resolve_state_location
+from governed_harness.runtime.state_location import isolation_marker
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -220,6 +223,20 @@ def acceptance_contract_digest(task: Task) -> str:
     )
 
 
+def _affected_tests_failed(outputs: list[Any]) -> PhaseOutcome | None:
+    """The outcome of a fast-lane attempt stopped by its affected tests (#58), if it was."""
+    last = outputs[-1].result if outputs else None
+    if last is None or last.validator_id != AFFECTED_TESTS_ID:
+        return None
+    if last.status is ResultStatus.PASSED:
+        return None
+    return PhaseOutcome(
+        last.status,
+        "The affected tests did not pass; the full suite runs on the next attempt",
+        last.evidence_refs,
+    )
+
+
 class _ProcessLedger:
     """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
     recovery after a killed harness can terminate the ones still running."""
@@ -251,80 +268,6 @@ class _ProcessLedger:
                 self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
-@dataclass(frozen=True)
-class EnginePaths:
-    workspace: Path
-    harness_dir: Path
-    database: Path
-    artifact_dir: Path
-    state_root: Path | None = None
-    """The run registry outside the workspace (``runtime.stateDir`` or an isolated run's
-    origin, #55); ``None`` when the state lives in ``.harness/`` as in 1.0.0."""
-
-    @classmethod
-    def from_workspace(cls, workspace: Path) -> EnginePaths:
-        root = workspace.resolve(strict=True)
-        harness_dir = root / ".harness"
-        harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return cls(root, harness_dir, harness_dir / "state.db", harness_dir / "artifacts")
-
-    @classmethod
-    def for_project(cls, resolved: ResolvedConfiguration) -> EnginePaths:
-        """The paths of a resolved project: ``.harness/`` for the workspace's own files and the
-        state location ``runtime.stateDir`` (or an isolation marker) names for the registry."""
-        paths = cls.from_workspace(resolved.workspace_root)
-        location = resolve_state_location(
-            paths.workspace, resolved.project.project_id, resolved.project.runtime.state_dir
-        )
-        if not location.external:
-            return paths
-        return cls(
-            paths.workspace,
-            paths.harness_dir,
-            location.database,
-            location.artifacts,
-            location.root,
-        )
-
-
-@dataclass
-class EngineServices:
-    resolved: ResolvedConfiguration
-    paths: EnginePaths
-    state: SQLiteStateStore
-    events: SQLiteEventStore
-    artifacts: LocalArtifactStore
-
-    @classmethod
-    def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
-        paths = EnginePaths.for_project(resolved)
-        return cls(
-            resolved=resolved,
-            paths=paths,
-            state=SQLiteStateStore(paths.database),
-            events=SQLiteEventStore(paths.database),
-            artifacts=LocalArtifactStore(
-                paths.artifact_dir,
-                SecretRedactor(
-                    literals=secret_values(resolved.project),
-                    extended=bool(resolved.project.runtime.extended_redaction),
-                ),
-            ),
-        )
-
-    def close(self) -> None:
-        self.state.close()
-        self.events.close()
-
-
-@dataclass(frozen=True)
-class PhaseOutcome:
-    status: ResultStatus
-    summary: str
-    evidence_refs: tuple[str, ...] = ()
-    artifact_refs: tuple[str, ...] = ()
-
-
 class RunEngine:
     _exit_gate_unmet: str | None = None
     """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
@@ -336,7 +279,7 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
-        self.provenance = ProvenanceRecorder(self)
+        self.provenance: ProvenanceRecorder = ProvenanceRecorder(self)
         self.snapshots = SnapshotStore(
             services.paths.workspace,
             services.artifacts,
@@ -348,14 +291,11 @@ class RunEngine:
             ),
         )
         self._phase_deadline: float | None = None
-        self.results = AgentResults(self)
-        # Imported here: the ladder modules type against the engine, so a module-level import
-        # would close an import cycle.
-        from governed_harness.orchestration.friction import Friction
-        from governed_harness.orchestration.ladder import VerificationLadder
-
-        self.ladder = VerificationLadder(self)
-        self.friction = Friction(self)
+        # The helpers type the engine as an EngineHost (orchestration.hosts); the annotations
+        # keep mypy from inferring these attributes while it checks the engine against it.
+        self.results: AgentResults = AgentResults(self)
+        self.ladder: VerificationLadder = VerificationLadder(self)
+        self.friction: Friction = Friction(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -1017,19 +957,7 @@ class RunEngine:
             # friction.fastLane (#58): the lane of the run, recorded with its reasons.
             self.friction.classify(execution, phase, task)
         if self.results.active and policy != "off":
-            # Agent review of ambiguity and completeness, and the check of earlier answers
-            # (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps
-            # the deterministic intake only.
-            review = self.results.intent.questions(
-                execution,
-                phase,
-                task,
-                questions,
-                agent=not (
-                    self.friction.active
-                    and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
-                ),
-            )
+            review = self._intent_review(execution, phase, task, questions)
             review_refs = review.evidence_refs
             if review.blocked is not None:
                 return PhaseOutcome(
@@ -1045,21 +973,65 @@ class RunEngine:
             questions = questions + intake.questions
             contract = intake.contract
             ladder_block = intake.blocked
-            if ladder_block is not None and contract is None:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
-                )
-        if not questions and ladder_block is None:
-            if self.results.active:
-                # architecture.mode: agent (#56): options for a new project, chosen by a person.
-                advised = self.results.architecture.advise(execution, phase, task)
-                if advised is not None:
-                    return advised
+        if ladder_block is not None and contract is None:
             return PhaseOutcome(
-                ResultStatus.PASSED,
-                "Intent is structured and identifiable",
-                (evidence.artifact_ref, *review_refs),
+                ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
             )
+        if not questions and ladder_block is None:
+            return self._intent_identified(
+                execution, phase, task, (evidence.artifact_ref, *review_refs)
+            )
+        return self._intent_clarification(
+            execution,
+            phase,
+            task,
+            questions,
+            policy,
+            contract=contract,
+            ladder_block=ladder_block,
+            evidence=evidence,
+        )
+
+    def _intent_review(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        questions: tuple[ClarificationQuestion, ...],
+    ) -> IntentReviewOutcome:
+        """Agent review of ambiguity and completeness, and the check of earlier answers
+        (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps the
+        deterministic intake only."""
+        skip = self.friction.active and self.friction.skips(
+            execution, "ambiguityReview", PhaseId.INTENT
+        )
+        return self.results.intent.questions(execution, phase, task, questions, agent=not skip)
+
+    def _intent_identified(
+        self, execution: Execution, phase: PhaseExecution, task: Task, refs: tuple[str, ...]
+    ) -> PhaseOutcome:
+        """INTENT with nothing to clarify; under architecture.mode: agent (#56) a new project
+        first gets architecture options a person chooses from."""
+        if self.results.active:
+            advised = self.results.architecture.advise(execution, phase, task)
+            if advised is not None:
+                return advised
+        return PhaseOutcome(ResultStatus.PASSED, "Intent is structured and identifiable", refs)
+
+    def _intent_clarification(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        questions: tuple[ClarificationQuestion, ...],
+        policy: str,
+        *,
+        contract: dict[str, Any] | None,
+        ladder_block: str | None,
+        evidence: Evidence,
+    ) -> PhaseOutcome:
+        """INTENT with questions or a ladder block: the clarification request, and a block
+        under ``enforce`` (or the ladder's), otherwise the questions as warnings."""
         request_evidence = self._request_clarification(
             execution,
             phase,
@@ -1068,17 +1040,14 @@ class RunEngine:
             "enforce" if policy == "enforce" or ladder_block else "warn",
             contract=contract,
         )
+        refs = (evidence.artifact_ref, request_evidence.artifact_ref)
         if ladder_block is not None and not (questions and policy == "enforce"):
-            return PhaseOutcome(
-                ResultStatus.BLOCKED,
-                ladder_block,
-                (evidence.artifact_ref, request_evidence.artifact_ref),
-            )
+            return PhaseOutcome(ResultStatus.BLOCKED, ladder_block, refs)
         if policy == "enforce":
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
                 f"Intent needs clarification: {len(questions)} question(s)",
-                (evidence.artifact_ref, request_evidence.artifact_ref),
+                refs,
             )
         for question in questions:
             self._record_clarification_finding(execution, question, request_evidence)
@@ -1086,7 +1055,7 @@ class RunEngine:
             ResultStatus.PASSED,
             f"Intent is structured and identifiable; {len(questions)} clarification "
             "question(s) recorded as warnings",
-            (evidence.artifact_ref, request_evidence.artifact_ref),
+            refs,
         )
 
     def _request_clarification(
@@ -2483,51 +2452,18 @@ class RunEngine:
             self.friction.profile(execution, change_set)
         outputs: list[Any]
         if self.friction.active and self.friction.fast_verification_applies(execution):
-            # fastLane.verification (#58): affected tests first, side by side, reused by digest.
-            outputs = self.friction.run_validators(
-                execution,
-                change_set,
-                list(self.s.resolved.effective_validators),
-                lambda definition: partial(
-                    self.validators.create(definition.validator_id).execute,
-                    self._validation_context(execution, change_set, definition),
-                ),
-                lambda output: self._save_validator_output(execution, output),
-            )
-            from governed_harness.orchestration.friction import AFFECTED_TESTS_ID
-
-            if (
-                outputs
-                and outputs[-1].result.validator_id == AFFECTED_TESTS_ID
-                and outputs[-1].result.status is not ResultStatus.PASSED
-            ):
-                return PhaseOutcome(
-                    outputs[-1].result.status,
-                    "The affected tests did not pass; the full suite runs on the next attempt",
-                    outputs[-1].result.evidence_refs,
-                )
+            outputs = self._fast_validators(execution, change_set)
+            stopped = _affected_tests_failed(outputs)
+            if stopped is not None:
+                return stopped
         else:
             outputs = list(self._run_profile_validators(execution, change_set))
         coverage = self._coverage_minimum()
         if coverage is not None:
             outputs.append(self._verify_coverage(execution, change_set, coverage))
-        policy = self.s.resolved.project.requirement_traceability
-        exempt = (
-            self.friction.tests_exempt(execution, change_set, "requirement traceability")
-            if self.friction.active and policy != "off"
-            else None
-        )
-        if exempt is not None:
-            # friction.changeTypes (#58): a documentation or configuration change.
-            skipped = self.friction.not_applicable(
-                execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
-            )
-            self._save_validator_output(execution, skipped)
-            outputs.append(skipped)
-        elif policy != "off":
-            outputs.append(
-                self._verify_requirement_traceability(execution, phase, change_set, policy)
-            )
+        traceability = self._traceability_output(execution, phase, change_set)
+        if traceability is not None:
+            outputs.append(traceability)
         if self.results.active:
             # Deterministic checks of the agent-results settings, then the comparison of
             # failing validators with the baseline (verification.differential, #7).
@@ -2550,6 +2486,41 @@ class RunEngine:
                 evidence,
             )
         return PhaseOutcome(ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence)
+
+    def _fast_validators(self, execution: Execution, change_set: ChangeSet) -> list[Any]:
+        """fastLane.verification (#58): affected tests first, side by side, reused by digest."""
+        return self.friction.run_validators(
+            execution,
+            change_set,
+            list(self.s.resolved.effective_validators),
+            lambda definition: partial(
+                self.validators.create(definition.validator_id).execute,
+                self._validation_context(execution, change_set, definition),
+            ),
+            lambda output: self._save_validator_output(execution, output),
+        )
+
+    def _traceability_output(
+        self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
+    ) -> ValidatorOutput | None:
+        """The requirement traceability of the ChangeSet, unless the policy is off; under
+        friction.changeTypes (#58) a documentation or configuration change records it as not
+        applicable."""
+        policy = self.s.resolved.project.requirement_traceability
+        if policy == "off":
+            return None
+        exempt = (
+            self.friction.tests_exempt(execution, change_set, "requirement traceability")
+            if self.friction.active
+            else None
+        )
+        if exempt is None:
+            return self._verify_requirement_traceability(execution, phase, change_set, policy)
+        skipped = self.friction.not_applicable(
+            execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
+        )
+        self._save_validator_output(execution, skipped)
+        return skipped
 
     def _verify_requirement_traceability(
         self,

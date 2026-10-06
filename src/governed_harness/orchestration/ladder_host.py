@@ -13,26 +13,33 @@ if TYPE_CHECKING:
     from governed_harness.configuration.models import ProjectConfiguration
     from governed_harness.domain.models import CertificationRecord, Execution
     from governed_harness.ladder.capabilities import CapabilityStatus
-    from governed_harness.orchestration.engine import EngineServices, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 
 class LadderHost(Protocol):
     @property
-    def engine(self) -> RunEngine: ...
+    def engine(self) -> EngineHost:
+        """The engine that owns the ladder."""
 
     @property
-    def s(self) -> EngineServices: ...
+    def s(self) -> EngineServices:
+        """The project's configuration, paths and stores."""
 
     @property
-    def project(self) -> ProjectConfiguration: ...
+    def project(self) -> ProjectConfiguration:
+        """The project configuration."""
 
-    def capabilities(self, execution: Execution) -> list[CapabilityStatus]: ...
+    def capabilities(self, execution: Execution) -> list[CapabilityStatus]:
+        """The profiles' capabilities and their availability here."""
 
-    def profile_verifications(self) -> list[tuple[str, ProfileVerification]]: ...
+    def profile_verifications(self) -> list[tuple[str, ProfileVerification]]:
+        """The verification settings of each selected profile."""
 
     def latest_certification(
         self, execution_id: str, digest: str | None
-    ) -> CertificationRecord | None: ...
+    ) -> CertificationRecord | None:
+        """The latest certification of a run for a digest."""
 
 
 __all__ = ["LadderHost"]
