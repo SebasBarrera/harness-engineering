@@ -136,26 +136,29 @@ def parse_answer(result: Any) -> tuple[str, list[dict[str, Any]], str, str | Non
     raw = result.get("findings")
     if not isinstance(raw, list):
         raise ContractError("findings must be a list")
-    items: list[dict[str, Any]] = []
-    for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise ContractError(f"finding {index} is not an object")
-        for name in ("file", "rule", "issue"):
-            if not isinstance(entry.get(name), str) or not entry[name].strip():
-                raise ContractError(f"finding {index} needs a non-empty {name}")
-        if entry.get("side") not in ("new", "old"):
-            raise ContractError(f"finding {index}: side must be new or old")
-        line = entry.get("line")
-        if not isinstance(line, int) or isinstance(line, bool) or line < 1:
-            raise ContractError(f"finding {index}: line must be a positive integer")
-        if entry.get("severity") not in SEVERITIES:
-            raise ContractError(f"finding {index}: severity must be error or suggestion")
-        evidence = entry.get("evidence", "")
-        if evidence is not None and not isinstance(evidence, str):
-            raise ContractError(f"finding {index}: evidence must be a string")
-        items.append(entry)
+    items = [_checked_finding(index, entry) for index, entry in enumerate(raw, start=1)]
     model = result.get("model")
     return str(verdict), items, summary, model if isinstance(model, str) and model else None
+
+
+def _checked_finding(index: int, entry: Any) -> dict[str, Any]:
+    """One finding of an answer, checked against the contract."""
+    if not isinstance(entry, dict):
+        raise ContractError(f"finding {index} is not an object")
+    for name in ("file", "rule", "issue"):
+        if not isinstance(entry.get(name), str) or not entry[name].strip():
+            raise ContractError(f"finding {index} needs a non-empty {name}")
+    if entry.get("side") not in ("new", "old"):
+        raise ContractError(f"finding {index}: side must be new or old")
+    line = entry.get("line")
+    if not isinstance(line, int) or isinstance(line, bool) or line < 1:
+        raise ContractError(f"finding {index}: line must be a positive integer")
+    if entry.get("severity") not in SEVERITIES:
+        raise ContractError(f"finding {index}: severity must be error or suggestion")
+    evidence = entry.get("evidence", "")
+    if evidence is not None and not isinstance(evidence, str):
+        raise ContractError(f"finding {index}: evidence must be a string")
+    return entry
 
 
 def _rule_id(value: str) -> str:
@@ -205,35 +208,9 @@ def normalize(
         if not locations.allows(path, side, line):
             normalized.dropped_outside += 1
             continue
-        rule_id = _rule_id(entry["rule"])
-        severity: FindingSeverity = "error" if entry["severity"] == "error" else "suggestion"
-        evidence = _text(entry.get("evidence") or "")
-        rule = rules.get(rule_id)
-        note = ""
-        if rule is not None:
-            if severity == "error" and not rule.blocking:
-                severity, note = "suggestion", "the rule is a warning"
-                normalized.downgraded += 1
-            priority = rule.priority
-        else:
-            priority = OUT_OF_CATALOG_PRIORITY
-            if severity == "error" and not concrete(evidence, _near(changes, path, side, line)):
-                severity = "suggestion"
-                note = "outside the catalog without concrete evidence"
-                normalized.downgraded += 1
-        finding = ReviewFinding(
-            reviewer=reviewer,
-            file=path,
-            side=side,
-            line=line,
-            rule=rule_id,
-            severity=severity,
-            issue=_text(entry["issue"]),
-            evidence=evidence,
-            in_catalog=rule is not None,
-            priority=priority,
-            note=note,
-        )
+        finding = _finding(reviewer, entry, path, rules, changes)
+        if finding.note:
+            normalized.downgraded += 1
         if finding.key in seen:
             continue
         seen.add(finding.key)
@@ -243,6 +220,49 @@ def normalize(
         normalized.truncated = len(normalized.findings) - limit
         normalized.findings = normalized.findings[:limit]
     return normalized
+
+
+def _finding(
+    reviewer: str,
+    entry: dict[str, Any],
+    path: str,
+    rules: Mapping[str, Rule],
+    changes: Mapping[str, FileChange],
+) -> ReviewFinding:
+    """One reportable finding of an answer, with its catalog priority; a ``note`` says why an
+    error was downgraded to a suggestion."""
+    side, line = entry["side"], int(entry["line"])
+    rule_id = _rule_id(entry["rule"])
+    evidence = _text(entry.get("evidence") or "")
+    rule = rules.get(rule_id)
+    severity: FindingSeverity = "error" if entry["severity"] == "error" else "suggestion"
+    note = ""
+    if severity == "error":
+        note = _downgrade(rule, evidence, _near(changes, path, side, line))
+    return ReviewFinding(
+        reviewer=reviewer,
+        file=path,
+        side=side,
+        line=line,
+        rule=rule_id,
+        severity="suggestion" if note else severity,
+        issue=_text(entry["issue"]),
+        evidence=evidence,
+        in_catalog=rule is not None,
+        priority=rule.priority if rule is not None else OUT_OF_CATALOG_PRIORITY,
+        note=note,
+    )
+
+
+def _downgrade(rule: Rule | None, evidence: str, near: list[str]) -> str:
+    """Why an error is reported as a suggestion: its catalog rule is a warning, or it is
+    outside the catalog and its evidence quotes no changed line; empty when it stays an
+    error."""
+    if rule is not None:
+        return "" if rule.blocking else "the rule is a warning"
+    if concrete(evidence, near):
+        return ""
+    return "outside the catalog without concrete evidence"
 
 
 def verdict_of(findings: list[ReviewFinding]) -> Verdict:

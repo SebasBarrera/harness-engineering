@@ -149,3 +149,36 @@ def test_tests_that_pass_before_the_change_are_a_finding(
         if item.rule_id == "acceptance.passes-before"
     ]
     assert weak.severity is FindingSeverity.MEDIUM
+
+
+# ----- #82: frozen files of two runs in one workspace ------------------------------------------
+def test_a_later_run_never_overwrites_an_earlier_frozen_file(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace, tmp_path, "good")
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["verification"]["weakenedControls"] = "enforce"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, first = start(python_workspace, tmp_path)
+    approve(application, python_workspace, first)
+    target = python_workspace / "tests" / "acceptance" / "test_ac_1.py"
+    earlier = target.read_bytes()
+    # The second task proposes a test with another name at the same path.
+    agent = python_workspace / "agent.py"
+    agent.write_text(agent.read_text().replace("def test_ac_1()", "def test_ac_1_again()"))
+    source = tmp_path / "second.yaml"
+    source.write_text(TASK.replace("task_acceptance", "task_second"), encoding="utf-8")
+    application.create_task(python_workspace, source)
+    second = application.start_run(python_workspace, "task_second").execution_id
+    result = approve(application, python_workspace, second)
+    assert target.read_bytes() == earlier
+    [(proposed, written)] = result["acceptanceTests"]["renamed"].items()
+    assert proposed == "tests/acceptance/test_ac_1.py"
+    assert written == f"tests/acceptance/test_ac_1_{second[-8:]}.py"
+    assert list(result["acceptanceTests"]["frozen"]) == [written]
+    assert not [
+        item
+        for item in application.list_findings(python_workspace, second)
+        if item.rule_id in {"weakened.test-deleted", "acceptance.modified"}
+    ]

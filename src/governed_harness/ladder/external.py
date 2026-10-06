@@ -52,7 +52,7 @@ def detect_kind(data: bytes) -> EvidenceKind:
     raise EvidenceFormatError("the JSON file is neither SARIF nor a CI status object")
 
 
-def read_junit(data: bytes, case: str | None = None) -> EvidenceVerdict:
+def _junit_root(data: bytes) -> ElementTree.Element:
     text = data.decode("utf-8", "replace")
     if "<!DOCTYPE" in text or "<!ENTITY" in text:
         raise EvidenceFormatError("JUnit XML with a DTD or entities is refused")
@@ -62,6 +62,12 @@ def read_junit(data: bytes, case: str | None = None) -> EvidenceVerdict:
         raise EvidenceFormatError(f"not well-formed XML: {error}") from error
     if root.tag not in {"testsuites", "testsuite"}:
         raise EvidenceFormatError("not a JUnit report (no testsuites or testsuite element)")
+    return root
+
+
+def _junit_counts(root: ElementTree.Element, case: str | None) -> tuple[int, int, int, list[str]]:
+    """``(total, failed, skipped, failing ids)`` of the test cases whose id contains
+    ``case``."""
     total = failed = skipped = 0
     failing: list[str] = []
     for item in root.iter("testcase"):
@@ -76,6 +82,11 @@ def read_junit(data: bytes, case: str | None = None) -> EvidenceVerdict:
         if item.find("failure") is not None or item.find("error") is not None:
             failed += 1
             failing.append(identifier)
+    return total, failed, skipped, failing
+
+
+def read_junit(data: bytes, case: str | None = None) -> EvidenceVerdict:
+    total, failed, skipped, failing = _junit_counts(_junit_root(data), case)
     executed = total - skipped
     passed = executed > 0 and failed == 0
     scope = f" matching {case!r}" if case is not None else ""
@@ -91,28 +102,40 @@ def read_junit(data: bytes, case: str | None = None) -> EvidenceVerdict:
     )
 
 
-def read_sarif(data: bytes) -> EvidenceVerdict:
+def _sarif_runs(data: bytes) -> list[Any]:
     try:
         value = json.loads(data.decode("utf-8", "replace"))
     except ValueError as error:
         raise EvidenceFormatError("not JSON") from error
     if not isinstance(value, dict) or not isinstance(value.get("runs"), list):
         raise EvidenceFormatError("not a SARIF log (no runs)")
+    runs: list[Any] = value["runs"]
+    return runs
+
+
+def _sarif_levels(run: dict[str, Any]) -> tuple[int, int]:
+    """``(errors, others)`` of a run's results; a result without a level is a warning."""
+    levels = [
+        result.get("level") or "warning"
+        for result in run.get("results") or []
+        if isinstance(result, dict)
+    ]
+    errors = levels.count("error")
+    return errors, len(levels) - errors
+
+
+def read_sarif(data: bytes) -> EvidenceVerdict:
     errors = warnings = 0
     tools: list[str] = []
-    for run in value["runs"]:
+    for run in _sarif_runs(data):
         if not isinstance(run, dict):
             continue
-        driver = ((run.get("tool") or {}).get("driver") or {}) if isinstance(run, dict) else {}
+        driver = (run.get("tool") or {}).get("driver") or {}
         if isinstance(driver, dict) and driver.get("name"):
             tools.append(str(driver["name"]))
-        for result in run.get("results") or []:
-            if not isinstance(result, dict):
-                continue
-            if (result.get("level") or "warning") == "error":
-                errors += 1
-            else:
-                warnings += 1
+        run_errors, run_others = _sarif_levels(run)
+        errors += run_errors
+        warnings += run_others
     summary = f"SARIF ({', '.join(tools) or 'unknown tool'}): {errors} error(s), {warnings} other"
     return EvidenceVerdict(
         "sarif", errors == 0, summary, details={"errors": errors, "others": warnings}

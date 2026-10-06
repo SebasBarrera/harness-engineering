@@ -64,9 +64,12 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     task = request["task"]
     plan = request.get("plan") or {}
     lines = [
-        "You are implementing a task in the repository in the current directory, under the "
-        "Governed Agent Harness. Edit the files needed to meet the acceptance criteria. Do not "
-        "commit, push or create branches; the harness verifies your change and a person decides.",
+        (
+            "You are implementing a task in the repository in the current directory, under the "
+            "Governed Agent Harness. Edit the files needed to meet the acceptance criteria. Do not "
+            "commit, push or create branches; the harness verifies your change and a person "
+            "decides."
+        ),
         "",
         f"# Task {task['task_id']}: {task['title']}",
         "",
@@ -280,9 +283,10 @@ class NativeAgentProvider(CommandAgentProvider):
 
     def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
         """The base arguments of a reviewer of the review panel (#57): read-only, with the
-        reviewer's tool allowlist and a strict MCP configuration. ``None``: the CLI has no such
-        options and keeps its base arguments (the agent sandbox and the workspace comparison
-        still keep the call read-only)."""
+        reviewer's tool allowlist and a strict MCP configuration, read from the request's
+        isolation mapping (``tools``, ``mcpConfig``). ``None``: the CLI has no such options and
+        keeps its base arguments (the agent sandbox and the workspace comparison still keep the
+        call read-only); the adapters that have them override this method."""
         return None
 
     def policy_args(self, policy: Any) -> tuple[str, ...]:

@@ -17,7 +17,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from governed_harness.configuration.agent_results import (
     DEFAULT_ROUTING_TABLES,
@@ -33,16 +33,25 @@ from governed_harness.configuration.agent_results import (
 )
 from governed_harness.evidence.hashing import sha256_json
 
+if TYPE_CHECKING:
+    from governed_harness.configuration.models import ProjectConfiguration
+
 __all__ = [
+    "ANCHORED",
     "DEFAULT_MAX_ESCALATIONS",
+    "MODEL_TIERS",
     "CalibrationRow",
     "RoutingDecision",
     "RoutingHistory",
     "TaskSignals",
+    "anchored_ladder",
     "calibrate",
     "can_escalate",
     "classify_size",
     "flags_for",
+    "invoking_model",
+    "model_argument",
+    "model_rank",
     "provider_family",
     "select",
     "select_reviewer",
@@ -55,6 +64,11 @@ DEFAULT_MAX_ESCALATIONS = 2
 _SIZE_ORDER: dict[str, int] = {"S": 0, "M": 1, "L": 2}
 _SIGNALS: tuple[str, ...] = ("requirements", "files", "loc")
 _ESCALATING_KINDS: frozenset[str] = frozenset({"implement", "review"})
+
+ANCHORED = "anchored"
+MODEL_TIERS: dict[str, tuple[str, ...]] = {"claude-code": ("haiku", "sonnet", "opus")}
+"""Since #85: the tiers of a family's models, cheapest first, matched by name. A family without
+an entry ranks its models by their first rung in the family's ladder."""
 
 
 @dataclass(frozen=True)
@@ -96,6 +110,9 @@ class RoutingDecision:
     flags: tuple[str, ...]
     warning: str | None = None
     """Since #59: why the decision fell back (a call kind without its own routing entry)."""
+    anchor: str | None = None
+    """Since #85: the invoking model, the ceiling of an ``anchored`` decision (recorded only
+    under that mode)."""
 
     def as_dict(self) -> dict[str, Any]:
         value: dict[str, Any] = {
@@ -113,6 +130,8 @@ class RoutingDecision:
         }
         if self.warning is not None:
             value["warning"] = self.warning
+        if self.mode == ANCHORED:
+            value["anchor"] = self.anchor
         return value
 
 
@@ -197,7 +216,8 @@ def _max_escalations(policy: AgentRoutingConfig | None) -> int:
 
 
 def _tiered(policy: AgentRoutingConfig | None) -> bool:
-    return policy is not None and policy.mode == "tiered"
+    """Whether the policy chooses from the tables (``tiered``, or ``anchored`` since #85)."""
+    return policy is not None and policy.mode in {"tiered", ANCHORED}
 
 
 def can_escalate(history: RoutingHistory, policy: AgentRoutingConfig | None) -> bool:
@@ -253,6 +273,108 @@ def _ladder_index(ladder: tuple[Rung, ...], rung: Rung, *, by_model: bool) -> in
     return None
 
 
+# ----- anchored routing (#85) ---------------------------------------------------------------
+def model_argument(argv: Sequence[str]) -> str | None:
+    """The value of a ``--model`` (or ``-m``) option of a command line, ``--model=X``
+    included; ``None`` without one."""
+    for index, item in enumerate(argv):
+        if item.startswith("--model="):
+            return item.split("=", 1)[1] or None
+        if item in {"--model", "-m"} and index + 1 < len(argv):
+            return argv[index + 1]
+    return None
+
+
+def invoking_model(project: ProjectConfiguration, provider_id: str) -> str | None:
+    """The invoking model, the ceiling of ``agentRouting.mode: anchored``, of a call that
+    ``provider_id`` answers: ``agentRouting.anchorModel`` when set, else the provider's
+    ``model``, else the ``--model``/``-m`` value of its command or ``args``. The embedded
+    ``session`` provider stands for the project's ``agentProvider``, which answers the read-only
+    calls of a session run. ``None`` when nothing says it."""
+    policy = project.agent_routing
+    if policy is not None and policy.anchor_model:
+        return policy.anchor_model
+    if provider_id == "session":
+        provider_id = project.agent_provider
+    configured = project.agent_providers.get(provider_id)
+    if configured is None:
+        return None
+    if configured.model:
+        return configured.model
+    return model_argument((*(configured.command or ()), *(configured.args or ())))
+
+
+def model_rank(model: str, family: ProviderFamily, ladder: Sequence[Rung]) -> int | None:
+    """The tier of ``model`` in its family, cheapest first: by name for a family listed in
+    ``MODEL_TIERS``, else by the first rung of the family's ladder that uses it; ``None`` when
+    it cannot be told."""
+    tiers = MODEL_TIERS.get(family)
+    if tiers:
+        lowered = model.lower()
+        return next((index for index, name in enumerate(tiers) if name in lowered), None)
+    models = list(dict.fromkeys(item.model for item in ladder))
+    return models.index(model) if model in models else None
+
+
+def anchored_ladder(table: FamilyTable, anchor: str, family: ProviderFamily) -> tuple[Rung, ...]:
+    """The rungs an ``anchored`` call may use, cheapest first: the ladder's rungs of a cheaper
+    tier than ``anchor``, its rungs of the anchor's tier with the anchor as their model, and at
+    least the anchor itself as the top rung. An anchor whose tier is unknown allows only
+    itself."""
+    ladder = table.ladder or ()
+    ceiling = model_rank(anchor, family, ladder)
+    rungs: list[Rung] = []
+    if ceiling is not None:
+        for rung in ladder:
+            rank = model_rank(rung.model, family, ladder)
+            if rank is None or rank > ceiling:
+                continue
+            rungs.append(rung if rank < ceiling else Rung(model=anchor, effort=rung.effort))
+    if not any(item.model == anchor for item in rungs):
+        rungs.append(Rung(model=anchor))
+    return tuple(dict.fromkeys(rungs))
+
+
+def _clamp(
+    rung: Rung, anchor: str, family: ProviderFamily, table: FamilyTable
+) -> tuple[Rung, bool]:
+    """``(rung, capped)``: a rung of a cheaper tier as it is, a rung of the anchor's tier on the
+    anchor with the rung's effort, anything above (or of an unknown tier) the top rung allowed."""
+    if rung.model == anchor:
+        return rung, False
+    ladder = table.ladder or ()
+    ceiling = model_rank(anchor, family, ladder)
+    rank = model_rank(rung.model, family, ladder)
+    if ceiling is None or rank is None or rank > ceiling:
+        return anchored_ladder(table, anchor, family)[-1], True
+    if rank == ceiling:
+        return Rung(model=anchor, effort=rung.effort), False
+    return rung, False
+
+
+def _anchored_choice(
+    table: FamilyTable,
+    base: Rung,
+    call_kind: CallKind,
+    size: SizeClass,
+    steps: int,
+    anchor: str | None,
+    family: ProviderFamily,
+) -> tuple[str, Rung | None, int | None, int]:
+    """``(rule, rung, index in the allowed ladder, escalations)`` of an anchored call; without
+    an anchor the provider keeps its own model (rung ``None``)."""
+    if anchor is None:
+        return f"anchored:no-anchor:{call_kind}:{size}", None, None, 0
+    allowed = anchored_ladder(table, anchor, family)
+    chosen, capped = _clamp(base, anchor, family, table)
+    start = _ladder_index(allowed, chosen, by_model=True)
+    if call_kind in _ESCALATING_KINDS and steps > 0:
+        index = min((start or 0) + steps, len(allowed) - 1)
+        return f"anchored:escalation:{steps}:{call_kind}:{size}", allowed[index], index, steps
+    prefix = "anchored:ceiling" if capped else "anchored"
+    return f"{prefix}:{call_kind}:{size}", chosen, start, 0
+
+
 def select(
     call_kind: CallKind,
     signals: TaskSignals,
@@ -261,13 +383,15 @@ def select(
     *,
     family: ProviderFamily,
     override: AgentCallConfig | None = None,
+    anchor: str | None = None,
 ) -> RoutingDecision:
     """Choose the model and effort of one agent call.
 
-    An explicit per-call configuration wins over the tables. Without a ``tiered`` policy, or
-    without a table for the family, the provider keeps its own model (``fixed``). Only
-    ``implement`` and ``review`` escalate, because those are the calls whose output the
-    deterministic verifier scores; the size is always classified so the record shows it.
+    An explicit per-call configuration wins over the tables. Without a ``tiered`` (or
+    ``anchored``) policy, or without a table for the family, the provider keeps its own model
+    (``fixed``). Only ``implement`` and ``review`` escalate, because those are the calls whose
+    output the deterministic verifier scores; the size is always classified so the record
+    shows it. Under ``anchored`` (#85) ``anchor``, the invoking model, is the ceiling.
     """
     size, _size_rule = classify_size(signals, policy.thresholds if policy else None)
     mode = policy.mode if policy is not None and policy.mode is not None else "fixed"
@@ -295,6 +419,7 @@ def select(
             policy_digest=digest,
             flags=flags_for(family, model, effort),
             warning=warning,
+            anchor=anchor,
         )
 
     if override is not None and (override.model or override.effort):
@@ -307,6 +432,9 @@ def select(
     base, warning = _kind_rung(table, call_kind, size)
     if base is None:
         return decision("fixed", None, None)
+    steps = min(history.escalations, _max_escalations(policy))
+    if mode == ANCHORED:
+        return decision(*_anchored_values(table, base, call_kind, size, steps, anchor, family))
     if warning is not None:
         return decision(
             f"fallback:implement:{call_kind}:{size}",
@@ -314,18 +442,40 @@ def select(
             base.effort,
             _ladder_index(table.ladder, base, by_model=False) if table.ladder else None,
         )
+    rule, chosen, index, escalations = _tier_choice(table, base, call_kind, size, steps)
+    return decision(rule, chosen.model, chosen.effort, index, escalations)
 
+
+def _anchored_values(
+    table: FamilyTable,
+    base: Rung,
+    call_kind: CallKind,
+    size: SizeClass,
+    steps: int,
+    anchor: str | None,
+    family: ProviderFamily,
+) -> tuple[str, str | None, str | None, int | None, int]:
+    """``(rule, model, effort, rung, escalations)`` of an anchored call."""
+    rule, rung, index, escalations = _anchored_choice(
+        table, base, call_kind, size, steps, anchor, family
+    )
+    if rung is None:
+        return rule, None, None, None, 0
+    return rule, rung.model, rung.effort, index, escalations
+
+
+def _tier_choice(
+    table: FamilyTable, base: Rung, call_kind: CallKind, size: SizeClass, steps: int
+) -> tuple[str, Rung, int | None, int]:
+    """``(rule, rung, ladder index, escalations)`` of a tiered call: ``steps`` rungs up the
+    family's ladder from ``base`` for a call that escalates, else ``base`` itself."""
     ladder = table.ladder or ()
-    steps = min(history.escalations, _max_escalations(policy))
     if call_kind in _ESCALATING_KINDS and steps > 0 and ladder:
         start = _ladder_index(ladder, base, by_model=True) or 0
         index = min(start + steps, len(ladder) - 1)
-        chosen = ladder[index]
-        return decision(
-            f"escalation:{steps}:{call_kind}:{size}", chosen.model, chosen.effort, index, steps
-        )
+        return f"escalation:{steps}:{call_kind}:{size}", ladder[index], index, steps
     index_used = _ladder_index(ladder, base, by_model=False) if ladder else None
-    return decision(f"tier:{call_kind}:{size}", base.model, base.effort, index_used)
+    return f"tier:{call_kind}:{size}", base, index_used, 0
 
 
 def select_reviewer(
@@ -333,30 +483,42 @@ def select_reviewer(
     policy: AgentRoutingConfig | None,
     *,
     family: ProviderFamily,
+    anchor: str | None = None,
 ) -> RoutingDecision:
     """The model and effort of a reviewer of the review panel (#57): its own entry of the
     family table (``reviewers``), else the ``review`` rung, else the implement rung of size M
-    with a warning (#59). Without a ``tiered`` policy the provider keeps its own model."""
+    with a warning (#59). Without a ``tiered`` policy the provider keeps its own model; under
+    ``anchored`` (#85) the reviewer's rung is capped at ``anchor``."""
     signals = TaskSignals(requirements=0, files=0, loc=0)
-    decision = select("review", signals, RoutingHistory(), policy, family=family)
+    decision = select("review", signals, RoutingHistory(), policy, family=family, anchor=anchor)
     if policy is None or not _tiered(policy):
         return decision
     table = _table(policy, family)
     rung = (table.reviewers or {}).get(reviewer_id) if table is not None else None
-    if rung is None:
+    if table is None or rung is None:
         return decision
+    rule = f"tier:review:{reviewer_id}"
+    if policy.mode == ANCHORED:
+        if anchor is None:
+            return decision
+        rung, capped = _clamp(rung, anchor, family, table)
+        rule = f"anchored:{'ceiling:' if capped else ''}review:{reviewer_id}"
+        index = _ladder_index(anchored_ladder(table, anchor, family), rung, by_model=False)
+    else:
+        index = _ladder_index(table.ladder, rung, by_model=False) if table.ladder else None
     return RoutingDecision(
         call_kind="review",
         mode=decision.mode,
         family=family,
         size=decision.size,
-        rule=f"tier:review:{reviewer_id}",
+        rule=rule,
         model=rung.model,
         effort=rung.effort,
-        rung=_ladder_index(table.ladder, rung, by_model=False) if table and table.ladder else None,
+        rung=index,
         escalations=0,
         policy_digest=decision.policy_digest,
         flags=flags_for(family, rung.model, rung.effort),
+        anchor=decision.anchor,
     )
 
 

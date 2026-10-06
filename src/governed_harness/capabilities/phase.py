@@ -13,7 +13,12 @@ workflow's ``allowedCapabilities`` had no effect. Under ``governance.phaseCapabi
   workflow's ``allowedCapabilities`` plus what the harness itself runs in it, see
   ``HARNESS_PHASE_CAPABILITIES``);
 * an agent call outside IMPLEMENTATION is read-only (no ``filesystem.write``) and the only
-  process it may start is its own configured command; a reviewer is one such call.
+  process it may start is its own configured command; a reviewer is one such call;
+* an agent's own command (the command of the configured provider it is, ``agent.ID``) keeps its
+  grant in every phase only when the run's ``process.execute`` grants allow it (the profiles',
+  narrowed by the project, plus ``capabilities.extend``). A command no grant allows is refused
+  before it starts (#87): the refusal is a HIGH ``capabilities.command-denied`` finding and the
+  phase is ``BLOCKED`` (:class:`CommandRefused`).
 
 The policy of the running phase lives in a context variable, so every grant made while the
 phase runs (validators, probes, agent calls) goes through it without each caller passing it."""
@@ -21,28 +26,45 @@ phase runs (validators, probes, agent calls) goes through it without each caller
 from __future__ import annotations
 
 import fnmatch
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
+from governed_harness.capabilities.authorizer import CapabilityDenied, command_in_scope
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import Actor
 
+WRITE = "filesystem.write"
+EXECUTE = "process.execute"
+
 HARNESS_PHASE_CAPABILITIES: dict[str, tuple[str, ...]] = {
-    "SPECIFICATION": ("process.execute",),
-    "PLANNING": ("process.execute",),
-    "INDEPENDENT_REVIEW": ("process.execute",),
+    "SPECIFICATION": (EXECUTE,),
+    "PLANNING": (EXECUTE,),
+    "INDEPENDENT_REVIEW": (EXECUTE,),
 }
 """What the harness itself runs in a phase beyond the workflow's 1.0.0 declaration: the frozen
 acceptance tests before the change (SPECIFICATION), the preflight probes on a copy of the
 baseline (PLANNING), the project's consistency checks before the reviewers (INDEPENDENT_REVIEW).
 Applied only under ``governance.phaseCapabilities`` and recorded in the resolved workflow."""
 
-WRITE = "filesystem.write"
-EXECUTE = "process.execute"
+
+class CommandRefused(CapabilityDenied):
+    """A command of an agent that no grant of the running phase allows, refused before it
+    started under ``governance.phaseCapabilities``: the phase is ``BLOCKED``, not ``ERROR``."""
+
+
+def launch_granted(argv: Sequence[str], rules: Iterable[CapabilityRule]) -> bool:
+    """Whether the run's ``process.execute`` rules allow the command ``argv`` (a rule that needs
+    an approval does not)."""
+    return any(
+        rule.capability == EXECUTE
+        and not rule.approval_required
+        and any(command_in_scope(argv, scope) for scope in rule.scope)
+        for rule in rules
+    )
 
 
 @dataclass(frozen=True)
@@ -50,17 +72,34 @@ class PhasePolicy:
     phase: str
     allowed: frozenset[str]
     launch: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    """``agent.ID`` -> the command of that configured provider (its own launch)."""
+    """``agent.ID`` -> the argv of the command of that configured provider (its own launch)."""
+    on_refused: Callable[[Actor, Sequence[str]], None] | None = None
+    """Told when a command of an agent is refused (the harness records the finding)."""
 
     def apply(self, actor: Actor, rules: Iterable[CapabilityRule]) -> list[CapabilityRule]:
+        rules = tuple(rules)
         kept = [rule for rule in rules if rule.capability in self.allowed]
         if actor.actor_type is ActorType.AGENT:
             if self.phase != "IMPLEMENTATION":
                 kept = [rule for rule in kept if rule.capability not in {WRITE, EXECUTE}]
             launch = self.launch.get(actor.actor_id)
-            if launch:
-                kept.append(CapabilityRule(capability=EXECUTE, scope=launch))
+            # Its own command keeps a grant only when the run's grants allow it (#87).
+            if launch and launch_granted(launch, rules):
+                kept.append(CapabilityRule(capability=EXECUTE, scope=(" ".join(launch),)))
         return kept
+
+    def refuse(self, actor: Actor, argv: Sequence[str], error: CapabilityDenied) -> None:
+        """A command of an agent that its grants do not allow: report it and raise
+        :class:`CommandRefused`; any other actor's refusal is left as it was."""
+        if actor.actor_type is not ActorType.AGENT:
+            return
+        if self.on_refused is not None:
+            self.on_refused(actor, argv)
+        raise CommandRefused(
+            f"{actor.actor_id} may not start {' '.join(argv)[:200]!r}: no process.execute grant "
+            f"allows it in {self.phase}; add it to capabilities.extend in project.yaml if it is "
+            "intended"
+        ) from error
 
     def describe(self, rules: Iterable[CapabilityRule], agent: str | None) -> dict[str, Any]:
         tool = Actor(actor_type=ActorType.TOOL, actor_id="validator.phase", version="1")
@@ -153,9 +192,11 @@ def intersect_capabilities(
 
 __all__ = [
     "HARNESS_PHASE_CAPABILITIES",
+    "CommandRefused",
     "PhasePolicy",
     "current_policy",
     "intersect_capabilities",
     "intersect_scopes",
+    "launch_granted",
     "phase_scope",
 ]

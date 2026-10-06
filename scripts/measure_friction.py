@@ -281,8 +281,10 @@ def measure(workdir: Path, flow: str) -> dict[str, Any]:
 
 def markdown(report: dict[str, Any]) -> str:
     lines = [
-        "| Flow | Task | Agent calls | Recorded tokens | Calls by kind | Interactions | "
-        "Commands | Command seconds |",
+        (
+            "| Flow | Task | Agent calls | Recorded tokens | Calls by kind | Interactions | "
+            "Commands | Command seconds |"
+        ),
         "|---|---|---:|---:|---|---:|---:|---:|",
     ]
     for item in report["measurements"]:

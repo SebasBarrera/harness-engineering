@@ -91,5 +91,6 @@ def test_each_phase_records_its_resolved_grants(python_workspace: Path, tmp_path
     implementation = {item["capability"] for item in by_phase["IMPLEMENTATION"]["agent"]["grants"]}
     assert "filesystem.write" in implementation
     review = {item["capability"] for item in by_phase["INDEPENDENT_REVIEW"]["agent"]["grants"]}
-    assert "filesystem.write" not in review and "process.execute" not in review
+    assert "filesystem.write" not in review
+    assert "process.execute" not in review
     assert all(item["evidenceRef"].startswith("artifact://") for item in events)

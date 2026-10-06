@@ -15,6 +15,18 @@ class CapabilityDenied(PermissionError):
     pass
 
 
+def command_in_scope(argv: Sequence[str], scope: str) -> bool:
+    """Whether a ``process.execute`` scope allows the command ``argv``: every command (``**``),
+    its executable, the whole command, or a prefix of it ending at an argument boundary."""
+    resource = " ".join(argv)
+    return (
+        scope == "**"
+        or (bool(argv) and argv[0] == scope)
+        or resource == scope
+        or resource.startswith(f"{scope} ")
+    )
+
+
 class CapabilityAuthorizer:
     def authorize(
         self,
@@ -59,14 +71,8 @@ class CapabilityAuthorizer:
                 or not grant.active_at(instant)
             ):
                 continue
-            for scope in grant.scope:
-                if (
-                    scope == "**"
-                    or argv[0] == scope
-                    or resource == scope
-                    or resource.startswith(f"{scope} ")
-                ):
-                    return grant
+            if any(command_in_scope(argv, scope) for scope in grant.scope):
+                return grant
         raise CapabilityDenied(f"{actor.actor_id} lacks process.execute for {resource}")
 
     @staticmethod

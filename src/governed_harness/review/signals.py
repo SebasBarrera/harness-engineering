@@ -137,6 +137,22 @@ def _changed_text(item: FileChange) -> Iterable[str]:
         yield line.text
 
 
+def _changed(pattern: str, item: FileChange) -> bool:
+    """Whether ``pattern`` matches a changed line of ``item``."""
+    compiled = re.compile(pattern)
+    return any(compiled.search(text) for text in _changed_text(item))
+
+
+def _pattern_hits(patterns: Sequence[str], files: list[FileChange]) -> list[str]:
+    """``pattern:P@PATH`` for each pattern of the reviewer, at the first file it matches."""
+    hits: list[str] = []
+    for pattern in patterns:
+        first = next((item for item in files if _changed(pattern, item)), None)
+        if first is not None:
+            hits.append(f"pattern:{pattern}@{first.path}")
+    return hits
+
+
 def activation(
     reviewer: Reviewer, files: list[FileChange], packs: Sequence[str] | None = None
 ) -> Activation:
@@ -144,24 +160,17 @@ def activation(
     spec = reviewer.spec
     if not files:
         return Activation(False, "no file of its slice changed")
-    hits: list[str] = []
-    for pattern in spec.patterns:
-        compiled = re.compile(pattern)
-        for item in files:
-            if any(compiled.search(text) for text in _changed_text(item)):
-                hits.append(f"pattern:{pattern}@{item.path}")
-                break
+    hits = _pattern_hits(spec.patterns, files)
     if spec.activation == "always":
         return Activation(True, "always", tuple(hits))
     if spec.activation == "changed":
         return Activation(True, f"{len(files)} file(s) of its slice changed", tuple(hits))
     name = spec.activation.split(":", 1)[1]
-    for item in files:
-        for pattern in signal_patterns(name, item.path, packs):
-            compiled = re.compile(pattern)
-            if any(compiled.search(text) for text in _changed_text(item)):
-                hits.append(f"{name}@{item.path}")
-                break
+    hits.extend(
+        f"{name}@{item.path}"
+        for item in files
+        if any(_changed(pattern, item) for pattern in signal_patterns(name, item.path, packs))
+    )
     if hits:
         return Activation(True, f"signal {name} on a changed line", tuple(hits))
     return Activation(False, f"no {name} signal on a changed line of its slice")

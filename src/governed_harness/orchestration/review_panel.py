@@ -20,11 +20,12 @@ for the person who decides."""
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from governed_harness import __version__
 from governed_harness.agents import AgentCallResult
+from governed_harness.agents.routing import RoutingDecision
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.review import ReviewPanelConfig
 from governed_harness.domain.enums import (
@@ -42,9 +43,11 @@ from governed_harness.domain.models import (
     Finding,
     PhaseExecution,
 )
+from governed_harness.orchestration.agent_review import AGENT_REVIEW_ID
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE, ReviewOutcome
 from governed_harness.review.cache import ReviewCache
 from governed_harness.review.contract import ReviewFinding
-from governed_harness.review.invoke import BuiltProvider, ProviderInvoker
+from governed_harness.review.invoke import BuiltProvider, InvokerHooks, ProviderInvoker
 from governed_harness.review.panel import PanelInputs, PanelReport, ReviewerCall, run_panel
 from governed_harness.review.project import (
     consistency_runner,
@@ -53,11 +56,11 @@ from governed_harness.review.project import (
     reviewer_route,
 )
 from governed_harness.review.providers import build_reviewer_provider, mcp_digest, mcp_servers
+from governed_harness.review.reviewers import Reviewer
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.agent_review import ReviewOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 AUTOFIX_FLAG = "reviewfix"
 PANEL_RULE_PREFIX = "review.panel"
@@ -92,7 +95,7 @@ def compact_task(task: Any) -> dict[str, Any]:
 
 
 class PanelReview:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -100,14 +103,73 @@ class PanelReview:
         review = self.results.project.review
         return review.panel if review is not None else None
 
+    def enabled_settings(self) -> ReviewPanelConfig:
+        """The panel's settings, for the steps that run only when it is configured."""
+        settings = self.settings
+        if settings is None:  # not reached: the review runs the panel only when configured
+            raise RuntimeError("review.panel is not configured")
+        return settings
+
     @property
     def configured(self) -> bool:
         settings = self.settings
         return settings is not None and settings.enabled
 
+    # ----- routing of the reviewers (#85) -----------------------------------------------------
+    def _route_observer(
+        self, decisions: dict[tuple[str, str], RoutingDecision]
+    ) -> Callable[[Reviewer, str, RoutingDecision], None]:
+        """Keeps the routing decision of each reviewer on each provider, recorded with its call
+        as for any other call: under ``agentRouting``, or for a reviewer's own model."""
+        routed = self.results.project.agent_routing is not None
+
+        def heard(reviewer: Reviewer, provider_id: str, decision: RoutingDecision) -> None:
+            if routed or decision.rule.startswith("reviewer:"):
+                decisions[(reviewer.reviewer_id, provider_id)] = decision
+
+        return heard
+
+    def _record_routing(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        call: ReviewerCall,
+        decision: RoutingDecision,
+    ) -> None:
+        """``agent.routing.decided`` of one reviewer call, as every other agent call records it,
+        with the reviewer and the attempt."""
+        results = self.results
+        record = {
+            **decision.as_dict(),
+            "provider": call.provider,
+            "phase": phase.phase_id,
+            "reviewer": call.reviewer,
+            "attempt": call.attempt,
+        }
+        ref = results.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-routing",
+            summary=(
+                f"Routing of the {call.reviewer} reviewer: {decision.rule} -> "
+                f"{decision.model or 'provider default'}/{decision.effort or 'default'}"
+            ),
+        )
+        results.s.events.append(
+            execution.execution_id,
+            "agent.routing.decided",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
     # ----- the invoker -----------------------------------------------------------------------
     def _invoker(
-        self, execution: Execution, phase: PhaseExecution, servers: dict[str, Any]
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        servers: dict[str, Any],
+        decisions: dict[tuple[str, str], RoutingDecision],
     ) -> ProviderInvoker:
         results = self.results
         engine = results.engine
@@ -142,11 +204,14 @@ class PanelReview:
                 )
             return BuiltProvider(built.built.provider, built.built.actor, refs)
 
-        def before(calls: Sequence[ReviewerCall]) -> str | None:
+        def before(_calls: Sequence[ReviewerCall]) -> str | None:
             blocked = results.before_agent_call(execution, phase, "review")
             return blocked.summary if blocked is not None else None
 
         def record_request(call: ReviewerCall) -> str | None:
+            decision = decisions.get((call.reviewer, call.provider))
+            if decision is not None:
+                self._record_routing(execution, phase, call, decision)
             return results.record_json(
                 execution,
                 phase.phase_id,
@@ -155,13 +220,11 @@ class PanelReview:
                 summary=f"Review request of the {call.reviewer} reviewer to {call.provider}",
             )
 
-        def after(call: ReviewerCall, result: AgentCallResult) -> None:
+        def after(_call: ReviewerCall, result: AgentCallResult) -> None:
             engine._save_agent_result(execution, phase, result.execution)
             results.after_agent_call(execution, phase, result.execution)
 
         def on_violation(diff: WorkspaceDiff, restored: int, unrestorable: int) -> None:
-            from governed_harness.orchestration.agent_results import READ_ONLY_RULE
-
             shown = ", ".join(item.path for item in diff.changes[:10])
             results.record_finding(
                 execution,
@@ -190,11 +253,13 @@ class PanelReview:
             phase_id=PhaseId.INDEPENDENT_REVIEW,
             default_timeout=engine._bounded_timeout(runtime.command_timeout_seconds),
             max_output_bytes=runtime.max_output_bytes,
-            cancelled=lambda: engine.is_cancelled(execution.execution_id),
-            before=before,
-            record_request=record_request,
-            after=after,
-            on_violation=on_violation,
+            hooks=InvokerHooks(
+                cancelled=lambda: engine.is_cancelled(execution.execution_id),
+                before=before,
+                record_request=record_request,
+                after=after,
+                on_violation=on_violation,
+            ),
             mcp_servers=servers,
         )
 
@@ -202,10 +267,7 @@ class PanelReview:
     def run(
         self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
     ) -> ReviewOutcome:
-        from governed_harness.orchestration.agent_review import ReviewOutcome
-
-        settings = self.settings
-        assert settings is not None
+        settings = self.enabled_settings()
         results = self.results
         engine = results.engine
         resolved = results.s.resolved
@@ -222,6 +284,7 @@ class PanelReview:
         cache_settings = settings.effective_cache
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         untrusted, notice = panel_context(resolved, workspace)
+        decisions: dict[tuple[str, str], RoutingDecision] = {}
         inputs = PanelInputs(
             workspace=workspace,
             diff_text=diff,
@@ -230,8 +293,8 @@ class PanelReview:
             reviewers=setup.reviewers,
             settings=settings,
             provider=provider,
-            invoker=self._invoker(execution, phase, servers),
-            route=reviewer_route(resolved),
+            invoker=self._invoker(execution, phase, servers, decisions),
+            route=reviewer_route(resolved, self._route_observer(decisions)),
             runner_version=__version__,
             base=results.s.state.get_flag(f"baseline:{execution.execution_id}") or None,
             head=change_set.digest,
@@ -286,7 +349,7 @@ class PanelReview:
         status = ResultStatus.BLOCKED if unknown and enforce else ResultStatus.PASSED
         results.record_validation(
             execution,
-            validator_id="review.agent",
+            validator_id=AGENT_REVIEW_ID,
             digest=change_set.digest,
             status=status,
             kind=ValidationKind.SUCCESS
@@ -320,69 +383,85 @@ class PanelReview:
     def _record_findings(
         self, execution: Execution, report: PanelReport, report_ref: str, enforce: bool
     ) -> tuple[list[Finding], dict[str, ReviewFinding]]:
-        results = self.results
-        recorded: list[Finding] = []
-        by_key: dict[str, ReviewFinding] = {}
         error = FindingSeverity.HIGH if enforce else FindingSeverity.MEDIUM
-        for item in report.consistency:
-            if item.get("status") == "PASSED":
-                continue
-            recorded.append(
-                results.record_finding(
-                    execution,
-                    validator_id="review.agent",
-                    rule_id=f"{PANEL_RULE_PREFIX}.consistency.{item['id']}",
-                    category="agent-review",
-                    severity=error,
-                    message=(
-                        f"The consistency check {item['id']} failed ({item.get('summary', '')}); "
-                        "no reviewer was called"
-                    ),
-                    evidence_refs=(report_ref,),
-                )
-            )
-        for outcome in report.reviewers:
-            if outcome.status != "UNKNOWN":
-                continue
-            recorded.append(
-                results.record_finding(
-                    execution,
-                    validator_id="review.agent",
-                    rule_id=f"{PANEL_RULE_PREFIX}.unknown",
-                    category="agent-protocol",
-                    severity=error,
-                    message=f"The {outcome.reviewer} reviewer gave no valid answer: {outcome.reason}",
-                    evidence_refs=(report_ref, *outcome.evidence_refs),
-                )
-            )
+        recorded = self._record_panel_problems(execution, report, report_ref, error)
+        by_key: dict[str, ReviewFinding] = {}
         for finding in report.findings:
-            actor = (
-                Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{report.provider}", version="1")
-                if finding.source == "ai"
-                else Actor(
-                    actor_type=ActorType.TOOL,
-                    actor_id=f"validator.review.{finding.reviewer}",
-                    version="1",
-                )
-            )
-            side = "" if finding.side == "new" else " (a removed line)"
-            entry = results.record_finding(
-                execution,
-                validator_id="review.agent",
-                rule_id=f"{PANEL_RULE_PREFIX}.{finding.rule}",
-                category="agent-review",
-                severity=error if finding.blocking else FindingSeverity.LOW,
-                message=f"[{finding.reviewer}] {finding.issue}{side}",
-                path=finding.file,
-                line=finding.line,
-                evidence_refs=(report_ref,),
-                recommendation=(f"Evidence: {finding.evidence}" if finding.evidence else None),
-                introduced=True,
-                actor=actor,
-            )
+            entry = self._record_review_finding(execution, report, finding, report_ref, error)
             by_key[entry.finding_id] = finding
             recorded.append(entry)
         return recorded, by_key
+
+    def _record_panel_problems(
+        self, execution: Execution, report: PanelReport, report_ref: str, error: FindingSeverity
+    ) -> list[Finding]:
+        """A finding per failed consistency check and per reviewer without a valid answer."""
+        results = self.results
+        recorded = [
+            results.record_finding(
+                execution,
+                validator_id=AGENT_REVIEW_ID,
+                rule_id=f"{PANEL_RULE_PREFIX}.consistency.{item['id']}",
+                category="agent-review",
+                severity=error,
+                message=(
+                    f"The consistency check {item['id']} failed ({item.get('summary', '')}); "
+                    "no reviewer was called"
+                ),
+                evidence_refs=(report_ref,),
+            )
+            for item in report.consistency
+            if item.get("status") != "PASSED"
+        ]
+        recorded.extend(
+            results.record_finding(
+                execution,
+                validator_id=AGENT_REVIEW_ID,
+                rule_id=f"{PANEL_RULE_PREFIX}.unknown",
+                category="agent-protocol",
+                severity=error,
+                message=f"The {outcome.reviewer} reviewer gave no valid answer: {outcome.reason}",
+                evidence_refs=(report_ref, *outcome.evidence_refs),
+            )
+            for outcome in report.reviewers
+            if outcome.status == "UNKNOWN"
+        )
+        return recorded
+
+    def _record_review_finding(
+        self,
+        execution: Execution,
+        report: PanelReport,
+        finding: ReviewFinding,
+        report_ref: str,
+        error: FindingSeverity,
+    ) -> Finding:
+        """One finding of the report, attributed to the agent or the tool that made it."""
+        if finding.source == "ai":
+            actor = Actor(
+                actor_type=ActorType.AGENT, actor_id=f"agent.{report.provider}", version="1"
+            )
+        else:
+            actor = Actor(
+                actor_type=ActorType.TOOL,
+                actor_id=f"validator.review.{finding.reviewer}",
+                version="1",
+            )
+        side = "" if finding.side == "new" else " (a removed line)"
+        return self.results.record_finding(
+            execution,
+            validator_id=AGENT_REVIEW_ID,
+            rule_id=f"{PANEL_RULE_PREFIX}.{finding.rule}",
+            category="agent-review",
+            severity=error if finding.blocking else FindingSeverity.LOW,
+            message=f"[{finding.reviewer}] {finding.issue}{side}",
+            path=finding.file,
+            line=finding.line,
+            evidence_refs=(report_ref,),
+            recommendation=(f"Evidence: {finding.evidence}" if finding.evidence else None),
+            introduced=True,
+            actor=actor,
+        )
 
     # ----- scoped auto-fix ---------------------------------------------------------------------
     def agent_files(self, execution: Execution, change_set: ChangeSet) -> set[str] | None:
@@ -416,8 +495,7 @@ class PanelReview:
         change_set: ChangeSet,
         blocking: list[tuple[Finding, ReviewFinding | None]],
     ) -> tuple[Finding, ...]:
-        settings = self.settings
-        assert settings is not None
+        settings = self.enabled_settings()
         config = settings.auto_fix
         if config is None:
             # Without autoFix the panel behaves as the single reviewer: every error goes back.

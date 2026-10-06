@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - git with a fixed argv, no shell
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -67,7 +67,7 @@ class Git:
     ) -> subprocess.CompletedProcess[bytes]:
         environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0", **self.env, **(env or {})}
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 B607 - git from PATH, argv built by the harness, no shell
                 ["git", *args],
                 cwd=self.root,
                 input=stdin,

@@ -29,9 +29,66 @@ Side = Literal["new", "old"]
 SIDES: tuple[Side, ...] = ("new", "old")
 
 _HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
-_GIT_HEADER = re.compile(r"^diff --git (?:\"?a/)?(.+?)\"? (?:\"?b/)?(.+?)\"?$")
-_GIT_BINARY = re.compile(r"^Binary files (?:a/)?(.+?) and (?:b/)?(.+?) differ$")
 _HARNESS_BINARY = re.compile(r"^Binary files differ: (.+)$")
+_DEV_NULL = "/dev/null"
+_GIT_HEADER_PREFIX = "diff --git "
+_GIT_BINARY_PREFIX = "Binary files "
+_GIT_BINARY_SEPARATOR = " and "
+_GIT_BINARY_SUFFIX = " differ"
+
+
+# The two paths of a Git header are read by scanning the line once: a path may hold spaces, and a
+# single pattern with two lazy groups backtracks over every space. Each reader returns what
+# ``^diff --git (?:"?a/)?(.+?)"? (?:"?b/)?(.+?)"?$`` and
+# ``^Binary files (?:a/)?(.+?) and (?:b/)?(.+?) differ$`` capture on a line without line breaks
+# (the parser reads ``str.splitlines()``), or ``None`` where they do not match.
+def _side_starts(text: str, prefix: str, *, quoted: bool) -> tuple[int, ...]:
+    """Where a path may start after its optional ``a/``/``b/`` prefix (``"``-quoted when
+    ``quoted``): past the prefix first, then at the very start."""
+    if quoted and text.startswith('"' + prefix):
+        return (len(prefix) + 1, 0)
+    if text.startswith(prefix):
+        return (len(prefix), 0)
+    return (0,)
+
+
+def _new_side(value: str, *, quoted: bool) -> str:
+    """The second path: its prefix dropped unless nothing would be left, then (when ``quoted``)
+    its closing quote."""
+    start = next(start for start in _side_starts(value, "b/", quoted=quoted) if start < len(value))
+    path = value[start:]
+    return path[:-1] if quoted and len(path) > 1 and path.endswith('"') else path
+
+
+def _git_header_paths(line: str) -> tuple[str, str] | None:
+    """``diff --git a/OLD b/NEW``: the old path ends at the first space (with the closing quote
+    before it, if any) that still leaves a new path."""
+    if not line.startswith(_GIT_HEADER_PREFIX):
+        return None
+    rest = line[len(_GIT_HEADER_PREFIX) :]
+    for start in _side_starts(rest, "a/", quoted=True):
+        space = rest.find(" ", start + 1)
+        if space == -1 or space + 1 >= len(rest):
+            continue
+        end = space - 1 if space - 1 > start and rest[space - 1] == '"' else space
+        return rest[start:end], _new_side(rest[space + 1 :], quoted=True)
+    return None
+
+
+def _git_binary_paths(line: str) -> tuple[str, str] | None:
+    """``Binary files a/OLD and b/NEW differ``: the old path ends at the first `` and `` that
+    still leaves a new path."""
+    rest = line[len(_GIT_BINARY_PREFIX) :]
+    if not (line.startswith(_GIT_BINARY_PREFIX) and rest.endswith(_GIT_BINARY_SUFFIX)):
+        return None
+    body = rest[: -len(_GIT_BINARY_SUFFIX)]
+    for start in _side_starts(body, "a/", quoted=False):
+        separator = body.find(_GIT_BINARY_SEPARATOR, start + 1)
+        new_start = separator + len(_GIT_BINARY_SEPARATOR)
+        if separator == -1 or new_start >= len(body):
+            continue
+        return body[start:separator], _new_side(body[new_start:], quoted=False)
+    return None
 
 
 @dataclass
@@ -75,101 +132,136 @@ def _side_path(value: str, prefix: str) -> str | None:
     value = value.split("\t", 1)[0].strip()
     if value.startswith('"') and value.endswith('"'):
         value = value[1:-1]
-    if value == "/dev/null":
+    if value == _DEV_NULL:
         return None
     return value[len(prefix) :] if value.startswith(prefix) else value
 
 
 def parse_diff(text: str) -> list[FileChange]:
     """The files of a unified diff, in diff order."""
-    files: list[FileChange] = []
-    current: FileChange | None = None
-    old_left = new_left = 0
-    old_line = new_line = 0
-    open_header = False
-    lines = text.splitlines()
-    index = 0
-    while index < len(lines):
-        line = lines[index]
-        in_hunk = current is not None and (old_left > 0 or new_left > 0)
-        if in_hunk and current is not None:
-            current.lines.append(line)
-            if line.startswith("+"):
-                current.added.append(DiffLine(new_line, line[1:]))
-                new_line += 1
-                new_left -= 1
-            elif line.startswith("-"):
-                current.removed.append(DiffLine(old_line, line[1:]))
-                old_line += 1
-                old_left -= 1
-            elif line.startswith("\\"):
-                pass
-            else:
-                old_line += 1
-                new_line += 1
-                old_left -= 1
-                new_left -= 1
-            index += 1
-            continue
-        git_header = _GIT_HEADER.match(line)
-        if git_header:
-            current = FileChange(git_header.group(1), git_header.group(2), lines=[line])
-            files.append(current)
-            open_header = True
-            index += 1
-            continue
-        if (
-            line.startswith("--- ")
-            and index + 1 < len(lines)
-            and lines[index + 1].startswith("+++ ")
-        ):
-            old_path = _side_path(line[4:], "a/")
-            new_path = _side_path(lines[index + 1][4:], "b/")
-            if current is not None and open_header:
-                current.old_path, current.new_path = old_path, new_path
-            else:
-                current = FileChange(old_path, new_path)
-                files.append(current)
-            open_header = False
-            current.lines.extend((line, lines[index + 1]))
-            index += 2
-            continue
-        if current is not None and line.startswith(("new file mode", "deleted file mode")):
-            current.lines.append(line)
-            if line.startswith("new file mode"):
-                current.old_path = None
-            else:
-                current.new_path = None
-            index += 1
-            continue
-        binary = _GIT_BINARY.match(line) or _HARNESS_BINARY.match(line)
-        if binary:
-            open_header = False
-            if _HARNESS_BINARY.match(line):
-                current = FileChange(binary.group(1), binary.group(1), binary=True, lines=[line])
-                files.append(current)
-            elif current is not None:
-                current.binary = True
-                current.lines.append(line)
-                if binary.group(1) == "/dev/null":
-                    current.old_path = None
-                if binary.group(2) == "/dev/null":
-                    current.new_path = None
-            index += 1
-            continue
+    return _DiffParser(text.splitlines()).parse()
+
+
+class _DiffParser:
+    """A single pass over the lines of a unified diff. Inside a hunk the counters of its header
+    decide what a line is; outside, each header kind is tried in turn."""
+
+    def __init__(self, lines: list[str]) -> None:
+        self.lines = lines
+        self.files: list[FileChange] = []
+        self.current: FileChange | None = None
+        self.old_left = self.new_left = 0
+        self.old_line = self.new_line = 0
+        self.open_header = False
+
+    def parse(self) -> list[FileChange]:
+        index = 0
+        while index < len(self.lines):
+            index += self._step(index)
+        return self.files
+
+    def _step(self, index: int) -> int:
+        """Read the line at ``index``; the number of lines it consumed."""
+        line = self.lines[index]
+        if self.current is not None and (self.old_left > 0 or self.new_left > 0):
+            self._hunk_line(self.current, line)
+            return 1
+        for header in (self._git_header, self._file_header, self._mode, self._binary, self._hunk):
+            used = header(index)
+            if used:
+                return used
+        if self.current is not None:
+            self.current.lines.append(line)
+        return 1
+
+    def _hunk_line(self, current: FileChange, line: str) -> None:
+        current.lines.append(line)
+        if line.startswith("+"):
+            current.added.append(DiffLine(self.new_line, line[1:]))
+            self.new_line += 1
+            self.new_left -= 1
+        elif line.startswith("-"):
+            current.removed.append(DiffLine(self.old_line, line[1:]))
+            self.old_line += 1
+            self.old_left -= 1
+        elif not line.startswith("\\"):
+            self.old_line += 1
+            self.new_line += 1
+            self.old_left -= 1
+            self.new_left -= 1
+
+    def _git_header(self, index: int) -> int:
+        line = self.lines[index]
+        paths = _git_header_paths(line)
+        if paths is None:
+            return 0
+        self.current = FileChange(*paths, lines=[line])
+        self.files.append(self.current)
+        self.open_header = True
+        return 1
+
+    def _file_header(self, index: int) -> int:
+        """A ``---``/``+++`` pair: the paths of the file the ``diff --git`` line opened, or a
+        new file of a diff without such lines."""
+        line = self.lines[index]
+        following = self.lines[index + 1] if index + 1 < len(self.lines) else ""
+        if not (line.startswith("--- ") and following.startswith("+++ ")):
+            return 0
+        old_path = _side_path(line[4:], "a/")
+        new_path = _side_path(following[4:], "b/")
+        if self.current is not None and self.open_header:
+            self.current.old_path, self.current.new_path = old_path, new_path
+        else:
+            self.current = FileChange(old_path, new_path)
+            self.files.append(self.current)
+        self.open_header = False
+        self.current.lines.extend((line, following))
+        return 2
+
+    def _mode(self, index: int) -> int:
+        line = self.lines[index]
+        current = self.current
+        if current is None or not line.startswith(("new file mode", "deleted file mode")):
+            return 0
+        current.lines.append(line)
+        if line.startswith("new file mode"):
+            current.old_path = None
+        else:
+            current.new_path = None
+        return 1
+
+    def _binary(self, index: int) -> int:
+        line = self.lines[index]
+        harness = _HARNESS_BINARY.match(line)
+        git = _git_binary_paths(line)
+        if harness is None and git is None:
+            return 0
+        self.open_header = False
+        if harness:
+            # A line both forms read keeps the Git reading of its first path.
+            path = git[0] if git else harness.group(1)
+            self.current = FileChange(path, path, binary=True, lines=[line])
+            self.files.append(self.current)
+        elif self.current is not None and git is not None:
+            self.current.binary = True
+            self.current.lines.append(line)
+            if git[0] == _DEV_NULL:
+                self.current.old_path = None
+            if git[1] == _DEV_NULL:
+                self.current.new_path = None
+        return 1
+
+    def _hunk(self, index: int) -> int:
+        line = self.lines[index]
         hunk = _HUNK.match(line)
-        if hunk and current is not None:
-            open_header = False
-            old_line, new_line = int(hunk.group(1)), int(hunk.group(3))
-            old_left = int(hunk.group(2)) if hunk.group(2) is not None else 1
-            new_left = int(hunk.group(4)) if hunk.group(4) is not None else 1
-            current.lines.append(line)
-            index += 1
-            continue
-        if current is not None:
-            current.lines.append(line)
-        index += 1
-    return files
+        if not hunk or self.current is None:
+            return 0
+        self.open_header = False
+        self.old_line, self.new_line = int(hunk.group(1)), int(hunk.group(3))
+        self.old_left = int(hunk.group(2)) if hunk.group(2) is not None else 1
+        self.new_left = int(hunk.group(4)) if hunk.group(4) is not None else 1
+        self.current.lines.append(line)
+        return 1
 
 
 # ----- reportable locations ---------------------------------------------------------------------
@@ -187,7 +279,7 @@ class Locations:
         return False
 
     def paths(self) -> list[str]:
-        return sorted({path for path, _side in self.lines})
+        return sorted({key[0] for key in self.lines})
 
     def as_ranges(self) -> dict[str, dict[str, list[list[int]]]]:
         """``{path: {side: [[first, last], ...]}}``: what the request shows the reviewer."""

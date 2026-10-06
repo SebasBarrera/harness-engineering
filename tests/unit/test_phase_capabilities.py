@@ -3,12 +3,16 @@ allowed capabilities, read-only agent calls outside IMPLEMENTATION."""
 
 from __future__ import annotations
 
-from governed_harness.capabilities import grants_from_rules
+import pytest
+
+from governed_harness.capabilities import CapabilityDenied, grants_from_rules
 from governed_harness.capabilities.phase import (
+    CommandRefused,
     PhasePolicy,
     current_policy,
     intersect_capabilities,
     intersect_scopes,
+    launch_granted,
     phase_scope,
 )
 from governed_harness.configuration.models import CapabilityRule
@@ -49,7 +53,7 @@ def test_the_phase_policy_filters_every_grant() -> None:
     policy = PhasePolicy(
         "VERIFICATION",
         frozenset({"filesystem.read", "process.execute"}),
-        {"agent.coder": ("claude",)},
+        {"agent.coder": ("python", "agent.py")},
     )
     assert current_policy() is None
     with phase_scope(policy):
@@ -59,11 +63,50 @@ def test_the_phase_policy_filters_every_grant() -> None:
     # Outside IMPLEMENTATION an agent is read-only and may start only its own command.
     assert [(grant.capability, grant.scope) for grant in agent] == [
         ("filesystem.read", ("**",)),
-        ("process.execute", ("claude",)),
+        ("process.execute", ("python agent.py",)),
     ]
     assert current_policy() is None
     # Without a policy nothing changes (1.0.0).
     assert len(grants_from_rules("run", AGENT, RULES)) == 4
+
+
+def test_an_agent_command_the_grants_do_not_allow_gets_no_grant() -> None:
+    # #87: the provider's own command is granted only when a process.execute rule allows it.
+    for phase in ("INTENT", "IMPLEMENTATION"):
+        policy = PhasePolicy(
+            phase,
+            frozenset({"filesystem.read", "process.execute"}),
+            {"agent.coder": ("sh", "-c", "echo not-allowed")},
+        )
+        with phase_scope(policy):
+            agent = grants_from_rules("run", AGENT, RULES)
+        assert ("process.execute", ("sh -c echo not-allowed",)) not in [
+            (grant.capability, grant.scope) for grant in agent
+        ]
+
+
+def test_a_launch_needs_a_rule_without_approval() -> None:
+    approval = CapabilityRule(capability="process.execute", scope=("sh",), approvalRequired=True)
+    assert not launch_granted(("sh", "-c", "x"), (approval,))
+    granted = CapabilityRule(capability="process.execute", scope=("sh -c",))
+    assert launch_granted(("sh", "-c", "x"), (granted,))
+    assert not launch_granted(("shell",), (granted,))
+
+
+def test_a_refused_agent_command_is_reported_and_raised() -> None:
+    seen: list[tuple[str, tuple[str, ...]]] = []
+    policy = PhasePolicy(
+        "INTENT",
+        frozenset({"filesystem.read"}),
+        on_refused=lambda actor, argv: seen.append((actor.actor_id, tuple(argv))),
+    )
+    denied = CapabilityDenied("agent.coder lacks process.execute for sh")
+    with pytest.raises(CommandRefused, match="capabilities.extend"):
+        policy.refuse(AGENT, ("sh", "-c", "x"), denied)
+    assert seen == [("agent.coder", ("sh", "-c", "x"))]
+    # Any other actor's refusal is left as it was (no report, no other exception).
+    policy.refuse(TOOL, ("sh",), denied)
+    assert len(seen) == 1
 
 
 def test_implementation_keeps_the_agent_write_grant() -> None:

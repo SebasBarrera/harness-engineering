@@ -184,25 +184,38 @@ def project_report(services: EngineServices) -> dict[str, Any]:
     }
 
 
+def _effective_packs(
+    standards: Any, workspace: Path, technologies: tuple[str, ...]
+) -> list[str] | None:
+    if standards is None:
+        return None
+    return [
+        item.pack_id
+        for item in project_standards(
+            workspace,
+            packs=standards.packs,
+            overrides=standards.overrides_path,
+            disabled=standards.disabled or (),
+            technologies=technologies,
+        ).packs
+    ]
+
+
+def _testing_strategy(testing: Any, workspace: Path, technologies: tuple[str, ...]) -> str:
+    """The configured strategy; ``auto`` (or none) detects it; without ``testing``, off."""
+    if not testing:
+        return "off"
+    if testing.strategy not in {None, "auto"}:
+        return str(testing.strategy)
+    return detect_testing(workspace, technologies).strategy
+
+
 def engineering_summary(resolved: Any) -> dict[str, Any]:
     """Effective wave 6 settings for ``harness config validate`` (absent: 1.0.0 behaviour)."""
     project = resolved.project
     workspace = resolved.workspace_root
     technologies = tuple(item.technology for item in resolved.profiles)
     standards = project.standards
-    packs: list[str] | None = None
-    if standards is not None:
-        packs = [
-            item.pack_id
-            for item in project_standards(
-                workspace,
-                packs=standards.packs,
-                overrides=standards.overrides_path,
-                disabled=standards.disabled or (),
-                technologies=technologies,
-            ).packs
-        ]
-    testing = project.testing
     principles = project.verification.principles if project.verification else None
     architecture = project.architecture
     forge = project.delivery_settings.forge
@@ -211,18 +224,10 @@ def engineering_summary(resolved: Any) -> dict[str, Any]:
         "standards": {
             "cards": standards.cards if standards else "off",
             "tools": standards.tools if standards else "off",
-            "packs": packs,
+            "packs": _effective_packs(standards, workspace, technologies),
         },
         "principles": principles.mode if principles else "off",
-        "testing": {
-            "strategy": (
-                testing.strategy
-                if testing and testing.strategy not in {None, "auto"}
-                else detect_testing(workspace, technologies).strategy
-            )
-            if testing
-            else "off",
-        },
+        "testing": {"strategy": _testing_strategy(project.testing, workspace, technologies)},
         "architecture": {
             "mode": architecture.mode if architecture else "off",
             "style": architecture.style if architecture else None,

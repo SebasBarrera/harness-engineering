@@ -1,6 +1,10 @@
 """The review panel in INDEPENDENT_REVIEW of a governed run (review.panel, #57): reviewers by
 domain, the report as evidence, scoped auto-fix by provenance and a reviewer that never answers.
-The provider is a fixture command that calls no model."""
+The provider is a fixture command that calls no model.
+
+The reviewers of a panel run in parallel, so the fixture records each call in a file of its own
+(renamed into place when complete) instead of rewriting one shared log: a shared read-modify-write
+lost a reviewer's call or left a torn file whenever two reviewers wrote at once."""
 
 from __future__ import annotations
 
@@ -26,14 +30,16 @@ TASK = (
 )
 
 AGENT = """\
-import json, sys
+import json, os, sys, time
 from pathlib import Path
 
 request = json.load(sys.stdin)
 log = Path(LOG)
-calls = json.loads(log.read_text()) if log.exists() else []
-calls.append(request)
-log.write_text(json.dumps(calls))
+log.mkdir(exist_ok=True)
+name = f"{time.time_ns():020d}-{os.getpid()}"
+(log / f"{name}.tmp").write_text(json.dumps(request))
+os.replace(log / f"{name}.tmp", log / f"{name}.json")
+calls = [json.loads(path.read_text()) for path in sorted(log.glob("*.json"))]
 kind = request.get("kind", "implement")
 if kind == "review":
     reviewer = (request.get("reviewer") or {}).get("id")
@@ -73,7 +79,7 @@ print(json.dumps({"status": "PASSED", "summary": "implemented"}))
 
 
 def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
-    log = tmp_path / f"calls-{mode}.json"
+    log = tmp_path / f"calls-{mode}"
     script = AGENT.replace("LOG", repr(str(log))).replace("MODE", repr(mode))
     (workspace / "agent.py").write_text(script, encoding="utf-8")
     path = workspace / ".harness" / "project.yaml"
@@ -104,7 +110,9 @@ def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
 
 
 def requests(log: Path, kind: str) -> list[dict[str, Any]]:
-    return [item for item in json.loads(log.read_text()) if item.get("kind", "implement") == kind]
+    """The recorded calls of ``kind``, in the order they were made."""
+    calls = [json.loads(path.read_text()) for path in sorted(log.glob("*.json"))]
+    return [item for item in calls if item.get("kind", "implement") == kind]
 
 
 def start(workspace: Path, tmp_path: Path) -> tuple[HarnessApplication, str]:
@@ -143,14 +151,16 @@ def test_panel_reviews_by_domain_and_records_its_report(
         for item in events(application, python_workspace, run)
         if item.event_type == "review.panel.completed"
     ]
-    assert completed and completed[-1].payload["verdict"] == "PASS"
+    assert completed
+    assert completed[-1].payload["verdict"] == "PASS"
     with application._services(python_workspace) as services:
         validation = [
             item
             for item in services.state.list("validation", ValidationResult, execution_id=run)
             if item.validator_id == "review.agent"
         ][-1]
-        assert validation.status is ResultStatus.PASSED and validation.mandatory
+        assert validation.status is ResultStatus.PASSED
+        assert validation.mandatory
 
 
 def test_errors_on_agent_lines_go_back_scoped(python_workspace: Path, tmp_path: Path) -> None:
@@ -158,11 +168,13 @@ def test_errors_on_agent_lines_go_back_scoped(python_workspace: Path, tmp_path: 
     application, run = start(python_workspace, tmp_path)
     recorded = events(application, python_workspace, run)
     requested = [item for item in recorded if item.event_type == "review.autofix.requested"]
-    assert len(requested) == 1 and requested[0].payload["fixable"]
+    assert len(requested) == 1
+    assert requested[0].payload["fixable"]
     corrections = [item for item in recorded if item.event_type == "correction.authorized"]
     assert [item.payload["trigger"] for item in corrections] == ["REVIEW_FINDINGS"]
     implements = requests(log, "implement")
-    assert len(implements) == 2 and "feedback" in implements[1]
+    assert len(implements) == 2
+    assert "feedback" in implements[1]
     feedback = json.dumps(implements[1]["feedback"])
     assert "quality.wrong-logic" in feedback
     assert (
@@ -178,7 +190,8 @@ def test_errors_on_lines_the_agent_did_not_write_stay_for_a_person(
     recorded = events(application, python_workspace, run)
     assert not [item for item in recorded if item.event_type == "review.autofix.requested"]
     declined = [item for item in recorded if item.event_type == "review.autofix.declined"]
-    assert declined and declined[0].payload["reason"] == "no error on a line the agent wrote"
+    assert declined
+    assert declined[0].payload["reason"] == "no error on a line the agent wrote"
     assert len(requests(log, "implement")) == 1
     status = application.status(python_workspace, run)
     assert status["execution"]["currentPhase"] == PhaseId.DECISION
@@ -188,7 +201,8 @@ def test_errors_on_lines_the_agent_did_not_write_stay_for_a_person(
             for item in services.state.list("finding", Finding, execution_id=run)
             if item.rule_id == "review.panel.quality.wrong-logic"
         ]
-    assert findings and findings[0].severity is FindingSeverity.HIGH
+    assert findings
+    assert findings[0].severity is FindingSeverity.HIGH
     assert "(a removed line)" in findings[0].message
 
 
@@ -208,3 +222,41 @@ def test_reviewer_without_a_valid_answer_blocks(python_workspace: Path, tmp_path
         item.event_type == "correction.authorized"
         for item in events(application, python_workspace, run)
     )
+
+
+def test_every_reviewer_records_its_routing_decision(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#85: each reviewer call records agent.routing.decided, capped at the invoking model."""
+    log = configure(python_workspace, tmp_path, "clean")
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["agentProviders"]["fixture_agent"]["model"] = "claude-sonnet-5-5"
+    config["agentRouting"] = {"mode": "anchored", "families": {"fixture_agent": "claude-code"}}
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, run = start(python_workspace, tmp_path)
+    reviewed = sorted(item["reviewer"]["id"] for item in requests(log, "review"))
+    decided = [
+        item.payload
+        for item in events(application, python_workspace, run)
+        if item.event_type == "agent.routing.decided" and "reviewer" in item.payload
+    ]
+    assert sorted(item["reviewer"] for item in decided) == reviewed
+    assert {item["model"] for item in decided} == {"claude-sonnet-5-5"}
+    assert {item["anchor"] for item in decided} == {"claude-sonnet-5-5"}
+    assert {item["phase"] for item in decided} == {PhaseId.INDEPENDENT_REVIEW}
+    report = application.routing_calibration(python_workspace)
+    review_rows = [item for item in report["groups"] if item["callKind"] == "review"]
+    assert len(review_rows) == 1
+
+
+def test_reviewers_record_no_routing_without_agent_routing(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace, tmp_path, "clean")
+    application, run = start(python_workspace, tmp_path)
+    assert not [
+        item
+        for item in events(application, python_workspace, run)
+        if item.event_type == "agent.routing.decided"
+    ]

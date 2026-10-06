@@ -353,6 +353,7 @@ def build_brief(
         not_verified.append(
             "a second agent reviewed the ChangeSet (review.agentReview); it is not a person"
         )
+    not_verified.extend(_assumption_notes(task))
     agent_results = _agent_results_section(services, execution, current_findings)
     brief: dict[str, Any] = {
         "schemaVersion": BRIEF_SCHEMA_VERSION,
@@ -378,6 +379,7 @@ def build_brief(
                 for item in task.acceptance_criteria
             ],
             "constraints": list(task.constraints),
+            **_assumptions_section(task),
         },
         "changed": changed,
         "gate": {
@@ -420,6 +422,25 @@ def build_brief(
         brief.update(ladder)
         brief["notVerified"] = [*brief["notVerified"], *not_verified_lines(ladder)]
     return brief
+
+
+def _assumptions_section(task: Task) -> dict[str, Any]:
+    """``assumptions`` of what was asked (#79): the points the agent review left open after its
+    last round; absent when the task records none, so other briefs keep their form."""
+    from governed_harness.orchestration.intent_convergence import assumptions_of
+
+    assumptions = assumptions_of(task)
+    return {"assumptions": assumptions} if assumptions else {}
+
+
+def _assumption_notes(task: Task) -> list[str]:
+    from governed_harness.orchestration.intent_convergence import assumptions_of
+
+    return [
+        f"assumption {item.get('assumptionId')} was not answered by a person: "
+        f"{item.get('question')}"
+        for item in assumptions_of(task)
+    ]
 
 
 def _agent_results_section(

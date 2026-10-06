@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import os
 import re
-import subprocess
+import subprocess  # nosec B404 - fixed git argv below, no shell
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -32,12 +32,12 @@ from governed_harness.configuration.ladder import EnvironmentConfig
 from governed_harness.domain.enums import ActorType, FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.models import Actor, ChangeSet, Execution, PhaseExecution
 from governed_harness.ladder.capabilities import run_detection
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import Contents, materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.validators import ValidationContext
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import PhaseOutcome
     from governed_harness.orchestration.ladder_host import LadderHost
 
 ENVIRONMENT_ID = "harness.environment"
@@ -46,7 +46,7 @@ _TIMEOUT = 15
 
 def _git(workspace: Path, *args: str) -> tuple[int, str]:
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607 - fixed git argv, no shell
             ["git", *args],
             cwd=workspace,
             capture_output=True,
@@ -81,13 +81,12 @@ def dirty_paths(workspace: Path) -> list[str] | None:
     return sorted(paths)
 
 
-def environment_checks(
-    config: EnvironmentConfig, workspace: Path, *, timeout: int = _TIMEOUT
-) -> dict[str, Any]:
-    """Tools, variables, hooks and the dirty tree (no validator runs): the checks DISCOVERY
-    and ``harness doctor`` share. ``problems`` are the ones that stop a run."""
-    problems: list[str] = []
+def _tool_checks(
+    config: EnvironmentConfig, workspace: Path, timeout: int
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Each required tool, its version and why it is not usable."""
     tools: list[dict[str, Any]] = []
+    problems: list[str] = []
     for item in config.tools or ():
         code, output = run_detection(tuple(item.command), workspace, timeout)
         ok = code == 0 and (item.pattern is None or re.search(item.pattern, output) is not None)
@@ -96,28 +95,50 @@ def environment_checks(
         if not ok:
             want = f" matching {item.pattern!r}" if item.pattern else ""
             problems.append(f"tool {item.name}{want} is not available ({version or output[:200]})")
+    return tools, problems
+
+
+def _hook_state(path: Path | None) -> tuple[bool, bool]:
+    """Whether a hook file is present and executable (any file is on Windows)."""
+    present = bool(path and path.is_file())
+    executable = bool(path and present and (os.name == "nt" or os.access(path, os.X_OK)))
+    return present, executable
+
+
+def _hook_checks(
+    config: EnvironmentConfig, workspace: Path
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Each required Git hook, whether it is present and executable, and how to install it."""
+    hooks: list[dict[str, Any]] = []
+    problems: list[str] = []
+    git_hooks = config.git_hooks
+    if not git_hooks or not git_hooks.required:
+        return hooks, problems
+    directory = hooks_directory(workspace)
+    install = f"; install it with: {' '.join(git_hooks.install)}" if git_hooks.install else ""
+    for name in git_hooks.required:
+        present, executable = _hook_state(directory / name if directory else None)
+        hooks.append({"name": name, "present": present, "executable": executable})
+        if not executable:
+            state = "not executable" if present else "missing"
+            problems.append(f"Git hook {name} is {state}{install}")
+    return hooks, problems
+
+
+def environment_checks(
+    config: EnvironmentConfig, workspace: Path, *, timeout: int = _TIMEOUT
+) -> dict[str, Any]:
+    """Tools, variables, hooks and the dirty tree (no validator runs): the checks DISCOVERY
+    and ``harness doctor`` share. ``problems`` are the ones that stop a run."""
+    tools, problems = _tool_checks(config, workspace, timeout)
     variables = [
         {"name": name, "set": bool(os.environ.get(name))} for name in config.variables or ()
     ]
     problems.extend(
         f"environment variable {item['name']} is not set" for item in variables if not item["set"]
     )
-    hooks: list[dict[str, Any]] = []
-    git_hooks = config.git_hooks
-    if git_hooks and git_hooks.required:
-        directory = hooks_directory(workspace)
-        for name in git_hooks.required:
-            path = directory / name if directory else None
-            present = bool(path and path.is_file())
-            executable = bool(path and present and (os.name == "nt" or os.access(path, os.X_OK)))
-            hooks.append({"name": name, "present": present, "executable": executable})
-            if not executable:
-                install = (
-                    f"; install it with: {' '.join(git_hooks.install)}" if git_hooks.install else ""
-                )
-                problems.append(
-                    f"Git hook {name} is {'not executable' if present else 'missing'}{install}"
-                )
+    hooks, hook_problems = _hook_checks(config, workspace)
+    problems.extend(hook_problems)
     dirty = dirty_paths(workspace)
     policy = config.dirty_tree or "allow"
     if dirty and policy == "block":
@@ -144,8 +165,6 @@ class EnvironmentPreflight:
     def run(
         self, execution: Execution, phase: PhaseExecution, baseline_digest: str
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         config = self.config
         if config is None:
             return None

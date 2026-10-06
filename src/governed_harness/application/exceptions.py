@@ -133,7 +133,8 @@ def record_exception(
     alternative_evidence: str | None,
     follow_up: str | None,
 ) -> ExceptionRecord:
-    assert decision.expires_at is not None
+    if decision.expires_at is None:  # the decision of an exception always carries its expiry
+        raise ConfigurationError("an exception needs an expiry (--expires-in or --expires-at)")
     engine = RunEngine(services)
     execution = engine.get_execution(decision.execution_id)
     gate = services.state.get("gate", decision.gate_evaluation_id, GateEvaluation)

@@ -55,7 +55,7 @@ from governed_harness.validators.parsers import parse_output
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 RATCHET_ID = "harness.ratchet"
 _DIGITS = re.compile(r"\d+")
@@ -79,7 +79,7 @@ def issue_keys(stdout: str, stderr: str, workspace: Path) -> tuple[str, ...]:
 
 
 class Differential:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -454,7 +454,7 @@ class Differential:
         )
 
 
-def _original(results: AgentResults, output: ValidatorOutput) -> tuple[Finding, ...]:
+def _original(results: ResultsHost, output: ValidatorOutput) -> tuple[Finding, ...]:
     return tuple(
         results.s.state.get("finding", item, Finding) for item in output.result.finding_ids
     )

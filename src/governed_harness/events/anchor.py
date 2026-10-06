@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import os
 import platform
-import subprocess
+import subprocess  # nosec B404 - git notes with a fixed argv, no shell
 import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -154,7 +154,7 @@ class AnchorStore:
 
     # ----- git note ---------------------------------------------------------------
     def _git(self, *args: str, stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603 B607 - git from PATH, fixed argv without hooks, no shell
             ["git", "-c", f"core.hooksPath={os.devnull}", *args],
             cwd=self.workspace,
             input=stdin,

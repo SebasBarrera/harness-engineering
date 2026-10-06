@@ -3,13 +3,12 @@ from __future__ import annotations
 import contextlib
 import json
 import socket
-import subprocess
+import subprocess  # nosec B404 - only SubprocessError: the engine starts no process here
 import threading
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as wait_for_futures
-from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import cached_property, partial
 from pathlib import Path
@@ -27,21 +26,20 @@ from governed_harness.agents import (
 from governed_harness.agents.environment import (
     ProviderEnvironment,
     provider_environment,
-    secret_values,
 )
 from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.capabilities.authorizer import contained_path
-from governed_harness.capabilities.phase import PhasePolicy, phase_scope
+from governed_harness.capabilities.phase import CommandRefused, PhasePolicy, phase_scope
 from governed_harness.capabilities.repository import (
+    DestructiveActionDenied,
     DestructivePolicy,
     destructive_scope,
     repository_policies,
 )
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
-    ResolvedConfiguration,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
@@ -99,8 +97,8 @@ from governed_harness.domain.models import (
     ValidationResult,
     utc_now,
 )
-from governed_harness.events import AnchorStore, SQLiteEventStore
-from governed_harness.evidence import LocalArtifactStore, SecretRedactor, sha256_json
+from governed_harness.events import AnchorStore
+from governed_harness.evidence import sha256_json
 from governed_harness.gates import GateEngine, GatePolicy
 from governed_harness.gates.exceptions import apply_exceptions, exception_ids
 from governed_harness.intake import (
@@ -112,6 +110,10 @@ from governed_harness.intake import (
 )
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
+from governed_harness.orchestration.corrections import EMPTY_RULE as EMPTY_CORRECTION_RULE
+from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths
+from governed_harness.orchestration.engine_types import EngineServices as EngineServices
+from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
 from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
 from governed_harness.orchestration.feedback import (
     TRANSIENT_SCAN_BYTES,
@@ -121,6 +123,9 @@ from governed_harness.orchestration.feedback import (
     transient_cause,
     verification_reason_codes,
 )
+from governed_harness.orchestration.friction import AFFECTED_TESTS_ID, Friction
+from governed_harness.orchestration.intent_review import ReviewOutcome as IntentReviewOutcome
+from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
@@ -150,7 +155,7 @@ from governed_harness.runtime.snapshots import (
     SnapshotSettings,
     SnapshotStore,
 )
-from governed_harness.runtime.state_location import isolation_marker, resolve_state_location
+from governed_harness.runtime.state_location import isolation_marker
 from governed_harness.storage import SQLiteStateStore
 from governed_harness.telemetry import MetricsProjector
 from governed_harness.validators import (
@@ -163,6 +168,8 @@ from governed_harness.validators import (
 )
 from governed_harness.validators.base import ValidatorOutput
 from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
+
+CANCELLATION_REQUESTED = "Cancellation requested"
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -220,6 +227,20 @@ def acceptance_contract_digest(task: Task) -> str:
     )
 
 
+def _affected_tests_failed(outputs: list[Any]) -> PhaseOutcome | None:
+    """The outcome of a fast-lane attempt stopped by its affected tests (#58), if it was."""
+    last = outputs[-1].result if outputs else None
+    if last is None or last.validator_id != AFFECTED_TESTS_ID:
+        return None
+    if last.status is ResultStatus.PASSED:
+        return None
+    return PhaseOutcome(
+        last.status,
+        "The affected tests did not pass; the full suite runs on the next attempt",
+        last.evidence_refs,
+    )
+
+
 class _ProcessLedger:
     """Records the process groups a run's runner starts (flag ``process:<run>``), so that a
     recovery after a killed harness can terminate the ones still running."""
@@ -251,80 +272,6 @@ class _ProcessLedger:
                 self.state.set_flag(self.key, json.dumps(recorded, sort_keys=True))
 
 
-@dataclass(frozen=True)
-class EnginePaths:
-    workspace: Path
-    harness_dir: Path
-    database: Path
-    artifact_dir: Path
-    state_root: Path | None = None
-    """The run registry outside the workspace (``runtime.stateDir`` or an isolated run's
-    origin, #55); ``None`` when the state lives in ``.harness/`` as in 1.0.0."""
-
-    @classmethod
-    def from_workspace(cls, workspace: Path) -> EnginePaths:
-        root = workspace.resolve(strict=True)
-        harness_dir = root / ".harness"
-        harness_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
-        return cls(root, harness_dir, harness_dir / "state.db", harness_dir / "artifacts")
-
-    @classmethod
-    def for_project(cls, resolved: ResolvedConfiguration) -> EnginePaths:
-        """The paths of a resolved project: ``.harness/`` for the workspace's own files and the
-        state location ``runtime.stateDir`` (or an isolation marker) names for the registry."""
-        paths = cls.from_workspace(resolved.workspace_root)
-        location = resolve_state_location(
-            paths.workspace, resolved.project.project_id, resolved.project.runtime.state_dir
-        )
-        if not location.external:
-            return paths
-        return cls(
-            paths.workspace,
-            paths.harness_dir,
-            location.database,
-            location.artifacts,
-            location.root,
-        )
-
-
-@dataclass
-class EngineServices:
-    resolved: ResolvedConfiguration
-    paths: EnginePaths
-    state: SQLiteStateStore
-    events: SQLiteEventStore
-    artifacts: LocalArtifactStore
-
-    @classmethod
-    def open(cls, resolved: ResolvedConfiguration) -> EngineServices:
-        paths = EnginePaths.for_project(resolved)
-        return cls(
-            resolved=resolved,
-            paths=paths,
-            state=SQLiteStateStore(paths.database),
-            events=SQLiteEventStore(paths.database),
-            artifacts=LocalArtifactStore(
-                paths.artifact_dir,
-                SecretRedactor(
-                    literals=secret_values(resolved.project),
-                    extended=bool(resolved.project.runtime.extended_redaction),
-                ),
-            ),
-        )
-
-    def close(self) -> None:
-        self.state.close()
-        self.events.close()
-
-
-@dataclass(frozen=True)
-class PhaseOutcome:
-    status: ResultStatus
-    summary: str
-    evidence_refs: tuple[str, ...] = ()
-    artifact_refs: tuple[str, ...] = ()
-
-
 class RunEngine:
     _exit_gate_unmet: str | None = None
     """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
@@ -336,7 +283,7 @@ class RunEngine:
         self.validators = ValidatorRegistry()
         self.retrospective_engine = RetrospectiveEngine()
         self._sandbox_host = sandbox_host
-        self.provenance = ProvenanceRecorder(self)
+        self.provenance: ProvenanceRecorder = ProvenanceRecorder(self)
         self.snapshots = SnapshotStore(
             services.paths.workspace,
             services.artifacts,
@@ -348,14 +295,11 @@ class RunEngine:
             ),
         )
         self._phase_deadline: float | None = None
-        self.results = AgentResults(self)
-        # Imported here: the ladder modules type against the engine, so a module-level import
-        # would close an import cycle.
-        from governed_harness.orchestration.friction import Friction
-        from governed_harness.orchestration.ladder import VerificationLadder
-
-        self.ladder = VerificationLadder(self)
-        self.friction = Friction(self)
+        # The helpers type the engine as an EngineHost (orchestration.hosts); the annotations
+        # keep mypy from inferring these attributes while it checks the engine against it.
+        self.results: AgentResults = AgentResults(self)
+        self.ladder: VerificationLadder = VerificationLadder(self)
+        self.friction: Friction = Friction(self)
 
     @property
     def sandbox_host(self) -> SandboxHost:
@@ -477,7 +421,9 @@ class RunEngine:
 
     def _continue_execution(self, execution_id: str) -> Execution:
         execution = self.get_execution(execution_id)
-        if execution.status in {ResultStatus.PASSED, ResultStatus.CANCELLED}:
+        if not run_is_open(execution):
+            # Closed, cancelled or rejected (#83): a rejected run is reported as it ended, not
+            # evaluated again on the baseline stop the line restored.
             return execution
         if self.is_cancelled(execution_id):
             return self._cancel_execution(execution)
@@ -490,10 +436,9 @@ class RunEngine:
         while True:
             execution = self.get_execution(execution_id)
             if execution.current_phase is PhaseId.DECISION:
-                outcome = self._run_phase(execution, self._phase_decision)
+                if self._decision_waits(execution):
+                    return self.get_execution(execution_id)
                 execution = self.get_execution(execution_id)
-                if outcome.status is ResultStatus.BLOCKED:
-                    return execution
             elif execution.current_phase is PhaseId.CLOSURE:
                 self._run_phase(execution, self._phase_closure)
                 return self.get_execution(execution_id)
@@ -539,6 +484,15 @@ class RunEngine:
                 ResultStatus.ERROR,
             }:
                 return execution
+
+    def _decision_waits(self, execution: Execution) -> bool:
+        """Run DECISION; whether the run stops there (BLOCKED). A ChangeSet that changed
+        outside the run sends it back to VERIFICATION first under
+        ``verification.reverifyOnChange`` (#78)."""
+        if self._reverify_after_change(execution):
+            return False
+        outcome = self._run_phase(execution, self._phase_decision)
+        return outcome.status is ResultStatus.BLOCKED
 
     def cancel(self, execution_id: str, actor_id: str = "human.local") -> Execution:
         execution = self.get_execution(execution_id)
@@ -885,33 +839,7 @@ class RunEngine:
             {"phaseId": phase_id, "attempt": attempt},
             phase_execution_id=phase.phase_execution_id,
         )
-        try:
-            if self.is_cancelled(execution.execution_id):
-                outcome = PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
-            else:
-                with (
-                    phase_scope(self._phase_policy(running, phase)),
-                    destructive_scope(self._destructive_policy(running)),
-                ):
-                    outcome = handler(running, phase)
-        except (KeyboardInterrupt, SystemExit) as interruption:
-            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
-            # record the phase as interrupted so that a later run continue recovers it.
-            if self._leases_workspace():
-                self._mark_interrupted(
-                    execution.execution_id,
-                    phase,
-                    f"The harness was interrupted ({type(interruption).__name__})",
-                )
-            raise
-        except Exception as error:
-            outcome = PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
-            self.s.events.append(
-                execution.execution_id,
-                "phase.error",
-                {"phaseId": phase_id, "errorType": type(error).__name__, "message": str(error)},
-                phase_execution_id=phase.phase_execution_id,
-            )
+        outcome = self._execute_handler(running, phase, handler)
         if definition is not None:
             outcome = self._apply_phase_settings(definition, phase, outcome)
         exit_checks: list[ExitGateCheck] = []
@@ -965,33 +893,84 @@ class RunEngine:
             completed_payload,
             phase_execution_id=phase.phase_execution_id,
         )
-        latest = self.get_execution(execution.execution_id)
-        if outcome.status is ResultStatus.PASSED:
-            if phase_id is PhaseId.CLOSURE:
-                updated = latest.model_copy(
-                    update={"status": ResultStatus.PASSED, "updated_at": utc_now()}
+        self._save_execution(self._after_phase(execution.execution_id, phase_id, outcome))
+        return outcome
+
+    def _execute_handler(
+        self,
+        running: Execution,
+        phase: PhaseExecution,
+        handler: Callable[[Execution, PhaseExecution], PhaseOutcome],
+    ) -> PhaseOutcome:
+        """Run the phase's work under the policies of the phase. A command the policies refuse
+        before it starts (a provider command no grant allows under
+        ``governance.phaseCapabilities``, #87; a destructive command under
+        ``destructiveActionsDefault: deny``, #76) blocks the phase with the finding the refusal
+        recorded; any other exception is an ``ERROR``."""
+        execution_id = running.execution_id
+        try:
+            if self.is_cancelled(execution_id):
+                return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
+            with (
+                phase_scope(self._phase_policy(running, phase)),
+                destructive_scope(self._destructive_policy(running)),
+            ):
+                return handler(running, phase)
+        except (KeyboardInterrupt, SystemExit) as interruption:
+            # The harness itself is stopping (Ctrl-C, or SIGTERM under the workspace lease):
+            # record the phase as interrupted so that a later run continue recovers it.
+            if self._leases_workspace():
+                self._mark_interrupted(
+                    execution_id,
+                    phase,
+                    f"The harness was interrupted ({type(interruption).__name__})",
                 )
-            else:
-                transition = self.state_machine.advance(phase_id, ResultStatus.PASSED)
-                updated = latest.model_copy(
-                    update={
-                        "status": ResultStatus.PENDING,
-                        "current_phase": self._next_phase(phase_id, transition.target),
-                        "updated_at": utc_now(),
-                    }
-                )
-        else:
-            updated = latest.model_copy(
+            raise
+        except (CommandRefused, DestructiveActionDenied) as refusal:
+            return PhaseOutcome(ResultStatus.BLOCKED, f"{type(refusal).__name__}: {refusal}")
+        except Exception as error:
+            self.s.events.append(
+                execution_id,
+                "phase.error",
+                {
+                    "phaseId": phase.phase_id,
+                    "errorType": type(error).__name__,
+                    "message": str(error),
+                },
+                phase_execution_id=phase.phase_execution_id,
+            )
+            return PhaseOutcome(ResultStatus.ERROR, f"{type(error).__name__}: {error}")
+
+    def _after_phase(
+        self, execution_id: str, phase_id: PhaseId, outcome: PhaseOutcome
+    ) -> Execution:
+        """The run after a phase attempt: the next phase when it passed, otherwise the
+        attempt's status (with the reason of an error or a cancellation)."""
+        latest = self.get_execution(execution_id)
+        if outcome.status is not ResultStatus.PASSED:
+            stopped = outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED}
+            return latest.model_copy(
                 update={
                     "status": outcome.status,
-                    "terminal_reason": outcome.summary
-                    if outcome.status in {ResultStatus.ERROR, ResultStatus.CANCELLED}
-                    else None,
+                    "terminal_reason": outcome.summary if stopped else None,
                     "updated_at": utc_now(),
                 }
             )
-        self._save_execution(updated)
-        return outcome
+        if phase_id is PhaseId.CLOSURE:
+            return latest.model_copy(
+                update={"status": ResultStatus.PASSED, "updated_at": utc_now()}
+            )
+        transition = self.state_machine.advance(phase_id, ResultStatus.PASSED)
+        return latest.model_copy(
+            update={
+                "status": ResultStatus.PENDING,
+                "current_phase": self._next_phase(phase_id, transition.target),
+                # A run that moves on has no reason to have stopped (#77): the reason of an
+                # earlier stop it was resumed from does not stay on it.
+                "terminal_reason": None,
+                "updated_at": utc_now(),
+            }
+        )
 
     def _phase_intent(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         task = self.run_task(execution)
@@ -1017,25 +996,15 @@ class RunEngine:
             # friction.fastLane (#58): the lane of the run, recorded with its reasons.
             self.friction.classify(execution, phase, task)
         if self.results.active and policy != "off":
-            # Agent review of ambiguity and completeness, and the check of earlier answers
-            # (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps
-            # the deterministic intake only.
-            review = self.results.intent.questions(
-                execution,
-                phase,
-                task,
-                questions,
-                agent=not (
-                    self.friction.active
-                    and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
-                ),
-            )
+            review = self._intent_review(execution, phase, task, questions)
             review_refs = review.evidence_refs
             if review.blocked is not None:
                 return PhaseOutcome(
                     ResultStatus.BLOCKED, review.blocked, (evidence.artifact_ref, *review_refs)
                 )
             questions = questions + review.questions
+            # #79: an exhausted review records its open points as assumptions of a revision.
+            task = review.revised or task
         contract: dict[str, Any] | None = None
         ladder_block: str | None = None
         if self.ladder.active:
@@ -1045,21 +1014,65 @@ class RunEngine:
             questions = questions + intake.questions
             contract = intake.contract
             ladder_block = intake.blocked
-            if ladder_block is not None and contract is None:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
-                )
-        if not questions and ladder_block is None:
-            if self.results.active:
-                # architecture.mode: agent (#56): options for a new project, chosen by a person.
-                advised = self.results.architecture.advise(execution, phase, task)
-                if advised is not None:
-                    return advised
+        if ladder_block is not None and contract is None:
             return PhaseOutcome(
-                ResultStatus.PASSED,
-                "Intent is structured and identifiable",
-                (evidence.artifact_ref, *review_refs),
+                ResultStatus.BLOCKED, ladder_block, (evidence.artifact_ref, *review_refs)
             )
+        if not questions and ladder_block is None:
+            return self._intent_identified(
+                execution, phase, task, (evidence.artifact_ref, *review_refs)
+            )
+        return self._intent_clarification(
+            execution,
+            phase,
+            task,
+            questions,
+            policy,
+            contract=contract,
+            ladder_block=ladder_block,
+            evidence=evidence,
+        )
+
+    def _intent_review(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        questions: tuple[ClarificationQuestion, ...],
+    ) -> IntentReviewOutcome:
+        """Agent review of ambiguity and completeness, and the check of earlier answers
+        (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps the
+        deterministic intake only."""
+        skip = self.friction.active and self.friction.skips(
+            execution, "ambiguityReview", PhaseId.INTENT
+        )
+        return self.results.intent.questions(execution, phase, task, questions, agent=not skip)
+
+    def _intent_identified(
+        self, execution: Execution, phase: PhaseExecution, task: Task, refs: tuple[str, ...]
+    ) -> PhaseOutcome:
+        """INTENT with nothing to clarify; under architecture.mode: agent (#56) a new project
+        first gets architecture options a person chooses from."""
+        if self.results.active:
+            advised = self.results.architecture.advise(execution, phase, task)
+            if advised is not None:
+                return advised
+        return PhaseOutcome(ResultStatus.PASSED, "Intent is structured and identifiable", refs)
+
+    def _intent_clarification(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        questions: tuple[ClarificationQuestion, ...],
+        policy: str,
+        *,
+        contract: dict[str, Any] | None,
+        ladder_block: str | None,
+        evidence: Evidence,
+    ) -> PhaseOutcome:
+        """INTENT with questions or a ladder block: the clarification request, and a block
+        under ``enforce`` (or the ladder's), otherwise the questions as warnings."""
         request_evidence = self._request_clarification(
             execution,
             phase,
@@ -1068,17 +1081,14 @@ class RunEngine:
             "enforce" if policy == "enforce" or ladder_block else "warn",
             contract=contract,
         )
+        refs = (evidence.artifact_ref, request_evidence.artifact_ref)
         if ladder_block is not None and not (questions and policy == "enforce"):
-            return PhaseOutcome(
-                ResultStatus.BLOCKED,
-                ladder_block,
-                (evidence.artifact_ref, request_evidence.artifact_ref),
-            )
+            return PhaseOutcome(ResultStatus.BLOCKED, ladder_block, refs)
         if policy == "enforce":
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
                 f"Intent needs clarification: {len(questions)} question(s)",
-                (evidence.artifact_ref, request_evidence.artifact_ref),
+                refs,
             )
         for question in questions:
             self._record_clarification_finding(execution, question, request_evidence)
@@ -1086,7 +1096,7 @@ class RunEngine:
             ResultStatus.PASSED,
             f"Intent is structured and identifiable; {len(questions)} clarification "
             "question(s) recorded as warnings",
-            (evidence.artifact_ref, request_evidence.artifact_ref),
+            refs,
         )
 
     def _request_clarification(
@@ -1456,7 +1466,7 @@ class RunEngine:
                     self._record_denied_writes(execution, result.tool_invocations)
                 self._record_provider_retry(execution, phase, result, cause, retries)
                 if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                    return PhaseOutcome(ResultStatus.CANCELLED, "Cancellation requested")
+                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
         finally:
             if guard is not None and guard_before is not None:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
@@ -1518,7 +1528,10 @@ class RunEngine:
             # Embedded mode (#56): the agent session that drives the harness implements.
             def changed() -> list[str]:
                 diff = self._compute_owned_diff(execution)
-                return [item.path for item in diff.changes]
+                # The frozen acceptance tests the harness wrote are not the session's edits
+                # (#81): a session that changed nothing else has not implemented anything.
+                harness_written = self.results.acceptance.untouched(execution)
+                return [item.path for item in diff.changes if item.path not in harness_written]
 
             actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.session", version="1")
             return SessionAgentProvider(changed), actor, sandbox, sandbox_refs
@@ -1595,15 +1608,36 @@ class RunEngine:
         definition = next(
             (item for item in resolved.workflow.phases if item.phase_id is phase.phase_id), None
         )
+        # Each configured provider's actor (agent.ID) may start its own command, and only when
+        # the run's process.execute grants allow it (#87).
         launch = {
-            f"agent.{provider_id}": (" ".join(config.effective_command),)
+            f"agent.{provider_id}": tuple(config.effective_command)
             for provider_id, config in resolved.project.agent_providers.items()
             if config.effective_command
         }
+
+        def refused(actor: Actor, argv: Sequence[str]) -> None:
+            self.results.record_finding(
+                execution,
+                validator_id="harness.capabilities",
+                rule_id="capabilities.command-denied",
+                category="security",
+                severity=FindingSeverity.HIGH,
+                message=(
+                    f"{actor.actor_id} tried to start a command no process.execute grant allows "
+                    f"in {phase.phase_id.value}: {' '.join(argv)[:200]}"
+                ),
+                recommendation=(
+                    "Grant the command with capabilities.extend (process.execute) in "
+                    "project.yaml if it is intended (governance.phaseCapabilities)."
+                ),
+            )
+
         policy = PhasePolicy(
             phase=phase.phase_id.value,
             allowed=frozenset(definition.allowed_capabilities if definition else ()),
             launch=launch,
+            on_refused=refused,
         )
         provider = self.s.state.get_flag(f"provider:{execution.execution_id}")
         description = policy.describe(
@@ -2483,51 +2517,18 @@ class RunEngine:
             self.friction.profile(execution, change_set)
         outputs: list[Any]
         if self.friction.active and self.friction.fast_verification_applies(execution):
-            # fastLane.verification (#58): affected tests first, side by side, reused by digest.
-            outputs = self.friction.run_validators(
-                execution,
-                change_set,
-                list(self.s.resolved.effective_validators),
-                lambda definition: partial(
-                    self.validators.create(definition.validator_id).execute,
-                    self._validation_context(execution, change_set, definition),
-                ),
-                lambda output: self._save_validator_output(execution, output),
-            )
-            from governed_harness.orchestration.friction import AFFECTED_TESTS_ID
-
-            if (
-                outputs
-                and outputs[-1].result.validator_id == AFFECTED_TESTS_ID
-                and outputs[-1].result.status is not ResultStatus.PASSED
-            ):
-                return PhaseOutcome(
-                    outputs[-1].result.status,
-                    "The affected tests did not pass; the full suite runs on the next attempt",
-                    outputs[-1].result.evidence_refs,
-                )
+            outputs = self._fast_validators(execution, change_set)
+            stopped = _affected_tests_failed(outputs)
+            if stopped is not None:
+                return stopped
         else:
             outputs = list(self._run_profile_validators(execution, change_set))
         coverage = self._coverage_minimum()
         if coverage is not None:
             outputs.append(self._verify_coverage(execution, change_set, coverage))
-        policy = self.s.resolved.project.requirement_traceability
-        exempt = (
-            self.friction.tests_exempt(execution, change_set, "requirement traceability")
-            if self.friction.active and policy != "off"
-            else None
-        )
-        if exempt is not None:
-            # friction.changeTypes (#58): a documentation or configuration change.
-            skipped = self.friction.not_applicable(
-                execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
-            )
-            self._save_validator_output(execution, skipped)
-            outputs.append(skipped)
-        elif policy != "off":
-            outputs.append(
-                self._verify_requirement_traceability(execution, phase, change_set, policy)
-            )
+        traceability = self._traceability_output(execution, phase, change_set)
+        if traceability is not None:
+            outputs.append(traceability)
         if self.results.active:
             # Deterministic checks of the agent-results settings, then the comparison of
             # failing validators with the baseline (verification.differential, #7).
@@ -2535,7 +2536,7 @@ class RunEngine:
             outputs = self.results.after_verification(execution, phase, change_set, outputs)
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
-            outputs.extend(self.ladder.verification(execution, phase, change_set, outputs))
+            outputs.extend(self.ladder.verification(execution, change_set, outputs))
         mandatory_non_passed = [
             output.result
             for output in outputs
@@ -2550,6 +2551,41 @@ class RunEngine:
                 evidence,
             )
         return PhaseOutcome(ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence)
+
+    def _fast_validators(self, execution: Execution, change_set: ChangeSet) -> list[Any]:
+        """fastLane.verification (#58): affected tests first, side by side, reused by digest."""
+        return self.friction.run_validators(
+            execution,
+            change_set,
+            list(self.s.resolved.effective_validators),
+            lambda definition: partial(
+                self.validators.create(definition.validator_id).execute,
+                self._validation_context(execution, change_set, definition),
+            ),
+            lambda output: self._save_validator_output(execution, output),
+        )
+
+    def _traceability_output(
+        self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
+    ) -> ValidatorOutput | None:
+        """The requirement traceability of the ChangeSet, unless the policy is off; under
+        friction.changeTypes (#58) a documentation or configuration change records it as not
+        applicable."""
+        policy = self.s.resolved.project.requirement_traceability
+        if policy == "off":
+            return None
+        exempt = (
+            self.friction.tests_exempt(execution, change_set, "requirement traceability")
+            if self.friction.active
+            else None
+        )
+        if exempt is None:
+            return self._verify_requirement_traceability(execution, phase, change_set, policy)
+        skipped = self.friction.not_applicable(
+            execution, change_set, TRACEABILITY_VALIDATOR_ID, exempt
+        )
+        self._save_validator_output(execution, skipped)
+        return skipped
 
     def _verify_requirement_traceability(
         self,
@@ -2739,6 +2775,76 @@ class RunEngine:
             ResultStatus.BLOCKED,
             f"Human decision required for gate {gate.gate_evaluation_id} and digest {change_set.digest}",
             (f"record://gate/{gate.gate_evaluation_id}",),
+        )
+
+    def _reverify_after_change(self, execution: Execution) -> bool:
+        """Under ``verification.reverifyOnChange`` (#78): a run in DECISION whose ChangeSet
+        changed outside the run (an edit after its gate was evaluated) goes back to
+        VERIFICATION on the new ChangeSet instead of evaluating a gate that has no validation
+        of it (INCONCLUSIVE). The change is recorded as evidence first: both digests, the
+        paths that differ and the new diff. Without the key the run stays in DECISION as
+        before. Returns whether the run was sent back."""
+        verification = self.s.resolved.project.verification
+        if verification is None or not verification.reverify_on_change:
+            return False
+        previous = execution.change_set_digest
+        if not previous:
+            return False
+        change_set = self._refresh_changeset(execution)
+        if change_set.digest == previous:
+            return False
+        latest = self.get_execution(execution.execution_id)
+        self.provenance.attribute(latest, change_set, PhaseId.DECISION)
+        paths = self._paths_between(execution.execution_id, previous, change_set)
+        ref = self.results.record_json(
+            latest,
+            PhaseId.DECISION,
+            {
+                "previousDigest": previous,
+                "currentDigest": change_set.digest,
+                "paths": paths,
+                "diffRef": change_set.diff_ref,
+            },
+            kind="out-of-band-change",
+            evidence_kind=EvidenceKind.CHANGESET,
+            summary=f"ChangeSet changed outside the run: {len(paths)} path(s)",
+            supports=(change_set.change_set_id,),
+        )
+        transition = self.state_machine.authorize_reverification(PhaseId.DECISION)
+        self._save_execution(
+            latest.model_copy(
+                update={
+                    "status": ResultStatus.PENDING,
+                    "current_phase": transition.target,
+                    "gate_evaluation_id": None,
+                    "human_decision_id": None,
+                    "terminal_reason": None,
+                    "updated_at": utc_now(),
+                }
+            )
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "verification.reverify.authorized",
+            {
+                "previousDigest": previous,
+                "currentDigest": change_set.digest,
+                "paths": paths,
+                "evidenceRef": ref,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+            },
+        )
+        return True
+
+    def _paths_between(self, execution_id: str, previous: str, change_set: ChangeSet) -> list[str]:
+        """The paths whose content differs between the run's ChangeSet ``previous`` and
+        ``change_set``."""
+        records = self.s.state.list("change_set", ChangeSet, execution_id=execution_id)
+        earlier = next((item for item in records if item.digest == previous), None)
+        before = {item.path: item.after_digest for item in (earlier.files if earlier else ())}
+        after = {item.path: item.after_digest for item in change_set.files}
+        return sorted(
+            path for path in before.keys() | after.keys() if before.get(path) != after.get(path)
         )
 
     def _phase_closure(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
@@ -2937,20 +3043,7 @@ class RunEngine:
         limit = runtime.correction_limit
         failed_ids = [item.validator_id for item in failing]
         if used >= limit:
-            if limit > 0:
-                self.s.events.append(
-                    execution.execution_id,
-                    "correction.exhausted",
-                    {
-                        "trigger": "VERIFICATION_FAILED",
-                        "cycles": used,
-                        "maxCycles": limit,
-                        "failedValidators": failed_ids,
-                        "changeSetDigest": execution.change_set_digest,
-                    },
-                )
-            # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
-            return self.results.active and self.results.replan_after_failure(execution)
+            return self._corrections_exhausted(execution, used, limit, failed_ids, validations)
         feedback_ref: str | None = None
         if self._feedback_applies(execution.execution_id):
             findings = [
@@ -3003,6 +3096,61 @@ class RunEngine:
             # agentRouting (#44): a quality failure climbs the escalation ladder.
             self.results.escalate(execution, "VERIFICATION_FAILED")
         return True
+
+    def _corrections_exhausted(
+        self,
+        execution: Execution,
+        used: int,
+        limit: int,
+        failed_ids: list[str],
+        validations: list[ValidationResult],
+    ) -> bool:
+        """The correction budget is spent: the run returns to PLANNING when adaptive
+        granularity splits a coarse attempt (#39, #77) and stops otherwise. Returns whether
+        the run goes on."""
+        if limit > 0:
+            self.s.events.append(
+                execution.execution_id,
+                "correction.exhausted",
+                {
+                    "trigger": "VERIFICATION_FAILED",
+                    "cycles": used,
+                    "maxCycles": limit,
+                    "failedValidators": failed_ids,
+                    "changeSetDigest": execution.change_set_digest,
+                },
+            )
+        # planning.granularity: adaptive (#39) decomposes a coarse attempt that failed.
+        if self.results.active and self.results.replan_after_failure(execution):
+            return True
+        if limit > 0:
+            self._stop_after_corrections(execution, used, failed_ids, validations)
+        return False
+
+    def _stop_after_corrections(
+        self,
+        execution: Execution,
+        used: int,
+        failed_ids: list[str],
+        validations: list[ValidationResult],
+    ) -> None:
+        """The run stops in VERIFICATION with the correction budget spent: the reason says so,
+        and says when the agent's last correction changed nothing (``agent.empty-correction``),
+        so a person sees why the run did not go on (#77)."""
+        reason = (
+            f"VERIFICATION still fails after {used} correction cycle(s) "
+            f"(runtime.verificationCorrections): {', '.join(failed_ids)}"
+        )
+        finding_ids = {item for validation in validations for item in validation.finding_ids}
+        if any(
+            item.rule_id == EMPTY_CORRECTION_RULE and item.finding_id in finding_ids
+            for item in self.s.state.list("finding", Finding, execution_id=execution.execution_id)
+        ):
+            reason += "; the agent's last correction changed nothing (agent.empty-correction)"
+        latest = self.get_execution(execution.execution_id)
+        self._save_execution(
+            latest.model_copy(update={"terminal_reason": reason, "updated_at": utc_now()})
+        )
 
     def _record_unsupported_claim(
         self, execution: Execution, failing: list[ValidationResult]
@@ -3635,7 +3783,7 @@ class RunEngine:
         updated = execution.model_copy(
             update={
                 "status": ResultStatus.CANCELLED,
-                "terminal_reason": "Cancellation requested",
+                "terminal_reason": CANCELLATION_REQUESTED,
                 "updated_at": utc_now(),
             }
         )
