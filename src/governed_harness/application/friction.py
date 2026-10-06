@@ -178,6 +178,8 @@ class BatchItem:
     decision: DecisionKind
     digest: str
     rationale: str | None = None
+    acknowledged_risks: tuple[str, ...] = ()
+    """Risk factors the person acknowledges with an APPROVE (``acknowledgeRisks``, #73)."""
 
 
 def parse_batch_item(value: str, decision: DecisionKind) -> BatchItem:
@@ -189,8 +191,9 @@ def parse_batch_item(value: str, decision: DecisionKind) -> BatchItem:
 
 
 def load_batch_file(raw: Any) -> list[BatchItem]:
-    """The decisions of a batch file: a list of ``run``, ``decision``, ``changeSetDigest`` and
-    optional ``rationale`` (or the same under a top-level ``decisions`` key)."""
+    """The decisions of a batch file: a list of ``run``, ``decision``, ``changeSetDigest``, an
+    optional ``rationale`` and optional ``acknowledgeRisks`` (or the same under a top-level
+    ``decisions`` key)."""
     if isinstance(raw, dict):
         raw = raw.get("decisions")
     if not isinstance(raw, list) or not raw:
@@ -208,8 +211,25 @@ def load_batch_file(raw: Any) -> list[BatchItem]:
         if not run or not digest.startswith("sha256:"):
             raise ConfigurationError(f"decision {index} needs run and changeSetDigest")
         rationale = entry.get("rationale")
-        items.append(BatchItem(run, decision, digest, str(rationale) if rationale else None))
+        items.append(
+            BatchItem(
+                run,
+                decision,
+                digest,
+                str(rationale) if rationale else None,
+                _risks(entry.get("acknowledgeRisks"), index),
+            )
+        )
     return items
+
+
+def _risks(value: Any, index: int) -> tuple[str, ...]:
+    """The ``acknowledgeRisks`` of a batch decision: a list of risk factor names."""
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ConfigurationError(f"decision {index}: acknowledgeRisks must be a list of names")
+    return tuple(value)
 
 
 def plan_state(services: EngineServices, execution_id: str) -> dict[str, Any] | None:

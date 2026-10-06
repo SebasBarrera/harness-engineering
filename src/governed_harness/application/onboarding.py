@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess  # nosec B404 - fixed git and interpreter argv, no shell
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.validators.command import _MODULE_MISSING_EXIT_CODE, _MODULE_PROBE
 
 GITIGNORE_ENTRY = ".harness/"
+GITIGNORE_FILE = ".gitignore"
 
 EXAMPLE_TASK_NAME = "task.example.yaml"
 
@@ -50,19 +52,114 @@ _OWNED = {
 }
 
 
-def ensure_gitignore(workspace: Path) -> str:
-    """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
-    path = workspace / ".gitignore"
+class IgnoreFile(StrEnum):
+    """Where ``harness init`` writes its ignore entry (#86)."""
+
+    EXCLUDE = "exclude"
+    """The repository's ``info/exclude``: local to the clone, so the tree stays clean."""
+    GITIGNORE = "gitignore"
+    """The workspace ``.gitignore`` (a tracked change)."""
+
+
+_HARNESS_ENTRIES = {".harness", ".harness/", "/.harness", "/.harness/", ".harness/*"}
+
+
+_IGNORE_FILE_NAMES = frozenset({GITIGNORE_FILE, "exclude"})
+
+
+def _contained(path: Path, root: Path) -> Path:
+    """The resolved ignore file, refused unless it is a known ignore file inside ``root`` (the
+    workspace for ``.gitignore``, the repository's Git directory for ``info/exclude``): the
+    location comes from the command line and from Git, so it is checked before it is written."""
+    resolved = path.resolve()
+    if resolved.name not in _IGNORE_FILE_NAMES or not resolved.is_relative_to(root.resolve()):
+        raise ValueError(f"Refusing to write an ignore file outside {root}: {path}")
+    return resolved
+
+
+def _add_entry(path: Path, root: Path) -> str:
+    """Add ``.harness/`` to an ignore file inside ``root``; returns added, present or created."""
+    path = _contained(path, root)
     if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{GITIGNORE_ENTRY}\n", encoding="utf-8")
         return "created"
     text = path.read_text(encoding="utf-8")
-    entries = {line.strip() for line in text.splitlines()}
-    if entries & {".harness", ".harness/", "/.harness", "/.harness/", ".harness/*"}:
+    if _has_entry(text):
         return "present"
-    separator = "" if not text or text.endswith("\n") else "\n"
-    path.write_text(f"{text}{separator}{GITIGNORE_ENTRY}\n", encoding="utf-8")
+    # Append the entry rather than rewrite the file: only the fixed entry is written.
+    addition = (
+        f"{GITIGNORE_ENTRY}\n" if not text or text.endswith("\n") else f"\n{GITIGNORE_ENTRY}\n"
+    )
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(addition)
     return "added"
+
+
+def ensure_gitignore(workspace: Path) -> str:
+    """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
+    return _add_entry(workspace / GITIGNORE_FILE, workspace)
+
+
+def _git_location(workspace: Path, *args: str) -> Path | None:
+    """A path Git reports for the workspace's repository, absolute (``None`` on failure)."""
+    result = _run(["git", "rev-parse", *args], workspace)
+    location = result.stdout.strip()
+    if result.returncode != 0 or not location:
+        return None
+    path = Path(location)
+    return path if path.is_absolute() else workspace / path
+
+
+def _exclude_path(workspace: Path) -> tuple[Path, Path] | None:
+    """The ``info/exclude`` file of the repository the workspace is in and the repository's
+    common Git directory that holds it (``None`` outside a Git repository or without Git); a
+    linked worktree shares its repository's file."""
+    if not shutil.which("git"):
+        return None
+    exclude = _git_location(workspace, "--git-path", "info/exclude")
+    common = _git_location(workspace, "--git-common-dir")
+    if exclude is None or common is None:
+        return None
+    return exclude, common
+
+
+def _shown(path: Path, workspace: Path) -> str:
+    try:
+        return path.resolve().relative_to(workspace.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def ensure_ignored(workspace: Path, target: IgnoreFile = IgnoreFile.EXCLUDE) -> dict[str, str]:
+    """Make Git ignore ``.harness/`` without dirtying an existing repository (#86).
+
+    ``exclude`` (the default) writes the entry to the repository's ``info/exclude``, which Git
+    reads like a ``.gitignore`` but which is not part of the tree, so the first run of a
+    brownfield repository finds no uncommitted change caused by ``init``; an entry already in
+    the ``.gitignore`` is left as it is. Outside a Git repository, or with ``gitignore``, the
+    entry goes to the workspace ``.gitignore`` as before. Returns the file, the entry and
+    whether it was added, present or created."""
+    gitignore = workspace / GITIGNORE_FILE
+    exclude = _exclude_path(workspace) if target is IgnoreFile.EXCLUDE else None
+    if exclude is None or _add_entry_present(gitignore):
+        status = _add_entry(gitignore, workspace)
+        return {"file": GITIGNORE_FILE, "entry": GITIGNORE_ENTRY, "status": status}
+    path, common = exclude
+    return {
+        "file": _shown(path, workspace),
+        "entry": GITIGNORE_ENTRY,
+        "status": _add_entry(path, common),
+    }
+
+
+def _add_entry_present(path: Path) -> bool:
+    """Whether an ignore file exists and already has the harness entry."""
+    return path.is_file() and _has_entry(path.read_text(encoding="utf-8"))
+
+
+def _has_entry(text: str) -> bool:
+    return bool({line.strip() for line in text.splitlines()} & _HARNESS_ENTRIES)
 
 
 def write_example_task(harness_dir: Path, technologies: list[str], *, force: bool) -> Path | None:
@@ -139,7 +236,8 @@ def repository_checks(workspace: Path) -> dict[str, Any]:
         else {
             "status": "WARNING",
             "message": ".harness/ is not ignored by Git",
-            "hint": "Add `.harness/` to .gitignore (`harness init` does it): it holds the state "
+            "hint": "Add `.harness/` to .git/info/exclude or .gitignore (`harness init` does "
+            "it): it holds the state "
             "database and artifacts with copies of your code.",
         }
     )

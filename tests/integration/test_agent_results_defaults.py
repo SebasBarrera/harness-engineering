@@ -42,11 +42,22 @@ TASK = (
 def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None:
     HarnessApplication().init(python_workspace, force=True)
     config = yaml.safe_load((python_workspace / ".harness" / "project.yaml").read_text())
-    assert config["intake"]["ambiguityReview"] == "agent"
+    # #79: the converging review, which records the open points as assumptions at its cap.
+    assert config["intake"]["ambiguityReview"] == {
+        "mode": "agent",
+        "maxRounds": 3,
+        "maxQuestions": 8,
+        "onExhausted": "assume",
+    }
     assert config["review"]["agentReview"] == "enforce"
     assert config["governance"]["stopTheLine"] == "restore"
     assert {"planning", "context", "budget", "memory", "agentRouting"} <= set(config)
+    # #85: the invoking model is the ceiling of the routing tables.
+    assert config["agentRouting"]["mode"] == "anchored"
+    # #80: a broken read-only answer gets a second attempt.
+    assert config["runtime"]["contractRetry"] == {"mode": "once"}
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
+    assert summary["contractRetry"] == {"mode": "once"}
     assert summary["agentReview"] == "enforce"
     assert summary["checks"]["differential"] is True
 

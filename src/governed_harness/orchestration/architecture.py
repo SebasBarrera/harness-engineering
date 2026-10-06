@@ -258,6 +258,7 @@ class ArchitectureFlow:
             {"mode": "advise", "styles": list(ARCHITECTURE_STYLES), "projectKind": kind.as_dict()},
             task=task,
             instruction_values={"mode": "advise", "styles": ", ".join(ARCHITECTURE_STYLES)},
+            validate=validate_options,
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -331,6 +332,7 @@ class ArchitectureFlow:
             {"mode": "survey", "layout": layout, "styles": list(ARCHITECTURE_STYLES)},
             task=task,
             instruction_values={"mode": "survey", "styles": ", ".join(ARCHITECTURE_STYLES)},
+            validate=validate_survey,
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(

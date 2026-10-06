@@ -286,7 +286,10 @@ def _init(value: Mapping[str, Any]) -> list[str]:
         f"{item['profileId']} ({item['confidence']:.2f})" for item in value.get("profiles", [])
     )
     lines.append(f"Detected profiles: {profiles or 'none'}")
-    if "gitignore" in value:
+    ignore = value.get("ignore")
+    if isinstance(ignore, Mapping):
+        lines.append(f"{ignore['file']}: {ignore['entry']} {ignore['status']}")
+    elif "gitignore" in value:
         lines.append(f".gitignore: .harness/ {value['gitignore']}")
     if value.get("exampleTask"):
         lines.append(f"Example task: {value['exampleTask']}")
@@ -314,6 +317,7 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
         )
     for item in brief["asked"]["constraints"]:
         lines.append(f"  constraint: {short(item, 100)}")
+    lines.extend(_assumption_lines(brief["asked"].get("assumptions")))
     changed = brief["changed"]
     totals = changed.get("totals") or {"files": 0, "additions": 0, "deletions": 0}
     lines.extend(
@@ -505,7 +509,17 @@ def _contract_lines(contract: Mapping[str, Any] | None) -> list[str]:
         value = item["value"]
         shown = ", ".join(map(str, value)) if isinstance(value, list) else _scalar(value)
         lines.append(f"  {label(item['field']):<20} {short(shown, 70)} ({item['source']})")
+    lines.extend(_assumption_lines(contract.get("assumptions")))
     return lines
+
+
+def _assumption_lines(assumptions: Any) -> list[str]:
+    """The points the agent review left open, recorded as assumptions (#79)."""
+    return [
+        f"  assumption {item.get('assumptionId')}: {short(str(item.get('question')), 90)}"
+        for item in assumptions or []
+        if isinstance(item, Mapping)
+    ]
 
 
 def _interruption_lines(interruptions: Mapping[str, Any] | None) -> list[str]:
@@ -541,31 +555,47 @@ def _exceptions(items: Sequence[Mapping[str, Any]]) -> list[str]:
     return table(rows, ["EXCEPTION", "STATUS", "EXPIRES", "BY", "SCOPES", "USED IN", "FOLLOW-UP"])
 
 
+def _decision_detail(item: Mapping[str, Any]) -> str:
+    detail = f"gate {item['gateStatus']}, {item['blockingFindings']} blocking finding(s)"
+    risks = item.get("acknowledgeRisks") or []
+    if risks:
+        detail += f", acknowledge risk(s): {', '.join(risks)}"
+    return detail
+
+
+def _deferred_detail(item: Mapping[str, Any]) -> str:
+    warning = f", {item['warning']}" if item.get("warning") else ""
+    return f"{item['itemId']} ({short(item['where'], 30)}) {item['status']}{warning}"
+
+
+_INBOX_DETAILS: dict[str, Callable[[Mapping[str, Any]], str]] = {
+    "decision": _decision_detail,
+    "deferred": _deferred_detail,
+    "preflight": lambda _item: "preflight UNAVAILABLE: continue uncertified or fix the environment",
+    "clarification": lambda item: f"{item['questions']} question(s)",
+}
+
+
+def _inbox_detail(item: Mapping[str, Any]) -> str:
+    """What the entry waits on; the waits before DECISION of #73 carry their own summary."""
+    detail = _INBOX_DETAILS.get(str(item["kind"]))
+    return detail(item) if detail else str(item.get("summary") or "")
+
+
 def _inbox(items: Sequence[Mapping[str, Any]]) -> list[str]:
     if not items:
         return ["Nothing waits for a person."]
-    rows = []
-    for item in items:
-        if item["kind"] == "decision":
-            detail = f"gate {item['gateStatus']}, {item['blockingFindings']} blocking finding(s)"
-        elif item["kind"] == "deferred":
-            detail = f"{item['itemId']} ({short(item['where'], 30)}) {item['status']}" + (
-                f", {item['warning']}" if item.get("warning") else ""
-            )
-        elif item["kind"] == "preflight":
-            detail = "preflight UNAVAILABLE: continue uncertified or fix the environment"
-        else:
-            detail = f"{item['questions']} question(s)"
-        rows.append(
-            [
-                str(item["kind"]),
-                str(item["executionId"]),
-                short(item["taskTitle"], 36),
-                detail,
-                f"{item['waitingHours']} h",
-                str(item["next"]),
-            ]
-        )
+    rows = [
+        [
+            str(item["kind"]),
+            str(item["executionId"]),
+            short(item["taskTitle"], 36),
+            _inbox_detail(item),
+            f"{item['waitingHours']} h",
+            str(item["next"]),
+        ]
+        for item in items
+    ]
     return table(rows, ["WAITS FOR", "RUN", "TASK", "STATE", "WAITING", "NEXT"])
 
 

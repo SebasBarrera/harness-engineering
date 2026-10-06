@@ -34,8 +34,13 @@ def routing_calibration(services: EngineServices) -> dict[str, Any]:
     rows: list[CalibrationRow] = []
     for execution in services.state.list("execution", Execution, project_id=project_id):
         approved = execution.status is ResultStatus.PASSED
+        # Since #85 every reviewer of the review panel records its decision; reviewers on the
+        # same model share the run's review invocations, so they count once.
+        reviewers: set[tuple[Any, ...]] = set()
         for event in services.events.list(execution.execution_id):
-            if event.event_type != "agent.routing.decided":
+            if event.event_type != "agent.routing.decided" or not _counted(
+                event.payload, reviewers
+            ):
                 continue
             payload = event.payload
             kind = str(payload.get("callKind"))
@@ -72,6 +77,18 @@ def routing_calibration(services: EngineServices) -> dict[str, Any]:
             "suggested tables need at least two approved runs per group and are not applied."
         ),
     }
+
+
+def _counted(payload: dict[str, Any], reviewers: set[tuple[Any, ...]]) -> bool:
+    """Whether a routing decision is a calibration row: a reviewer's decision counts once per
+    call kind, model and effort of the run (``reviewers`` collects them)."""
+    if "reviewer" not in payload:
+        return True
+    key = (payload.get("callKind"), payload.get("model"), payload.get("effort"))
+    if key in reviewers:
+        return False
+    reviewers.add(key)
+    return True
 
 
 def budget_state(services: EngineServices, execution_id: str) -> dict[str, Any]:
@@ -278,6 +295,13 @@ def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -
     }
 
 
+def _off_or_value(value: Any) -> Any:
+    """A setting as ``config validate`` shows it: ``off`` when absent, a section as JSON."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", by_alias=True)
+    return value if value is not None else "off"
+
+
 def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     """Effective agent-results settings for ``config validate``; ``off`` (or false) where a
     key is absent, which is the 1.0.0 behaviour."""
@@ -287,11 +311,10 @@ def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     runtime = project.runtime
     governance = project.governance_settings
 
-    def off(value: Any) -> Any:
-        return value if value is not None else "off"
-
+    off = _off_or_value
     return {
         "ambiguityReview": off(intake.ambiguity_review if intake else None),
+        "contractRetry": off(runtime.contract_retry),
         "validateAnswers": bool(intake and intake.validate_answers),
         "agentReview": off(review.agent_review if review else None),
         "structuredChanges": bool(review and review.structured_changes),

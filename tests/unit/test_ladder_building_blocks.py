@@ -125,6 +125,50 @@ def test_probe_evaluation_passes_and_fails() -> None:
     assert ("order", "amount=10") in failed
 
 
+def test_assertion_variants_narrow_every_kind() -> None:
+    # #74: an assertion meant for one variant is checked on that variant only.
+    item = probe(
+        assertions=[
+            {"kind": "exitCode", "equals": 2, "variants": ["amount=10"]},
+            {"kind": "exitCode", "equals": 0, "variants": ["amount=1000"]},
+            {"kind": "jsonPath", "path": "$.error", "present": True, "variants": ["amount=10"]},
+            {"kind": "jsonPath", "path": "$.total", "equals": 900, "variants": ["amount=1000"]},
+            {
+                "kind": "order",
+                "path": "$.items[*]",
+                "order": "ascending",
+                "variants": ["amount=1000"],
+            },
+            {"kind": "differs", "path": "$.total"},
+        ]
+    )
+    result = evaluate(
+        item,
+        [
+            run("amount=10", {"error": "below the minimum", "items": [3, 1]}, code=2),
+            run("amount=1000", {"total": 900, "items": [1, 3]}),
+        ],
+    )
+    assert result.passed
+    checked = [(entry.kind, entry.variant) for entry in result.results]
+    assert checked == [
+        ("exitCode", "amount=10"),
+        ("exitCode", "amount=1000"),
+        ("jsonPath", "amount=10"),
+        ("jsonPath", "amount=1000"),
+        ("order", "amount=1000"),
+        ("differs", None),
+    ]
+
+
+def test_assertion_naming_no_variant_fails() -> None:
+    item = probe(assertions=[{"kind": "exitCode", "equals": 0, "variants": ["amount=5"]}])
+    result = evaluate(item, [run("amount=10", {}), run("amount=1000", {})])
+    assert not result.passed
+    assert [entry.passed for entry in result.results] == [False]
+    assert "amount=5" in result.results[0].detail
+
+
 def test_probe_that_cannot_run_is_unavailable() -> None:
     item = probe()
     missing = evaluate(

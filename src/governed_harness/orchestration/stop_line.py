@@ -30,6 +30,7 @@ from governed_harness.domain.errors import PolicyViolationError
 from governed_harness.domain.models import ChangeSet, Execution
 from governed_harness.orchestration.workspace_ops import restore_changes
 from governed_harness.runtime.guard import IGNORED_PATTERNS
+from governed_harness.runtime.workspace import WorkspaceDiff
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
@@ -109,6 +110,18 @@ class StopLine:
         if isinstance(stopped, dict) and stopped.get("executionId") == execution.execution_id:
             self.results.s.state.set_flag(self._flag(execution.project_id), "")
 
+    def _kept(self, execution: Execution) -> set[str]:
+        """The frozen acceptance tests of a run that is still open stay in the workspace when
+        its changes are restored (#81): a person approved them and the harness wrote them, and
+        the next VERIFICATION of the run checks that they are unchanged. A closed, cancelled or
+        rejected run keeps nothing."""
+        from governed_harness.orchestration.engine import run_is_open
+
+        latest = self.results.engine.get_execution(execution.execution_id)
+        if not run_is_open(latest):
+            return set()
+        return self.results.acceptance.untouched(latest)
+
     def _record(self, execution: Execution, reason: str, *, restore: bool) -> dict[str, Any] | None:
         results = self.results
         diff = results.baseline_changes(execution)
@@ -125,8 +138,17 @@ class StopLine:
         )
         restored: list[str] = []
         unrestorable: list[str] = []
+        kept = self._kept(execution)
         if restore:
-            restored, unrestorable = restore_changes(workspace, contents, diff)
+            restored, unrestorable = restore_changes(
+                workspace,
+                contents,
+                WorkspaceDiff(
+                    changes=tuple(item for item in diff.changes if item.path not in kept),
+                    unified_diff=diff.unified_diff,
+                    digest=diff.digest,
+                ),
+            )
         record: dict[str, Any] = {
             "executionId": execution.execution_id,
             "reason": reason,
@@ -136,6 +158,8 @@ class StopLine:
             "restoredPaths": restored,
             "unrestorablePaths": unrestorable,
         }
+        if kept:
+            record["keptPaths"] = sorted(kept)
         ref = results.record_json(
             execution,
             execution.current_phase,

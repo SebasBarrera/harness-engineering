@@ -108,7 +108,25 @@ def declared_settings_report(
         warnings.append("policies.coverage.minimumPercent is applied to Python projects only")
     if resolved.project.retention:
         warnings.append("retention is applied only when harness gc --apply runs")
+    warnings.extend(ungranted_provider_warnings(resolved))
     return declarative, warnings
+
+
+def ungranted_provider_warnings(resolved: ResolvedConfiguration) -> list[str]:
+    """Under ``governance.phaseCapabilities`` (#87) a provider command that no ``process.execute``
+    grant allows is refused when the run starts it: one warning per such provider."""
+    from governed_harness.capabilities.phase import launch_granted
+
+    if not resolved.project.governance_settings.phase_capabilities:
+        return []
+    return [
+        f"agentProviders.{provider_id}.command {' '.join(config.effective_command)!r} is not "
+        "allowed by any process.execute grant: a run refuses to start it; add it to "
+        "capabilities.extend"
+        for provider_id, config in sorted(resolved.project.agent_providers.items())
+        if config.effective_command
+        and not launch_granted(config.effective_command, resolved.effective_capabilities)
+    ]
 
 
 def _project_or_profile_policies(resolved: ResolvedConfiguration) -> set[str]:

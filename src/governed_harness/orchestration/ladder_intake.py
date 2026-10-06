@@ -307,6 +307,7 @@ class LadderIntake:
             payload,
             task=task,
             instruction_values={"maxLocations": config.limit},
+            validate=lambda result: self._validated(result, config.limit),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return IntentResult(

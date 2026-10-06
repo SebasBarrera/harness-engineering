@@ -1,0 +1,141 @@
+{
+ "source": "evaluation/results-2.0.0/pilot/pilot.jsonl on test/evaluation-2-0-0-runner, cell harness-tiered (claude-haiku-4-5-20251001, brownfield, prompt full, rep 1): the agent questions (rule A1) of each clarification round the simulated product owner answered; targets reduced to task",
+ "rounds": [
+  [
+   {
+    "category": "ambiguity",
+    "target": "task",
+    "text": "¿«Caracteres de control» incluye '\\n', '\\r' y '\\t', que ya cuentan como whitespace? ¿Y los bytes no ASCII (>=0x80) pasados como bytes en lugar de str? ¿Y un '\\x00'?"
+   },
+   {
+    "category": "boundaries",
+    "target": "task",
+    "text": "¿Qué debe pasar con un '=' que no está en el final, como 'ab=c'? req_alphabet lo rechaza, pero ¿se rechaza siempre con BadData, o solo cuando lo que sigue al '=' no es otro '='?"
+   },
+   {
+    "category": "errors",
+    "target": "task",
+    "text": "Para un str con caracteres no ASCII, el encode con errors='ignore' ya no debe ocultarlos. ¿La excepción debe ser siempre BadData y nunca UnicodeEncodeError? ¿Qué tipos distintos de str/bytes (bytearray, memoryview, None) deben tolerarse?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "¿Se acepta padding incorrecto o redundante? Por ejemplo, 'YQ=' (con un '=' de menos), 'YQ===' (tres '='), 'YQ==' en cuya forma sin padding el largo es 1 mod 4, o '====' solo. La redacción 'como máximo dos '=' al final' no define si el número de '=' debe coincidir con el padding canónico. ¿Se rechazan los inputs con más de dos '='?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "Un input cuyo largo sin padding es 1 mod 4 (por ejemplo, 'A') es inválido en base64. ¿Debe seguir fallando con BadData, que es lo que hace hoy binascii.Error, o hay que validarlo de forma explícita?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "¿Qué se espera para el input vacío (b'' o '')? ¿Debe devolver b'' como ahora?"
+   },
+   {
+    "category": "non-functional",
+    "target": "task",
+    "text": "¿Hay requisitos de rendimiento, o de tiempo constante, para la validación del alfabeto? ¿Se prefiere una regex, un translate/set o base64.b64decode(validate=True)? Esto importa porque 'validate=True' no aplica directamente con el alfabeto URL-safe."
+   },
+   {
+    "category": "acceptance-evidence",
+    "target": "task",
+    "text": "¿Qué rutas concretas deben cubrir las pruebas de firmas: Signer.verify_signature/unsign, TimestampSigner (el timestamp con caracteres extra), URLSafeSerializer y URLSafeTimedSerializer (payload)? ¿Y qué excepción esperada en cada una (BadSignature, BadTimeSignature, BadPayload)?"
+   },
+   {
+    "category": "out-of-scope",
+    "target": "task",
+    "text": "¿Queda fuera del alcance cambiar base64_encode, el uso de _base64_alphabet en el Signer (validación del separador) y el compartimiento de '=' en ese alfabeto? ¿Se debe actualizar la documentación o el CHANGES?"
+   },
+   {
+    "category": "consistency",
+    "target": "task",
+    "text": "Hoy TimestampSigner.unsign ignora con 'except Exception: pass' los fallos de base64_decode del timestamp, y verify_signature devuelve False. ¿Es aceptable que esos llamadores conserven ese comportamiento con el decoder estricto, o se espera que cambien (por ejemplo, que un timestamp mal codificado dé BadTimeSignature)?"
+   }
+  ],
+  [
+   {
+    "category": "ambiguity",
+    "target": "task",
+    "text": "Q-10 dice que verify_signature debe tratar los fallos de decodificación estricta como rechazo de la firma. En `signer.py:230` el decode ya está dentro de un try que devuelve False. ¿Hay que cambiar algo ahí, o basta con asegurar que BadData (y no solo binascii.Error) se capture? Además, `unsign` lanza BadSignature cuando verify_signature devuelve False, así que no queda claro qué se espera que cambie en verify_signature."
+   },
+   {
+    "category": "ambiguity",
+    "target": "task",
+    "text": "Rechazar None y otros tipos: ¿qué excepción se lanza, BadData o TypeError? Q-3 dice que los tipos no soportados se rechazan, pero no dice cuál es la excepción. Hoy `want_bytes` lanza un error de otro tipo. ¿Se aceptan memoryview, o solo str, bytes y bytearray como dice el requisito?"
+   },
+   {
+    "category": "contradiction",
+    "target": "task",
+    "text": "Q-10 dice que TimestampSigner.unsign debe propagar el fallo como BadTimeSignature y no capturarlo en silencio. Hoy `timed.py` hace `except Exception: pass` alrededor de `base64_decode(ts_bytes)`, y con firma válida y timestamp None ya lanza `BadTimeSignature('Malformed timestamp')`. Con firma inválida, el `sig_error` se convierte en BadTimeSignature con `date_signed=None`. ¿Hay que quitar el `except Exception` y propagar BadData tal cual, o hay que capturar solo BadData y mantener esos mensajes y `payload`? ¿Qué mensaje y qué atributos (payload, date_signed) debe tener la BadTimeSignature cuando el timestamp tiene base64 inválido?"
+   },
+   {
+    "category": "boundaries",
+    "target": "task",
+    "text": "El constraint de alcance dice 'Do update CHANGES' dentro de la lista 'Out of scope', lo que se contradice con req_b00e1a69 (actualizar CHANGES). ¿Se actualiza CHANGES.rst? Si es así, ¿en la sección de la versión en desarrollo, y con qué entrada? ¿Hay que actualizar también `docs/` o el docstring de base64_decode?"
+   },
+   {
+    "category": "errors",
+    "target": "task",
+    "text": "Cuando un input incumple varias reglas a la vez (por ejemplo, un tipo inválido con caracteres no ASCII), ¿hay un orden de precedencia obligatorio? ¿Debe el mensaje de BadData distinguir la causa (alfabeto, padding, longitud)? ¿Se debe conservar el `original_error` de binascii.Error cuando exista?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "Q-4 pide validación de padding canónico y exige rechazar 'YQ=', pero req_padding dice que 'at most two trailing =' se siguen aceptando. ¿'YQ=' (padding de menos) se rechaza o se acepta? ¿Se rechaza 'YQ==' cuando el padding no es el canónico para la longitud, por ejemplo 'YWI==' o 'YWJj=='? ¿Debe seguir aceptándose el input sin padding?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "¿Los bits sobrantes no cero de un último carácter no canónico (por ejemplo 'YR' frente a 'YQ') deben rechazarse o seguir aceptándose? Es un caso de maleabilidad de la firma del mismo tipo que el problema original."
+   },
+   {
+    "category": "consistency",
+    "target": "task",
+    "text": "El hint de ac_signatures espera BadPayload para URLSafeSerializer, pero la firma se verifica antes de decodificar el payload. Una firma alterada con un carácter extra debería dar BadSignature, no BadPayload. ¿BadPayload se espera solo cuando el payload mismo tiene base64 inválido y la firma es válida? ¿Qué caso exacto de prueba corresponde a cada excepción?"
+   }
+  ],
+  [
+   {
+    "category": "ambiguity",
+    "target": "task",
+    "text": "Según Q-6, el input sin padding, con 1 '=' y con 2 '=' se acepta, sin comprobar que el padding sea el canónico. ¿Se aceptan entonces 'YQ=' (padding de menos), 'YWI==' (padding de más) y 'YWJj=' o 'YWJj==' (input ya completo con padding sobrante)? ¿O la longitud total con padding debe ser múltiplo de 4? Q-4 original pedía rechazar 'YQ=', y la respuesta Q-6 lo contradice."
+   },
+   {
+    "category": "ambiguity",
+    "target": "task",
+    "text": "Q-3 dice que un timestamp con base64 inválido en TimestampSigner.unsign debe dar BadTimeSignature con un mensaje de \"signature rejection\", no \"Malformed timestamp\". Pero la rama actual de timestamp None ya lanza 'Malformed timestamp'. ¿Se mantiene ese mensaje en esa rama? ¿Cuál es el texto exacto para el timestamp inválido? ¿Y qué valor tiene date_signed cuando la firma es válida pero el timestamp no decodifica?"
+   },
+   {
+    "category": "contradiction",
+    "target": "task",
+    "text": "La constraint dice \"Out of scope: Do update CHANGES\", pero req_b00e1a69 y ac_232707095f064e8199f754223365c777 exigen actualizar CHANGES.rst. La aclaración Q-4 lo resuelve a favor de actualizarlo. ¿Se confirma que la constraint es un error de redacción (debía decir \"Do not\") y que CHANGES.rst sí está dentro del alcance?"
+   },
+   {
+    "category": "boundaries",
+    "target": "task",
+    "text": "Los tipos no soportados lanzan BadData, pero otros llamadores internos (por ejemplo want_bytes en Serializer.load_payload o en url_safe, que pasan por base64_decode) hoy pueden lanzar TypeError. ¿Se debe mantener la conversión a BadPayload o BadSignature en esos llamadores? ¿Un str con caracteres no ASCII debe lanzar BadData en lugar de UnicodeEncodeError?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "¿Cómo se tratan estos inputs: vacío (b'' y ''), solo '=' ('=', '==', '==='), un solo carácter válido ('A' o 'A=', que es ≡1 mod 4) y '=' en medio ('YQ==YQ')? ¿Cuáles devuelven bytes y cuáles lanzan BadData? ¿La regla de longitud ≡1 mod 4 se calcula sobre la longitud sin los '=' finales?"
+   },
+   {
+    "category": "edge-cases",
+    "target": "task",
+    "text": "En URLSafeSerializer, el prefijo '.' de compresión zlib se quita antes de decodificar. ¿Debe la validación estricta aplicarse solo al resto del payload, sin considerar el '.' como carácter inválido? ¿Y qué excepción final se espera si el payload comprimido tiene caracteres inválidos: BadPayload con original_error=BadData?"
+   },
+   {
+    "category": "acceptance-evidence",
+    "target": "task",
+    "text": "El timestamp va dentro del valor firmado, así que probar BadTimeSignature por timestamp inválido con firma válida exige firmar a mano un valor con un timestamp mal codificado. ¿Es aceptable construir ese caso con Signer.sign sobre un valor armado a mano, o se espera otro mecanismo? ¿Qué debe probarse con firma inválida y timestamp inválido a la vez, y cuál tiene precedencia?"
+   },
+   {
+    "category": "consistency",
+    "target": "task",
+    "text": "El verification_hint de ac_signatures dice que una firma con base64 inválido debe dar BadSignature, BadTimeSignature y BadPayload \"respectively\" para Signer, TimestampSigner y URLSafeSerializer/URLSafeTimedSerializer. La aclaración Q-8 dice que BadPayload solo aparece con el payload alterado y la firma válida. ¿Qué excepción exacta se espera de URLSafeSerializer.loads y de URLSafeTimedSerializer.loads cuando se altera la firma con un carácter fuera del alfabeto? Entiendo que serían BadSignature y BadTimeSignature, no BadPayload. ¿Es así? ¿Se debe corregir el hint?"
+   }
+  ]
+ ]
+}

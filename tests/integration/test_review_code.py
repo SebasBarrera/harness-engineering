@@ -205,6 +205,17 @@ def test_cache_hit_skips_the_reviewers(workspace: Path) -> None:
     assert second["cache"]["global"] == "hit"
     assert second["digest"] == first["digest"]
     assert second["tokens"]["total"] == 0
+    # #75: no reviewer was called, so the review reports no model call; the cached review's
+    # numbers stay apart.
+    assert first["tokens"]["modelCalls"] > 0
+    assert second["tokens"]["modelCalls"] == 0
+    assert second["tokens"]["cachedFrom"] == {
+        "total": first["tokens"]["total"],
+        "modelCalls": first["tokens"]["modelCalls"],
+    }
+    answered = [item for item in second["reviewers"] if item["status"] != "SKIPPED"]
+    assert answered
+    assert {item["cache"] for item in answered} == {"hit"}
     hook_like = application.review_code(workspace, provider="finder", mode="manual", skip=())
     assert hook_like["cache"]["global"] == "hit"
 

@@ -143,7 +143,9 @@ from .ladder import (
 from .notifications import inbox, notify, notify_transition
 from .onboarding import (
     EXAMPLE_TASK_NAME,
-    ensure_gitignore,
+    GITIGNORE_FILE,
+    IgnoreFile,
+    ensure_ignored,
     git_identity,
     provider_checks,
     repository_checks,
@@ -154,6 +156,7 @@ from .onboarding import (
 from .review import build_brief
 from .review_code import ReviewCodeCommands
 from .task_loader import load_task_file
+from .waits import waiting_entries
 
 
 def _dumped(model: Any) -> dict[str, Any] | None:
@@ -255,11 +258,15 @@ class HarnessApplication(ReviewCodeCommands):
         gitignore: bool = False,
         example_task: bool = False,
         agent_skills: bool = False,
+        ignore_file: IgnoreFile = IgnoreFile.EXCLUDE,
     ) -> dict[str, Any]:
-        """Write .harness/project.yaml. The CLI also asks for the .gitignore entry and the
-        example task (``gitignore``/``example_task``); the Python API leaves the workspace
-        untouched beyond .harness/ unless asked. ``agent_skills`` (#56) also writes the skill
-        of the governed flow for Claude Code and Codex."""
+        """Write .harness/project.yaml. The CLI also asks for the ignore entry and the example
+        task (``gitignore``/``example_task``); the Python API leaves the workspace untouched
+        beyond .harness/ unless asked. The entry goes to the repository's ``info/exclude``
+        (``ignore_file``, #86: the tree of an existing repository stays clean), or to the
+        ``.gitignore`` outside a Git repository or with ``IgnoreFile.GITIGNORE``.
+        ``agent_skills`` (#56) also writes the skill of the governed flow for Claude Code and
+        Codex."""
         config = initialize_project(path, force=force)
         workspace = config.parent.parent
         skills: list[dict[str, str]] | None = None
@@ -276,7 +283,10 @@ class HarnessApplication(ReviewCodeCommands):
             ],
         }
         if gitignore:
-            result["gitignore"] = ensure_gitignore(workspace)
+            ignore = ensure_ignored(workspace, ignore_file)
+            result["ignore"] = ignore
+            if ignore["file"] == GITIGNORE_FILE:
+                result["gitignore"] = ignore["status"]
         if skills is not None:
             result["agentSkills"] = skills
         example: Path | None = None
@@ -1157,6 +1167,7 @@ class HarnessApplication(ReviewCodeCommands):
                     actor_id=actor_id,
                     rationale=reason,
                     continue_after=continue_after,
+                    acknowledged_risks=item.acknowledged_risks,
                 )
             except HarnessError as error:
                 results.append(
@@ -1209,9 +1220,10 @@ class HarnessApplication(ReviewCodeCommands):
     def inbox(self, path: Path) -> list[dict[str, Any]]:
         """Runs of the project waiting for a person (decision or clarification answers) and,
         since #55, deferred verifications waiting for evidence and preflights waiting for a
-        decision."""
+        decision; since #73 every other wait before DECISION (plan approval, decomposition,
+        acceptance tests, architecture, operational contract)."""
         with self._services(path) as services:
-            entries = inbox(services) + inbox_entries(services)
+            entries = inbox(services) + inbox_entries(services) + waiting_entries(services)
             return sorted(entries, key=lambda item: item["waitingSince"])
 
     def decide_gate(

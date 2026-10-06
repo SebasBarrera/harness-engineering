@@ -222,3 +222,41 @@ def test_reviewer_without_a_valid_answer_blocks(python_workspace: Path, tmp_path
         item.event_type == "correction.authorized"
         for item in events(application, python_workspace, run)
     )
+
+
+def test_every_reviewer_records_its_routing_decision(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#85: each reviewer call records agent.routing.decided, capped at the invoking model."""
+    log = configure(python_workspace, tmp_path, "clean")
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["agentProviders"]["fixture_agent"]["model"] = "claude-sonnet-5-5"
+    config["agentRouting"] = {"mode": "anchored", "families": {"fixture_agent": "claude-code"}}
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, run = start(python_workspace, tmp_path)
+    reviewed = sorted(item["reviewer"]["id"] for item in requests(log, "review"))
+    decided = [
+        item.payload
+        for item in events(application, python_workspace, run)
+        if item.event_type == "agent.routing.decided" and "reviewer" in item.payload
+    ]
+    assert sorted(item["reviewer"] for item in decided) == reviewed
+    assert {item["model"] for item in decided} == {"claude-sonnet-5-5"}
+    assert {item["anchor"] for item in decided} == {"claude-sonnet-5-5"}
+    assert {item["phase"] for item in decided} == {PhaseId.INDEPENDENT_REVIEW}
+    report = application.routing_calibration(python_workspace)
+    review_rows = [item for item in report["groups"] if item["callKind"] == "review"]
+    assert len(review_rows) == 1
+
+
+def test_reviewers_record_no_routing_without_agent_routing(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace, tmp_path, "clean")
+    application, run = start(python_workspace, tmp_path)
+    assert not [
+        item
+        for item in events(application, python_workspace, run)
+        if item.event_type == "agent.routing.decided"
+    ]

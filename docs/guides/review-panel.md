@@ -151,7 +151,11 @@ changed lines; inside a run the validators of VERIFICATION already ran them.
   provider, fallback, options) and a per-reviewer key without the mode (version, base, provider,
   fallback, forced model, reviewer, model, slice hash, prompt hash, message hash with the
   reportable locations and the diff, definition hash, runner version, MCP configuration hash,
-  options), so a manual review and the pre-push hook reuse each other's answers.
+  options), so a manual review and the pre-push hook reuse each other's answers. A review served
+  from the global cache calls no model: its report has `cache.global: hit`, `tokens.total` and
+  `tokens.modelCalls` 0, every reviewer that answered marked `cache: hit`, and the cached
+  review's numbers under `tokens.cachedFrom` (`total`, `modelCalls`). A reviewer served from the
+  per-reviewer cache is likewise `cache: hit` with 0 tokens and is not counted in `modelCalls`.
 - **Budget**: `baseTokens + tokensPerLine × changed lines`, at most `maxTokens` or the reviewer's
   `maxBudget`, sent in the request and compared with the reported usage (`overBudget`). Inside a
   run the governed budget (`budget`) applies to every reviewer call too.

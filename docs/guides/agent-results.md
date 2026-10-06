@@ -38,6 +38,33 @@ model and effort (`intake.clarifyAgent`, `verification.acceptanceTests.author`,
 `routing`. Without one, `locate` takes the router's `locate` rung, else the bottom rung of the
 family's escalation ladder: the cheapest adequate model.
 
+### A second attempt for a broken answer (#80)
+
+In the 2.0.0 pilot an `acceptance` call answered with something that was not JSON and
+SPECIFICATION blocked at once, while the review panel already retries an invalid answer once on
+its fallback provider. `runtime.contractRetry`, which `harness init` writes as `{mode: once}`
+since #80, gives every read-only kind that second attempt:
+
+```yaml
+runtime:
+  contractRetry:
+    mode: once                  # once, or off
+    fallbackProvider: second    # optional: an agentProviders entry (or simulated)
+```
+
+An answer breaks its contract when it is a protocol error (no JSON object, no `result` object)
+or when the phase rejects its `result` (the checks behind `intake.agent-review-malformed`,
+`acceptance.malformed`, `planning.plan-malformed`, `locate.malformed`, `architecture.malformed`
+and `review.agent-malformed`). The call is then sent once more, to `fallbackProvider`
+when it is set, else to the same provider; the first attempt stays recorded (its request,
+output and invocation) and an `agent-contract-retry` evidence and an `agent.call.contract-retry`
+event say why and where the second went. The phase uses the second answer: a valid one continues
+as a valid first answer would, a broken one blocks as before, with one finding. A provider that
+did not answer, a budget block or a call that changed the workspace is not retried. A
+`fallbackProvider` that is not `simulated` or an entry of `agentProviders` is a configuration
+error. Without the key the first broken answer blocks, as in 1.1. Transient failures of a command
+provider keep their own retries (`runtime.providerRetries`).
+
 A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
 request as a prompt (the instructions, then the request as JSON) and reads the `result` object
 from the last JSON object with a `result` key in the agent's answer. The router's model and
@@ -67,6 +94,47 @@ cites a requirement id or a document that neither the task nor the workspace con
 question (rule `A2`) asking to attach or transcribe it, and the agent review of the revised task
 checks the answers against the documents they cite.
 
+### A review that converges (#79)
+
+With the bare `ambiguityReview: agent` every answered revision gets a new review, and nothing
+stops it from raising new questions: in the 2.0.0 pilot two of four governed Haiku runs asked
+10, 8 and 8 questions in three rounds and never reached IMPLEMENTATION. The object form, which
+`harness init` writes since #79, makes the review converge:
+
+```yaml
+intake:
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3        # rounds of agent questions a person answers (default 3)
+    maxQuestions: 8     # agent questions asked at most in one round (default 8)
+    onExhausted: assume # assume (continue) or block (default when absent)
+```
+
+- The `clarify` request carries `previousQuestions` (every question asked about the task in an
+  earlier revision, with its rule, category, target and the answer it got, or `null`), the
+  `round`, `maxRounds` and `maxQuestions`, and instructions to ask only about blocking ambiguity
+  that the latest revision introduced or left open, never again about a point an answer
+  settles, and nothing when the task can be implemented and verified as it stands.
+- A question already asked (same rule and normalised text: case, punctuation and spacing do not
+  count) is dropped, also within a round; a round keeps at most `maxQuestions`. The review's
+  evidence (`agent-clarify-review`) says how many were `dropped`.
+- A round is a clarification a person answered in this run that included agent questions (rule
+  `A1`). When `maxRounds` rounds were answered and the agent still raises points, the review is
+  exhausted (`intent.ambiguity.exhausted`, with the rounds, the open points and the action):
+  - `assume`: the open points become explicit assumptions of a new task revision
+    (`metadata.assumptions`: `assumptionId`, category, target, the question and the assumption
+    that the implementation takes the reading most consistent with the requirements and criteria
+    and states it). The revision is stored (and pinned to the run under
+    `governance.pinTaskRevision`), recorded as `ambiguity-assumptions` evidence and
+    `intent.assumptions.recorded`, and the run continues. The assumptions are visible in the
+    task of the implement request, in the operational contract (`assumptions`, part of its
+    digest), in the gate contract (`gate.assumptions`) and in the decision brief
+    (`asked.assumptions` and one line each under what was not verified).
+  - `block`: the open points are asked again and INTENT stays blocked, as before #79, with the
+    exhaustion recorded.
+
+The bare `agent` keeps the review of 1.1 and its configuration digest.
+
 ## SPECIFICATION: independent, frozen acceptance tests (#52)
 
 `verification.acceptanceTests.mode: agent` asks a separate call for pytest files written from the
@@ -80,7 +148,10 @@ harness acceptance decide --run <runId> --decision APPROVE --digest <digest> --r
 
 Approval writes the files, freezes their digests and runs them once on the workspace before the
 change (passing there is a MEDIUM `acceptance.passes-before` finding). Every later VERIFICATION
-fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass.
+fails if a frozen file changed (`acceptance.modified`, HIGH) or the tests do not pass. A proposed
+path where a file already exists, for example the frozen test of an earlier run in the same
+workspace, is never overwritten: the file is written next to it with the run's suffix
+(`test_ac_1_<run>.py`), and `acceptance show` lists the new name under `renamed` (#82).
 
 ## PLANNING: decomposition of large tasks (#39)
 
@@ -99,16 +170,28 @@ VERIFICATION with its own correction budget and its own gate (`subtask-<n>`), re
 A sub-task that does not pass stops the ones after it; the run reaches DECISION when all passed.
 `REJECT` keeps the task whole. Under `planning.granularity: adaptive` a model listed in
 `planning.coarseModels` starts with the whole task, and the run returns to PLANNING to decompose
-only when that attempt fails its corrections.
+only when that attempt fails its corrections. Another model's attempt is not sent back to
+PLANNING: when its corrections are spent the run stops in VERIFICATION (exit 6) with a
+`terminalReason` that names the failing validators and says when the last correction changed
+nothing (`agent.empty-correction`).
 
 ## IMPLEMENTATION: what the agent receives
 
 - `runtime.gateContract`: the `gate` block lists the validators (command, mandatory or optional),
-  the enabled checks with their policies, the review rules, the blocking severities, the
-  absolute workspace path and the command `harness check --path <workspace> --run <runId>`.
-  `harness check` runs the same validators and diff checks on the workspace and records nothing
-  (exit 0 when they pass, 6 otherwise); it reads the configuration and a check state file the
-  harness writes before the call, so it runs inside the agent sandbox.
+  the enabled checks with their policies, the review rules, the blocking severities and the
+  absolute workspace path. `harness check` runs the same validators and diff checks on the
+  workspace and records nothing (exit 0 when they pass, 6 otherwise); it reads the configuration
+  and a check state file the harness writes before the call, so it runs inside the agent
+  sandbox. Since #84 the contract suggests only a command the agent may run, by its capability
+  grants (`process.execute`): `checkCommand`, `harness check --path <workspace> --run <runId>`,
+  when they allow `harness`; otherwise `checkCommands`, the validator commands they allow (none
+  when they allow none), and the instructions say to run those, or that the harness runs the
+  gate after the call. Under `verification.requirementTraceability` (`enforce` or `warn`) the
+  block also has `traceability`: the policy, the identifier of each requirement the check looks
+  for in the tests (`identifier`, `requirementId`, the text), the requirements it does not check
+  (`notChecked`: no identifier) and the naming rule it applies (`rule`: a test file, class or
+  function whose name contains the identifier as whole tokens, or the identifier as a whole word
+  in a test's source or strings). Since #79 it also carries the task revision's `assumptions`.
 - `governance.phasePermissions`: `permissions`, derived from the capability grants of the agent
   actor: the filesystem read and write scopes, the commands, network access; no write scope for
   the read-only kinds. Recorded as evidence of the call.
@@ -176,7 +259,10 @@ the findings are MEDIUM at most.
 (rejected, cancelled, or failed in IMPLEMENTATION or VERIFICATION) as a quarantined patch and
 restores the baseline; `block` keeps them and refuses new runs in the workspace until a person
 runs `harness run quarantine --run <runId>`. A task that declares `ownedPaths` gets a HIGH
-finding for every changed path outside them.
+finding for every changed path outside them. The frozen acceptance tests of a run that can still
+be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace when its changes are
+restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
+restored with the rest.
 
 ## Budget (#42)
 
@@ -220,18 +306,58 @@ Codex `-m`/`model_reasoning_effort`); they are a starting point, and whether an 
 a model is not checked. `harness routing calibrate` reports the cost per approved task of the
 recorded decisions and suggests a table; nothing is applied.
 
+### Anchored at the invoking model (#85)
+
+With the starting tables `tiered` ignores the model the person invoked: in the 2.0.0 pilot the
+cells invoked with Haiku, Sonnet and Opus routed every call to the same Sonnet and Opus rungs.
+`agentRouting.mode: anchored`, which `harness init` writes since #85, uses the same tables and
+thresholds with the invoking model as the ceiling:
+
+- a rung of a cheaper tier than the invoking model is kept (cheaper rungs for the simple call
+  kinds and sizes);
+- a rung of the invoking model's tier runs on the invoking model with the rung's effort;
+- a rung above it becomes the top rung allowed (rule `anchored:ceiling:KIND:SIZE`);
+- escalation (`implement`, `review`) climbs the allowed rungs up to the invoking model, never
+  above (`anchored:escalation:N:KIND:SIZE`).
+
+Claude models are ranked by name (`haiku` below `sonnet` below `opus`); the models of another
+family by their first rung in its ladder. A model whose tier cannot be told allows only itself.
+With the starting tables: invoked with `claude-haiku-4-5-20251001`, every call runs on it;
+with `claude-sonnet-5-5`, the `plan`, `review`, `architecture` and size-`L` rungs run on
+Sonnet with `high` effort; with `claude-opus-5-5`, the models and efforts are those of `tiered`.
+
+How the invoking model is determined, for the provider that answers the call:
+
+- `agentRouting.anchorModel` when it is set;
+- else the provider's `model` (`agentProviders.<id>.model`);
+- else the value of `--model` (or `-m`, `--model=...`) in its `command` or `args`, as a command
+  provider that wraps a CLI is usually invoked;
+- for the embedded `session` provider, whose model the harness cannot see, the same order applied
+  to `agentProvider`, which answers the read-only calls of a session run (see
+  [embedded mode](embedded-mode.md)); the session implements with its own model.
+
+Without any of them each call keeps the provider's own model (rule `anchored:no-anchor:...`). A
+call kind's own `model` or `effort` (`intake.clarifyAgent`, `planning.planner`, ...) and a
+reviewer's own `models` entry still win, as under `tiered`. Every decision records the `anchor`.
+Since #85 every reviewer of the review panel also records `agent.routing.decided` (with
+`reviewer` and `attempt`), and `harness routing calibrate` counts the reviewers of one run on the
+same model once.
+
 ## Where each setting is tested
 
 | Setting | Tests |
 |---|---|
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
+| The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
+| `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
-| `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
+| `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |
+| `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py`, `tests/unit/test_gate_contract_terms.py` |
 | `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
 | `review.agentReview` | `tests/integration/test_agent_review.py` |
 | `planning` | `tests/integration/test_decomposition.py` |
 | `context`, `memory` | `tests/integration/test_context_and_lessons.py`, `tests/unit/test_context_manifest.py` |
 | `budget` | `tests/integration/test_budget.py` |
-| `agentRouting` | `tests/integration/test_agent_routing.py`, `tests/unit/test_routing.py` |
+| `agentRouting` | `tests/integration/test_agent_routing.py`, `tests/unit/test_routing.py`, `tests/unit/test_routing_anchored.py`, `tests/integration/test_review_panel_run.py` (reviewer decisions) |
 | The defaults `harness init` writes | `tests/integration/test_agent_results_defaults.py` and the `agent-results` flow of `scripts/demo_flows.py` |

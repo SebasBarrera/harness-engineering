@@ -20,11 +20,12 @@ for the person who decides."""
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING, Any
 
 from governed_harness import __version__
 from governed_harness.agents import AgentCallResult
+from governed_harness.agents.routing import RoutingDecision
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.review import ReviewPanelConfig
 from governed_harness.domain.enums import (
@@ -55,6 +56,7 @@ from governed_harness.review.project import (
     reviewer_route,
 )
 from governed_harness.review.providers import build_reviewer_provider, mcp_digest, mcp_servers
+from governed_harness.review.reviewers import Reviewer
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
@@ -113,9 +115,61 @@ class PanelReview:
         settings = self.settings
         return settings is not None and settings.enabled
 
+    # ----- routing of the reviewers (#85) -----------------------------------------------------
+    def _route_observer(
+        self, decisions: dict[tuple[str, str], RoutingDecision]
+    ) -> Callable[[Reviewer, str, RoutingDecision], None]:
+        """Keeps the routing decision of each reviewer on each provider, recorded with its call
+        as for any other call: under ``agentRouting``, or for a reviewer's own model."""
+        routed = self.results.project.agent_routing is not None
+
+        def heard(reviewer: Reviewer, provider_id: str, decision: RoutingDecision) -> None:
+            if routed or decision.rule.startswith("reviewer:"):
+                decisions[(reviewer.reviewer_id, provider_id)] = decision
+
+        return heard
+
+    def _record_routing(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        call: ReviewerCall,
+        decision: RoutingDecision,
+    ) -> None:
+        """``agent.routing.decided`` of one reviewer call, as every other agent call records it,
+        with the reviewer and the attempt."""
+        results = self.results
+        record = {
+            **decision.as_dict(),
+            "provider": call.provider,
+            "phase": phase.phase_id,
+            "reviewer": call.reviewer,
+            "attempt": call.attempt,
+        }
+        ref = results.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-routing",
+            summary=(
+                f"Routing of the {call.reviewer} reviewer: {decision.rule} -> "
+                f"{decision.model or 'provider default'}/{decision.effort or 'default'}"
+            ),
+        )
+        results.s.events.append(
+            execution.execution_id,
+            "agent.routing.decided",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
     # ----- the invoker -----------------------------------------------------------------------
     def _invoker(
-        self, execution: Execution, phase: PhaseExecution, servers: dict[str, Any]
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        servers: dict[str, Any],
+        decisions: dict[tuple[str, str], RoutingDecision],
     ) -> ProviderInvoker:
         results = self.results
         engine = results.engine
@@ -155,6 +209,9 @@ class PanelReview:
             return blocked.summary if blocked is not None else None
 
         def record_request(call: ReviewerCall) -> str | None:
+            decision = decisions.get((call.reviewer, call.provider))
+            if decision is not None:
+                self._record_routing(execution, phase, call, decision)
             return results.record_json(
                 execution,
                 phase.phase_id,
@@ -227,6 +284,7 @@ class PanelReview:
         cache_settings = settings.effective_cache
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         untrusted, notice = panel_context(resolved, workspace)
+        decisions: dict[tuple[str, str], RoutingDecision] = {}
         inputs = PanelInputs(
             workspace=workspace,
             diff_text=diff,
@@ -235,8 +293,8 @@ class PanelReview:
             reviewers=setup.reviewers,
             settings=settings,
             provider=provider,
-            invoker=self._invoker(execution, phase, servers),
-            route=reviewer_route(resolved),
+            invoker=self._invoker(execution, phase, servers, decisions),
+            route=reviewer_route(resolved, self._route_observer(decisions)),
             runner_version=__version__,
             base=results.s.state.get_flag(f"baseline:{execution.execution_id}") or None,
             head=change_set.digest,

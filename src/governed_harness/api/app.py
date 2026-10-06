@@ -528,7 +528,7 @@ async function loadRegistry(){
 async function loadInbox(){
  const items=await request('/api/inbox'); const target=document.getElementById('inbox'); target.innerHTML='';
  for(const item of items){ const button=document.createElement('button'); button.className='run';
-  const state=item.kind==='decision'?`gate ${esc(item.gateStatus)}, ${item.blockingFindings} blocking`:item.kind==='deferred'?`${esc(item.itemId)} ${esc(item.status)}${item.warning?', '+esc(item.warning):''}`:item.kind==='preflight'?'preflight UNAVAILABLE':`${item.questions} question(s)`;
+  const state=item.kind==='decision'?`gate ${esc(item.gateStatus)}, ${item.blockingFindings} blocking`:item.kind==='deferred'?`${esc(item.itemId)} ${esc(item.status)}${item.warning?', '+esc(item.warning):''}`:item.kind==='preflight'?'preflight UNAVAILABLE':item.kind==='clarification'?`${item.questions} question(s)`:esc(item.summary||'');
   button.innerHTML=`<b>${esc(item.kind)}</b> ${esc(item.taskTitle)}<br><small>${esc(item.executionId)} - ${state} - ${item.waitingHours} h</small>`;
   button.onclick=()=>loadRun(item.executionId); target.appendChild(button); }
  if(!items.length) target.textContent='Nothing waits for a person.';

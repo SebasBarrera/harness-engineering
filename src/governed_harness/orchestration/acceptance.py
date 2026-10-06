@@ -118,6 +118,22 @@ def validate_tests(
     return files
 
 
+def _free_path(workspace: Path, path: str, execution_id: str) -> str:
+    """``path`` when no file is there; otherwise the same name with the run's suffix (and a
+    counter if that is taken too), in the same directory and with the same extension, so the
+    runner still collects it (``test_<name>_<run>.py``, ``<name>_<run>.feature``)."""
+    if not (workspace / path).exists():
+        return path
+    pure = PurePosixPath(path)
+    suffix = execution_id.rsplit("_", 1)[-1][-8:]
+    candidate = str(pure.with_name(f"{pure.stem}_{suffix}{pure.suffix}"))
+    number = 2
+    while (workspace / candidate).exists():
+        candidate = str(pure.with_name(f"{pure.stem}_{suffix}_{number}{pure.suffix}"))
+        number += 1
+    return candidate
+
+
 class AcceptanceTests:
     def __init__(self, results: ResultsHost) -> None:
         self.results = results
@@ -180,6 +196,7 @@ class AcceptanceTests:
                 "directory": directory,
                 "format": "gherkin" if gherkin else "pytest",
             },
+            validate=lambda result: validate_tests(result, directory, gherkin=gherkin),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -257,15 +274,10 @@ class AcceptanceTests:
             raise NotFoundError(f"run {execution.execution_id} has no proposed acceptance tests")
         if state["digest"] != digest:
             raise PolicyViolationError("the digest does not match the proposed acceptance tests")
-        workspace = self.results.s.paths.workspace
         frozen: dict[str, str] = {}
+        renamed: dict[str, str] = {}
         if decision is DecisionKind.APPROVE:
-            for item in state["tests"]:
-                target = contained_path(workspace, Path(item["path"]))
-                target.parent.mkdir(parents=True, exist_ok=True)
-                data = item["content"].encode("utf-8")
-                target.write_bytes(data)
-                frozen[item["path"]] = sha256_bytes(data)
+            frozen, renamed = self._write(execution, state["tests"])
         status = "APPROVED" if decision is DecisionKind.APPROVE else "REJECTED"
         state = {
             **state,
@@ -274,17 +286,40 @@ class AcceptanceTests:
             "decidedBy": actor.actor_id,
             "rationale": rationale,
         }
+        payload: dict[str, Any] = {"decision": decision.value, "digest": digest, "frozen": frozen}
+        if renamed:
+            state["renamed"] = renamed
+            payload["renamed"] = renamed
         self.results.set_flag_json(self._key(execution), state)
         self.results.s.events.append(
-            execution.execution_id,
-            "acceptance.tests.decided",
-            {"decision": decision.value, "digest": digest, "frozen": frozen},
-            actor=actor,
+            execution.execution_id, "acceptance.tests.decided", payload, actor=actor
         )
         if frozen:
             self._fail_before(execution, list(frozen))
             state = self.state(execution) or state
         return state
+
+    def _write(
+        self, execution: Execution, tests: list[dict[str, str]]
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Write the approved files and return their digests (frozen) and the proposed paths
+        written under another name. A path where a file already exists (the frozen acceptance
+        test of an earlier run in the same workspace, or any file of the project) is never
+        overwritten (#82): the file gets a run-unique name next to it, so no earlier run's
+        frozen file changes and no agent is blamed for a test that disappeared."""
+        workspace = self.results.s.paths.workspace
+        frozen: dict[str, str] = {}
+        renamed: dict[str, str] = {}
+        for item in tests:
+            path = _free_path(workspace, item["path"], execution.execution_id)
+            if path != item["path"]:
+                renamed[item["path"]] = path
+            target = contained_path(workspace, Path(path))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            data = item["content"].encode("utf-8")
+            target.write_bytes(data)
+            frozen[path] = sha256_bytes(data)
+        return frozen, renamed
 
     def _fail_before(self, execution: Execution, paths: list[str]) -> None:
         """The frozen tests run on the workspace before the change: passing there means they
@@ -336,6 +371,20 @@ class AcceptanceTests:
         results.set_flag_json(self._key(execution), state)
 
     # ----- IMPLEMENTATION and VERIFICATION --------------------------------------------------
+    def untouched(self, execution: Execution) -> set[str]:
+        """The frozen files the harness wrote on approval that are still as approved: they
+        are the harness's, not the agent's edits (#81)."""
+        state = self.state(execution)
+        if not state or state.get("status") != "APPROVED":
+            return set()
+        workspace = self.results.s.paths.workspace
+        kept: set[str] = set()
+        for path, digest in (state.get("frozen") or {}).items():
+            target = workspace / path
+            if target.is_file() and sha256_bytes(target.read_bytes()) == digest:
+                kept.add(path)
+        return kept
+
     def request_extra(self, execution: Execution) -> dict[str, Any] | None:
         state = self.state(execution)
         if not state or state.get("status") != "APPROVED" or not state.get("frozen"):

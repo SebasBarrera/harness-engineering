@@ -2,6 +2,145 @@
 
 ## Unreleased
 
+- The gate contract names what requirement traceability checks and suggests only a command the
+  agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
+  neither the requirement identifiers nor the naming rule the check applies, and it suggested
+  `harness check`, which the agent's grants (the built-in profiles allow `python`, `npm`,
+  `go`...) do not let it run. The `gate` block now carries `traceability` (the policy, each
+  requirement's identifier, the requirements without one and the naming rule) under `enforce`
+  or `warn`, and `checkCommand` only when the agent's `process.execute` grants allow `harness`;
+  otherwise `checkCommands` lists the validator commands they allow (possibly none) and the
+  implement instructions say to run those or to leave the gate to the harness. This is a fix of
+  the contract `runtime.gateContract` already sends, so it applies without a new key; the
+  request of a run with `gateContract` changes accordingly.
+- A second attempt for a read-only answer that breaks its contract (#80). In the 2.0.0 pilot an
+  acceptance call answered with invalid JSON and SPECIFICATION blocked at once, while the review
+  panel retries an invalid answer on its fallback provider. Under `runtime.contractRetry`
+  (`mode: once`, optional `fallbackProvider`; `harness init` writes `{mode: once}`) a `clarify`,
+  `plan`, `acceptance`, `locate`, `architecture` or single-reviewer `review` answer that is a
+  protocol error or that its phase rejects is sent once more, to the fallback provider when one
+  is configured; both attempts stay recorded, with `agent-contract-retry` evidence and an
+  `agent.call.contract-retry` event, and the phase blocks only if the second answer breaks the
+  contract too. A `fallbackProvider` outside `agentProviders` (and not `simulated`) is a
+  configuration error. Without the key the first broken answer blocks, as before.
+- A converging agent ambiguity review (#79). In the 2.0.0 pilot two of four governed Haiku runs
+  never reached IMPLEMENTATION: every answered revision got a new review that raised new
+  questions (10, 8 and 8 in three rounds). `intake.ambiguityReview` now also takes an object
+  (`mode`, `maxRounds`, `maxQuestions`, `onExhausted`), which `harness init` writes as `agent`,
+  3, 8 and `assume`. The `clarify` request then carries the questions already asked with their
+  answers (`previousQuestions`), the round and the limits, and asks only for blocking ambiguity
+  the latest revision introduced or left open; a question already asked (same rule and
+  normalised text) is dropped and a round asks at most `maxQuestions`. After `maxRounds`
+  answered rounds the points the agent still raises are recorded as explicit assumptions of a
+  new task revision (`metadata.assumptions`, shown in the operational contract, the gate
+  contract and the decision brief) and the run continues (`assume`), or INTENT stays blocked
+  (`block`, the default of the object form); both record `intent.ambiguity.exhausted`. The bare
+  `agent` keeps the 1.1 review and its configuration digest. Tested with a fixture agent that
+  keeps asking and with the questions of the pilot's Haiku review on the pilot's task
+  (`tests/integration/test_ambiguity_convergence.py`).
+- Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
+  `harness init` now writes instead of `tiered`, uses the routing tables with the invoking model
+  as the ceiling: rungs of a cheaper tier are kept, rungs of its tier run on it with their
+  effort, rungs above it become the top rung allowed, and escalation climbs only up to it. The
+  invoking model is `agentRouting.anchorModel` (new key), else the `model` of the provider that
+  answers the call (`agentProvider` for the embedded session provider), else the `--model` or
+  `-m` value of its command or `args`; without one each call keeps the provider's model. Every
+  anchored decision records its `anchor`. A `project.yaml` with `tiered`, `fixed` or without
+  `agentRouting` keeps its behaviour and configuration digest. Fix that applies without a key:
+  every reviewer call of the review panel now records `agent.routing.decided` (with `reviewer`
+  and `attempt`) under `agentRouting` or a reviewer's own model, as every other agent call does;
+  `harness routing calibrate` counts the reviewers of one run on the same model once.
+  Guide: `docs/guides/agent-results.md#anchored-at-the-invoking-model-85`.
+- Run lifecycle, wave 9 (findings of the 2.0.0 evaluation). Fixes that restore the documented
+  behaviour apply to every project:
+  - `harness plan decide --decision APPROVE --no-continue` exits 0 once the approval is recorded,
+    as `gate decide --no-continue` does; it exited 6 because the run still showed its wait in
+    PLANNING (#83). A `REJECT` still ends the run and exits 6.
+  - `harness run continue` on a run a person rejected reports the closed run (`FAILED`, exit 6)
+    instead of evaluating again the baseline that stop the line restored and asking for a new
+    decision (#83).
+  - `harness inbox` (text and `--json`, and `GET /api/inbox`) lists every wait before DECISION:
+    a plan at the plan-approval checkpoint (`plan`), a proposed decomposition
+    (`decomposition`), proposed acceptance tests (`acceptance`), architecture options or
+    inferred layer rules (`architecture`) and an operational contract to confirm (`contract`),
+    next to the deferred verifications and the preflight, each with its `kind`, the `digest` the
+    answer binds to and the command that answers it; before, `run start` exited 6 on a plan
+    approval while the inbox was empty (#73). A decision entry gains `digest` and
+    `acknowledgeRisks` (the risk factors an `APPROVE` must acknowledge); a batch file accepts
+    `acknowledgeRisks` per decision and `--batch` asks for each factor on the terminal.
+  - Under `planning.granularity: adaptive`, a run whose corrections are spent returns to
+    PLANNING to be decomposed only when the implementing model is in `planning.coarseModels`,
+    as documented; any other model's run went back to PLANNING too, so an agent that repeated
+    its change (`agent.empty-correction`) looped through decomposition (#77). It now stops in
+    VERIFICATION with a `terminalReason` naming the failing validators and the empty
+    correction. A run that moves on after a stop no longer keeps the earlier `terminalReason`.
+  - An approved acceptance test whose proposed path already holds a file (the frozen test of an
+    earlier run in the same workspace, or a file of the project) is written under a run-unique
+    name next to it (`renamed` in `acceptance show` and in `acceptance.tests.decided`) instead
+    of overwriting it; the later run overwrote the earlier frozen file and its agent was blamed
+    with a HIGH `weakened.test-deleted` (#82).
+  - Embedded mode with acceptance tests: the frozen files the harness writes on approval no
+    longer count as the session's edits, so IMPLEMENTATION waits for the session instead of
+    passing at once; stop the line keeps the frozen files of a run that can still be continued
+    (`keptPaths` in the quarantine record) instead of deleting them, so the next verification
+    does not report `acceptance.modified` (#81).
+  - Re-verification after a change outside the run (#78), behind the new key
+    `verification.reverifyOnChange`, which `harness init` writes as `true`. `run continue` on a
+    run waiting in DECISION whose ChangeSet changed after its gate was evaluated records the
+    change as evidence (`out-of-band-change`, event `verification.reverify.authorized`) and runs
+    VERIFICATION and the independent review again on the new ChangeSet, instead of leaving an
+    `INCONCLUSIVE` gate that forced a new run. A `project.yaml` without the key keeps that
+    fail-closed behaviour and its configuration digest.
+- `harness init` no longer dirties the tree of an existing repository (closes #86). It appended
+  `.harness/` to the `.gitignore`, so the first run of a brownfield repository reported an
+  `environment.dirty-tree` finding about a change the harness itself had made (the fault probes
+  of the 2.0.0 evaluation left `.gitignore` changed in every probe). In a Git repository init now
+  writes the entry to the repository's `info/exclude` (`.git/info/exclude`; a linked worktree
+  shares its repository's file), which Git reads like a `.gitignore` but which is not part of the
+  tree; an entry already in `.gitignore` is left as it is, and outside a Git repository the
+  `.gitignore` is written as before. `--ignore-file gitignore` keeps the earlier behaviour. The
+  output gains `ignore` (`file`, `entry`, `status`); `gitignore` is still reported when the
+  `.gitignore` was the file. A change of `init` only: `project.yaml` and runs are unchanged.
+- A probe assertion's `variants` is honoured by every assertion kind (closes #74). Only `differs`
+  read it: an `exitCode`, `jsonPath`, `order` or `text` assertion meant for one variant was checked
+  on every variant, so a correct command line could come out `NOT_CERTIFIED` (seen in the ladder
+  corpus of the 2.0.0 evaluation). Now each assertion is checked on the variants it names (every
+  variant when it names none), and one whose `variants` names no variant of the probe fails
+  instead of checking nothing. A bug fix that makes a documented field take effect; it applies
+  always, with no new key.
+- A review served from the global review cache reports no model call (closes #75). On a global
+  cache hit `harness review-code` (and the panel of a governed run) copied the cached report's
+  reviewers, so `tokens.modelCalls` counted their attempts and the second opinion and each
+  reviewer kept the `cache` value of the original review, although no model was called (the
+  review corpus of the 2.0.0 evaluation reported 34 calls while its fixture received none). Now
+  the report of a hit has `tokens.total` and `tokens.modelCalls` 0, every reviewer that answered
+  is marked `cache: hit`, the second opinion carries 0 tokens, and the cached review's numbers
+  are kept under `tokens.cachedFrom` (`total`, `modelCalls`). `harness metrics` counts the agent
+  invocations a run recorded, and a cache hit records none. A bug fix of the report's counts; it
+  applies always, with no new key.
+- A provider launch refused by `destructiveActionsDefault: deny` blocks the run instead of ending
+  it as an internal error (closes #76). The refusal reached the phase as an exception, so the run
+  ended `ERROR` and `run start` exited with 1, as if the harness had failed. Now the phase and the
+  run are `BLOCKED` with the refusal (`DestructiveActionDenied: ...`, naming the agent, the
+  command and the `process.destructive` grant that would allow it) as the reason, the `HIGH`
+  `capabilities.destructive-denied` finding is recorded as before, and `run start` exits with 6,
+  the documented code for a run stopped by a policy. A bug fix that restores the documented exit
+  code: it applies whenever the policy is in force (`governance.applyRepositoryPolicies`), with no
+  new key. A blocked phase does not use up one of the workflow's `maxAttempts` (an error did).
+- A provider command outside the grants is refused again under `governance.phaseCapabilities`
+  (closes #87, security). The phase policy gave every configured provider an implicit
+  `process.execute` grant for its own command, so a provider command no grant allowed (the
+  `unauthorized-command` fault probe, `sh -c ...` in a Python project) was started, which 0.9.0
+  refused. Now the agent `agent.ID` keeps the grant for its own command (that provider's
+  `command`, or a built-in adapter's executable) only when one of the run's `process.execute`
+  grants allows it (`capabilities.extend` grants a command outside the profiles); otherwise the
+  command is refused before it starts, recorded as a `HIGH` `capabilities.command-denied`
+  finding, and the phase stops `BLOCKED` with a reason naming the agent, the command and
+  `capabilities.extend` (`run start` exits with 6). `harness config validate` warns about each
+  provider whose command no grant allows. Applies only under `governance.phaseCapabilities`, a
+  security fix with no new key; without the key a refused provider command still ends the run
+  as `ERROR` (exit 1) as in 0.9.0. A project under the key whose provider command (`claude`,
+  `codex`, a wrapper) was granted only implicitly must now grant it in `capabilities.extend`.
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

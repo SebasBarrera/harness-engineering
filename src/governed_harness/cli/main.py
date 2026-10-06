@@ -16,6 +16,7 @@ from governed_harness import __version__
 from governed_harness.application import HarnessApplication
 from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.application.hints import default_hint
+from governed_harness.application.onboarding import IgnoreFile
 from governed_harness.cli.render import render_human, wants_json
 from governed_harness.domain.enums import (
     DecisionKind,
@@ -234,8 +235,15 @@ def init(
     gitignore: bool = typer.Option(
         True,
         "--gitignore/--no-gitignore",
-        help="Add .harness/ to the project's .gitignore (state, artifacts and copies of the code "
-        "live there)",
+        help="Make Git ignore .harness/ (state, artifacts and copies of the code live there)",
+    ),
+    ignore_file: IgnoreFile = typer.Option(
+        IgnoreFile.EXCLUDE,
+        "--ignore-file",
+        case_sensitive=False,
+        help="Where the .harness/ entry goes: exclude writes the repository's .git/info/exclude, "
+        "so an existing repository's tree stays clean (the .gitignore outside a Git "
+        "repository); gitignore writes the project's .gitignore",
     ),
     example_task: bool = typer.Option(
         True,
@@ -251,8 +259,8 @@ def init(
     json_output: bool | None = JSON_OPTION,
 ) -> None:
     """Create .harness/project.yaml for a repository, using the detected technology profiles,
-    add .harness/ to .gitignore and write an example task. Prints the detected profiles and the
-    next commands."""
+    make Git ignore .harness/ (in .git/info/exclude, so the tree stays clean) and write an
+    example task. Prints the detected profiles and the next commands."""
     _emit(
         _call(
             lambda: HarnessApplication().init(
@@ -261,6 +269,7 @@ def init(
                 gitignore=gitignore,
                 example_task=example_task,
                 agent_skills=agent_skills,
+                ignore_file=ignore_file,
             )
         ),
         json_output,
@@ -780,7 +789,8 @@ def plan_decide(
 ) -> None:
     """Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
     sub-tasks in order, each with its own verification and gate; REJECT keeps the task whole.
-    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5."""
+    A stale digest, a non-human actor or a decision other than APPROVE or REJECT exits 5. An
+    APPROVE with --no-continue exits 0 once it is recorded, as gate decide does."""
     result = _call(
         lambda: _acting().decide_plan(
             path,
@@ -794,7 +804,10 @@ def plan_decide(
     )
     _emit(result, kind="plan")
     execution = result.get("execution")
-    if execution:
+    if execution and (continue_after or decision is not DecisionKind.APPROVE):
+        # An APPROVE with --no-continue does not resume the run: the decision is recorded and
+        # the run still shows the wait it was in, which is not a failure of this command (#83).
+        # A REJECT ends the run (exit 6), as gate decide REJECT does.
         _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
 
 
@@ -1954,11 +1967,14 @@ def inbox(
     ),
 ) -> None:
     """List the runs of the project that wait for a person, oldest first: a decision in
-    DECISION (gate status, digest, blocking findings) or answers to clarification questions in
-    INTENT, each with the next command. With --approve, --reject, --request-changes,
-    --decisions or --batch it records several decisions, each bound to its own ChangeSet digest:
-    a stale digest or a refused decision is reported for that run (the others are recorded) and
-    the command exits 5 when any was refused."""
+    DECISION (gate status, digest, blocking findings, the risk factors an APPROVE must
+    acknowledge), answers to clarification questions in INTENT, and every other wait before
+    DECISION (kind plan, decomposition, acceptance, architecture, contract, deferred or
+    preflight, with the digest it binds to), each with the next command. With --approve,
+    --reject, --request-changes, --decisions or --batch it records several decisions, each bound
+    to its own ChangeSet digest (a batch file may list acknowledgeRisks per decision): a stale
+    digest or a refused decision is reported for that run (the others are recorded) and the
+    command exits 5 when any was refused."""
     items = _option_batch(approve, reject, request_changes)
     if decisions is not None:
         items.extend(_file_batch(decisions))
@@ -2058,7 +2074,12 @@ def _interactive_batch(path: Path) -> list[Any]:
                 .lower()[:1]
             )
         if answer != "s":
-            items.append(BatchItem(entry["executionId"], choices[answer], entry["changeSetDigest"]))
+            risks = _batch_risks(entry) if choices[answer] is DecisionKind.APPROVE else ()
+            items.append(
+                BatchItem(
+                    entry["executionId"], choices[answer], entry["changeSetDigest"], None, risks
+                )
+            )
     if items:
         confirmed = str(
             typer.prompt(
@@ -2069,6 +2090,17 @@ def _interactive_batch(path: Path) -> list[Any]:
         if confirmed.strip().lower() not in {"y", "yes"}:
             raise typer.Exit(code=5)
     return items
+
+
+def _batch_risks(entry: dict[str, Any]) -> tuple[str, ...]:
+    """The risk factors an APPROVE of the inbox entry must acknowledge, each confirmed on the
+    terminal (#73); one not acknowledged leaves the approval to be refused for that run."""
+    acknowledged: list[str] = []
+    for factor in entry.get("acknowledgeRisks") or []:
+        answer = str(typer.prompt(f"  Acknowledge risk factor {factor}? (yes/no)", default="no"))
+        if answer.strip().lower() in {"y", "yes"}:
+            acknowledged.append(str(factor))
+    return tuple(acknowledged)
 
 
 def _print_metrics(text: str, fmt: str, output: Path | None) -> Path | None:
