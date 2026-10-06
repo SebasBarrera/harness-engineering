@@ -938,7 +938,7 @@ class AgentResults:
         them the request also carries its kind and rendered instructions (schema 1.1)."""
         extra = self.request_common(execution, phase, "implement", task, provider_id, grants)
         if self.gate.enabled:
-            extra["gate"] = self.gate.contract(execution)
+            extra["gate"] = self.gate.contract(execution, task)
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
         extra.update(self.repository_extra(read_only=False))

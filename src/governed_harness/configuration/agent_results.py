@@ -62,6 +62,52 @@ def off_from_yaml(value: Any) -> Any:
     return "off" if value is False else value
 
 
+AmbiguityExhausted = Literal["assume", "block"]
+DEFAULT_AMBIGUITY_ROUNDS = 3
+"""Rounds of agent questions a person answers before the review is exhausted (#79)."""
+DEFAULT_AMBIGUITY_QUESTIONS = 8
+"""Agent questions asked at most in one round (#79)."""
+
+
+class AmbiguityReviewConfig(_Section):
+    """The converging agent review of a task in INTENT (#79), the object form of
+    ``intake.ambiguityReview``.
+
+    The review receives the questions already asked and their answers, asks only for blocking
+    ambiguity that the latest revision introduced or left open, never asks again a question
+    already asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.
+    After ``maxRounds`` rounds answered by a person, the points the agent still raises are
+    recorded as explicit assumptions and the run continues (``onExhausted: assume``), or they
+    are asked again and INTENT stays blocked (``block``, the default). The bare value
+    ``agent`` keeps the review of 1.1, which neither converges nor stops."""
+
+    mode: AmbiguityReview = "agent"
+    max_rounds: int | None = Field(default=None, alias="maxRounds", ge=1, le=20)
+    max_questions: int | None = Field(default=None, alias="maxQuestions", ge=1, le=40)
+    on_exhausted: AmbiguityExhausted | None = Field(default=None, alias="onExhausted")
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "agent"
+
+    @property
+    def rounds(self) -> int:
+        return self.max_rounds or DEFAULT_AMBIGUITY_ROUNDS
+
+    @property
+    def questions(self) -> int:
+        return self.max_questions or DEFAULT_AMBIGUITY_QUESTIONS
+
+    @property
+    def exhausted(self) -> AmbiguityExhausted:
+        return self.on_exhausted or "block"
+
+
 # ----- VERIFICATION (#40, #52) --------------------------------------------------------------
 class ForbiddenImport(_Section):
     """Modules under ``source`` must not import modules under ``target`` (dotted prefixes)."""

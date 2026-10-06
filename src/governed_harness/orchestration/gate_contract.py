@@ -77,7 +77,15 @@ class GateContract:
             )
         return definitions
 
-    def contract(self, execution: Execution) -> dict[str, Any]:
+    def contract(self, execution: Execution, task: Task | None = None) -> dict[str, Any]:
+        """The gate contract of an implement call; with ``task``, also what the task records
+        that the gate holds the change to (since #79: its assumptions)."""
+        value = self._contract(execution)
+        if task is not None:
+            value.update(task_terms(task))
+        return value
+
+    def _contract(self, execution: Execution) -> dict[str, Any]:
         resolved = self.results.s.resolved
         project = resolved.project
         workspace = str(self.results.s.paths.workspace)
@@ -157,6 +165,15 @@ class GateContract:
         }
         path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
         return path
+
+
+def task_terms(task: Task) -> dict[str, Any]:
+    """What the task revision adds to the gate contract: the points the agent review left open
+    (#79), as assumptions the implementation states it took."""
+    from governed_harness.orchestration.intent_convergence import assumptions_of
+
+    assumptions = assumptions_of(task)
+    return {"assumptions": assumptions} if assumptions else {}
 
 
 def permissions(
@@ -388,4 +405,5 @@ __all__ = [
     "check_state_path",
     "permissions",
     "run_check",
+    "task_terms",
 ]

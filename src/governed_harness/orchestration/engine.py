@@ -964,6 +964,8 @@ class RunEngine:
                     ResultStatus.BLOCKED, review.blocked, (evidence.artifact_ref, *review_refs)
                 )
             questions = questions + review.questions
+            # #79: an exhausted review records its open points as assumptions of a revision.
+            task = review.revised or task
         contract: dict[str, Any] | None = None
         ladder_block: str | None = None
         if self.ladder.active:

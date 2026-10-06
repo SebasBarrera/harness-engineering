@@ -19,6 +19,7 @@ from governed_harness.configuration.agent_results import (
     AgentCallConfig,
     AgentRoutingConfig,
     AmbiguityReview,
+    AmbiguityReviewConfig,
     ArchitectureConfig,
     BudgetConfig,
     ContextConfig,
@@ -482,10 +483,17 @@ class IntakeConfig(ConfigModel):
     ambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its
     provider, model and effort, and ``validateAnswers`` checks a person's answers for references
     to documents or requirements the task and the workspace do not contain. Absent keys keep the
-    1.0.0 behaviour."""
+    1.0.0 behaviour.
+
+    Since #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,
+    ``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records
+    the open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1
+    review."""
 
     criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
-    ambiguity_review: AmbiguityReview | None = Field(default=None, alias="ambiguityReview")
+    ambiguity_review: AmbiguityReview | AmbiguityReviewConfig | None = Field(
+        default=None, alias="ambiguityReview"
+    )
     clarify_agent: AgentCallConfig | None = Field(default=None, alias="clarifyAgent")
     validate_answers: bool | None = Field(default=None, alias="validateAnswers")
     operational_contract: ContractMode | None = Field(default=None, alias="operationalContract")
@@ -508,7 +516,17 @@ class IntakeConfig(ConfigModel):
 
     @property
     def agent_review_enabled(self) -> bool:
-        return self.ambiguity_review == "agent"
+        value = self.ambiguity_review
+        if isinstance(value, AmbiguityReviewConfig):
+            return value.enabled
+        return value == "agent"
+
+    @property
+    def ambiguity_settings(self) -> AmbiguityReviewConfig | None:
+        """The converging review's settings (#79): only under the object form of
+        ``ambiguityReview``; the bare ``agent`` keeps the 1.1 review."""
+        value = self.ambiguity_review
+        return value if isinstance(value, AmbiguityReviewConfig) and value.enabled else None
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

@@ -11,7 +11,10 @@ Under ``intake.validateAnswers`` the answers that produced the current revision 
 references the task and the workspace cannot resolve (a requirement id such as ``A1`` that
 appears nowhere, a document such as ``SPEC.md`` that is not in the workspace); each one becomes
 a question asking the person to attach the document or transcribe what it says. The agent review
-of the revised task also receives the answers and checks them against the documents they cite."""
+of the revised task also receives the answers and checks them against the documents they cite.
+
+Under the object form of ``intake.ambiguityReview`` (#79) the review converges and is bounded;
+see :mod:`governed_harness.orchestration.intent_convergence`."""
 
 from __future__ import annotations
 
@@ -30,6 +33,12 @@ from governed_harness.domain.models import (
     Task,
 )
 from governed_harness.intake import task_digest
+from governed_harness.orchestration.intent_convergence import (
+    Convergence,
+    Item,
+    convergence,
+    with_assumptions,
+)
 from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 
 if TYPE_CHECKING:
@@ -52,10 +61,25 @@ _SEARCH_SUFFIXES = (".md", ".txt", ".rst", ".yaml", ".yml", ".json", ".py", ".ts
 _MAX_SEARCH_BYTES = 2_000_000
 
 
+CONVERGE_KEY = ":converge"
+"""Suffix of the stored review of a revision under the converging review (#79)."""
+
+
 @dataclass(frozen=True)
 class ReviewOutcome:
     questions: tuple[ClarificationQuestion, ...]
     evidence_refs: tuple[str, ...]
+    blocked: str | None = None
+    revised: Task | None = None
+    """Since #79: the task revision that records the open points as assumptions."""
+
+
+@dataclass(frozen=True)
+class _Items:
+    """The agent's questions about one revision, the evidence and why it blocked."""
+
+    items: list[Item]
+    refs: tuple[str, ...]
     blocked: str | None = None
 
 
@@ -127,7 +151,9 @@ class IntentReview:
         agent: bool = True,
     ) -> ReviewOutcome:
         """The questions the agent-results settings add after the deterministic ones.
-        ``agent`` false (the fast lane of #58) leaves out the agent's ambiguity review."""
+        ``agent`` false (the fast lane of #58) leaves out the agent's ambiguity review. Under
+        the converging review (#79) an exhausted review may revise the task instead
+        (``revised``: its assumptions)."""
         refs: list[str] = []
         added: list[ClarificationQuestion] = []
         start = len(deterministic) + 1
@@ -141,13 +167,15 @@ class IntentReview:
         setup = self.results.project_setup.questions(execution, phase, start)
         added.extend(setup)
         start += len(setup)
+        revised: Task | None = None
         if self.enabled and agent:
             outcome = self._agent_questions(execution, phase, task, deterministic, answers, start)
             refs.extend(outcome.evidence_refs)
             if outcome.blocked is not None:
                 return ReviewOutcome(tuple(added), tuple(refs), outcome.blocked)
             added.extend(outcome.questions)
-        return ReviewOutcome(tuple(added), tuple(refs))
+            revised = outcome.revised
+        return ReviewOutcome(tuple(added), tuple(refs), revised=revised)
 
     # ----- agent review ----------------------------------------------------------------------
     def _agent_questions(
@@ -159,21 +187,59 @@ class IntentReview:
         answers: list[dict[str, str]],
         start: int,
     ) -> ReviewOutcome:
+        intake = self.results.project.intake
+        settings = intake.ambiguity_settings if intake else None
+        context = convergence(self.results, execution, task, settings) if settings else None
+        fetched = self._review_items(execution, phase, task, deterministic, answers, context)
+        if fetched.blocked is not None:
+            return ReviewOutcome((), fetched.refs, fetched.blocked)
+        items = fetched.items
+        if context is None or not items or not context.exhausted:
+            return ReviewOutcome(_numbered(start, "A1", items), fetched.refs)
+        return self._exhausted(execution, phase, task, items, fetched.refs, context, start)
+
+    def _review_items(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        deterministic: tuple[ClarificationQuestion, ...],
+        answers: list[dict[str, str]],
+        context: Convergence | None,
+    ) -> _Items:
+        """The agent's questions about this revision: stored once per task revision (and per
+        review form), so a resumed run or a second run of the revision makes no call."""
         results = self.results
         digest = task_digest(task)
         key = f"agentclarify:{execution.project_id}:{digest}"
+        if context is not None:
+            key += CONVERGE_KEY
         cached = results.flag_json(key)
         if isinstance(cached, dict) and isinstance(cached.get("items"), list):
-            # Once per task revision: the stored answer is reused, no provider call.
-            items = [tuple(item) for item in cached["items"]]
+            items = [(str(a), str(b), str(c)) for a, b, c in cached["items"]]
             results.s.events.append(
                 execution.execution_id,
                 "intent.agent-review.reused",
                 {"taskDigest": digest, "questions": len(items), "evidenceRef": cached["ref"]},
             )
-            return ReviewOutcome(
-                _numbered(start, "A1", [(a, b, c) for a, b, c in items]), (cached["ref"],)
+            return _Items(items, (cached["ref"],))
+        fetched = self._call_review(execution, phase, task, deterministic, answers, context)
+        if fetched.blocked is None:
+            results.set_flag_json(
+                key, {"items": [list(item) for item in fetched.items], "ref": fetched.refs[-1]}
             )
+        return fetched
+
+    def _call_review(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        deterministic: tuple[ClarificationQuestion, ...],
+        answers: list[dict[str, str]],
+        context: Convergence | None,
+    ) -> _Items:
+        results = self.results
         payload: dict[str, Any] = {
             "deterministicQuestions": [
                 item.model_dump(mode="json", by_alias=True) for item in deterministic
@@ -182,10 +248,16 @@ class IntentReview:
         }
         if answers:
             payload["clarifications"] = answers
-        outcome = results.call_agent(execution, phase, "clarify", payload, task=task)
+        suffix = ""
+        if context is not None:
+            payload.update(context.payload())
+            suffix = context.suffix()
+        outcome = results.call_agent(
+            execution, phase, "clarify", payload, task=task, instructions_suffix=suffix
+        )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
-            return ReviewOutcome(
-                (),
+            return _Items(
+                [],
                 outcome.evidence_refs,
                 f"Agent review of the task did not answer ({outcome.status}): {outcome.summary}",
             )
@@ -202,12 +274,29 @@ class IntentReview:
                 evidence_refs=outcome.evidence_refs,
                 recommendation="Fix the provider's clarify answer and continue the run.",
             )
-            return ReviewOutcome(
-                (), outcome.evidence_refs, f"Agent review of the task was malformed: {error}"
+            return _Items(
+                [], outcome.evidence_refs, f"Agent review of the task was malformed: {error}"
             )
-        record = {
+        dropped = 0
+        if context is not None:
+            items, dropped = context.converge(items)
+        ref = self._record_review(execution, phase, task, outcome.invocation_id, items, dropped)
+        return _Items(items, (*outcome.evidence_refs, ref))
+
+    def _record_review(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        invocation_id: str | None,
+        items: list[Item],
+        dropped: int,
+    ) -> str:
+        results = self.results
+        digest = task_digest(task)
+        record: dict[str, Any] = {
             "taskDigest": digest,
-            "invocationId": outcome.invocation_id,
+            "invocationId": invocation_id,
             "questions": [
                 {"category": category, "target": target, "text": text}
                 for category, target, text in items
@@ -218,6 +307,9 @@ class IntentReview:
                 if any(item[0] == name for item in items)
             },
         }
+        if dropped:
+            # #79: questions already asked, or over the round's limit.
+            record["dropped"] = dropped
         ref = results.record_json(
             execution,
             phase.phase_id,
@@ -225,13 +317,98 @@ class IntentReview:
             kind="agent-clarify-review",
             summary=f"Agent review of the task: {len(items)} question(s)",
         )
-        results.set_flag_json(key, {"items": [list(item) for item in items], "ref": ref})
         results.s.events.append(
             execution.execution_id,
             "intent.agent-review.completed",
             {"taskDigest": digest, "questions": len(items), "evidenceRef": ref},
         )
-        return ReviewOutcome(_numbered(start, "A1", items), (*outcome.evidence_refs, ref))
+        return ref
+
+    # ----- the converging review (#79) -------------------------------------------------------
+    def _exhausted(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        items: list[Item],
+        refs: tuple[str, ...],
+        context: Convergence,
+        start: int,
+    ) -> ReviewOutcome:
+        """The agent still asks after the last round: under ``assume`` its points become the
+        assumptions of a new task revision, under ``block`` they are asked again."""
+        settings = context.settings
+        self.results.s.events.append(
+            execution.execution_id,
+            "intent.ambiguity.exhausted",
+            {
+                "taskDigest": task_digest(task),
+                "rounds": context.rounds,
+                "maxRounds": settings.rounds,
+                "open": len(items),
+                "onExhausted": settings.exhausted,
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        if settings.exhausted == "block":
+            return ReviewOutcome(_numbered(start, "A1", items), refs)
+        revised, added = with_assumptions(task, items, context.rounds)
+        if not added:
+            return ReviewOutcome((), refs)
+        ref = self._store_revision(execution, phase, task, revised, added, context)
+        return ReviewOutcome((), (*refs, ref), revised=revised)
+
+    def _store_revision(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        revised: Task,
+        added: list[dict[str, Any]],
+        context: Convergence,
+    ) -> str:
+        """Store the revision with the assumptions (pinned to the run under
+        ``governance.pinTaskRevision``), as evidence and on the chain."""
+        results = self.results
+        services = results.s
+        services.state.put("task", revised.task_id, revised, project_id=revised.project_id)
+        revision_ref = services.artifacts.put_json(
+            revised.model_dump(mode="json"), metadata={"kind": "task-revision"}
+        )
+        if results.project.governance_settings.pin_task_revision:
+            services.state.set_flag(f"taskrev:{execution.execution_id}", revision_ref.uri)
+        current = task_digest(revised)
+        record = {
+            "previousTaskDigest": task_digest(task),
+            "taskDigest": current,
+            "taskRef": revision_ref.uri,
+            "rounds": context.rounds,
+            "maxRounds": context.settings.rounds,
+            "assumptions": added,
+        }
+        ref = results.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="ambiguity-assumptions",
+            summary=(
+                f"{len(added)} open point(s) of the agent review recorded as assumptions after "
+                f"{context.rounds} round(s)"
+            ),
+            supports=(task.task_id,),
+        )
+        # The revision's review is settled: its assumptions are its answer.
+        results.set_flag_json(
+            f"agentclarify:{execution.project_id}:{current}{CONVERGE_KEY}",
+            {"items": [], "ref": ref},
+        )
+        services.events.append(
+            execution.execution_id,
+            "intent.assumptions.recorded",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return ref
 
     # ----- answers ---------------------------------------------------------------------------
     def _current_answers(self, execution: Execution, task: Task) -> list[dict[str, str]]:

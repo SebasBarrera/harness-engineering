@@ -295,6 +295,13 @@ def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -
     }
 
 
+def _off_or_value(value: Any) -> Any:
+    """A setting as ``config validate`` shows it: ``off`` when absent, a section as JSON."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", by_alias=True)
+    return value if value is not None else "off"
+
+
 def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     """Effective agent-results settings for ``config validate``; ``off`` (or false) where a
     key is absent, which is the 1.0.0 behaviour."""
@@ -304,9 +311,7 @@ def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     runtime = project.runtime
     governance = project.governance_settings
 
-    def off(value: Any) -> Any:
-        return value if value is not None else "off"
-
+    off = _off_or_value
     return {
         "ambiguityReview": off(intake.ambiguity_review if intake else None),
         "validateAnswers": bool(intake and intake.validate_answers),
