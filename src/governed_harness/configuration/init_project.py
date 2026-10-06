@@ -6,6 +6,8 @@ from pathlib import Path
 import yaml
 
 from governed_harness.configuration.agent_results import (
+    DEFAULT_AMBIGUITY_QUESTIONS,
+    DEFAULT_AMBIGUITY_ROUNDS,
     DEFAULT_COARSE_MODELS,
     DEFAULT_CONTEXT_MAX_BYTES,
     DEFAULT_CONTEXT_MAX_FILES,
@@ -111,7 +113,14 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "retention": {"artifactDays": 30, "eventDays": 365, "orphanArtifacts": True},
         "intake": {
             "criteriaPolicy": "enforce",
-            "ambiguityReview": "agent",
+            # #79: the review converges; after its last round the open points become
+            # explicit assumptions and the run continues.
+            "ambiguityReview": {
+                "mode": "agent",
+                "maxRounds": DEFAULT_AMBIGUITY_ROUNDS,
+                "maxQuestions": DEFAULT_AMBIGUITY_QUESTIONS,
+                "onExhausted": "assume",
+            },
             "validateAnswers": True,
             "operationalContract": "batch",
             "interruptions": {

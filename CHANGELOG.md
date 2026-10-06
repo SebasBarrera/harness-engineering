@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- A converging agent ambiguity review (#79). In the 2.0.0 pilot two of four governed Haiku runs
+  never reached IMPLEMENTATION: every answered revision got a new review that raised new
+  questions (10, 8 and 8 in three rounds). `intake.ambiguityReview` now also takes an object
+  (`mode`, `maxRounds`, `maxQuestions`, `onExhausted`), which `harness init` writes as `agent`,
+  3, 8 and `assume`. The `clarify` request then carries the questions already asked with their
+  answers (`previousQuestions`), the round and the limits, and asks only for blocking ambiguity
+  the latest revision introduced or left open; a question already asked (same rule and
+  normalised text) is dropped and a round asks at most `maxQuestions`. After `maxRounds`
+  answered rounds the points the agent still raises are recorded as explicit assumptions of a
+  new task revision (`metadata.assumptions`, shown in the operational contract, the gate
+  contract and the decision brief) and the run continues (`assume`), or INTENT stays blocked
+  (`block`, the default of the object form); both record `intent.ambiguity.exhausted`. The bare
+  `agent` keeps the 1.1 review and its configuration digest. Tested with a fixture agent that
+  keeps asking and with the questions of the pilot's Haiku review on the pilot's task
+  (`tests/integration/test_ambiguity_convergence.py`).
 - Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
   `harness init` now writes instead of `tiered`, uses the routing tables with the invoking model
   as the ceiling: rungs of a cheaper tier are kept, rungs of its tier run on it with their

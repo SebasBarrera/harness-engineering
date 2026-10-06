@@ -67,6 +67,47 @@ cites a requirement id or a document that neither the task nor the workspace con
 question (rule `A2`) asking to attach or transcribe it, and the agent review of the revised task
 checks the answers against the documents they cite.
 
+### A review that converges (#79)
+
+With the bare `ambiguityReview: agent` every answered revision gets a new review, and nothing
+stops it from raising new questions: in the 2.0.0 pilot two of four governed Haiku runs asked
+10, 8 and 8 questions in three rounds and never reached IMPLEMENTATION. The object form, which
+`harness init` writes since #79, makes the review converge:
+
+```yaml
+intake:
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3        # rounds of agent questions a person answers (default 3)
+    maxQuestions: 8     # agent questions asked at most in one round (default 8)
+    onExhausted: assume # assume (continue) or block (default when absent)
+```
+
+- The `clarify` request carries `previousQuestions` (every question asked about the task in an
+  earlier revision, with its rule, category, target and the answer it got, or `null`), the
+  `round`, `maxRounds` and `maxQuestions`, and instructions to ask only about blocking ambiguity
+  that the latest revision introduced or left open, never again about a point an answer
+  settles, and nothing when the task can be implemented and verified as it stands.
+- A question already asked (same rule and normalised text: case, punctuation and spacing do not
+  count) is dropped, also within a round; a round keeps at most `maxQuestions`. The review's
+  evidence (`agent-clarify-review`) says how many were `dropped`.
+- A round is a clarification a person answered in this run that included agent questions (rule
+  `A1`). When `maxRounds` rounds were answered and the agent still raises points, the review is
+  exhausted (`intent.ambiguity.exhausted`, with the rounds, the open points and the action):
+  - `assume`: the open points become explicit assumptions of a new task revision
+    (`metadata.assumptions`: `assumptionId`, category, target, the question and the assumption
+    that the implementation takes the reading most consistent with the requirements and criteria
+    and states it). The revision is stored (and pinned to the run under
+    `governance.pinTaskRevision`), recorded as `ambiguity-assumptions` evidence and
+    `intent.assumptions.recorded`, and the run continues. The assumptions are visible in the
+    task of the implement request, in the operational contract (`assumptions`, part of its
+    digest), in the gate contract (`gate.assumptions`) and in the decision brief
+    (`asked.assumptions` and one line each under what was not verified).
+  - `block`: the open points are asked again and INTENT stays blocked, as before #79, with the
+    exhaustion recorded.
+
+The bare `agent` keeps the review of 1.1 and its configuration digest.
+
 ## SPECIFICATION: independent, frozen acceptance tests (#52)
 
 `verification.acceptanceTests.mode: agent` asks a separate call for pytest files written from the
@@ -262,6 +303,7 @@ same model once.
 | Setting | Tests |
 |---|---|
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
+| The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
 | `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
