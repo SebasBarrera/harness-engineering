@@ -11,7 +11,7 @@ import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from governed_harness.checks.model import is_test_path
+from governed_harness.checks.model import DiffLine, is_test_path
 from governed_harness.checks.secrets import scan_secrets
 from governed_harness.review.diff import FileChange
 from governed_harness.review.signals import is_doc_path, is_pipeline_path
@@ -82,28 +82,34 @@ _WEAKENED = (
 )
 
 
+def _code_lines(item: FileChange) -> list[DiffLine]:
+    """The added lines of a file that are not shell or YAML comments."""
+    return [line for line in item.added if not line.text.lstrip().startswith("#")]
+
+
+def _first_match(text: str, patterns: Iterable[tuple[re.Pattern[str], str]]) -> str | None:
+    """Why the first matching pattern flags ``text``."""
+    return next((why for pattern, why in patterns if pattern.search(text)), None)
+
+
 def weakened_gates(files: Iterable[FileChange]) -> list[CheckHit]:
     hits: list[CheckHit] = []
     for item in files:
         if item.is_deleted or not is_pipeline_path(item.path):
             continue
-        for line in item.added:
-            text = line.text
-            if text.lstrip().startswith("#"):
-                continue
-            for pattern, why in _WEAKENED:
-                if pattern.search(text):
-                    hits.append(
-                        CheckHit(
-                            "weakened-gates",
-                            item.path,
-                            "new",
-                            line.number,
-                            f"Weakened gate: {why}",
-                            _quote(text),
-                        )
+        for line in _code_lines(item):
+            why = _first_match(line.text, _WEAKENED)
+            if why is not None:
+                hits.append(
+                    CheckHit(
+                        "weakened-gates",
+                        item.path,
+                        "new",
+                        line.number,
+                        f"Weakened gate: {why}",
+                        _quote(line.text),
                     )
-                    break
+                )
     return hits
 
 
@@ -133,23 +139,19 @@ def dangerous_paths(files: Iterable[FileChange]) -> list[CheckHit]:
     for item in files:
         if item.is_deleted or is_doc_path(item.path):
             continue
-        for line in item.added:
-            text = line.text
-            if text.lstrip().startswith("#"):
-                continue
-            for pattern, why in _DANGEROUS:
-                if pattern.search(text):
-                    hits.append(
-                        CheckHit(
-                            "dangerous-paths",
-                            item.path,
-                            "new",
-                            line.number,
-                            f"Dangerous path operation: {why}",
-                            _quote(text),
-                        )
+        for line in _code_lines(item):
+            why = _first_match(line.text, _DANGEROUS)
+            if why is not None:
+                hits.append(
+                    CheckHit(
+                        "dangerous-paths",
+                        item.path,
+                        "new",
+                        line.number,
+                        f"Dangerous path operation: {why}",
+                        _quote(line.text),
                     )
-                    break
+                )
     return hits
 
 
