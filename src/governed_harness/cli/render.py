@@ -435,62 +435,92 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
 
 def _ladder_sections(brief: Mapping[str, Any]) -> list[str]:
     """Certification, preflight, deferred items, checklist, contract and interruptions (#55)."""
-    lines: list[str] = []
-    certification = brief.get("certification")
-    if certification:
-        lines.extend(["", f"Certification {certification['status']} ({certification['trigger']})"])
-        for item in certification["criteria"]:
-            declared = "" if item["declared"] else " (default level)"
-            lines.append(
-                f"  {item['status']:<14} {item['criterionId']}: requires {item['required']}"
-                f"{declared}, reached {item['achieved'] or 'no rung'}"
-            )
-    preflight = brief.get("preflight")
-    if preflight:
-        lines.extend(["", f"Preflight {preflight['status']}"])
-        lines.extend(f"  - {short(reason, 100)}" for reason in preflight.get("reasons") or [])
-        decision = preflight.get("decision")
-        if decision:
-            lines.append(
-                f"  continued uncertified by {decision['actorId']}: {short(decision['rationale'], 70)}"
-            )
-    for item in brief.get("deferred") or []:
-        if item is brief["deferred"][0]:
-            lines.extend(["", "Deferred verification"])
+    return [
+        *_certification_lines(brief.get("certification")),
+        *_preflight_lines(brief.get("preflight")),
+        *_deferred_lines(brief.get("deferred") or []),
+        *_checklist_lines(brief.get("checklist") or []),
+        *_contract_lines(brief.get("contract")),
+        *_interruption_lines(brief.get("interruptions")),
+    ]
+
+
+def _certification_lines(certification: Mapping[str, Any] | None) -> list[str]:
+    if not certification:
+        return []
+    lines = ["", f"Certification {certification['status']} ({certification['trigger']})"]
+    for item in certification["criteria"]:
+        declared = "" if item["declared"] else " (default level)"
         lines.append(
-            f"  {item['status']:<8} {item['itemId']} ({short(item['where'], 40)}), expires "
-            f"{item['expiresAt'][:19]}"
-        )
-    checklist = brief.get("checklist") or []
-    if checklist:
-        lines.extend(["", "Checklist (ticked by the person who decides)"])
-        for item in checklist:
-            mark = "x" if item["checked"] else " "
-            files = f" [{', '.join(item['attachments'])}]" if item["attachments"] else ""
-            lines.append(f"  [{mark}] {item['itemId']}: {short(item['text'], 80)}{files}")
-    contract = brief.get("contract")
-    if contract:
-        state = "confirmed" if contract.get("confirmed") else "not confirmed"
-        lines.extend(["", f"Operational contract ({state}, {contract['digest'][:19]})"])
-        for item in contract.get("items", []):
-            value = item["value"]
-            shown = ", ".join(map(str, value)) if isinstance(value, list) else _scalar(value)
-            lines.append(f"  {label(item['field']):<20} {short(shown, 70)} ({item['source']})")
-    interruptions = brief.get("interruptions")
-    if interruptions:
-        budget = "over budget" if interruptions["overBudget"] else "within budget"
-        lines.extend(
-            [
-                "",
-                f"Interruptions: {interruptions['count']} of a target of "
-                f"{interruptions['target']} ({budget})",
-            ]
-        )
-        lines.extend(
-            f"  stop: {item['condition']} - {short(item.get('detail') or '', 70)}"
-            for item in interruptions.get("stops") or []
+            f"  {item['status']:<14} {item['criterionId']}: requires {item['required']}"
+            f"{declared}, reached {item['achieved'] or 'no rung'}"
         )
     return lines
+
+
+def _preflight_lines(preflight: Mapping[str, Any] | None) -> list[str]:
+    if not preflight:
+        return []
+    lines = ["", f"Preflight {preflight['status']}"]
+    lines.extend(f"  - {short(reason, 100)}" for reason in preflight.get("reasons") or [])
+    decision = preflight.get("decision")
+    if decision:
+        lines.append(
+            f"  continued uncertified by {decision['actorId']}: {short(decision['rationale'], 70)}"
+        )
+    return lines
+
+
+def _deferred_lines(deferred: Sequence[Mapping[str, Any]]) -> list[str]:
+    if not deferred:
+        return []
+    return [
+        "",
+        "Deferred verification",
+        *(
+            f"  {item['status']:<8} {item['itemId']} ({short(item['where'], 40)}), expires "
+            f"{item['expiresAt'][:19]}"
+            for item in deferred
+        ),
+    ]
+
+
+def _checklist_lines(checklist: Sequence[Mapping[str, Any]]) -> list[str]:
+    if not checklist:
+        return []
+    lines = ["", "Checklist (ticked by the person who decides)"]
+    for item in checklist:
+        mark = "x" if item["checked"] else " "
+        files = f" [{', '.join(item['attachments'])}]" if item["attachments"] else ""
+        lines.append(f"  [{mark}] {item['itemId']}: {short(item['text'], 80)}{files}")
+    return lines
+
+
+def _contract_lines(contract: Mapping[str, Any] | None) -> list[str]:
+    if not contract:
+        return []
+    state = "confirmed" if contract.get("confirmed") else "not confirmed"
+    lines = ["", f"Operational contract ({state}, {contract['digest'][:19]})"]
+    for item in contract.get("items", []):
+        value = item["value"]
+        shown = ", ".join(map(str, value)) if isinstance(value, list) else _scalar(value)
+        lines.append(f"  {label(item['field']):<20} {short(shown, 70)} ({item['source']})")
+    return lines
+
+
+def _interruption_lines(interruptions: Mapping[str, Any] | None) -> list[str]:
+    if not interruptions:
+        return []
+    budget = "over budget" if interruptions["overBudget"] else "within budget"
+    return [
+        "",
+        f"Interruptions: {interruptions['count']} of a target of "
+        f"{interruptions['target']} ({budget})",
+        *(
+            f"  stop: {item['condition']} - {short(item.get('detail') or '', 70)}"
+            for item in interruptions.get("stops") or []
+        ),
+    ]
 
 
 def _exceptions(items: Sequence[Mapping[str, Any]]) -> list[str]:
