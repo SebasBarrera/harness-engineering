@@ -77,13 +77,46 @@ class GateContract:
             )
         return definitions
 
-    def contract(self, execution: Execution, task: Task | None = None) -> dict[str, Any]:
-        """The gate contract of an implement call; with ``task``, also what the task records
-        that the gate holds the change to (since #79: its assumptions)."""
+    def contract(
+        self,
+        execution: Execution,
+        task: Task | None = None,
+        grants: list[CapabilityGrant] | None = None,
+    ) -> dict[str, Any]:
+        """The gate contract of an implement call. With ``task``, also what the gate holds the
+        change to from the task: the requirement identifiers and the naming rule that
+        requirement traceability checks (#84) and the assumptions (#79). With the agent's
+        ``grants``, a check command only when the agent may run it (#84): ``harness check``
+        when its grants allow it, else the validator commands they allow (``checkCommands``,
+        possibly none)."""
         value = self._contract(execution)
         if task is not None:
             value.update(task_terms(task))
+            value.update(traceability_terms(task, self.results.project.requirement_traceability))
+        if grants is not None and not runnable(value["checkCommand"], grants):
+            del value["checkCommand"]
+            value["checkCommands"] = [
+                {"id": item["id"], "command": item["command"]}
+                for item in value["validators"]
+                if item["command"] and runnable(item["command"], grants)
+            ]
         return value
+
+    @staticmethod
+    def instructions_note(contract: dict[str, Any]) -> str:
+        """What the implement instructions add when the contract has no ``harness check``
+        command the agent may run (#84); empty otherwise."""
+        if "checkCommand" in contract:
+            return ""
+        if contract.get("checkCommands"):
+            return (
+                "Your permissions do not include the harness check command: instead, run the "
+                "validator commands listed in gate.checkCommands before you finish."
+            )
+        return (
+            "Your permissions include no command of the gate: do not try to run the check "
+            "command or the validators; the harness runs them after you finish."
+        )
 
     def _contract(self, execution: Execution) -> dict[str, Any]:
         resolved = self.results.s.resolved
@@ -165,6 +198,63 @@ class GateContract:
         }
         path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
         return path
+
+
+TRACEABILITY_RULE = (
+    "A requirement is traced when a test names its identifier: the name of a test file, class "
+    "or function contains the identifier as a run of whole tokens in any case (for A1: "
+    "test_a1_rounding, test_A1, TestA1Rounding; for req_alphabet: test_req_alphabet_rejects), "
+    "or the identifier appears as a whole word in a test's source, docstring or string "
+    "constants (pytest.param(..., id='A1'), # covers A1). Test files are Python test_*.py or "
+    "*_test.py, and Node *.test.*, *.spec.* or files under test/, tests/ or __tests__/. Name "
+    "each test after the identifier of the requirement it checks."
+)
+"""How requirement traceability decides that a test names a requirement (see
+``governed_harness.validators.traceability``), as the gate contract states it (#84)."""
+
+
+def traceability_terms(task: Task, policy: str) -> dict[str, Any]:
+    """The requirement identifiers the traceability check looks for in the tests and its naming
+    rule (#84); nothing when the check is off."""
+    from governed_harness.validators.traceability import requirement_identifier
+
+    if policy == "off":
+        return {}
+    identified: list[dict[str, str]] = []
+    skipped: list[str] = []
+    for requirement in task.requirements:
+        found = requirement_identifier(requirement)
+        if found is None:
+            skipped.append(requirement.requirement_id)
+            continue
+        identified.append(
+            {
+                "identifier": found.identifier,
+                "requirementId": requirement.requirement_id,
+                "text": requirement.text[:300],
+            }
+        )
+    return {
+        "traceability": {
+            "policy": policy,
+            "requirements": identified,
+            "notChecked": skipped,
+            "rule": TRACEABILITY_RULE,
+        }
+    }
+
+
+def runnable(argv: list[str], grants: list[CapabilityGrant]) -> bool:
+    """Whether the agent's ``process.execute`` grants allow ``argv`` (#84)."""
+    from governed_harness.capabilities.authorizer import CapabilityAuthorizer, CapabilityDenied
+
+    if not argv or not grants:
+        return False
+    try:
+        CapabilityAuthorizer().authorize_command(actor=grants[0].actor, argv=argv, grants=grants)
+    except CapabilityDenied:
+        return False
+    return True
 
 
 def task_terms(task: Task) -> dict[str, Any]:
@@ -401,9 +491,12 @@ def _tail(store: LocalArtifactStore, refs: tuple[str, ...], limit: int = 2000) -
 
 
 __all__ = [
+    "TRACEABILITY_RULE",
     "GateContract",
     "check_state_path",
     "permissions",
     "run_check",
+    "runnable",
     "task_terms",
+    "traceability_terms",
 ]

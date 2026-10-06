@@ -181,7 +181,11 @@ def test_the_request_carries_the_gate_contract_and_permissions(
     assert "harness check" in request["instructions"] or "check command" in request["instructions"]
     gate = request["gate"]
     assert {item["id"] for item in gate["validators"]} >= {"python.pytest"}
-    assert gate["checkCommand"][:2] == ["harness", "check"] and run in gate["checkCommand"]
+    # #84: the profile grants the agent python, not harness: no harness check command, and the
+    # validator commands it may run instead.
+    assert "checkCommand" not in gate
+    assert "python.pytest" in {item["id"] for item in gate["checkCommands"]}
+    assert "gate.checkCommands" in request["instructions"]
     assert gate["workspace"] == str(python_workspace.resolve())
     assert "review.possible-secret" in {item["ruleId"] for item in gate["reviewRules"]}
     permissions = request["permissions"]
@@ -195,6 +199,56 @@ def test_the_request_carries_the_gate_contract_and_permissions(
     ]
     assert findings and findings[0].severity is FindingSeverity.HIGH
     assert findings[0].location is not None and findings[0].location.path == "notes.md"
+
+
+TRACED_TASK = TASK.replace(
+    "acceptanceCriteria:\n",
+    "requirements:\n"
+    "  - text: 'A1. Apply the discount at or above the threshold.'\n"
+    "  - requirementId: req_rate\n"
+    "    text: The rate is a fraction between 0 and 1.\n"
+    "  - text: Keep the signature.\n"
+    "acceptanceCriteria:\n",
+)
+
+
+def test_the_contract_names_the_requirements_traceability_checks(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#84: under requirementTraceability: enforce the contract carries the identifiers the
+    check looks for in the tests and the naming rule it applies."""
+    log = command_agent(python_workspace, tmp_path)
+    set_keys(python_workspace, verification={"requirementTraceability": "enforce"})
+    application = HarnessApplication()
+    source = tmp_path / "task.yaml"
+    source.write_text(TRACED_TASK, encoding="utf-8")
+    application.create_task(python_workspace, source)
+    application.start_run(python_workspace, "task_contract")
+    traceability = json.loads(log.read_text())["gate"]["traceability"]
+    assert traceability["policy"] == "enforce"
+    assert [item["identifier"] for item in traceability["requirements"]] == ["A1", "req_rate"]
+    assert len(traceability["notChecked"]) == 1
+    assert "test_a1_rounding" in traceability["rule"]
+
+
+def test_the_contract_keeps_harness_check_when_the_agent_may_run_it(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    log = command_agent(python_workspace, tmp_path)
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["capabilities"]["grants"] = [{"capability": "process.execute", "scope": ["harness"]}]
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application = HarnessApplication()
+    source = tmp_path / "task.yaml"
+    source.write_text(TASK, encoding="utf-8")
+    application.create_task(python_workspace, source)
+    run = application.start_run(python_workspace, "task_contract").execution_id
+    request = json.loads(log.read_text())
+    assert request["gate"]["checkCommand"][:2] == ["harness", "check"]
+    assert run in request["gate"]["checkCommand"]
+    assert "checkCommands" not in request["gate"]
+    assert "gate.checkCommands" not in request["instructions"]
 
 
 def test_harness_check_runs_the_gate_without_recording(

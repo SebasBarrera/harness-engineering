@@ -1020,32 +1020,24 @@ class AgentResults:
         """The keys the agent-results settings add to the implement request; with any of
         them the request also carries its kind and rendered instructions (schema 1.1)."""
         extra = self.request_common(execution, phase, "implement", task, provider_id, grants)
+        notes: list[str] = []
         if self.gate.enabled:
-            extra["gate"] = self.gate.contract(execution, task)
+            # #84: the requirement ids and naming rule, and a check command the agent may run.
+            gate = self.gate.contract(execution, task, grants)
+            extra["gate"] = gate
+            notes.append(self.gate.instructions_note(gate))
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
         extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
-        suffix = ""
         if self.engineering.configured:
-            # Standards cards for the files this call works on, testing strategy and layers
-            # (#56), selected deterministically and cached by digest.
-            since = self.baseline_changes(execution)
-            changed = [item.path for item in since.changes] if since is not None else []
-            manifest = extra.get("contextFiles")
-            listed = (
-                [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
-                if isinstance(manifest, dict)
-                else []
-            )
-            paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
-            extra.update(engineering)
+            notes.insert(0, self._engineering_extra(execution, phase, task, extra))
         if not extra:
             return None
         workspace = str(self.s.paths.workspace)
+        suffix = " ".join(item for item in notes if item)
         extra.update(
             {
                 "schemaVersion": REQUEST_SCHEMA_VERSION,
@@ -1056,6 +1048,25 @@ class AgentResults:
             }
         )
         return extra
+
+    def _engineering_extra(
+        self, execution: Execution, phase: PhaseExecution, task: Task, extra: dict[str, Any]
+    ) -> str:
+        """Standards cards for the files this call works on, testing strategy and layers (#56),
+        selected deterministically and cached by digest: added to ``extra``; the instructions
+        they add are returned."""
+        since = self.baseline_changes(execution)
+        changed = [item.path for item in since.changes] if since is not None else []
+        manifest = extra.get("contextFiles")
+        listed = (
+            [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
+            if isinstance(manifest, dict)
+            else []
+        )
+        paths = self.engineering.candidate_paths(task, changed, listed)
+        engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
+        extra.update(engineering)
+        return suffix
 
     def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
         """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the

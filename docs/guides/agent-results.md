@@ -172,11 +172,20 @@ only when that attempt fails its corrections.
 ## IMPLEMENTATION: what the agent receives
 
 - `runtime.gateContract`: the `gate` block lists the validators (command, mandatory or optional),
-  the enabled checks with their policies, the review rules, the blocking severities, the
-  absolute workspace path and the command `harness check --path <workspace> --run <runId>`.
-  `harness check` runs the same validators and diff checks on the workspace and records nothing
-  (exit 0 when they pass, 6 otherwise); it reads the configuration and a check state file the
-  harness writes before the call, so it runs inside the agent sandbox.
+  the enabled checks with their policies, the review rules, the blocking severities and the
+  absolute workspace path. `harness check` runs the same validators and diff checks on the
+  workspace and records nothing (exit 0 when they pass, 6 otherwise); it reads the configuration
+  and a check state file the harness writes before the call, so it runs inside the agent
+  sandbox. Since #84 the contract suggests only a command the agent may run, by its capability
+  grants (`process.execute`): `checkCommand`, `harness check --path <workspace> --run <runId>`,
+  when they allow `harness`; otherwise `checkCommands`, the validator commands they allow (none
+  when they allow none), and the instructions say to run those, or that the harness runs the
+  gate after the call. Under `verification.requirementTraceability` (`enforce` or `warn`) the
+  block also has `traceability`: the policy, the identifier of each requirement the check looks
+  for in the tests (`identifier`, `requirementId`, the text), the requirements it does not check
+  (`notChecked`: no identifier) and the naming rule it applies (`rule`: a test file, class or
+  function whose name contains the identifier as whole tokens, or the identifier as a whole word
+  in a test's source or strings). Since #79 it also carries the task revision's `assumptions`.
 - `governance.phasePermissions`: `permissions`, derived from the capability grants of the agent
   actor: the filesystem read and write scopes, the commands, network access; no write scope for
   the read-only kinds. Recorded as evidence of the call.
@@ -334,7 +343,7 @@ same model once.
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
-| `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py` |
+| `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py`, `tests/unit/test_gate_contract_terms.py` |
 | `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
 | `review.agentReview` | `tests/integration/test_agent_review.py` |
 | `planning` | `tests/integration/test_decomposition.py` |

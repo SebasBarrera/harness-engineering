@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The gate contract names what requirement traceability checks and suggests only a command the
+  agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
+  neither the requirement identifiers nor the naming rule the check applies, and it suggested
+  `harness check`, which the agent's grants (the built-in profiles allow `python`, `npm`,
+  `go`...) do not let it run. The `gate` block now carries `traceability` (the policy, each
+  requirement's identifier, the requirements without one and the naming rule) under `enforce`
+  or `warn`, and `checkCommand` only when the agent's `process.execute` grants allow `harness`;
+  otherwise `checkCommands` lists the validator commands they allow (possibly none) and the
+  implement instructions say to run those or to leave the gate to the harness. This is a fix of
+  the contract `runtime.gateContract` already sends, so it applies without a new key; the
+  request of a run with `gateContract` changes accordingly.
 - A second attempt for a read-only answer that breaks its contract (#80). In the 2.0.0 pilot an
   acceptance call answered with invalid JSON and SPECIFICATION blocked at once, while the review
   panel retries an invalid answer on its fallback provider. Under `runtime.contractRetry`
