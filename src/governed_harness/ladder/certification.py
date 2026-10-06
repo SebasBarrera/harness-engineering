@@ -85,8 +85,18 @@ def required_level(criterion: AcceptanceCriterion, default: VerificationLevel) -
 
 
 def _evidence(criterion: AcceptanceCriterion, inputs: CertificationInputs) -> list[LevelEvidence]:
+    return [
+        *_test_evidence(criterion.criterion_id, inputs),
+        *_probe_evidence(criterion, inputs),
+        *_deferred_evidence(criterion.criterion_id, inputs),
+        *_manual_evidence(criterion, inputs),
+    ]
+
+
+def _test_evidence(cid: str, inputs: CertificationInputs) -> list[LevelEvidence]:
+    """L0 from the verification, L1 from the tests and acceptance tests that name the
+    criterion, L2 from its integration tests."""
     found: list[LevelEvidence] = []
-    cid = criterion.criterion_id
     if inputs.verification_passed:
         found.append(
             LevelEvidence(
@@ -95,8 +105,8 @@ def _evidence(criterion: AcceptanceCriterion, inputs: CertificationInputs) -> li
                 detail=f"every mandatory validator passed on {inputs.digest}",
             )
         )
-    l1 = {item for item in inputs.level_validators.get(VerificationLevel.L1, set())}
-    l2 = {item for item in inputs.level_validators.get(VerificationLevel.L2, set())}
+    l1 = set(inputs.level_validators.get(VerificationLevel.L1, set()))
+    l2 = set(inputs.level_validators.get(VerificationLevel.L2, set()))
     l1_passed = sorted(l1 & inputs.passed_validators)
     l2_passed = sorted(l2 & inputs.passed_validators)
     named = inputs.tests.get(cid, [])
@@ -134,6 +144,15 @@ def _evidence(criterion: AcceptanceCriterion, inputs: CertificationInputs) -> li
                 + ", ".join(item.node_id for item in integration[:5]),
             )
         )
+    return found
+
+
+def _probe_evidence(
+    criterion: AcceptanceCriterion, inputs: CertificationInputs
+) -> list[LevelEvidence]:
+    """The level of every ready probe of the criterion that passed."""
+    found: list[LevelEvidence] = []
+    cid = criterion.criterion_id
     declared_probe = criterion.verification.probe if criterion.verification else None
     for probe in inputs.probes:
         if probe.probe_id != declared_probe and cid not in probe.criteria:
@@ -147,25 +166,35 @@ def _evidence(criterion: AcceptanceCriterion, inputs: CertificationInputs) -> li
                     refs=(probe.ref,) if probe.ref else (),
                 )
             )
-    for item in inputs.deferred:
-        if item.criterion_id == cid and item.status == "PASSED":
-            found.append(
-                LevelEvidence(
-                    level=item.level,
-                    source=f"deferred.{item.item_id}",
-                    detail=item.summary or f"deferred verification closed ({item.where})",
-                    refs=(item.evidence_ref,) if item.evidence_ref else (),
-                )
-            )
-    if criterion.verification and criterion.verification.manual and cid in inputs.checked:
-        found.append(
+    return found
+
+
+def _deferred_evidence(cid: str, inputs: CertificationInputs) -> list[LevelEvidence]:
+    return [
+        LevelEvidence(
+            level=item.level,
+            source=f"deferred.{item.item_id}",
+            detail=item.summary or f"deferred verification closed ({item.where})",
+            refs=(item.evidence_ref,) if item.evidence_ref else (),
+        )
+        for item in inputs.deferred
+        if item.criterion_id == cid and item.status == "PASSED"
+    ]
+
+
+def _manual_evidence(
+    criterion: AcceptanceCriterion, inputs: CertificationInputs
+) -> list[LevelEvidence]:
+    verification = criterion.verification
+    if verification and verification.manual and criterion.criterion_id in inputs.checked:
+        return [
             LevelEvidence(
                 level=VerificationLevel.L5,
                 source="decision",
-                detail=f"a person checked: {criterion.verification.manual}",
+                detail=f"a person checked: {verification.manual}",
             )
-        )
-    return found
+        ]
+    return []
 
 
 def _pending(

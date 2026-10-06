@@ -39,8 +39,9 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices, RunEngine
 
 ISOLATION_FLAG = "isolation"
+_HARNESS_DIR = ".harness"
 GENERATED_DIRECTORIES = frozenset(
-    {".harness", "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage"}
+    {_HARNESS_DIR, "__pycache__", ".pytest_cache", ".mypy_cache", ".ruff_cache", ".coverage"}
 )
 """What a run leaves untracked in its worktree (the harness's directory, tool caches)."""
 
@@ -115,7 +116,7 @@ def create_worktree(services: EngineServices, run_id: str, plan: dict[str, Any])
     directory = Path(plan["directory"])
     directory.parent.mkdir(parents=True, exist_ok=True)
     Git(workspace).run("worktree", "add", "-b", plan["branch"], str(directory), plan["start"])
-    harness = directory / ".harness"
+    harness = directory / _HARNESS_DIR
     harness.mkdir(parents=True, exist_ok=True, mode=0o700)
     shutil.copyfile(services.paths.harness_dir / "project.yaml", harness / "project.yaml")
     state_root = services.paths.state_root or services.paths.harness_dir
@@ -235,7 +236,7 @@ def cleanup_worktree(services: EngineServices, execution: Execution) -> dict[str
     if run_is_open(execution) and execution.current_phase is not PhaseId.CLOSURE:
         raise PolicyViolationError(f"run {execution.execution_id} is still open")
     directory = Path(record["directory"])
-    marker = directory / ".harness" / ISOLATION_MARKER
+    marker = directory / _HARNESS_DIR / ISOLATION_MARKER
     if not marker.is_file():
         raise PolicyViolationError(f"{directory} is not a worktree the harness created")
     origin = Path(record.get("origin") or services.paths.workspace)
@@ -256,8 +257,8 @@ def cleanup_worktree(services: EngineServices, execution: Execution) -> dict[str
         target = directory / line[3:].strip().strip('"').rstrip("/")
         if line.startswith("??") and _generated(line[3:].strip()) and target.is_dir():
             shutil.rmtree(target)
-    if (directory / ".harness").is_dir():
-        shutil.rmtree(directory / ".harness")
+    if (directory / _HARNESS_DIR).is_dir():
+        shutil.rmtree(directory / _HARNESS_DIR)
     git.run("worktree", "remove", str(directory))
     updated = {**record, "status": "REMOVED", "removedAt": utc_now().isoformat()}
     services.state.set_flag(

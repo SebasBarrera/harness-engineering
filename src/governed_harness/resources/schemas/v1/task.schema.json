@@ -365,7 +365,7 @@
     },
     "ProbeAssertion": {
       "additionalProperties": false,
-      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.",
+      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.\n\n``variants`` names the variants an assertion of any kind checks (every variant when it is\nempty); an assertion that names no variant of the probe fails.",
       "properties": {
         "after": {
           "anyOf": [

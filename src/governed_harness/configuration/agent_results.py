@@ -62,6 +62,76 @@ def off_from_yaml(value: Any) -> Any:
     return "off" if value is False else value
 
 
+AmbiguityExhausted = Literal["assume", "block"]
+DEFAULT_AMBIGUITY_ROUNDS = 3
+"""Rounds of agent questions a person answers before the review is exhausted (#79)."""
+DEFAULT_AMBIGUITY_QUESTIONS = 8
+"""Agent questions asked at most in one round (#79)."""
+
+
+class AmbiguityReviewConfig(_Section):
+    """The converging agent review of a task in INTENT (#79), the object form of
+    ``intake.ambiguityReview``.
+
+    The review receives the questions already asked and their answers, asks only for blocking
+    ambiguity that the latest revision introduced or left open, never asks again a question
+    already asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.
+    After ``maxRounds`` rounds answered by a person, the points the agent still raises are
+    recorded as explicit assumptions and the run continues (``onExhausted: assume``), or they
+    are asked again and INTENT stays blocked (``block``, the default). The bare value
+    ``agent`` keeps the review of 1.1, which neither converges nor stops."""
+
+    mode: AmbiguityReview = "agent"
+    max_rounds: int | None = Field(default=None, alias="maxRounds", ge=1, le=20)
+    max_questions: int | None = Field(default=None, alias="maxQuestions", ge=1, le=40)
+    on_exhausted: AmbiguityExhausted | None = Field(default=None, alias="onExhausted")
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "agent"
+
+    @property
+    def rounds(self) -> int:
+        return self.max_rounds or DEFAULT_AMBIGUITY_ROUNDS
+
+    @property
+    def questions(self) -> int:
+        return self.max_questions or DEFAULT_AMBIGUITY_QUESTIONS
+
+    @property
+    def exhausted(self) -> AmbiguityExhausted:
+        return self.on_exhausted or "block"
+
+
+# ----- read-only calls (#80) ----------------------------------------------------------------
+ContractRetryMode = Literal["once", "off"]
+
+
+class ContractRetryConfig(_Section):
+    """A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer
+    breaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase
+    rejects) is sent once more before the phase blocks (``mode: once``), to
+    ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
+    provider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1."""
+
+    mode: ContractRetryMode = "once"
+    fallback_provider: str | None = Field(default=None, alias="fallbackProvider", min_length=1)
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def _bare_off(cls, value: Any) -> Any:
+        return off_from_yaml(value)
+
+    @property
+    def enabled(self) -> bool:
+        return self.mode == "once"
+
+
 # ----- VERIFICATION (#40, #52) --------------------------------------------------------------
 class ForbiddenImport(_Section):
     """Modules under ``source`` must not import modules under ``target`` (dotted prefixes)."""
@@ -322,7 +392,7 @@ class MemoryConfig(_Section):
 
 
 # ----- Routing (#44) -------------------------------------------------------------------------
-RoutingMode = Literal["fixed", "tiered"]
+RoutingMode = Literal["fixed", "tiered", "anchored"]
 SizeClass = Literal["S", "M", "L"]
 ProviderFamily = Literal["claude-code", "codex", "generic"]
 
@@ -373,9 +443,20 @@ class FamilyTable(_Section):
 class AgentRoutingConfig(_Section):
     """Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,
     ``tiered`` chooses from the tables by call kind and task size and escalates on quality
-    failures."""
+    failures.
+
+    Since #85 ``anchored`` uses the same tables with the invoking model as the ceiling: a rung
+    of a cheaper model is kept, a rung of the invoking model's tier uses the invoking model
+    with the rung's effort, a rung above it becomes the top rung allowed, and escalation climbs
+    only up to that model. The invoking model is ``anchorModel`` when set, else the ``model``
+    of the provider that answers the call (for the ``session`` provider, ``agentProvider``),
+    else the ``--model``/``-m`` value of its command or ``args``; when none is known every call
+    keeps the provider's own model."""
 
     mode: RoutingMode | None = None
+    anchor_model: str | None = Field(default=None, alias="anchorModel", min_length=1)
+    """Since #85: the invoking model of ``mode: anchored`` when the provider does not say it
+    (for example the model of an embedded agent session)."""
     thresholds: SizeThresholds | None = None
     families: dict[str, ProviderFamily] | None = None
     tables: dict[ProviderFamily, FamilyTable] | None = None

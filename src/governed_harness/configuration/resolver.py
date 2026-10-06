@@ -16,6 +16,7 @@ from governed_harness.configuration.loader import (
 )
 from governed_harness.configuration.models import (
     CapabilityRule,
+    ProjectConfiguration,
     ResolvedConfiguration,
     TechnologyProfileDefinition,
     ToolchainConfig,
@@ -61,21 +62,9 @@ class ConfigurationResolver:
         # Since #55: the built-in Go, Rust, JVM, Swift and Android profiles are detected under
         # toolchain.extendedProfiles; without it detection is the 1.0.0 one.
         extended = load_extended_profiles() if toolchain.extended_profiles else {}
-        requested = list(project.profiles)
-        if requested == ["auto"] or "auto" in requested:
-            detections = [
-                result
-                for result in detect_profiles(
-                    workspace_root, [*project_profiles.values(), *extended.values()]
-                )
-                if result.confidence > 0
-            ]
-            if not detections:
-                raise ConfigurationError("no supported technology profile detected")
-            if toolchain.profile_detection == "all":
-                requested = [item.profile_id for item in detections]
-            else:
-                requested = [detections[0].profile_id]
+        requested = self._requested_profiles(
+            project, workspace_root, [*project_profiles.values(), *extended.values()]
+        )
         profiles = tuple(
             project_profiles[profile_id]
             if profile_id in project_profiles
@@ -86,31 +75,7 @@ class ConfigurationResolver:
         if project.governance_settings.enforce_workflow:
             # Since #3: every gate and condition the engine will evaluate must be known.
             validate_enforced_workflow(workflow)
-        validators = self._resolve_validators(project.validators, profiles)
-        grants = (*project.capabilities.grants, *(project.capabilities.extend or ()))
-        if toolchain.validators or toolchain.interpreter == "auto":
-            validators, extra_scopes = self._project_toolchain(
-                validators, toolchain, workspace_root
-            )
-            grants = (
-                *grants,
-                *(
-                    CapabilityRule(capability="process.execute", scope=(scope,))
-                    for scope in extra_scopes
-                ),
-            )
-        standards = project.standards
-        if standards is not None and standards.tools_enabled:
-            validators, tool_scopes = self._standards_tools(
-                validators, standards, workspace_root, profiles
-            )
-            grants = (
-                *grants,
-                *(
-                    CapabilityRule(capability="process.execute", scope=(scope,))
-                    for scope in tool_scopes
-                ),
-            )
+        validators, grants = self._validators_and_grants(project, workspace_root, profiles)
         if project.governance_settings.phase_capabilities:
             # #4: the project narrows the profiles; the scopes derived from the validators the
             # project selects are added after it, and each phase allows what it declares.
@@ -145,6 +110,57 @@ class ConfigurationResolver:
                 *profile_files,
             ),
         )
+
+    @staticmethod
+    def _requested_profiles(
+        project: ProjectConfiguration,
+        workspace_root: Path,
+        candidates: list[TechnologyProfileDefinition],
+    ) -> list[str]:
+        """The profiles the project names; ``auto`` detects them among the project's own, the
+        extended and the built-in profiles (the best one, or all under ``profileDetection``)."""
+        requested = list(project.profiles)
+        if requested != ["auto"] and "auto" not in requested:
+            return requested
+        detections = [
+            result
+            for result in detect_profiles(workspace_root, candidates)
+            if result.confidence > 0
+        ]
+        if not detections:
+            raise ConfigurationError("no supported technology profile detected")
+        if project.toolchain_settings.profile_detection == "all":
+            return [item.profile_id for item in detections]
+        return [detections[0].profile_id]
+
+    def _validators_and_grants(
+        self,
+        project: ProjectConfiguration,
+        workspace_root: Path,
+        profiles: tuple[TechnologyProfileDefinition, ...],
+    ) -> tuple[tuple[ValidatorDefinition, ...], tuple[CapabilityRule, ...]]:
+        """The validators of the profiles and the project, with the project toolchain and the
+        standards tools, and the grants with the process scopes those add."""
+        toolchain = project.toolchain_settings
+        validators = self._resolve_validators(project.validators, profiles)
+        grants = (*project.capabilities.grants, *(project.capabilities.extend or ()))
+        scopes: list[str] = []
+        if toolchain.validators or toolchain.interpreter == "auto":
+            validators, extra_scopes = self._project_toolchain(
+                validators, toolchain, workspace_root
+            )
+            scopes.extend(extra_scopes)
+        standards = project.standards
+        if standards is not None and standards.tools_enabled:
+            validators, tool_scopes = self._standards_tools(
+                validators, standards, workspace_root, profiles
+            )
+            scopes.extend(tool_scopes)
+        grants = (
+            *grants,
+            *(CapabilityRule(capability="process.execute", scope=(scope,)) for scope in scopes),
+        )
+        return validators, grants
 
     @classmethod
     def _narrowed_capabilities(

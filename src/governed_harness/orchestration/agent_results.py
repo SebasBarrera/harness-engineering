@@ -9,24 +9,32 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
     AgentCallResult,
     AgentExecutionResult,
+    AgentProvider,
     CommandAgentProvider,
     SimulatedAgentContext,
     render_instructions,
 )
 from governed_harness.agents.requests import READ_ONLY_KINDS, REQUEST_SCHEMA_VERSION, CallKind
-from governed_harness.agents.routing import RoutingHistory, TaskSignals, provider_family, select
+from governed_harness.agents.routing import (
+    RoutingHistory,
+    TaskSignals,
+    invoking_model,
+    provider_family,
+    select,
+)
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.agent_results import AgentCallConfig, BudgetConfig
 from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
+    ErrorKind,
     EvidenceKind,
     FindingSeverity,
     PhaseId,
@@ -51,6 +59,9 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
+from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.orchestration.workspace_ops import (
     Contents,
     changes_since,
@@ -67,7 +78,8 @@ from governed_harness.runtime.snapshots import StoredSnapshot
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices, PhaseOutcome, RunEngine
+    from governed_harness.orchestration.engine_types import EngineServices
+    from governed_harness.orchestration.hosts import EngineHost
 
 _SECURITY_WORDS = (
     "password",
@@ -81,25 +93,12 @@ _SECURITY_WORDS = (
     "encrypt",
 )
 
-READ_ONLY_RULE = "agent.read-only-violation"
 BUDGET_EXCEEDED_RULE = "budget.exceeded"
 BUDGET_WARNING_RULE = "budget.warning"
 
 
-@dataclass(frozen=True)
-class AgentCallOutcome:
-    """What a read-only agent call returned: its status, the structured result when it passed
-    and the evidence it left."""
-
-    status: ResultStatus
-    summary: str
-    result: dict[str, Any] | None
-    invocation_id: str | None
-    evidence_refs: tuple[str, ...]
-
-
 class AgentResults:
-    def __init__(self, engine: RunEngine) -> None:
+    def __init__(self, engine: EngineHost) -> None:
         from governed_harness.orchestration.acceptance import AcceptanceTests
         from governed_harness.orchestration.agent_review import AgentReview
         from governed_harness.orchestration.corrections import Corrections
@@ -512,8 +511,6 @@ class AgentResults:
     ) -> PhaseOutcome | None:
         """Fail closed before an agent call when a limit is already crossed (or a call crossed
         its per-call limit and no person raised it since)."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -603,22 +600,9 @@ class AgentResults:
 
     # ----- agent calls (#37, #38, #39) -----------------------------------------------------
     def call_config(self, kind: CallKind) -> AgentCallConfig | None:
-        if kind == "clarify":
-            return self.project.intake.clarify_agent if self.project.intake else None
-        if kind == "review":
-            return self.project.review.reviewer if self.project.review else None
-        if kind == "plan":
-            return self.project.planning.planner if self.project.planning else None
-        if kind == "acceptance":
-            config = self.acceptance.config
-            return config.author if config else None
-        if kind == "locate":
-            context = self.project.context
-            return context.locate.agent if context and context.locate else None
-        if kind == "architecture":
-            architecture = self.project.architecture
-            return architecture.agent if architecture else None
-        return None
+        """The configuration of a read-only call kind (``None``: the provider's defaults)."""
+        read = _CALL_CONFIGS.get(kind)
+        return read(self) if read is not None else None
 
     def provider_for(self, execution: Execution, kind: CallKind) -> str:
         configured = self.call_config(kind)
@@ -642,13 +626,93 @@ class AgentResults:
         task: Task,
         instruction_values: dict[str, Any] | None = None,
         instructions_suffix: str = "",
+        validate: Callable[[dict[str, Any]], object] | None = None,
     ) -> AgentCallOutcome:
         """Send a read-only request of ``kind`` and return its structured result.
 
         The request, the provider's output and the routing decision are evidence; a call that
-        changed the workspace is undone and answered with ``ERROR``."""
-        engine = self.engine
+        changed the workspace is undone and answered with ``ERROR``. Under
+        ``runtime.contractRetry`` (#80) an answer that breaks its contract (a protocol error,
+        or a ``result`` that ``validate`` rejects with ``ValueError``) is sent once more, to
+        the fallback provider when one is configured, and both attempts are recorded."""
         provider_id = self.provider_for(execution, kind)
+        first = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=provider_id,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        retry = self.project.runtime.contract_retry
+        problem = contract_problem(first, validate)
+        if retry is None or not retry.enabled or problem is None:
+            return first
+        fallback = retry.fallback_provider or provider_id
+        self._record_contract_retry(execution, phase, kind, first, problem, provider_id, fallback)
+        second = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=fallback,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        return replace(second, evidence_refs=(*first.evidence_refs, *second.evidence_refs))
+
+    def _record_contract_retry(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        first: AgentCallOutcome,
+        problem: str,
+        provider_id: str,
+        fallback: str,
+    ) -> None:
+        """The first attempt of a read-only call broke its contract: say why and where the
+        second goes."""
+        record = {
+            "callKind": kind,
+            "attempt": 1,
+            "provider": provider_id,
+            "retryProvider": fallback,
+            "problem": problem[:2000],
+            "invocationId": first.invocation_id,
+            "evidenceRefs": list(first.evidence_refs),
+        }
+        ref = self.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-contract-retry",
+            summary=f"The {kind} answer broke its contract; sent again to {fallback}",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.call.contract-retry",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _call_once(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        payload: dict[str, Any],
+        *,
+        task: Task,
+        provider_id: str,
+        instruction_values: dict[str, Any] | None,
+        instructions_suffix: str,
+    ) -> AgentCallOutcome:
+        """One attempt of a read-only call on ``provider_id`` (see :meth:`call_agent`)."""
+        engine = self.engine
         built = engine._build_provider(execution, phase, provider_id)
         if not isinstance(built, tuple):
             return AgentCallOutcome(built.status, built.summary, None, None, built.evidence_refs)
@@ -700,23 +764,11 @@ class AgentResults:
             max_output_bytes=runtime.max_output_bytes,
             cancellation=CancellationToken(lambda: engine.is_cancelled(execution.execution_id)),
         )
-        retries = 0
-        while True:
-            answer: AgentCallResult = provider.call(kind, request, context, phase_id=phase.phase_id)
-            engine._save_agent_result(execution, phase, answer.execution)
-            cause = (
-                engine._transient_cause(answer.execution)
-                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                else None
+        answer = self._call_with_retries(execution, phase, provider, kind, request, context)
+        if answer is None:
+            return AgentCallOutcome(
+                ResultStatus.CANCELLED, "Cancellation requested", None, None, ()
             )
-            if cause is None:
-                break
-            retries += 1
-            engine._record_provider_retry(execution, phase, answer.execution, cause, retries)
-            if not engine._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                return AgentCallOutcome(
-                    ResultStatus.CANCELLED, "Cancellation requested", None, None, ()
-                )
         self.after_agent_call(execution, phase, answer.execution)
         refs = (request_ref, *sandbox_refs) + (
             (answer.execution.output_ref,) if answer.execution.output_ref else ()
@@ -754,7 +806,37 @@ class AgentResults:
             answer.response if answer.execution.status is ResultStatus.PASSED else None,
             answer.execution.invocation.invocation_id,
             refs,
+            protocol_error=protocol_error(answer.execution),
         )
+
+    def _call_with_retries(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider: AgentProvider,
+        kind: CallKind,
+        request: dict[str, Any],
+        context: SimulatedAgentContext,
+    ) -> AgentCallResult | None:
+        """The provider's answer, each one saved; a transient failure of a command provider is
+        retried up to ``runtime.retryLimit`` times. ``None``: cancelled while waiting to retry."""
+        engine = self.engine
+        runtime = self.project.runtime
+        retries = 0
+        while True:
+            answer: AgentCallResult = provider.call(kind, request, context, phase_id=phase.phase_id)
+            engine._save_agent_result(execution, phase, answer.execution)
+            cause = (
+                engine._transient_cause(answer.execution)
+                if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+                else None
+            )
+            if cause is None:
+                return answer
+            retries += 1
+            engine._record_provider_retry(execution, phase, answer.execution, cause, retries)
+            if not engine._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                return None
 
     def request_common(
         self,
@@ -822,6 +904,14 @@ class AgentResults:
         # A built-in adapter (kind claude-code, codex, ...) names its family by its kind.
         return (*(configured.command or ()), configured.kind)
 
+    def invoking_model(self, provider_id: str) -> str | None:
+        """The invoking model, ceiling of ``agentRouting.mode: anchored`` (#85), of a call that
+        ``provider_id`` answers: ``agentRouting.anchorModel`` when set, else the provider's
+        ``model``, else the ``--model``/``-m`` value of its command or ``args``. The embedded
+        ``session`` provider stands for the project's ``agentProvider``, which answers the
+        read-only calls of a session run. ``None`` when nothing says it."""
+        return invoking_model(self.project, provider_id)
+
     def routing_for(
         self,
         execution: Execution,
@@ -848,6 +938,7 @@ class AgentResults:
             policy,
             family=family,
             override=override if has_override else None,
+            anchor=self.invoking_model(provider_id),
         )
         record = {**decision.as_dict(), "provider": provider_id, "phase": phase.phase_id}
         ref = self.record_json(
@@ -929,32 +1020,24 @@ class AgentResults:
         """The keys the agent-results settings add to the implement request; with any of
         them the request also carries its kind and rendered instructions (schema 1.1)."""
         extra = self.request_common(execution, phase, "implement", task, provider_id, grants)
+        notes: list[str] = []
         if self.gate.enabled:
-            extra["gate"] = self.gate.contract(execution)
+            # #84: the requirement ids and naming rule, and a check command the agent may run.
+            gate = self.gate.contract(execution, task, grants)
+            extra["gate"] = gate
+            notes.append(self.gate.instructions_note(gate))
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
         extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
-        suffix = ""
         if self.engineering.configured:
-            # Standards cards for the files this call works on, testing strategy and layers
-            # (#56), selected deterministically and cached by digest.
-            since = self.baseline_changes(execution)
-            changed = [item.path for item in since.changes] if since is not None else []
-            manifest = extra.get("contextFiles")
-            listed = (
-                [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
-                if isinstance(manifest, dict)
-                else []
-            )
-            paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, task, paths)
-            extra.update(engineering)
+            notes.insert(0, self._engineering_extra(execution, phase, task, extra))
         if not extra:
             return None
         workspace = str(self.s.paths.workspace)
+        suffix = " ".join(item for item in notes if item)
         extra.update(
             {
                 "schemaVersion": REQUEST_SCHEMA_VERSION,
@@ -965,6 +1048,25 @@ class AgentResults:
             }
         )
         return extra
+
+    def _engineering_extra(
+        self, execution: Execution, phase: PhaseExecution, task: Task, extra: dict[str, Any]
+    ) -> str:
+        """Standards cards for the files this call works on, testing strategy and layers (#56),
+        selected deterministically and cached by digest: added to ``extra``; the instructions
+        they add are returned."""
+        since = self.baseline_changes(execution)
+        changed = [item.path for item in since.changes] if since is not None else []
+        manifest = extra.get("contextFiles")
+        listed = (
+            [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
+            if isinstance(manifest, dict)
+            else []
+        )
+        paths = self.engineering.candidate_paths(task, changed, listed)
+        engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
+        extra.update(engineering)
+        return suffix
 
     def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
         """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the
@@ -1146,7 +1248,7 @@ class AgentResults:
         from governed_harness.agents.routing import can_escalate
 
         policy = self.project.agent_routing
-        if policy is None or policy.mode != "tiered":
+        if policy is None or policy.mode not in {"tiered", "anchored"}:
             return
         history = RoutingHistory(escalations=self.escalations(execution))
         if not can_escalate(history, policy):
@@ -1172,7 +1274,7 @@ class AgentResults:
 
     def implement_model(self, execution: Execution, task: Task) -> str | None:
         """The model an implement call would use (no record): the router's choice under
-        ``agentRouting: tiered``, else the provider's configured model."""
+        ``agentRouting: tiered`` (or ``anchored``), else the provider's configured model."""
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
         configured = self.project.agent_providers.get(provider_id)
         policy = self.project.agent_routing
@@ -1186,7 +1288,75 @@ class AgentResults:
                 RoutingHistory(escalations=self.escalations(execution)),
                 policy,
                 family=family,
+                anchor=self.invoking_model(provider_id),
             )
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the contract of a read-only answer (#80) ----------------------------------------------
+def protocol_error(result: AgentExecutionResult) -> str | None:
+    """Why an answer broke the provider protocol (no JSON, no ``result`` object), or ``None``."""
+    error = result.invocation.error
+    if result.status is not ResultStatus.ERROR or error is None:
+        return None
+    return error.message if error.kind is ErrorKind.PROTOCOL_ERROR else None
+
+
+def contract_problem(
+    outcome: AgentCallOutcome, validate: Callable[[dict[str, Any]], object] | None
+) -> str | None:
+    """Why a read-only answer breaks its contract: a protocol error, or a ``result`` that the
+    phase's ``validate`` rejects (``ValueError``); ``None`` for an answer that keeps it, and for
+    any other failure (a provider that did not answer, a call that changed the workspace)."""
+    if outcome.protocol_error is not None:
+        return outcome.protocol_error
+    if validate is None or outcome.status is not ResultStatus.PASSED or outcome.result is None:
+        return None
+    try:
+        validate(outcome.result)
+    except ValueError as error:
+        return str(error)
+    return None
+
+
+# ----- the configuration of each read-only call kind -----------------------------------------
+def _clarify_config(results: AgentResults) -> AgentCallConfig | None:
+    intake = results.project.intake
+    return intake.clarify_agent if intake else None
+
+
+def _review_config(results: AgentResults) -> AgentCallConfig | None:
+    review = results.project.review
+    return review.reviewer if review else None
+
+
+def _plan_config(results: AgentResults) -> AgentCallConfig | None:
+    planning = results.project.planning
+    return planning.planner if planning else None
+
+
+def _acceptance_config(results: AgentResults) -> AgentCallConfig | None:
+    config = results.acceptance.config
+    return config.author if config else None
+
+
+def _locate_config(results: AgentResults) -> AgentCallConfig | None:
+    context = results.project.context
+    return context.locate.agent if context and context.locate else None
+
+
+def _architecture_config(results: AgentResults) -> AgentCallConfig | None:
+    architecture = results.project.architecture
+    return architecture.agent if architecture else None
+
+
+_CALL_CONFIGS: dict[str, Callable[[AgentResults], AgentCallConfig | None]] = {
+    "clarify": _clarify_config,
+    "review": _review_config,
+    "plan": _plan_config,
+    "acceptance": _acceptance_config,
+    "locate": _locate_config,
+    "architecture": _architecture_config,
+}

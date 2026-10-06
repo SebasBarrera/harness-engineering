@@ -49,11 +49,11 @@ from governed_harness.domain.models import (
 from governed_harness.evidence import sha256_json
 from governed_harness.gates import GatePolicy
 from governed_harness.intake import task_digest
+from governed_harness.orchestration.engine_types import PhaseOutcome
 
 if TYPE_CHECKING:
     from governed_harness.events.sqlite_store import StoredEvent
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 MALFORMED_RULE = "planning.plan-malformed"
 DEFAULT_MAX_SUBTASKS = 12
@@ -121,7 +121,7 @@ def validate_plan(task: Task, result: dict[str, Any], max_subtasks: int) -> list
 
 
 class Decomposition:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -170,8 +170,6 @@ class Decomposition:
 
     def plan(self, execution: Execution, phase: PhaseExecution, task: Task) -> PhaseOutcome | None:
         """Request, validate and hold for approval the decomposition of a large task."""
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if not self.enabled:
             return None
         results = self.results
@@ -209,6 +207,7 @@ class Decomposition:
             {"threshold": threshold, "maxSubtasks": max_subtasks, "replan": replan},
             task=task,
             instruction_values={"maxSubtasks": max_subtasks},
+            validate=lambda result: validate_plan(task, result, max_subtasks),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -490,14 +489,16 @@ class Decomposition:
 
     def replan_after_failure(self, execution: Execution) -> bool:
         """Adaptive granularity: a coarse attempt whose corrections are exhausted returns to
-        PLANNING to be decomposed (once)."""
+        PLANNING to be decomposed (once). Only the attempt of a model listed in
+        ``planning.coarseModels`` is coarse (#77): another model's failure stops the run, it is
+        not sent back to PLANNING."""
         if not self.enabled or self.config.granularity != "adaptive":
             return False
         results = self.results
         if results.s.state.get_flag(f"replan:{execution.execution_id}") or self.approved(execution):
             return False
         task = results.engine.run_task(execution)
-        if len(task.requirements) < 2:
+        if len(task.requirements) < 2 or not self._coarse(execution, task):
             return False
         results.s.state.set_flag(f"replan:{execution.execution_id}", "1")
         results.s.state.set_flag(self._key(execution), "")

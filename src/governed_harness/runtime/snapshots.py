@@ -28,7 +28,7 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
+import subprocess  # nosec B404 - git ls-files with a fixed argv, no shell
 import tempfile
 import time
 from collections.abc import Callable, Iterator
@@ -79,7 +79,7 @@ class SnapshotSettings:
 
 def _git(root: Path, *args: str) -> subprocess.CompletedProcess[bytes] | None:
     try:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603 B607 - git from PATH, argv built here, no shell
             ["git", *args],
             cwd=root,
             stdin=subprocess.DEVNULL,

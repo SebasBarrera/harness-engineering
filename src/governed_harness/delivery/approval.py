@@ -19,6 +19,7 @@ in the range are reported to tell which run a commit claims; a trailer alone nev
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 from datetime import datetime
 from pathlib import Path
@@ -35,7 +36,8 @@ def local_database(root: Path) -> Path:
     ``runtime.stateDir`` names (#55) when the workspace has a project configuration."""
     config = root / ".harness" / "project.yaml"
     if config.is_file():
-        try:
+        # An unreadable configuration keeps the 1.0.0 path.
+        with contextlib.suppress(Exception):
             from governed_harness.configuration.loader import load_project_config
             from governed_harness.runtime.state_location import resolve_state_location
 
@@ -43,8 +45,6 @@ def local_database(root: Path) -> Path:
             return resolve_state_location(
                 root, project.project_id, project.runtime.state_dir, create=False
             ).database
-        except Exception:  # noqa: BLE001 - an unreadable configuration keeps the 1.0.0 path
-            pass
     return root / ".harness" / "state.db"
 
 
@@ -53,8 +53,7 @@ def _local_approvals(root: Path, now: datetime) -> list[dict[str, Any]]:
     if not database.is_file():
         return []
     found: list[dict[str, Any]] = []
-    store = SQLiteEventStore(database)
-    try:
+    with SQLiteEventStore(database) as store:
         events = store.list_all()
         runs = sorted({event.execution_id for event in events})
         for run in runs:
@@ -74,8 +73,6 @@ def _local_approvals(root: Path, now: datetime) -> list[dict[str, Any]]:
                         "problems": problems,
                     }
                 )
-    finally:
-        store.close()
     return found
 
 

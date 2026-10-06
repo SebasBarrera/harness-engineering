@@ -197,7 +197,8 @@ def test_missing_rung_falls_back_to_the_implement_tier() -> None:
     policy = _policy(tables={"claude-code": {"implement": {"S": {"model": "x"}}}})
     decision = select("plan", SMALL, RoutingHistory(), policy, family="claude-code")
     assert (decision.rule, decision.model) == ("fallback:implement:plan:S", "x")
-    assert decision.warning is not None and "plan" in decision.warning
+    assert decision.warning is not None
+    assert "plan" in decision.warning
     assert decision.as_dict()["warning"] == decision.warning
     decision = select("implement", LARGE, RoutingHistory(), policy, family="claude-code")
     assert decision.rule == "fixed"

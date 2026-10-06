@@ -25,7 +25,7 @@ from pydantic import (
 from governed_harness.configuration.agent_results import off_from_yaml
 from governed_harness.domain.enums import VerificationLevel
 
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 _BRANCH_FORBIDDEN = re.compile(r"(\.\.|[\s~^:?*\[\\]|@\{|//|^/|/$|\.lock$|^-)")
 
 

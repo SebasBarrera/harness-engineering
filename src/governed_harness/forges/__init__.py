@@ -46,27 +46,29 @@ from governed_harness.forges.transport import (
     build_transport,
 )
 
+_PR_TEMPLATE = "pull_request_template.md"
+
 TEMPLATE_CANDIDATES: dict[str, tuple[str, ...]] = {
     "github": (
-        ".github/pull_request_template.md",
+        f".github/{_PR_TEMPLATE}",
         ".github/PULL_REQUEST_TEMPLATE.md",
-        "docs/pull_request_template.md",
-        "pull_request_template.md",
+        f"docs/{_PR_TEMPLATE}",
+        _PR_TEMPLATE,
     ),
     "gitlab": (
         ".gitlab/merge_request_templates/Default.md",
         ".gitlab/merge_request_templates/default.md",
     ),
-    "bitbucket": ("PULL_REQUEST_TEMPLATE.md", ".bitbucket/pull_request_template.md"),
+    "bitbucket": ("PULL_REQUEST_TEMPLATE.md", f".bitbucket/{_PR_TEMPLATE}"),
     "azure-devops": (
-        ".azuredevops/pull_request_template.md",
-        "docs/pull_request_template.md",
-        "pull_request_template.md",
+        f".azuredevops/{_PR_TEMPLATE}",
+        f"docs/{_PR_TEMPLATE}",
+        _PR_TEMPLATE,
     ),
     "gitea": (
-        ".gitea/pull_request_template.md",
-        ".github/pull_request_template.md",
-        "pull_request_template.md",
+        f".gitea/{_PR_TEMPLATE}",
+        f".github/{_PR_TEMPLATE}",
+        _PR_TEMPLATE,
     ),
 }
 """Where each forge looks for its default pull request template, in order."""
@@ -99,6 +101,32 @@ def origin_url(workspace: Path, remote: str = "origin") -> str | None:
     return url or None
 
 
+_DEFAULT_HOSTS = {
+    "github": "github.com",
+    "gitlab": "gitlab.com",
+    "bitbucket": "bitbucket.org",
+    "azure-devops": "dev.azure.com",
+    "gitea": "codeberg.org",
+}
+
+
+def _configured_location(wanted: str | None, name: str | None, *, explicit: bool) -> ForgeLocation:
+    """The forge the configuration names when ``origin`` points to none: its kind on the
+    default host, with the configured repository."""
+    if not explicit:
+        raise ConfigurationError(
+            "no forge detected: the origin remote is missing or on an unknown host; set "
+            "delivery.forge.kind (github, gitlab, bitbucket, azure-devops, gitea) and "
+            "delivery.forge.repository, or pass --forge and --repository"
+        )
+    if name is None:
+        raise ConfigurationError(
+            "no repository: pass --repository or set delivery.forge.repository"
+        )
+    host = _DEFAULT_HOSTS[str(wanted)]
+    return ForgeLocation(str(wanted), host, name, default_api_url(str(wanted), host, name))
+
+
 def resolve_forge(
     workspace: Path,
     settings: ForgeConfig | None,
@@ -115,24 +143,7 @@ def resolve_forge(
     location = parse_remote(url, wanted) if url else None
     name = repository or configured.repository
     if location is None:
-        if not explicit:
-            raise ConfigurationError(
-                "no forge detected: the origin remote is missing or on an unknown host; set "
-                "delivery.forge.kind (github, gitlab, bitbucket, azure-devops, gitea) and "
-                "delivery.forge.repository, or pass --forge and --repository"
-            )
-        if name is None:
-            raise ConfigurationError(
-                "no repository: pass --repository or set delivery.forge.repository"
-            )
-        host = {
-            "github": "github.com",
-            "gitlab": "gitlab.com",
-            "bitbucket": "bitbucket.org",
-            "azure-devops": "dev.azure.com",
-            "gitea": "codeberg.org",
-        }[str(wanted)]
-        location = ForgeLocation(str(wanted), host, name, default_api_url(str(wanted), host, name))
+        location = _configured_location(wanted, name, explicit=explicit)
     if name is not None and name != location.repository:
         location = ForgeLocation(
             location.kind,

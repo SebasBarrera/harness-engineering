@@ -31,25 +31,32 @@ if TYPE_CHECKING:
 MAX_TEXT = 16000
 
 
+def _fast_lane_summary(lane: Any) -> dict[str, Any]:
+    verification = lane.verification if lane else None
+    return {
+        "mode": (lane.mode if lane else None) or "off",
+        "skip": list(lane.skipped) if lane and lane.enabled else [],
+        "affectedTestsFirst": bool(verification and verification.affected_tests_first),
+        "parallel": bool(verification and verification.parallel),
+        "cache": bool(verification and verification.cache),
+    }
+
+
+def _pre_authorization_summary(pre: Any) -> dict[str, Any]:
+    enabled = bool(pre and pre.enabled)
+    return {
+        "mode": (pre.mode if pre else None) or "off",
+        "defaultHours": pre.hours if enabled else None,
+        "maxHours": pre.limit_hours if enabled else None,
+    }
+
+
 def friction_summary(project: ProjectConfiguration) -> dict[str, Any]:
     """The effective friction settings (absent keys resolve to the 1.0.0 behaviour)."""
     config = project.friction or FrictionConfig()
-    lane = config.fast_lane
-    verification = lane.verification if lane else None
-    pre = config.pre_authorization
     return {
-        "fastLane": {
-            "mode": (lane.mode if lane else None) or "off",
-            "skip": list(lane.skipped) if lane and lane.enabled else [],
-            "affectedTestsFirst": bool(verification and verification.affected_tests_first),
-            "parallel": bool(verification and verification.parallel),
-            "cache": bool(verification and verification.cache),
-        },
-        "preAuthorization": {
-            "mode": (pre.mode if pre else None) or "off",
-            "defaultHours": pre.hours if pre and pre.enabled else None,
-            "maxHours": pre.limit_hours if pre and pre.enabled else None,
-        },
+        "fastLane": _fast_lane_summary(config.fast_lane),
+        "preAuthorization": _pre_authorization_summary(config.pre_authorization),
         "changeTypes": bool(config.change_types),
         "planApproval": config.plan_approval or "off",
         "targets": {
@@ -171,6 +178,8 @@ class BatchItem:
     decision: DecisionKind
     digest: str
     rationale: str | None = None
+    acknowledged_risks: tuple[str, ...] = ()
+    """Risk factors the person acknowledges with an APPROVE (``acknowledgeRisks``, #73)."""
 
 
 def parse_batch_item(value: str, decision: DecisionKind) -> BatchItem:
@@ -182,8 +191,9 @@ def parse_batch_item(value: str, decision: DecisionKind) -> BatchItem:
 
 
 def load_batch_file(raw: Any) -> list[BatchItem]:
-    """The decisions of a batch file: a list of ``run``, ``decision``, ``changeSetDigest`` and
-    optional ``rationale`` (or the same under a top-level ``decisions`` key)."""
+    """The decisions of a batch file: a list of ``run``, ``decision``, ``changeSetDigest``, an
+    optional ``rationale`` and optional ``acknowledgeRisks`` (or the same under a top-level
+    ``decisions`` key)."""
     if isinstance(raw, dict):
         raw = raw.get("decisions")
     if not isinstance(raw, list) or not raw:
@@ -201,8 +211,25 @@ def load_batch_file(raw: Any) -> list[BatchItem]:
         if not run or not digest.startswith("sha256:"):
             raise ConfigurationError(f"decision {index} needs run and changeSetDigest")
         rationale = entry.get("rationale")
-        items.append(BatchItem(run, decision, digest, str(rationale) if rationale else None))
+        items.append(
+            BatchItem(
+                run,
+                decision,
+                digest,
+                str(rationale) if rationale else None,
+                _risks(entry.get("acknowledgeRisks"), index),
+            )
+        )
     return items
+
+
+def _risks(value: Any, index: int) -> tuple[str, ...]:
+    """The ``acknowledgeRisks`` of a batch decision: a list of risk factor names."""
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ConfigurationError(f"decision {index}: acknowledgeRisks must be a list of names")
+    return tuple(value)
 
 
 def plan_state(services: EngineServices, execution_id: str) -> dict[str, Any] | None:

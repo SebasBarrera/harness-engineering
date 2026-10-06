@@ -93,6 +93,7 @@ nav:
       - Metrics: metrics.md
       - Monitoring: monitoring.md
       - Benchmarks: benchmarks.md
+      - Maintainer setup: maintainer-setup.md
   - Architecture:
       - Phases: architecture/phases.md
       - Traceability: architecture/traceability.md

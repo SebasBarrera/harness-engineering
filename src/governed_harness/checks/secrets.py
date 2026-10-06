@@ -267,7 +267,7 @@ class _Collector:
         )
 
 
-_MOVE_TO_SECRET_STORE = "Read the value from the environment or a secret store; never commit it."
+_MOVE_TO_SECRET_STORE = "Read the value from the environment or a secret store; never commit it."  # nosec B105 - remediation text, not a secret
 _TEST_RECOMMENDATION = "Use an obvious dummy value or generate the credential in a fixture."
 
 

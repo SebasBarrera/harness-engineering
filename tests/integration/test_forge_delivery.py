@@ -62,7 +62,8 @@ def test_gitlab_origin_publish_create_and_status(python_workspace: Path) -> None
     assert report["comment"]["action"] == "created"
     method, path, body = transport.calls[1]
     assert (method, path) == ("POST", "projects/team%2Fshop/merge_requests/7/notes")
-    assert marker(run) in body["body"] and digest in body["body"]
+    assert marker(run) in body["body"]
+    assert digest in body["body"]
     assert report["reports"]["status"] == "SKIPPED"
 
     transport = Recorder()
@@ -91,8 +92,9 @@ def test_gitlab_origin_publish_create_and_status(python_workspace: Path) -> None
 def test_create_needs_a_base_branch(python_workspace: Path) -> None:
     _origin(python_workspace, "https://gitlab.example.com/team/shop.git")
     application, run, _ = run_to_decision(python_workspace)
+    transport = Recorder()
     with pytest.raises(ConfigurationError, match="no base branch"):
-        application.create_pull_request(python_workspace, run, transport_override=Recorder())
+        application.create_pull_request(python_workspace, run, transport_override=transport)
 
 
 def test_unknown_origin_needs_the_forge(python_workspace: Path) -> None:

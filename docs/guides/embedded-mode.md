@@ -34,6 +34,8 @@ configuration the same way.
    the edits become the candidate ChangeSet, attributed to `agent.session`, and VERIFICATION,
    the review and the gate run. A failed verification is not corrected automatically for the
    session provider: the session reads the findings (`harness_status`), edits and continues.
+   The frozen acceptance tests the harness wrote after a person approved them are not the
+   session's edits: IMPLEMENTATION waits until the session changes something else (#81).
 5. At DECISION (exit 4) the session stops and shows the person `harness review`; the person
    decides with `harness gate decide` in a terminal.
 
@@ -41,6 +43,14 @@ The read-only calls of the run (clarify, review, acceptance, plan, architecture)
 project's `agentProvider` (or the provider each call configures), so the author does not review
 its own change. With `agentProvider: simulated` they get the simulated provider's empty answers;
 configure an adapter (for example `kind: claude-code`) for a real second reviewer.
+
+Under `agentRouting.mode: anchored` (what `harness init` writes, #85) the model of those
+read-only calls never goes above the invoking model. The harness cannot see the model of the
+session itself (the Model Context Protocol does not carry it), so the invoking model is
+`agentRouting.anchorModel` when you set it (set it to the session's model), else the `model` of
+`agentProvider`, else the `--model` value of its `command` or `args`; without any of them each
+call keeps the provider's own model. The session implements with its own model; the harness
+does not route it.
 
 ## The MCP server
 

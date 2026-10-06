@@ -18,6 +18,7 @@ every changed path outside them, so an out-of-scope write is no longer silent.""
 from __future__ import annotations
 
 import fnmatch
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.domain.enums import (
@@ -33,7 +34,7 @@ from governed_harness.runtime.guard import IGNORED_PATTERNS
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 OWNED_PATHS_ID = "harness.owned-paths"
 STOPPED_STATUSES = frozenset({ResultStatus.FAILED, ResultStatus.TIMED_OUT, ResultStatus.ERROR})
@@ -41,7 +42,7 @@ _STOPPED_PHASES = frozenset({PhaseId.IMPLEMENTATION, PhaseId.VERIFICATION})
 
 
 class StopLine:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -109,6 +110,18 @@ class StopLine:
         if isinstance(stopped, dict) and stopped.get("executionId") == execution.execution_id:
             self.results.s.state.set_flag(self._flag(execution.project_id), "")
 
+    def _kept(self, execution: Execution) -> set[str]:
+        """The frozen acceptance tests of a run that is still open stay in the workspace when
+        its changes are restored (#81): a person approved them and the harness wrote them, and
+        the next VERIFICATION of the run checks that they are unchanged. A closed, cancelled or
+        rejected run keeps nothing."""
+        from governed_harness.orchestration.engine import run_is_open
+
+        latest = self.results.engine.get_execution(execution.execution_id)
+        if not run_is_open(latest):
+            return set()
+        return self.results.acceptance.untouched(latest)
+
     def _record(self, execution: Execution, reason: str, *, restore: bool) -> dict[str, Any] | None:
         results = self.results
         diff = results.baseline_changes(execution)
@@ -125,8 +138,15 @@ class StopLine:
         )
         restored: list[str] = []
         unrestorable: list[str] = []
+        kept = self._kept(execution)
         if restore:
-            restored, unrestorable = restore_changes(workspace, contents, diff)
+            restored, unrestorable = restore_changes(
+                workspace,
+                contents,
+                replace(
+                    diff, changes=tuple(item for item in diff.changes if item.path not in kept)
+                ),
+            )
         record: dict[str, Any] = {
             "executionId": execution.execution_id,
             "reason": reason,
@@ -136,6 +156,8 @@ class StopLine:
             "restoredPaths": restored,
             "unrestorablePaths": unrestorable,
         }
+        if kept:
+            record["keptPaths"] = sorted(kept)
         ref = results.record_json(
             execution,
             execution.current_phase,

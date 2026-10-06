@@ -46,17 +46,57 @@ from governed_harness.domain.models import (
 )
 from governed_harness.evidence import sha256_json
 from governed_harness.evidence.hashing import sha256_bytes
+from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.runtime import CancellationToken
 from governed_harness.runtime.process_runner import CommandSpec
 from governed_harness.validators import CommandValidator, ValidatorOutput
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
-    from governed_harness.orchestration.engine import PhaseOutcome
+    from governed_harness.orchestration.hosts import ResultsHost
 
 ACCEPTANCE_ID = "harness.acceptance-tests"
 MAX_FILES = 20
 MAX_FILE_BYTES = 200_000
+
+
+def _check_feature(index: int, path: str, content: Any, directory: str) -> None:
+    """A feature file lives under ``directory`` and has a Feature and a Scenario."""
+    if (
+        not path.startswith(directory + "/")
+        or ".." in PurePosixPath(path).parts
+        or not path.endswith(".feature")
+    ):
+        raise ValueError(f"feature file {index} must be {directory}/<name>.feature, got {path!r}")
+    if not isinstance(content, str) or "Feature:" not in content or ("Scenario" not in content):
+        raise ValueError(f"feature file {path} needs a Feature and a Scenario")
+
+
+def _check_test_path(index: int, path: str, directory: str) -> None:
+    """A pytest file lives under ``directory`` and is named ``test_<name>.py``."""
+    if (
+        not path.startswith(directory + "/")
+        or ".." in PurePosixPath(path).parts
+        or not PurePosixPath(path).name.startswith("test_")
+        or not path.endswith(".py")
+    ):
+        raise ValueError(f"test file {index} must be {directory}/test_<name>.py, got {path!r}")
+
+
+def _test_file(index: int, entry: Any, directory: str, gherkin: bool) -> dict[str, str]:
+    """One file of the answer, checked: its place, its name and its content."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"test file {index} is not an object")
+    path = str(entry.get("path") or "")
+    content = entry.get("content")
+    if gherkin:
+        _check_feature(index, path, content, directory)
+    else:
+        _check_test_path(index, path, directory)
+    if not isinstance(content, str) or not content.strip():
+        raise ValueError(f"test file {path} has no content")
+    if len(content.encode("utf-8")) > MAX_FILE_BYTES:
+        raise ValueError(f"test file {path} is larger than {MAX_FILE_BYTES} bytes")
+    return {"path": path, "content": content}
 
 
 def validate_tests(
@@ -70,46 +110,32 @@ def validate_tests(
     files: list[dict[str, str]] = []
     seen: set[str] = set()
     for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"test file {index} is not an object")
-        path = str(entry.get("path") or "")
-        content = entry.get("content")
-        parts = PurePosixPath(path).parts
-        if gherkin:
-            if (
-                not path.startswith(directory + "/")
-                or ".." in parts
-                or not path.endswith(".feature")
-            ):
-                raise ValueError(
-                    f"feature file {index} must be {directory}/<name>.feature, got {path!r}"
-                )
-            if (
-                not isinstance(content, str)
-                or "Feature:" not in content
-                or ("Scenario" not in content)
-            ):
-                raise ValueError(f"feature file {path} needs a Feature and a Scenario")
-        elif (
-            not path.startswith(directory + "/")
-            or ".." in parts
-            or not PurePosixPath(path).name.startswith("test_")
-            or not path.endswith(".py")
-        ):
-            raise ValueError(f"test file {index} must be {directory}/test_<name>.py, got {path!r}")
-        if not isinstance(content, str) or not content.strip():
-            raise ValueError(f"test file {path} has no content")
-        if len(content.encode("utf-8")) > MAX_FILE_BYTES:
-            raise ValueError(f"test file {path} is larger than {MAX_FILE_BYTES} bytes")
-        if path in seen:
-            raise ValueError(f"test file {path} appears twice")
-        seen.add(path)
-        files.append({"path": path, "content": content})
+        item = _test_file(index, entry, directory, gherkin)
+        if item["path"] in seen:
+            raise ValueError(f"test file {item['path']} appears twice")
+        seen.add(item["path"])
+        files.append(item)
     return files
 
 
+def _free_path(workspace: Path, path: str, execution_id: str) -> str:
+    """``path`` when no file is there; otherwise the same name with the run's suffix (and a
+    counter if that is taken too), in the same directory and with the same extension, so the
+    runner still collects it (``test_<name>_<run>.py``, ``<name>_<run>.feature``)."""
+    if not (workspace / path).exists():
+        return path
+    pure = PurePosixPath(path)
+    suffix = execution_id.rsplit("_", 1)[-1][-8:]
+    candidate = str(pure.with_name(f"{pure.stem}_{suffix}{pure.suffix}"))
+    number = 2
+    while (workspace / candidate).exists():
+        candidate = str(pure.with_name(f"{pure.stem}_{suffix}_{number}{pure.suffix}"))
+        number += 1
+    return candidate
+
+
 class AcceptanceTests:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -145,8 +171,6 @@ class AcceptanceTests:
     def propose(
         self, execution: Execution, phase: PhaseExecution, task: Task
     ) -> PhaseOutcome | None:
-        from governed_harness.orchestration.engine import PhaseOutcome
-
         if not self.enabled:
             return None
         state = self.state(execution)
@@ -172,6 +196,7 @@ class AcceptanceTests:
                 "directory": directory,
                 "format": "gherkin" if gherkin else "pytest",
             },
+            validate=lambda result: validate_tests(result, directory, gherkin=gherkin),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -249,15 +274,10 @@ class AcceptanceTests:
             raise NotFoundError(f"run {execution.execution_id} has no proposed acceptance tests")
         if state["digest"] != digest:
             raise PolicyViolationError("the digest does not match the proposed acceptance tests")
-        workspace = self.results.s.paths.workspace
         frozen: dict[str, str] = {}
+        renamed: dict[str, str] = {}
         if decision is DecisionKind.APPROVE:
-            for item in state["tests"]:
-                target = contained_path(workspace, Path(item["path"]))
-                target.parent.mkdir(parents=True, exist_ok=True)
-                data = item["content"].encode("utf-8")
-                target.write_bytes(data)
-                frozen[item["path"]] = sha256_bytes(data)
+            frozen, renamed = self._write(execution, state["tests"])
         status = "APPROVED" if decision is DecisionKind.APPROVE else "REJECTED"
         state = {
             **state,
@@ -266,17 +286,40 @@ class AcceptanceTests:
             "decidedBy": actor.actor_id,
             "rationale": rationale,
         }
+        payload: dict[str, Any] = {"decision": decision.value, "digest": digest, "frozen": frozen}
+        if renamed:
+            state["renamed"] = renamed
+            payload["renamed"] = renamed
         self.results.set_flag_json(self._key(execution), state)
         self.results.s.events.append(
-            execution.execution_id,
-            "acceptance.tests.decided",
-            {"decision": decision.value, "digest": digest, "frozen": frozen},
-            actor=actor,
+            execution.execution_id, "acceptance.tests.decided", payload, actor=actor
         )
         if frozen:
             self._fail_before(execution, list(frozen))
             state = self.state(execution) or state
         return state
+
+    def _write(
+        self, execution: Execution, tests: list[dict[str, str]]
+    ) -> tuple[dict[str, str], dict[str, str]]:
+        """Write the approved files and return their digests (frozen) and the proposed paths
+        written under another name. A path where a file already exists (the frozen acceptance
+        test of an earlier run in the same workspace, or any file of the project) is never
+        overwritten (#82): the file gets a run-unique name next to it, so no earlier run's
+        frozen file changes and no agent is blamed for a test that disappeared."""
+        workspace = self.results.s.paths.workspace
+        frozen: dict[str, str] = {}
+        renamed: dict[str, str] = {}
+        for item in tests:
+            path = _free_path(workspace, item["path"], execution.execution_id)
+            if path != item["path"]:
+                renamed[item["path"]] = path
+            target = contained_path(workspace, Path(path))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            data = item["content"].encode("utf-8")
+            target.write_bytes(data)
+            frozen[path] = sha256_bytes(data)
+        return frozen, renamed
 
     def _fail_before(self, execution: Execution, paths: list[str]) -> None:
         """The frozen tests run on the workspace before the change: passing there means they
@@ -328,6 +371,20 @@ class AcceptanceTests:
         results.set_flag_json(self._key(execution), state)
 
     # ----- IMPLEMENTATION and VERIFICATION --------------------------------------------------
+    def untouched(self, execution: Execution) -> set[str]:
+        """The frozen files the harness wrote on approval that are still as approved: they
+        are the harness's, not the agent's edits (#81)."""
+        state = self.state(execution)
+        if not state or state.get("status") != "APPROVED":
+            return set()
+        workspace = self.results.s.paths.workspace
+        kept: set[str] = set()
+        for path, digest in (state.get("frozen") or {}).items():
+            target = workspace / path
+            if target.is_file() and sha256_bytes(target.read_bytes()) == digest:
+                kept.add(path)
+        return kept
+
     def request_extra(self, execution: Execution) -> dict[str, Any] | None:
         state = self.state(execution)
         if not state or state.get("status") != "APPROVED" or not state.get("frozen"):

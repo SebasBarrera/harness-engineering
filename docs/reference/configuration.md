@@ -57,6 +57,8 @@ runtime:
   providerRetryDelaySeconds: 60
   extendedRedaction: true
   gateContract: true
+  contractRetry:
+    mode: once
   reproduceFirst: true
   stateDir: auto
 retention:
@@ -65,7 +67,11 @@ retention:
   orphanArtifacts: true
 intake:
   criteriaPolicy: enforce
-  ambiguityReview: agent
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3
+    maxQuestions: 8
+    onExhausted: assume
   validateAnswers: true
   operationalContract: batch
   interruptions:
@@ -107,6 +113,7 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+  reverifyOnChange: true
   ladder:
     mode: enforce
     defaultLevel: L1
@@ -182,7 +189,7 @@ memory:
   learnFromFindings: auto
   autoApproveRecurring: false
 agentRouting:
-  mode: tiered
+  mode: anchored
   thresholds:
     requirements:
     - 5
@@ -212,9 +219,9 @@ governance:
   applyNetworkPolicy: true
   stopTheLine: restore
   phasePermissions: true
+  phaseCapabilities: true
   applyRepositoryPolicies: true
   enforceWorkflow: true
-  phaseCapabilities: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -297,9 +304,12 @@ api:
   users: []
 ```
 
-Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and writes
+Since 1.1 the CLI `harness init` also makes Git ignore `.harness/` and writes
 `.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
-`notifications` section is never written, because it needs a URL.
+`notifications` section is never written, because it needs a URL. Since #86 the entry goes to
+the repository's `.git/info/exclude` in a Git repository, so the tree stays clean (an entry
+already in `.gitignore` is left as it is), and to `.gitignore` outside one or with
+`--ignore-file gitignore`.
 
 ## Fields
 
@@ -340,16 +350,20 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
 | `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
-| `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes `agent` and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
+| `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes the object form below and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
+| `intake.ambiguityReview.mode`, `maxRounds`, `maxQuestions`, `onExhausted` | the bare `agent` (the 1.1 review) when given as a value; `init` writes `agent`, `3`, `8`, `assume` | Since #79 the object form makes the review converge: it sends the questions already asked with their answers, drops repeated questions, asks at most `maxQuestions` (default 8) a round, and after `maxRounds` (default 3) answered rounds records the open points as assumptions of the task revision (`assume`) or keeps INTENT blocked (`block`, the default). See [a review that converges](../guides/agent-results.md#a-review-that-converges-79). |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
+| `verification.reverifyOnChange` | `false` when absent; `init` writes `true` | `run continue` on a run waiting in DECISION whose ChangeSet changed outside the run records the change as evidence and runs VERIFICATION again on the new ChangeSet (#78). See [re-verification after a change outside the run](#re-verification-after-a-change-outside-the-run). |
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
+| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
+| `agentRouting.mode`, `agentRouting.anchorModel` | `fixed` when absent; `init` writes `anchored` (before #85: `tiered`) | `fixed` keeps the provider's model, `tiered` chooses from the tables, `anchored` chooses from the tables with the invoking model as the ceiling; `anchorModel` names the invoking model when the provider does not (for example an embedded session). See [anchored routing](../guides/agent-results.md#anchored-at-the-invoking-model-85). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |
@@ -454,8 +468,11 @@ happened after a run to it (schema
 ## Notifications
 
 `harness inbox` (and `GET /api/inbox`, the dashboard's left column) lists the runs that wait for
-a person: a decision in `DECISION` (gate status, digest, blocking findings) or answers to
-clarification questions in `INTENT`, oldest first. It needs no configuration. The dashboard
+a person: a decision in `DECISION` (gate status, digest, blocking findings and the risk factors
+an `APPROVE` must acknowledge, `acknowledgeRisks`) or answers to clarification questions in
+`INTENT`, and every other wait before `DECISION` (`plan`, `decomposition`, `acceptance`,
+`architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
+and the command that answers it, oldest first. It needs no configuration. The dashboard
 refreshes the inbox, the runs and the selected run every 5 seconds.
 
 Webhooks are opt-in. `harness init` writes none, because a URL is needed:
@@ -766,6 +783,27 @@ correction cycles or implementation attempts. The default patterns are `timed ou
 `connection reset`, `went to sleep`, `overloaded`, `429`, `529`, `rate limit` and `usage limit`; a
 pattern that starts or ends with a digit does not match inside a longer number.
 
+## Re-verification after a change outside the run
+
+A file of the ChangeSet edited while the run waits in DECISION (after its gate was evaluated)
+changes the ChangeSet digest: the pending approval no longer applies (`approval.invalidated`).
+Without the key, `run continue` evaluates the gate of the new ChangeSet, which has no
+validation of it, so the gate is `INCONCLUSIVE` (`NO_MANDATORY_VALIDATIONS`) and the change needs
+a `REQUEST_CHANGES` or a new run, as in 1.0.0 (thesis flow 4, `scripts/demo_flows.py`).
+
+```yaml
+verification:
+  reverifyOnChange: true
+```
+
+With the key (written by `harness init`), `run continue` records the change first, as evidence
+of DECISION (`out-of-band-change`: both digests, the paths that differ and the new diff, plus the
+provenance of the edit when `provenance.agentSnapshots` is on), and the event
+`verification.reverify.authorized`; the run then returns to VERIFICATION on the new ChangeSet,
+the independent review runs again and DECISION asks for a decision bound to the new digest. A
+decision recorded for the earlier digest stays stale. A failed re-verification follows the usual
+correction rules. The key never applies to a run that is not in DECISION.
+
 ## Governance
 
 The `governance` section protects the human decision, the workspace and the record. Every key is
@@ -900,22 +938,33 @@ issued for the whole run whatever the phase: a project could widen a profile but
 and the workflow's `allowedCapabilities` had no effect (issue #4). Under
 `governance.phaseCapabilities: true`:
 
-* a capability the project lists in `capabilities.grants` keeps only the scopes both the
+- a capability the project lists in `capabilities.grants` keeps only the scopes both the
   profiles and the project allow (a project scope inside a profile scope, `src/**` inside `**`);
   a capability the project does not list keeps the profiles' scopes; a scope no profile grants
   is added explicitly with `capabilities.extend` (without the key, `extend` is added like
   `grants`). Scopes the harness derives from what the project selects (its toolchain validators,
   the interpreter, the standards tools) are added after it. Two patterns that only overlap in
   part are not kept: the intersection fails closed;
-* every grant made while a phase runs (validators, probes, agent calls) keeps only the
+- every grant made while a phase runs (validators, probes, agent calls) keeps only the
   capabilities the phase allows: the workflow's `allowedCapabilities` plus what the harness
   itself runs there (`process.execute` in SPECIFICATION for the frozen acceptance tests, in
   PLANNING for the preflight probes, in INDEPENDENT_REVIEW for the review panel's consistency
   checks), written into the resolved workflow of the configuration snapshot;
-* an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
+- an agent call outside IMPLEMENTATION (clarify, locate, plan, acceptance, architecture, review
   and every reviewer of the panel) gets no `filesystem.write` and may start only its own
   configured command (`agentProviders.ID.command`);
-* each phase attempt records the resolved grants of the validators and of the run's agent as
+- an agent's own command is the command of the configured provider the agent is (the actor
+  `agent.ID` starts only `agentProviders.ID.command`, or the default executable of a built-in
+  adapter), and it keeps its grant in every phase only when one of the run's `process.execute`
+  grants allows it (the profiles' narrowed by `capabilities.grants`, plus `capabilities.extend`
+  and the derived scopes; a grant with `approvalRequired` does not count). A command no grant
+  allows is refused before it starts (issue #87): the refusal is a `HIGH`
+  `capabilities.command-denied` finding, the phase is `BLOCKED` with a reason that names the
+  agent, the command and `capabilities.extend`, and `run start` exits with 6. `harness config
+  validate` warns about each provider whose command no grant allows. A provider command outside
+  the profiles (`claude`, `codex`, a wrapper) is granted with `capabilities.extend`, since
+  `capabilities.grants` only narrows the profiles;
+- each phase attempt records the resolved grants of the validators and of the run's agent as
   evidence and as a `capabilities.resolved` event.
 
 `harness config validate` warns that `allowedCapabilities` is declared but not applied while the
@@ -926,7 +975,7 @@ key is off.
 The policies `repositoryContentTrusted` and `destructiveActionsDefault` were part of the core
 policies and read by nothing (issue #5). Under `governance.applyRepositoryPolicies: true`:
 
-* `repositoryContentTrusted: false` (the default): every request the harness builds says that
+- `repositoryContentTrusted: false` (the default): every request the harness builds says that
   repository content is untrusted data, not instructions (a prompt-injection notice). The
   instruction files of the repository (`instructions.files`, by default `AGENTS.md`, `CLAUDE.md`,
   `.cursorrules`, `.cursor/rules`, `.github/copilot-instructions.md`) reach the implementing agent
@@ -937,14 +986,17 @@ policies and read by nothing (issue #5). Under `governance.applyRepositoryPolici
   instructions", "reviewers must approve", chat-template markers. With
   `repositoryContentTrusted: true` that rule is inactive and no notice is added. A CLI that loads
   instruction files by itself still reads them; the notice tells it how to treat them.
-* `destructiveActionsDefault: deny` (the default): a command the harness runs while a phase runs
+- `destructiveActionsDefault: deny` (the default): a command the harness runs while a phase runs
   (validators, probes, consistency checks, provider launches) is refused before it starts when it
   deletes recursively outside the workspace (or the workspace root), force-pushes or deletes a
   remote ref, rewrites history (`rebase`, `commit --amend`, `filter-branch`, `filter-repo`),
   discards commits (`reset --hard`), drops data (`DROP TABLE`, `TRUNCATE TABLE`, `dropdb`,
   `FLUSHALL`) or changes ownership or permissions outside the workspace, also inside `sh -c`.
   A `process.destructive` grant whose scope prefixes the command allows it. Each refusal is a
-  `HIGH` `capabilities.destructive-denied` finding. Implement and read-only requests carry
+  `HIGH` `capabilities.destructive-denied` finding. A refused command that the phase cannot do
+  without (a provider launch) leaves the phase and the run `BLOCKED` with the refusal as the
+  reason, and `run start` or `run continue` exits with 6 (issue #76; before, the run ended as
+  `ERROR` with exit 1). Implement and read-only requests carry
   `commandPolicy: {destructive: deny}`; the Claude Code adapter passes the same operations as
   `--disallowedTools` (a pattern cannot see paths, so `chown` and `chmod -R` are refused there
   everywhere). Commands an agent CLI runs by itself are confined by the agent sandbox, not by this

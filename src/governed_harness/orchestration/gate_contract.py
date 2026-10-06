@@ -25,7 +25,11 @@ from governed_harness import __version__
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.checks import parse_unified_diff
 from governed_harness.configuration import ConfigurationResolver
-from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.configuration.models import (
+    ResolvedConfiguration,
+    ValidatorDefinition,
+    VerificationConfig,
+)
 from governed_harness.domain.enums import ActorType, FindingSeverity, ResultStatus
 from governed_harness.domain.errors import NotFoundError
 from governed_harness.domain.models import (
@@ -44,7 +48,7 @@ from governed_harness.validators import CommandValidator, ValidationContext
 from governed_harness.validators.review import RULES
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 CHECK_DIRECTORY = "check"
 
@@ -54,7 +58,7 @@ def check_state_path(harness_dir: Path, execution_id: str) -> Path:
 
 
 class GateContract:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: ResultsHost) -> None:
         self.results = results
 
     @property
@@ -73,39 +77,53 @@ class GateContract:
             )
         return definitions
 
-    def contract(self, execution: Execution) -> dict[str, Any]:
+    def contract(
+        self,
+        execution: Execution,
+        task: Task | None = None,
+        grants: list[CapabilityGrant] | None = None,
+    ) -> dict[str, Any]:
+        """The gate contract of an implement call. With ``task``, also what the gate holds the
+        change to from the task: the requirement identifiers and the naming rule that
+        requirement traceability checks (#84) and the assumptions (#79). With the agent's
+        ``grants``, a check command only when the agent may run it (#84): ``harness check``
+        when its grants allow it, else the validator commands they allow (``checkCommands``,
+        possibly none)."""
+        value = self._contract(execution)
+        if task is not None:
+            value.update(task_terms(task))
+            value.update(traceability_terms(task, self.results.project.requirement_traceability))
+        if grants is not None and not runnable(value["checkCommand"], grants):
+            del value["checkCommand"]
+            value["checkCommands"] = [
+                {"id": item["id"], "command": item["command"]}
+                for item in value["validators"]
+                if item["command"] and runnable(item["command"], grants)
+            ]
+        return value
+
+    @staticmethod
+    def instructions_note(contract: dict[str, Any]) -> str:
+        """What the implement instructions add when the contract has no ``harness check``
+        command the agent may run (#84); empty otherwise."""
+        if "checkCommand" in contract:
+            return ""
+        if contract.get("checkCommands"):
+            return (
+                "Your permissions do not include the harness check command: instead, run the "
+                "validator commands listed in gate.checkCommands before you finish."
+            )
+        return (
+            "Your permissions include no command of the gate: do not try to run the check "
+            "command or the validators; the harness runs them after you finish."
+        )
+
+    def _contract(self, execution: Execution) -> dict[str, Any]:
         resolved = self.results.s.resolved
         project = resolved.project
         workspace = str(self.results.s.paths.workspace)
         verification = project.verification
-        checks: dict[str, Any] = {}
-        if verification is not None:
-            for name, alias in (
-                ("interface", "interface"),
-                ("constraints", "constraints"),
-                ("weakened_controls", "weakenedControls"),
-                ("ratchet", "ratchet"),
-                ("secrets", "secrets"),
-                ("security_patterns", "securityPatterns"),
-                ("differential", "differential"),
-            ):
-                value = getattr(verification, name)
-                if value not in {None, "off", False}:
-                    checks[alias] = value
-            if verification.architecture is not None:
-                checks["architecture"] = verification.architecture.model_dump(
-                    mode="json", by_alias=True
-                )
-            if verification.test_quality is not None:
-                checks["testQuality"] = verification.test_quality.model_dump(
-                    mode="json", by_alias=True
-                )
-            if verification.risk_factors is not None:
-                checks["riskFactors"] = self.results.verification.risk_actions()
-            if verification.principles is not None:
-                checks["principles"] = verification.principles.model_dump(
-                    mode="json", by_alias=True
-                )
+        checks = self._checks(verification) if verification is not None else {}
         if self.results.engineering.configured:
             layers = self.results.architecture.rules()
             if layers is not None and layers.layers:
@@ -141,6 +159,33 @@ class GateContract:
             ],
         }
 
+    def _checks(self, verification: VerificationConfig) -> dict[str, Any]:
+        """The diff checks of ``verification`` the gate runs, as the contract shows them."""
+        checks: dict[str, Any] = {}
+        for name, alias in (
+            ("interface", "interface"),
+            ("constraints", "constraints"),
+            ("weakened_controls", "weakenedControls"),
+            ("ratchet", "ratchet"),
+            ("secrets", "secrets"),
+            ("security_patterns", "securityPatterns"),
+            ("differential", "differential"),
+        ):
+            value = getattr(verification, name)
+            if value not in {None, "off", False}:
+                checks[alias] = value
+        if verification.architecture is not None:
+            checks["architecture"] = verification.architecture.model_dump(
+                mode="json", by_alias=True
+            )
+        if verification.test_quality is not None:
+            checks["testQuality"] = verification.test_quality.model_dump(mode="json", by_alias=True)
+        if verification.risk_factors is not None:
+            checks["riskFactors"] = self.results.verification.risk_actions()
+        if verification.principles is not None:
+            checks["principles"] = verification.principles.model_dump(mode="json", by_alias=True)
+        return checks
+
     def write_check_state(self, execution: Execution, task: Task) -> Path:
         """The task and the baseline ``harness check`` compares the workspace with."""
         path = check_state_path(self.results.s.paths.harness_dir, execution.execution_id)
@@ -153,6 +198,72 @@ class GateContract:
         }
         path.write_text(json.dumps(value, sort_keys=True), encoding="utf-8")
         return path
+
+
+TRACEABILITY_RULE = (
+    "A requirement is traced when a test names its identifier: the name of a test file, class "
+    "or function contains the identifier as a run of whole tokens in any case (for A1: "
+    "test_a1_rounding, test_A1, TestA1Rounding; for req_alphabet: test_req_alphabet_rejects), "
+    "or the identifier appears as a whole word in a test's source, docstring or string "
+    "constants (pytest.param(..., id='A1'), # covers A1). Test files are Python test_*.py or "
+    "*_test.py, and Node *.test.*, *.spec.* or files under test/, tests/ or __tests__/. Name "
+    "each test after the identifier of the requirement it checks."
+)
+"""How requirement traceability decides that a test names a requirement (see
+``governed_harness.validators.traceability``), as the gate contract states it (#84)."""
+
+
+def traceability_terms(task: Task, policy: str) -> dict[str, Any]:
+    """The requirement identifiers the traceability check looks for in the tests and its naming
+    rule (#84); nothing when the check is off."""
+    from governed_harness.validators.traceability import requirement_identifier
+
+    if policy == "off":
+        return {}
+    identified: list[dict[str, str]] = []
+    skipped: list[str] = []
+    for requirement in task.requirements:
+        found = requirement_identifier(requirement)
+        if found is None:
+            skipped.append(requirement.requirement_id)
+            continue
+        identified.append(
+            {
+                "identifier": found.identifier,
+                "requirementId": requirement.requirement_id,
+                "text": requirement.text[:300],
+            }
+        )
+    return {
+        "traceability": {
+            "policy": policy,
+            "requirements": identified,
+            "notChecked": skipped,
+            "rule": TRACEABILITY_RULE,
+        }
+    }
+
+
+def runnable(argv: list[str], grants: list[CapabilityGrant]) -> bool:
+    """Whether the agent's ``process.execute`` grants allow ``argv`` (#84)."""
+    from governed_harness.capabilities.authorizer import CapabilityAuthorizer, CapabilityDenied
+
+    if not argv or not grants:
+        return False
+    try:
+        CapabilityAuthorizer().authorize_command(actor=grants[0].actor, argv=argv, grants=grants)
+    except CapabilityDenied:
+        return False
+    return True
+
+
+def task_terms(task: Task) -> dict[str, Any]:
+    """What the task revision adds to the gate contract: the points the agent review left open
+    (#79), as assumptions the implementation states it took."""
+    from governed_harness.orchestration.intent_convergence import assumptions_of
+
+    assumptions = assumptions_of(task)
+    return {"assumptions": assumptions} if assumptions else {}
 
 
 def permissions(
@@ -186,7 +297,6 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
-    from governed_harness.configuration.models import VerificationConfig
     from governed_harness.orchestration.architecture import effective_rules
     from governed_harness.orchestration.verification_checks import (
         current_files,
@@ -381,8 +491,12 @@ def _tail(store: LocalArtifactStore, refs: tuple[str, ...], limit: int = 2000) -
 
 
 __all__ = [
+    "TRACEABILITY_RULE",
     "GateContract",
     "check_state_path",
     "permissions",
     "run_check",
+    "runnable",
+    "task_terms",
+    "traceability_terms",
 ]

@@ -81,7 +81,7 @@ class ProbeEvaluation:
         }
 
 
-_PLACEHOLDER = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_PLACEHOLDER = re.compile(r"\{([A-Za-z_]\w*)\}", re.ASCII)
 NOT_JSON = object()
 """The document of a variant whose output is not JSON (``output: json``)."""
 
@@ -154,64 +154,79 @@ def _single(
             index, kind, passed, f"exit code {run.exit_code}, expected {assertion.equals}", run.name
         )
     if kind == "jsonPath":
-        values = _values(document, assertion.path, output)
-        if assertion.present is not None:
-            passed = bool(values) is assertion.present
-            state = "present" if values else "absent"
-            want = "present" if assertion.present else "absent"
-            return AssertionResult(
-                index, kind, passed, f"{assertion.path} is {state}, expected {want}", run.name
-            )
-        if assertion.matches is not None:
-            pattern = re.compile(assertion.matches)
-            passed = bool(values) and all(
-                isinstance(item, str) and pattern.search(item) is not None for item in values
-            )
-            return AssertionResult(
-                index,
-                kind,
-                passed,
-                f"{assertion.path} = {_shown(values)} must match {assertion.matches!r}",
-                run.name,
-            )
-        actual: Any = values[0] if len(values) == 1 else values
-        passed = bool(values) and actual == assertion.equals
-        return AssertionResult(
-            index,
-            kind,
-            passed,
-            f"{assertion.path} = {_shown(actual) if values else 'absent'}, expected "
-            f"{_shown(assertion.equals)}",
-            run.name,
-        )
+        return _json_path(index, assertion, run, _values(document, assertion.path, output))
     if kind == "order":
-        if assertion.path is not None:
-            values = _values(document, assertion.path, output)
-            sequence: list[Any] | str = values
-        else:
-            sequence = run.stdout if output != "json" else json.dumps(document, sort_keys=True)
-        if assertion.order is not None:
-            passed = (
-                isinstance(sequence, list)
-                and len(sequence) > 0
-                and _ordered(sequence, assertion.order)
-            )
-            return AssertionResult(
-                index,
-                kind,
-                passed,
-                f"{assertion.path} = {_shown(sequence)} must be {assertion.order}",
-                run.name,
-            )
-        passed = _before(sequence, str(assertion.before), str(assertion.after))
+        return _order(index, assertion, run, document, output)
+    return _text(index, assertion, run)
+
+
+def _json_path(index: int, assertion: Any, run: VariantRun, values: list[Any]) -> AssertionResult:
+    """``present``, ``matches`` or ``equals`` of the values a path selects."""
+    kind = assertion.kind
+    if assertion.present is not None:
+        passed = bool(values) is assertion.present
+        state = "present" if values else "absent"
+        want = "present" if assertion.present else "absent"
+        return AssertionResult(
+            index, kind, passed, f"{assertion.path} is {state}, expected {want}", run.name
+        )
+    if assertion.matches is not None:
+        pattern = re.compile(assertion.matches)
+        passed = bool(values) and all(
+            isinstance(item, str) and pattern.search(item) is not None for item in values
+        )
         return AssertionResult(
             index,
             kind,
             passed,
-            f"{assertion.before!r} must appear before {assertion.after!r}",
+            f"{assertion.path} = {_shown(values)} must match {assertion.matches!r}",
             run.name,
         )
-    # text
+    actual: Any = values[0] if len(values) == 1 else values
+    passed = bool(values) and actual == assertion.equals
+    return AssertionResult(
+        index,
+        kind,
+        passed,
+        f"{assertion.path} = {_shown(actual) if values else 'absent'}, expected "
+        f"{_shown(assertion.equals)}",
+        run.name,
+    )
+
+
+def _order(
+    index: int, assertion: Any, run: VariantRun, document: Any, output: str
+) -> AssertionResult:
+    """The values of a path in ``order``, or one text ``before`` another."""
+    kind = assertion.kind
+    sequence: list[Any] | str
+    if assertion.path is not None:
+        sequence = _values(document, assertion.path, output)
+    else:
+        sequence = run.stdout if output != "json" else json.dumps(document, sort_keys=True)
+    if assertion.order is not None:
+        passed = (
+            isinstance(sequence, list) and len(sequence) > 0 and _ordered(sequence, assertion.order)
+        )
+        return AssertionResult(
+            index,
+            kind,
+            passed,
+            f"{assertion.path} = {_shown(sequence)} must be {assertion.order}",
+            run.name,
+        )
+    passed = _before(sequence, str(assertion.before), str(assertion.after))
+    return AssertionResult(
+        index,
+        kind,
+        passed,
+        f"{assertion.before!r} must appear before {assertion.after!r}",
+        run.name,
+    )
+
+
+def _text(index: int, assertion: Any, run: VariantRun) -> AssertionResult:
+    kind = assertion.kind
     if assertion.contains is not None:
         passed = assertion.contains in run.stdout
         return AssertionResult(
@@ -220,6 +235,54 @@ def _single(
     passed = re.search(str(assertion.matches), run.stdout) is not None
     return AssertionResult(
         index, kind, passed, f"output must match {assertion.matches!r}", run.name
+    )
+
+
+def _observed(run: VariantRun, document: Any, assertion: Any, output: str) -> str:
+    """What a ``differs`` assertion compares for one variant."""
+    if assertion.path is None:
+        return run.stdout
+    if document is NOT_JSON:
+        return "not JSON"
+    return _shown(_values(document, assertion.path, output))
+
+
+def _chosen(assertion: Any, runs: list[VariantRun]) -> list[VariantRun]:
+    """The runs an assertion checks: the variants it names, or every variant."""
+    return [run for run in runs if not assertion.variants or run.name in assertion.variants]
+
+
+def _per_variant(
+    index: int, assertion: Any, runs: list[VariantRun], documents: dict[str, Any], output: str
+) -> list[AssertionResult]:
+    """An assertion other than ``differs`` on each variant it names (#74); one that names no
+    variant of the probe fails instead of checking nothing."""
+    chosen = _chosen(assertion, runs)
+    if not chosen:
+        return [
+            AssertionResult(
+                index,
+                assertion.kind,
+                False,
+                f"names no variant of the probe: {', '.join(assertion.variants)}",
+            )
+        ]
+    return [_single(index, assertion, run, documents[run.name], output) for run in chosen]
+
+
+def _differs(
+    index: int, assertion: Any, runs: list[VariantRun], documents: dict[str, Any], output: str
+) -> AssertionResult:
+    chosen = _chosen(assertion, runs)
+    observed = [_observed(run, documents[run.name], assertion, output) for run in chosen]
+    passed = len(chosen) >= 2 and len(set(observed)) > 1
+    return AssertionResult(
+        index,
+        "differs",
+        passed,
+        f"{assertion.path or 'the output'} across "
+        f"{', '.join(run.name for run in chosen)}: "
+        + ("differs" if passed else "the same in every variant"),
     )
 
 
@@ -236,33 +299,9 @@ def evaluate(probe: Any, runs: list[VariantRun]) -> ProbeEvaluation:
     results: list[AssertionResult] = []
     for index, assertion in enumerate(probe.assertions, start=1):
         if assertion.kind == "differs":
-            chosen = [
-                run for run in runs if not assertion.variants or run.name in assertion.variants
-            ]
-            observed = [
-                (
-                    "not JSON"
-                    if documents[run.name] is NOT_JSON
-                    else _shown(_values(documents[run.name], assertion.path, probe.output))
-                )
-                if assertion.path is not None
-                else run.stdout
-                for run in chosen
-            ]
-            passed = len(chosen) >= 2 and len(set(observed)) > 1
-            results.append(
-                AssertionResult(
-                    index,
-                    "differs",
-                    passed,
-                    f"{assertion.path or 'the output'} across "
-                    f"{', '.join(run.name for run in chosen)}: "
-                    + ("differs" if passed else "the same in every variant"),
-                )
-            )
-            continue
-        for run in runs:
-            results.append(_single(index, assertion, run, documents[run.name], probe.output))
+            results.append(_differs(index, assertion, runs, documents, probe.output))
+        else:
+            results.extend(_per_variant(index, assertion, runs, documents, probe.output))
     return ProbeEvaluation(
         probe.probe_id, "READY", all(item.passed for item in results), tuple(results), (), names
     )

@@ -192,8 +192,21 @@
     },
     "AgentRoutingConfig": {
       "additionalProperties": false,
-      "description": "Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,\n``tiered`` chooses from the tables by call kind and task size and escalates on quality\nfailures.",
+      "description": "Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,\n``tiered`` chooses from the tables by call kind and task size and escalates on quality\nfailures.\n\nSince #85 ``anchored`` uses the same tables with the invoking model as the ceiling: a rung\nof a cheaper model is kept, a rung of the invoking model's tier uses the invoking model\nwith the rung's effort, a rung above it becomes the top rung allowed, and escalation climbs\nonly up to that model. The invoking model is ``anchorModel`` when set, else the ``model``\nof the provider that answers the call (for the ``session`` provider, ``agentProvider``),\nelse the ``--model``/``-m`` value of its command or ``args``; when none is known every call\nkeeps the provider's own model.",
       "properties": {
+        "anchorModel": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchormodel"
+        },
         "families": {
           "anyOf": [
             {
@@ -233,7 +246,8 @@
             {
               "enum": [
                 "fixed",
-                "tiered"
+                "tiered",
+                "anchored"
               ],
               "type": "string"
             },
@@ -294,6 +308,67 @@
         }
       },
       "title": "AgentRoutingConfig",
+      "type": "object"
+    },
+    "AmbiguityReviewConfig": {
+      "additionalProperties": false,
+      "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the review of 1.1, which neither converges nor stops.",
+      "properties": {
+        "maxQuestions": {
+          "anyOf": [
+            {
+              "maximum": 40,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxquestions"
+        },
+        "maxRounds": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxrounds"
+        },
+        "mode": {
+          "default": "agent",
+          "enum": [
+            "agent",
+            "off"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "onExhausted": {
+          "anyOf": [
+            {
+              "enum": [
+                "assume",
+                "block"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Onexhausted"
+        }
+      },
+      "title": "AmbiguityReviewConfig",
       "type": "object"
     },
     "ApiConfig": {
@@ -911,6 +986,36 @@
         }
       },
       "title": "ContextConfig",
+      "type": "object"
+    },
+    "ContractRetryConfig": {
+      "additionalProperties": false,
+      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase\nrejects) is sent once more before the phase blocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1.",
+      "properties": {
+        "fallbackProvider": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallbackprovider"
+        },
+        "mode": {
+          "default": "once",
+          "enum": [
+            "once",
+            "off"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "ContractRetryConfig",
       "type": "object"
     },
     "DeliveryConfig": {
@@ -1668,7 +1773,7 @@
     },
     "GovernanceConfig": {
       "additionalProperties": false,
-      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a\n  project narrows, never widens, a profile), every grant made while a phase runs keeps only\n  the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call\n  outside IMPLEMENTATION is read-only and may start only its own command, and the resolved\n  grants of each phase attempt are recorded as evidence.\n* ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes\n  repository content (instruction files included) quoted, untrusted context of every agent\n  request with a prompt-injection notice, and the review panel flags instructions in changed\n  files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive\n  deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or\n  permission changes outside the workspace) unless a ``process.destructive`` grant allows\n  them, with a finding for each attempt.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.",
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 1.1).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a\n  project narrows, never widens, a profile), every grant made while a phase runs keeps only\n  the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call\n  outside IMPLEMENTATION is read-only and may start only its own command, an agent's own\n  command is started only when a ``process.execute`` grant allows it (otherwise a ``HIGH``\n  ``capabilities.command-denied`` finding blocks the phase, #87), and the resolved grants of\n  each phase attempt are recorded as evidence.\n* ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes\n  repository content (instruction files included) quoted, untrusted context of every agent\n  request with a prompt-injection notice, and the review panel flags instructions in changed\n  files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive\n  deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or\n  permission changes outside the workspace) unless a ``process.destructive`` grant allows\n  them, with a finding for each attempt.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.",
       "properties": {
         "applyNetworkPolicy": {
           "anyOf": [
@@ -1937,7 +2042,7 @@
     },
     "IntakeConfig": {
       "additionalProperties": false,
-      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.",
+      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.\n\nSince #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,\n``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records\nthe open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1\nreview.",
       "properties": {
         "ambiguityReview": {
           "anyOf": [
@@ -1947,6 +2052,9 @@
                 "off"
               ],
               "type": "string"
+            },
+            {
+              "$ref": "#/$defs/AmbiguityReviewConfig"
             },
             {
               "type": "null"
@@ -2946,7 +3054,7 @@
     },
     "ProbeAssertion": {
       "additionalProperties": false,
-      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.",
+      "description": "A generic assertion on the output of a probe.\n\n* ``exitCode``: the exit code ``equals`` a number;\n* ``jsonPath``: the value at ``path`` is ``present`` (true) or absent (``present: false``),\n  ``equals`` a value or ``matches`` a regular expression;\n* ``differs``: the value at ``path`` (JSON) or the whole output (text) is not the same in\n  every variant (``variants`` narrows the comparison);\n* ``order``: the values at ``path`` are ``ascending`` or ``descending``, or ``before``\n  appears before ``after`` (in the list at ``path``, or in the text);\n* ``text``: the output ``matches`` a regular expression or ``contains`` a text.\n\n``variants`` names the variants an assertion of any kind checks (every variant when it is\nempty); an assertion that names no variant of the probe fails.",
       "properties": {
         "after": {
           "anyOf": [
@@ -3711,6 +3819,17 @@
           "minimum": 1,
           "title": "Commandtimeoutseconds",
           "type": "integer"
+        },
+        "contractRetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContractRetryConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "extendedRedaction": {
           "anyOf": [
@@ -4703,6 +4822,18 @@
           ],
           "title": "Requirementtraceability",
           "type": "string"
+        },
+        "reverifyOnChange": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reverifyonchange"
         },
         "riskFactors": {
           "anyOf": [

@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - fixed git and interpreter argv, no shell
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.validators.command import _MODULE_MISSING_EXIT_CODE, _MODULE_PROBE
 
 GITIGNORE_ENTRY = ".harness/"
+GITIGNORE_FILE = ".gitignore"
 
 EXAMPLE_TASK_NAME = "task.example.yaml"
 
@@ -50,19 +52,84 @@ _OWNED = {
 }
 
 
-def ensure_gitignore(workspace: Path) -> str:
-    """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
-    path = workspace / ".gitignore"
+class IgnoreFile(StrEnum):
+    """Where ``harness init`` writes its ignore entry (#86)."""
+
+    EXCLUDE = "exclude"
+    """The repository's ``info/exclude``: local to the clone, so the tree stays clean."""
+    GITIGNORE = "gitignore"
+    """The workspace ``.gitignore`` (a tracked change)."""
+
+
+_HARNESS_ENTRIES = {".harness", ".harness/", "/.harness", "/.harness/", ".harness/*"}
+
+
+def _add_entry(path: Path) -> str:
+    """Add ``.harness/`` to an ignore file; returns added, present or created."""
     if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(f"{GITIGNORE_ENTRY}\n", encoding="utf-8")
         return "created"
     text = path.read_text(encoding="utf-8")
-    entries = {line.strip() for line in text.splitlines()}
-    if entries & {".harness", ".harness/", "/.harness", "/.harness/", ".harness/*"}:
+    if _has_entry(text):
         return "present"
     separator = "" if not text or text.endswith("\n") else "\n"
     path.write_text(f"{text}{separator}{GITIGNORE_ENTRY}\n", encoding="utf-8")
     return "added"
+
+
+def ensure_gitignore(workspace: Path) -> str:
+    """Add ``.harness/`` to the workspace .gitignore; returns added, present or created."""
+    return _add_entry(workspace / GITIGNORE_FILE)
+
+
+def _exclude_path(workspace: Path) -> Path | None:
+    """The ``info/exclude`` file of the repository the workspace is in (``None`` outside a Git
+    repository or without Git); a linked worktree shares its repository's file."""
+    if not shutil.which("git"):
+        return None
+    result = _run(["git", "rev-parse", "--git-path", "info/exclude"], workspace)
+    location = result.stdout.strip()
+    if result.returncode != 0 or not location:
+        return None
+    path = Path(location)
+    return path if path.is_absolute() else workspace / path
+
+
+def _shown(path: Path, workspace: Path) -> str:
+    try:
+        return path.resolve().relative_to(workspace.resolve()).as_posix()
+    except ValueError:
+        return str(path)
+
+
+def ensure_ignored(workspace: Path, target: IgnoreFile = IgnoreFile.EXCLUDE) -> dict[str, str]:
+    """Make Git ignore ``.harness/`` without dirtying an existing repository (#86).
+
+    ``exclude`` (the default) writes the entry to the repository's ``info/exclude``, which Git
+    reads like a ``.gitignore`` but which is not part of the tree, so the first run of a
+    brownfield repository finds no uncommitted change caused by ``init``; an entry already in
+    the ``.gitignore`` is left as it is. Outside a Git repository, or with ``gitignore``, the
+    entry goes to the workspace ``.gitignore`` as before. Returns the file, the entry and
+    whether it was added, present or created."""
+    gitignore = workspace / GITIGNORE_FILE
+    exclude = _exclude_path(workspace) if target is IgnoreFile.EXCLUDE else None
+    if exclude is None or _add_entry_present(gitignore):
+        return {"file": GITIGNORE_FILE, "entry": GITIGNORE_ENTRY, "status": _add_entry(gitignore)}
+    return {
+        "file": _shown(exclude, workspace),
+        "entry": GITIGNORE_ENTRY,
+        "status": _add_entry(exclude),
+    }
+
+
+def _add_entry_present(path: Path) -> bool:
+    """Whether an ignore file exists and already has the harness entry."""
+    return path.is_file() and _has_entry(path.read_text(encoding="utf-8"))
+
+
+def _has_entry(text: str) -> bool:
+    return bool({line.strip() for line in text.splitlines()} & _HARNESS_ENTRIES)
 
 
 def write_example_task(harness_dir: Path, technologies: list[str], *, force: bool) -> Path | None:
@@ -82,7 +149,7 @@ def write_example_task(harness_dir: Path, technologies: list[str], *, force: boo
 def _run(
     argv: list[str], cwd: Path | None, timeout: float = 20.0
 ) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
+    return subprocess.run(  # nosec B603 - argv lists built here (git, a validator's interpreter), no shell
         argv,
         cwd=cwd,
         stdin=subprocess.DEVNULL,
@@ -139,7 +206,8 @@ def repository_checks(workspace: Path) -> dict[str, Any]:
         else {
             "status": "WARNING",
             "message": ".harness/ is not ignored by Git",
-            "hint": "Add `.harness/` to .gitignore (`harness init` does it): it holds the state "
+            "hint": "Add `.harness/` to .git/info/exclude or .gitignore (`harness init` does "
+            "it): it holds the state "
             "database and artifacts with copies of your code.",
         }
     )

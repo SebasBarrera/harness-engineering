@@ -20,7 +20,7 @@ import gzip
 import json
 import os
 import shutil
-import subprocess
+import subprocess  # nosec B404 - the forge CLI with a fixed argv, no shell
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -55,7 +55,7 @@ class GhTransport:
         if body is not None:
             args += ["--input", "-"]
         try:
-            result = subprocess.run(
+            result = subprocess.run(  # nosec B603 - fixed argv of the forge CLI checked on PATH, no shell
                 args,
                 input=json.dumps(body).encode("utf-8") if body is not None else None,
                 capture_output=True,

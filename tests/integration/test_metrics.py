@@ -85,10 +85,13 @@ def test_report_of_a_closed_run(python_workspace: Path, tmp_path: Path) -> None:
     run = closed_run(python_workspace, tmp_path)
     report, _settings = HarnessApplication().metrics(python_workspace, filters=Filters())
     totals = report["totals"]
-    assert totals["runs"] == 1 and totals["tasks"] == 1
-    assert totals["featuresDelivered"] == 1 and totals["issuesResolved"] == 1
+    assert totals["runs"] == 1
+    assert totals["tasks"] == 1
+    assert totals["featuresDelivered"] == 1
+    assert totals["issuesResolved"] == 1
     assert report["delivery"]["issuesResolved"][0]["issue"] == "#7"
-    assert totals["approvals"] == 1 and totals["humanInteractions"] == 1
+    assert totals["approvals"] == 1
+    assert totals["humanInteractions"] == 1
     assert totals["linesAdded"] >= 1
     assert report["quality"]["approvedFirstTime"] == 1
     assert report["runs"][0]["runId"] == run
@@ -130,11 +133,17 @@ def test_html_is_self_contained(python_workspace: Path, tmp_path: Path) -> None:
     closed_run(python_workspace, tmp_path)
     report, _settings = HarnessApplication().metrics(python_workspace, filters=Filters())
     page = render(report, "html")
-    assert page.startswith("<!doctype html>") and '<html lang="en">' in page
+    assert page.startswith("<!doctype html>")
+    assert '<html lang="en">' in page
     assert not re.search(r"""(src|href)\s*=\s*["']?https?:""", page)
-    assert "<script" not in page and "<link" not in page and "@import" not in page
-    assert '<svg viewBox="0 0' in page and 'role="img"' in page and "<desc " in page
-    assert "<table>" in page and "prefers-color-scheme: dark" in page
+    assert "<script" not in page
+    assert "<link" not in page
+    assert "@import" not in page
+    assert '<svg viewBox="0 0' in page
+    assert 'role="img"' in page
+    assert "<desc " in page
+    assert "<table>" in page
+    assert "prefers-color-scheme: dark" in page
 
 
 def test_metrics_command_formats_and_filters(python_workspace: Path, tmp_path: Path) -> None:
@@ -164,7 +173,8 @@ def test_metrics_command_formats_and_filters(python_workspace: Path, tmp_path: P
     html = runner.invoke(
         app, [*base, "--format", "html", "--output", str(tmp_path / "report.html")]
     )
-    assert html.exit_code == 0 and (tmp_path / "report.html").read_text().startswith("<!doctype")
+    assert html.exit_code == 0
+    assert (tmp_path / "report.html").read_text().startswith("<!doctype")
 
 
 def test_all_repositories_of_the_registry(python_workspace: Path, tmp_path: Path) -> None:
@@ -185,8 +195,9 @@ def test_all_repositories_of_the_registry(python_workspace: Path, tmp_path: Path
 
 def test_narrative_is_one_call_on_demand(python_workspace: Path, tmp_path: Path) -> None:
     closed_run(python_workspace, tmp_path)
+    application, filters = HarnessApplication(), Filters()
     with pytest.raises(ConfigurationError, match="metrics.narrative"):
-        HarnessApplication().metrics(python_workspace, filters=Filters(), narrative=True)
+        application.metrics(python_workspace, filters=filters, narrative=True)
     script = tmp_path / "narrate.py"
     script.write_text(
         "import sys\ndata = sys.stdin.read()\nprint('One run closed.' if 'totals' in data else '')\n",
@@ -208,10 +219,12 @@ def test_metrics_tab_of_the_dashboard(python_workspace: Path, tmp_path: Path) ->
     body = open_client.get("/api/metrics").json()
     assert body["totals"]["runs"] == 1
     page = open_client.get("/api/metrics/report")
-    assert page.status_code == 200 and page.text.startswith("<!doctype html>")
+    assert page.status_code == 200
+    assert page.text.startswith("<!doctype html>")
     assert open_client.get("/api/metrics", params={"since": "soon"}).status_code == 400
     dashboard = open_client.get("/").text
-    assert 'id="tab-metrics"' in dashboard and "/api/metrics/report" in dashboard
+    assert 'id="tab-metrics"' in dashboard
+    assert "/api/metrics/report" in dashboard
     # Under the api section (#18) the metrics routes need a token like every other route.
     token = "tok-metrics-" + "x" * 24
     edit_config(python_workspace, api={"auth": "token", "tokenEnv": "TEST_API_START"})

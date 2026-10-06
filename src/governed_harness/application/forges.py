@@ -77,18 +77,16 @@ def publish_on_forge(
     )
     findings = services.state.list("finding", Finding, execution_id=run_id)
     send = reports if reports is not None else True
-    upload = (
-        forge.upload_reports(
+    if send:
+        code_quality = render_code_quality(findings) if settings.code_quality is not False else None
+        upload = forge.upload_reports(
             pull_request,
             sarif=TraceReporter().render_sarif(findings),
-            code_quality=render_code_quality(findings)
-            if settings.code_quality is not False
-            else None,
+            code_quality=code_quality,
             commit_sha=commit_sha,
         )
-        if send
-        else {"status": "SKIPPED", "reason": "report upload disabled"}
-    )
+    else:
+        upload = {"status": "SKIPPED", "reason": "report upload disabled"}
     return {
         "publisher": resolved.location.kind,
         "forge": resolved.as_dict(),

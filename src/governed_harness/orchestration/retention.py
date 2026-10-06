@@ -33,7 +33,7 @@ from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.models import Execution
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.engine import EngineServices
+    from governed_harness.orchestration.engine_types import EngineServices
 
 PRUNED_EVENT = "retention.artifacts.pruned"
 _ARTIFACT_PREFIX = "artifact://sha256/"

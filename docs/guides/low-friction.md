@@ -108,7 +108,14 @@ harness inbox --batch                                    # on a terminal, one ru
 ```
 
 Each decision is bound to its own ChangeSet digest: a digest that changed is refused for that run
-(the others are recorded) and the command exits 5.
+(the others are recorded) and the command exits 5. A decision entry lists in `acknowledgeRisks`
+the risk factors an `APPROVE` must acknowledge (`verification.riskFactors`); a batch file gives
+them per decision as `acknowledgeRisks: [network]`, and `--batch` asks for each one on the
+terminal. The inbox also lists every other wait before DECISION, each with its `kind`, the
+`digest` the answer binds to and the command that answers it in `next`: `plan` (the
+plan-approval checkpoint), `decomposition`, `acceptance`, `architecture`, `contract`, `deferred`
+and `preflight`. Only decisions are recorded in a batch; the other waits are answered with their
+own command.
 
 ## The plan-approval checkpoint
 

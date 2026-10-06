@@ -77,6 +77,30 @@ def _config_present(workspace: Path, entry: str) -> bool:
         return False
 
 
+def _configured(tool: PackTool, workspace: Path, known: set[str]) -> bool:
+    """The tool has a command, the repository configures it and no selected validator
+    covers it."""
+    if not tool.command or not tool.config_files:
+        return False
+    if any(item in known for item in tool.covered_by):
+        return False
+    return any(_config_present(workspace, entry) for entry in tool.config_files)
+
+
+def _tool_validator(validator_id: str, tool: PackTool) -> ValidatorDefinition:
+    """An optional validator that runs the tool only when it is installed."""
+    return ValidatorDefinition.model_validate(
+        {
+            "id": validator_id,
+            "command": list(tool.command or ()),
+            "mandatory": False,
+            "whenAvailable": True,
+            "timeoutSeconds": 600,
+            **({"parser": tool.parser} if tool.parser else {}),
+        }
+    )
+
+
 def tool_validators(
     standards: ProjectStandards,
     workspace: Path,
@@ -89,32 +113,13 @@ def tool_validators(
     found: list[tuple[str, PackTool, ValidatorDefinition]] = []
     for pack in standards.packs:
         for tool in pack.tools:
-            if not tool.command or not tool.config_files:
-                continue
-            if any(item in known for item in tool.covered_by):
-                continue
-            if not any(_config_present(workspace, entry) for entry in tool.config_files):
+            if not _configured(tool, workspace, known):
                 continue
             validator_id = f"{TOOL_VALIDATOR_PREFIX}.{pack.pack_id}.{tool.tool_id}"
             if validator_id in known:
                 continue
             known.add(validator_id)
-            found.append(
-                (
-                    pack.pack_id,
-                    tool,
-                    ValidatorDefinition.model_validate(
-                        {
-                            "id": validator_id,
-                            "command": list(tool.command),
-                            "mandatory": False,
-                            "whenAvailable": True,
-                            "timeoutSeconds": 600,
-                            **({"parser": tool.parser} if tool.parser else {}),
-                        }
-                    ),
-                )
-            )
+            found.append((pack.pack_id, tool, _tool_validator(validator_id, tool)))
     return found
 
 

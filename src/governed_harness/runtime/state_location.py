@@ -27,7 +27,7 @@ import json
 import os
 import platform
 import re
-import subprocess
+import subprocess  # nosec B404 - git rev-parse with a fixed argv, no shell
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -39,6 +39,7 @@ from governed_harness.evidence.hashing import sha256_bytes
 STATE_DIR_ENV = "HARNESS_STATE_DIR"
 ISOLATION_MARKER = "isolation.json"
 REGISTRY_FILE = "registry.json"
+_DATABASE = "state.db"
 _SLUG = re.compile(r"[^a-z0-9_.-]+")
 
 
@@ -71,7 +72,7 @@ def repository_identity(workspace: Path) -> Path:
     """The Git common directory of ``workspace`` (shared by its worktrees), else the workspace
     itself."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # nosec B603 B607 - git from PATH, fixed argv, no shell
             ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
             cwd=workspace,
             capture_output=True,
@@ -124,10 +125,10 @@ def resolve_state_location(
     marker = isolation_marker(root_workspace)
     if marker is not None:
         root = Path(marker["stateRoot"])
-        return StateLocation(root, root / "state.db", root / "artifacts", True)
+        return StateLocation(root, root / _DATABASE, root / "artifacts", True)
     if state_dir is None:
         harness = root_workspace / ".harness"
-        return StateLocation(harness, harness / "state.db", harness / "artifacts", False)
+        return StateLocation(harness, harness / _DATABASE, harness / "artifacts", False)
     identity = repository_identity(root_workspace)
     root = configured_root(state_dir) / project_key(project_id, identity)
     if create:
@@ -140,7 +141,7 @@ def resolve_state_location(
                 "writable directory"
             ) from error
         _register(root, project_id, root_workspace, identity)
-    return StateLocation(root, root / "state.db", root / "artifacts", True)
+    return StateLocation(root, root / _DATABASE, root / "artifacts", True)
 
 
 def _register(root: Path, project_id: str, workspace: Path, identity: Path) -> None:
@@ -179,7 +180,7 @@ def registered_projects(state_root: Path | None = None) -> list[dict[str, Any]]:
         except (OSError, ValueError):
             continue
         if isinstance(value, dict) and isinstance(value.get("projectId"), str):
-            found.append({**value, "database": str(path.parent / "state.db")})
+            found.append({**value, "database": str(path.parent / _DATABASE)})
     return sorted(found, key=lambda item: (item["projectId"], item.get("workspace", "")))
 
 

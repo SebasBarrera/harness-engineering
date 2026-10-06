@@ -4,11 +4,17 @@ and linters (#57). Shared by INDEPENDENT_REVIEW and ``harness review-code``."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from governed_harness.agents.routing import provider_family, select_reviewer
+from governed_harness.agents.routing import (
+    RoutingDecision,
+    flags_for,
+    invoking_model,
+    provider_family,
+    select_reviewer,
+)
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.models import ResolvedConfiguration
 from governed_harness.configuration.review import ReviewPanelConfig
@@ -31,8 +37,8 @@ from governed_harness.review.rules import (
     project_rules,
 )
 from governed_harness.runtime import CancellationToken
-from governed_harness.runtime.process_runner import CommandSpec, SafeProcessRunner
-from governed_harness.standards import ProjectStandards, project_standards
+from governed_harness.runtime.process_runner import CommandSpec, ProcessResult, SafeProcessRunner
+from governed_harness.standards import PackTool, ProjectStandards, project_standards
 
 CONSISTENCY_ACTOR = Actor(
     actor_type=ActorType.TOOL, actor_id="validator.review.consistency", version="1"
@@ -145,10 +151,15 @@ def panel_context(
     return {"untrustedContent": context}, UNTRUSTED_NOTICE
 
 
-def reviewer_route(resolved: ResolvedConfiguration) -> Route:
+RouteObserver = Callable[[Reviewer, str, RoutingDecision], None]
+"""Hears the routing decision of a reviewer on a provider (#85: recorded per call)."""
+
+
+def reviewer_route(resolved: ResolvedConfiguration, observer: RouteObserver | None = None) -> Route:
     """The model and effort of a reviewer on a provider: the reviewer's own ``models`` entry
     (provider id or family) and ``effort``, else the routing table (``reviewers``, ``review``)
-    under ``agentRouting: tiered``, else the provider's default."""
+    under ``agentRouting: tiered`` (capped at the invoking model under ``anchored``, #85), else
+    the provider's default. ``observer`` hears every decision."""
     project = resolved.project
     policy = project.agent_routing
 
@@ -156,13 +167,31 @@ def reviewer_route(resolved: ResolvedConfiguration) -> Route:
         configured = project.agent_providers.get(provider_id)
         command = (*(configured.command or ()), configured.kind) if configured else ()
         family = provider_family(provider_id, command, policy.families if policy else None)
+        decision = select_reviewer(
+            reviewer.reviewer_id,
+            policy,
+            family=family,
+            anchor=invoking_model(project, provider_id),
+        )
         model = reviewer.model_for(provider_id, family)
         effort = reviewer.spec.effort
-        if model is None:
-            decision = select_reviewer(reviewer.reviewer_id, policy, family=family)
-            model = decision.model
-            effort = effort or decision.effort
-        return model, effort
+        if model is not None:
+            # The reviewer's own model wins over the tables, as a call's own setting does.
+            decision = replace(
+                decision,
+                rule=f"reviewer:{reviewer.reviewer_id}",
+                model=model,
+                effort=effort,
+                rung=None,
+                flags=flags_for(family, model, effort),
+            )
+        elif effort is not None:
+            decision = replace(
+                decision, effort=effort, flags=flags_for(family, decision.model, effort)
+            )
+        if observer is not None:
+            observer(reviewer, provider_id, decision)
+        return decision.model, decision.effort
 
     return route
 
@@ -197,7 +226,7 @@ def consistency_runner(
                     grants=grants,
                     cancellation=CancellationToken(cancelled),
                 )
-            except (PermissionError, OSError, ValueError) as error:
+            except (OSError, ValueError) as error:
                 results.append({"id": check.check_id, "status": "BLOCKED", "summary": f"{error}"})
                 continue
             tail = (outcome.stdout + outcome.stderr).decode("utf-8", "replace")[-_OUTPUT_TAIL:]
@@ -226,71 +255,94 @@ def linter_runner(
     """Outside a governed run (``review.panel.runTools``): run each pack tool the repository
     configures that verifies an active rule, once, and keep the diagnostics of those rules on
     reportable lines."""
-    if not setup.settings.run_tools or setup.standards is None:
+    standards = setup.standards
+    if not setup.settings.run_tools or standards is None:
         return None
-    from governed_harness.validators.parsers import parse_output
 
     def run(rules: list[Rule], locations: Locations) -> list[ReviewFinding]:
-        wanted: dict[str, dict[str, Rule]] = {}
-        for rule in rules:
-            for tool, name in rule.tools:
-                if tool in setup.tools and name:
-                    wanted.setdefault(tool, {})[name] = rule
+        wanted = _wanted_rules(rules, setup.tools)
         if not wanted or not locations.lines:
             return []
         grants = grants_from_rules(execution_id, TOOLS_ACTOR, resolved.effective_capabilities)
+        limit = resolved.project.runtime.max_output_bytes
         findings: list[ReviewFinding] = []
-        assert setup.standards is not None
-        for pack in setup.standards.packs:
-            for pack_tool in pack.tools:
-                if pack_tool.tool_id not in wanted or not pack_tool.command:
-                    continue
-                try:
-                    outcome = runner.run(
-                        CommandSpec(
-                            argv=pack_tool.command,
-                            cwd=workspace,
-                            timeout_seconds=600.0,
-                            max_output_bytes=resolved.project.runtime.max_output_bytes,
-                        ),
-                        actor=TOOLS_ACTOR,
-                        grants=grants,
-                    )
-                except (PermissionError, OSError, ValueError):
-                    continue
-                issues = parse_output(
-                    outcome.stdout.decode("utf-8", "replace"),
-                    outcome.stderr.decode("utf-8", "replace"),
-                    workspace,
-                    parser=pack_tool.parser or "auto",
+        for pack_tool in (tool for pack in standards.packs for tool in pack.tools):
+            if pack_tool.tool_id not in wanted or not pack_tool.command:
+                continue
+            try:
+                outcome = runner.run(
+                    CommandSpec(
+                        argv=pack_tool.command,
+                        cwd=workspace,
+                        timeout_seconds=600.0,
+                        max_output_bytes=limit,
+                    ),
+                    actor=TOOLS_ACTOR,
+                    grants=grants,
                 )
-                for issue in issues:
-                    matched = wanted[pack_tool.tool_id].get(issue.rule)
-                    if matched is None or not issue.path or not issue.line:
-                        continue
-                    if not locations.allows(issue.path, "new", issue.line):
-                        continue
-                    findings.append(
-                        ReviewFinding(
-                            reviewer=pack_tool.tool_id,
-                            file=issue.path,
-                            side="new",
-                            line=issue.line,
-                            rule=matched.rule_id,
-                            severity="error" if matched.blocking else "suggestion",
-                            issue=issue.message,
-                            priority=matched.priority,
-                            source=f"tool:{pack_tool.tool_id}",
-                        )
-                    )
-                del wanted[pack_tool.tool_id]
+            except (OSError, ValueError):
+                continue
+            findings.extend(
+                _tool_findings(pack_tool, wanted[pack_tool.tool_id], outcome, workspace, locations)
+            )
+            del wanted[pack_tool.tool_id]
         return findings
 
     return run
 
 
+def _wanted_rules(rules: list[Rule], tools: frozenset[str]) -> dict[str, dict[str, Rule]]:
+    """``tool -> tool rule name -> rule`` for the active rules a configured tool verifies."""
+    wanted: dict[str, dict[str, Rule]] = {}
+    for rule in rules:
+        for tool, name in rule.tools:
+            if tool in tools and name:
+                wanted.setdefault(tool, {})[name] = rule
+    return wanted
+
+
+def _tool_findings(
+    pack_tool: PackTool,
+    rules: dict[str, Rule],
+    outcome: ProcessResult,
+    workspace: Path,
+    locations: Locations,
+) -> list[ReviewFinding]:
+    """The diagnostics of one tool run that belong to a wanted rule, on a reportable line."""
+    from governed_harness.validators.parsers import parse_output
+
+    issues = parse_output(
+        outcome.stdout.decode("utf-8", "replace"),
+        outcome.stderr.decode("utf-8", "replace"),
+        workspace,
+        parser=pack_tool.parser or "auto",
+    )
+    findings: list[ReviewFinding] = []
+    for issue in issues:
+        matched = rules.get(issue.rule)
+        if matched is None or not issue.path or not issue.line:
+            continue
+        if not locations.allows(issue.path, "new", issue.line):
+            continue
+        findings.append(
+            ReviewFinding(
+                reviewer=pack_tool.tool_id,
+                file=issue.path,
+                side="new",
+                line=issue.line,
+                rule=matched.rule_id,
+                severity="error" if matched.blocking else "suggestion",
+                issue=issue.message,
+                priority=matched.priority,
+                source=f"tool:{pack_tool.tool_id}",
+            )
+        )
+    return findings
+
+
 __all__ = [
     "ReviewSetup",
+    "RouteObserver",
     "consistency_runner",
     "linter_runner",
     "panel_context",
