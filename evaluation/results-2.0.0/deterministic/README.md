@@ -39,6 +39,9 @@ still declares version `1.0.0` (`harness --version` prints `harness 1.0.0`); 2.0
 yet. Python 3.12.11 on macOS arm64; the projects' validators ran with pytest 9.1.1, Ruff 0.16.7,
 mypy and freezegun 1.4.0 from a local virtual environment. Every suite was re-run on that code on
 2026-10-06 (the first results, on the code before wave 9, are in the history of this branch).
+PR #89 was then merged into develop with one more commit (`12b13d9`: `harness init` appends its
+entry to the ignore file instead of rewriting it), merged here afterwards; the suites were not
+run again for it, and they run once more on the v2.0.0 wheel.
 
 What wave 9 changed in these results (each subdirectory's README has the detail): the fault
 probes `unauthorized-command` (refused before it starts, #87) and `destructive-command` (BLOCKED,
