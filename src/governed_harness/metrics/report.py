@@ -45,6 +45,7 @@ from governed_harness.telemetry.metrics import HUMAN_INTERACTION_EVENTS, human_i
 SCHEMA_VERSION = "1.0"
 _ISSUE_TEXT = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\b", re.IGNORECASE)
 _APPROVALS = frozenset({DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION})
+_RELATIVE_UNITS = {"h": "hours", "d": "days", "w": "weeks"}
 _PHASES = (
     "INTENT",
     "DISCOVERY",
@@ -94,11 +95,11 @@ def parse_since(value: str | None, now: datetime | None = None) -> datetime | No
     if not value:
         return None
     text = value.strip()
-    relative = re.fullmatch(r"(\d+)([hdw])", text)
-    if relative:
-        amount = int(relative.group(1))
-        unit = {"h": "hours", "d": "days", "w": "weeks"}[relative.group(2)]
-        return (now or datetime.now(UTC)) - timedelta(**{unit: amount})
+    # A plain parse instead of a regular expression: linear on any input (``--since`` comes
+    # from the command line). ``isdecimal`` accepts exactly what ``\d`` accepted.
+    unit = _RELATIVE_UNITS.get(text[-1:])
+    if unit is not None and text[:-1].isdecimal():
+        return (now or datetime.now(UTC)) - timedelta(**{unit: int(text[:-1])})
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
@@ -739,12 +740,18 @@ def build_report(
         "projects": projects,
         "notes": [
             "Computed from the run records and event chains only; no model was called.",
-            "Costs: reportedCostUsd is what providers reported; estimatedCostUsd is computed "
-            "from the price table for calls that reported tokens without a cost (estimated).",
-            "Tokens: input includes cache tokens when the provider reports both; reasoning "
-            "tokens are shown apart and not priced separately.",
-            "No per-person indicator: interactions, approvals and waits are counted per run, "
-            "task and project.",
+            (
+                "Costs: reportedCostUsd is what providers reported; estimatedCostUsd is computed "
+                "from the price table for calls that reported tokens without a cost (estimated)."
+            ),
+            (
+                "Tokens: input includes cache tokens when the provider reports both; reasoning "
+                "tokens are shown apart and not priced separately."
+            ),
+            (
+                "No per-person indicator: interactions, approvals and waits are counted per run, "
+                "task and project."
+            ),
         ],
         "totals": {
             "runs": len(runs),
