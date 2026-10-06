@@ -45,6 +45,7 @@ from governed_harness.domain.models import (
     AcceptanceCriterion,
     CertificationRecord,
     ChangeSet,
+    CriterionVerification,
     DeferredVerification,
     Execution,
     Finding,
@@ -115,12 +116,125 @@ _GENERIC_TEST_SUFFIXES = (
 _MAX_GENERIC_TEST_BYTES = 2_000_000
 _SKIPPED_TEST_DIRECTORIES = frozenset({"node_modules", "build", "target", "vendor", "dist"})
 
+_PROBE_KINDS = {
+    ResultStatus.PASSED: ValidationKind.SUCCESS,
+    ResultStatus.FAILED: ValidationKind.VALIDATION_FAILURE,
+    ResultStatus.BLOCKED: ValidationKind.CONFIGURATION_ERROR,
+}
+"""The validation kind of a probe's status."""
+
 
 @dataclass(frozen=True)
 class PreflightResult:
     status: str  # READY, PARTIAL, UNAVAILABLE
     reasons: tuple[str, ...]
     ref: str
+
+
+def _probe_readiness(probe_runs: dict[str, ProbeRun]) -> tuple[list[str], list[str]]:
+    """What the probes on the baseline say about the run: reasons it cannot be certified and
+    reasons it is only partly verifiable."""
+    reasons: list[str] = []
+    partial: list[str] = []
+    for probe_id, run in sorted(probe_runs.items()):
+        if run.evaluation.readiness == "UNAVAILABLE":
+            reasons.append(
+                f"probe {probe_id} cannot run on the baseline: "
+                + "; ".join(run.evaluation.problems[:2])
+            )
+        elif run.evaluation.passed:
+            partial.append(
+                f"probe {probe_id} already passes on the baseline (it does not show the change)"
+            )
+    return reasons, partial
+
+
+def _plan_readiness(plan: list[dict[str, Any]]) -> tuple[list[str], list[str]]:
+    """The same for the declared criteria of the verification plan."""
+    reasons: list[str] = []
+    partial: list[str] = []
+    for item in plan:
+        if not item["declared"]:
+            continue
+        if item["route"] == "unreachable":
+            reasons.append(
+                f"criterion {item['criterionId']} requires {item['required']}: {item['why']}"
+            )
+        elif item["route"] in {"deferred", "manual"}:
+            when = "after the run" if item["route"] == "deferred" else "with a person"
+            partial.append(
+                f"criterion {item['criterionId']} reaches {item['required']} only {when}"
+            )
+    return reasons, partial
+
+
+def _reachable(
+    capabilities: list[CapabilityStatus],
+    linked: list[ProbeDefinition],
+    probe_runs: dict[str, ProbeRun],
+) -> dict[VerificationLevel, str]:
+    """The rungs a criterion reaches here and what reaches each one."""
+    reachable: dict[VerificationLevel, str] = {VerificationLevel.L0: "the mandatory validators"}
+    for item in capabilities:
+        level = VerificationLevel(item.level)
+        if item.available and not item.probes:
+            reachable.setdefault(level, f"{item.provides} ({item.profile_id})")
+    for probe in linked:
+        run = probe_runs.get(probe.probe_id)
+        if run is None or run.evaluation.readiness == "READY":
+            reachable.setdefault(probe.level, f"probe {probe.probe_id}")
+    return reachable
+
+
+def _unreachable_reason(
+    required: VerificationLevel,
+    linked: list[ProbeDefinition],
+    probe_runs: dict[str, ProbeRun],
+    capabilities: list[CapabilityStatus],
+) -> str:
+    """Why no rung at or above ``required`` is reachable here."""
+    broken = [
+        f"probe {probe.probe_id} cannot run here ("
+        + "; ".join(probe_runs[probe.probe_id].evaluation.problems[:2])
+        + ")"
+        for probe in linked
+        if probe.probe_id in probe_runs
+        and probe_runs[probe.probe_id].evaluation.readiness == "UNAVAILABLE"
+    ]
+    if broken:
+        return "; ".join(broken[:2])
+    missing_probe = (
+        required.rank >= VerificationLevel.L3.rank
+        and required is not VerificationLevel.L5
+        and not linked
+    )
+    if missing_probe:
+        return "no probe is linked to it"
+    unavailable = [
+        f"{item.level} {item.provides} needs "
+        + ", ".join(d.description for d in item.detections if not d.available)
+        for item in capabilities
+        if not item.available
+        and not item.probes
+        and VerificationLevel(item.level).rank >= required.rank
+    ]
+    return "; ".join(unavailable[:2]) or f"no capability reaches {required.value} here"
+
+
+def _recorded_evaluations(
+    validations: list[ValidationResult], definitions: dict[str, ProbeDefinition]
+) -> dict[str, ProbeEvaluation]:
+    """The probes' evaluations as their recorded validations say (a decision after the run)."""
+    evaluations: dict[str, ProbeEvaluation] = {}
+    for item in validations:
+        probe_id = item.validator_id[6:]
+        if item.validator_id.startswith("probe.") and probe_id in definitions:
+            evaluations[probe_id] = ProbeEvaluation(
+                probe_id,
+                "UNAVAILABLE" if item.status is ResultStatus.BLOCKED else "READY",
+                item.status is ResultStatus.PASSED,
+            )
+    return evaluations
 
 
 class VerificationLadder:
@@ -313,26 +427,9 @@ class VerificationLadder:
         capabilities = self.capabilities(execution)
         probes = self.probes(task)
         probe_runs: dict[str, ProbeRun] = {}
-        friction = self.engine.friction
-        if (
-            config.preflight
-            and probes
-            and not (friction.active and friction.skips(execution, "preflight", PhaseId.PLANNING))
-        ):
-            # The fast lane of #58 leaves the probes on the baseline out (no long preflight).
+        if config.preflight and probes and not self._fast_preflight(execution):
             probe_runs = self._baseline_probes(execution, probes)
-        reasons: list[str] = []
-        partial: list[str] = []
-        for probe_id, run in sorted(probe_runs.items()):
-            if run.evaluation.readiness == "UNAVAILABLE":
-                reasons.append(
-                    f"probe {probe_id} cannot run on the baseline: "
-                    + "; ".join(run.evaluation.problems[:2])
-                )
-            elif run.evaluation.passed:
-                partial.append(
-                    f"probe {probe_id} already passes on the baseline (it does not show the change)"
-                )
+        reasons, partial = _probe_readiness(probe_runs)
         acceptance = results.acceptance.state(execution) or {}
         before = (acceptance.get("failBefore") or {}).get("status")
         if before in {"ERROR", "TIMED_OUT", "BLOCKED"}:
@@ -341,17 +438,15 @@ class VerificationLadder:
             self._criterion_plan(criterion, capabilities, probes, probe_runs, config)
             for criterion in task.acceptance_criteria
         ]
-        for item in plan:
-            if item["route"] == "unreachable" and item["declared"]:
-                reasons.append(
-                    f"criterion {item['criterionId']} requires {item['required']}: {item['why']}"
-                )
-            elif item["route"] in {"deferred", "manual"} and item["declared"]:
-                partial.append(
-                    f"criterion {item['criterionId']} reaches {item['required']} only "
-                    f"{'after the run' if item['route'] == 'deferred' else 'with a person'}"
-                )
-        status = "UNAVAILABLE" if reasons else "PARTIAL" if partial else "READY"
+        plan_reasons, plan_partial = _plan_readiness(plan)
+        reasons.extend(plan_reasons)
+        partial.extend(plan_partial)
+        if reasons:
+            status = "UNAVAILABLE"
+        elif partial:
+            status = "PARTIAL"
+        else:
+            status = "READY"
         record = {
             "status": status,
             "reasons": reasons,
@@ -403,6 +498,11 @@ class VerificationLadder:
                 )
         return runs
 
+    def _fast_preflight(self, execution: Execution) -> bool:
+        """Whether the fast lane of #58 leaves the probes on the baseline out (recorded)."""
+        friction = self.engine.friction
+        return friction.active and friction.skips(execution, "preflight", PhaseId.PLANNING)
+
     def _criterion_plan(
         self,
         criterion: AcceptanceCriterion,
@@ -420,66 +520,16 @@ class VerificationLadder:
             if (declaration and declaration.probe == probe.probe_id)
             or criterion.criterion_id in probe.criteria
         ]
-        reachable: dict[VerificationLevel, str] = {VerificationLevel.L0: "the mandatory validators"}
-        for item in capabilities:
-            level = VerificationLevel(item.level)
-            if item.available and not item.probes:
-                reachable.setdefault(level, f"{item.provides} ({item.profile_id})")
-        for probe in linked:
-            run = probe_runs.get(probe.probe_id)
-            if run is None or run.evaluation.readiness == "READY":
-                reachable.setdefault(probe.level, f"probe {probe.probe_id}")
+        reachable = _reachable(capabilities, linked, probe_runs)
         highest = max(reachable, key=lambda level: level.rank)
-        missing_probe = (
-            required.rank >= VerificationLevel.L3.rank
-            and required is not VerificationLevel.L5
-            and not linked
-        )
-        if any(level.rank >= required.rank for level in reachable):
-            route, why = (
-                "local",
-                reachable[
-                    min(
-                        (level for level in reachable if level.rank >= required.rank),
-                        key=lambda level: level.rank,
-                    )
-                ],
+        routed = self._route(declaration, required, reachable)
+        if routed is None:
+            reason = _unreachable_reason(required, linked, probe_runs, capabilities)
+            routed = (
+                "unreachable",
+                f"{reason}; highest reachable here is {highest.value} ({reachable[highest]})",
             )
-        elif declaration and declaration.manual and required is VerificationLevel.L5:
-            route = "manual" if self.manual_checklist else "unreachable"
-            why = (
-                f"a person checks: {declaration.manual}"
-                if self.manual_checklist
-                else "manual checks need review.manualChecklist"
-            )
-        elif declaration and declaration.deferred:
-            route, why = "deferred", f"verified after the run: {declaration.deferred}"
-        else:
-            route = "unreachable"
-            broken = [
-                f"probe {probe.probe_id} cannot run here ("
-                + "; ".join(probe_runs[probe.probe_id].evaluation.problems[:2])
-                + ")"
-                for probe in linked
-                if probe.probe_id in probe_runs
-                and probe_runs[probe.probe_id].evaluation.readiness == "UNAVAILABLE"
-            ]
-            unavailable = [
-                f"{item.level} {item.provides} needs "
-                + ", ".join(d.description for d in item.detections if not d.available)
-                for item in capabilities
-                if not item.available
-                and not item.probes
-                and VerificationLevel(item.level).rank >= required.rank
-            ]
-            reason = (
-                "; ".join(broken[:2])
-                if broken
-                else "no probe is linked to it"
-                if missing_probe
-                else "; ".join(unavailable[:2]) or f"no capability reaches {required.value} here"
-            )
-            why = f"{reason}; highest reachable here is {highest.value} ({reachable[highest]})"
+        route, why = routed
         return {
             "criterionId": criterion.criterion_id,
             "declared": declaration is not None,
@@ -490,6 +540,25 @@ class VerificationLadder:
             "why": why,
             "probes": [probe.probe_id for probe in linked],
         }
+
+    def _route(
+        self,
+        declaration: CriterionVerification | None,
+        required: VerificationLevel,
+        reachable: dict[VerificationLevel, str],
+    ) -> tuple[str, str] | None:
+        """How a criterion reaches its rung: here, with a person or after the run; ``None``
+        when it cannot."""
+        enough = [level for level in reachable if level.rank >= required.rank]
+        if enough:
+            return "local", reachable[min(enough, key=lambda level: level.rank)]
+        if declaration and declaration.manual and required is VerificationLevel.L5:
+            if self.manual_checklist:
+                return "manual", f"a person checks: {declaration.manual}"
+            return "unreachable", "manual checks need review.manualChecklist"
+        if declaration and declaration.deferred:
+            return "deferred", f"verified after the run: {declaration.deferred}"
+        return None
 
     # ----- VERIFICATION -------------------------------------------------------------------------
     def verification(
@@ -570,13 +639,12 @@ class VerificationLadder:
                         "changeSetDigest": change_set.digest,
                     },
                 )
-        status = (
-            ResultStatus.PASSED
-            if not outside
-            else ResultStatus.BLOCKED
-            if "scope-contradiction" in stops
-            else ResultStatus.FAILED
-        )
+        if not outside:
+            status = ResultStatus.PASSED
+        elif "scope-contradiction" in stops:
+            status = ResultStatus.BLOCKED
+        else:
+            status = ResultStatus.FAILED
         ref = results.record_json(
             execution,
             PhaseId.VERIFICATION,
@@ -600,119 +668,122 @@ class VerificationLadder:
     def _verify_probes(
         self, execution: Execution, change_set: ChangeSet, task: Task
     ) -> tuple[list[ValidatorOutput], dict[str, ProbeEvaluation]]:
-        results = self.engine.results
         outputs: list[ValidatorOutput] = []
         evaluations: dict[str, ProbeEvaluation] = {}
         _, waived_probes = self.waived(execution)
         enforce = self.config is not None and self.config.mode == "enforce"
-        severity = FindingSeverity.HIGH if enforce else FindingSeverity.LOW
         for probe in self.probes(task):
-            validator_id = f"probe.{probe.probe_id}"
             if probe.probe_id in waived_probes:
-                ref = results.record_json(
-                    execution,
-                    PhaseId.VERIFICATION,
-                    {"probeId": probe.probe_id, "waived": True},
-                    kind="probe-report",
-                    summary=f"Probe {probe.probe_id} waived in preflight",
-                )
-                result = results.record_validation(
+                outputs.append(self._waived_probe(execution, change_set, probe))
+                continue
+            output, evaluation = self._verify_probe(execution, change_set, probe, enforce)
+            evaluations[probe.probe_id] = evaluation
+            outputs.append(output)
+        return outputs, evaluations
+
+    def _waived_probe(
+        self, execution: Execution, change_set: ChangeSet, probe: ProbeDefinition
+    ) -> ValidatorOutput:
+        """The NOT_APPLICABLE result of a probe a person waived in preflight."""
+        results = self.engine.results
+        ref = results.record_json(
+            execution,
+            PhaseId.VERIFICATION,
+            {"probeId": probe.probe_id, "waived": True},
+            kind="probe-report",
+            summary=f"Probe {probe.probe_id} waived in preflight",
+        )
+        result = results.record_validation(
+            execution,
+            validator_id=f"probe.{probe.probe_id}",
+            digest=change_set.digest,
+            status=ResultStatus.NOT_APPLICABLE,
+            kind=ValidationKind.SUCCESS,
+            mandatory=False,
+            summary="waived: a person decided in preflight to continue without it",
+            evidence_refs=(ref,),
+        )
+        return ValidatorOutput(result, ())
+
+    def _verify_probe(
+        self, execution: Execution, change_set: ChangeSet, probe: ProbeDefinition, enforce: bool
+    ) -> tuple[ValidatorOutput, ProbeEvaluation]:
+        """Run one probe on the change and record its report, findings and validation."""
+        results = self.engine.results
+        validator_id = f"probe.{probe.probe_id}"
+        run = run_probe(
+            self.engine,
+            execution,
+            probe,
+            self.s.paths.workspace,
+            self.engine._runner(execution),
+        )
+        evaluation = run.evaluation
+        ref = results.record_json(
+            execution,
+            PhaseId.VERIFICATION,
+            run.as_dict(),
+            kind="probe-report",
+            summary=f"Probe {probe.probe_id}: {evaluation.readiness}, "
+            + ("passed" if evaluation.passed else "did not pass"),
+            evidence_kind=EvidenceKind.TEST_REPORT,
+            supports=probe.criteria,
+        )
+        if evaluation.readiness == "UNAVAILABLE":
+            status = ResultStatus.BLOCKED
+            findings = [self._unavailable_probe(execution, probe, evaluation, ref)]
+        elif not evaluation.passed:
+            status = ResultStatus.FAILED
+            severity = FindingSeverity.HIGH if enforce else FindingSeverity.LOW
+            findings = [
+                results.record_finding(
                     execution,
                     validator_id=validator_id,
-                    digest=change_set.digest,
-                    status=ResultStatus.NOT_APPLICABLE,
-                    kind=ValidationKind.SUCCESS,
-                    mandatory=False,
-                    summary="waived: a person decided in preflight to continue without it",
+                    rule_id=PROBE_FAILED_RULE,
+                    category="verification-ladder",
+                    severity=severity,
+                    message=(
+                        f"Probe {probe.probe_id}"
+                        + (f" variant {item.variant}" if item.variant else "")
+                        + f", assertion {item.index} ({item.kind}): {item.detail}"
+                    ),
                     evidence_refs=(ref,),
+                    introduced=True,
                 )
-                outputs.append(ValidatorOutput(result, ()))
-                continue
-            run = run_probe(
-                self.engine,
-                execution,
-                probe,
-                self.s.paths.workspace,
-                self.engine._runner(execution),
-            )
-            evaluation = run.evaluation
-            evaluations[probe.probe_id] = evaluation
-            ref = results.record_json(
-                execution,
-                PhaseId.VERIFICATION,
-                run.as_dict(),
-                kind="probe-report",
-                summary=f"Probe {probe.probe_id}: {evaluation.readiness}, "
-                + ("passed" if evaluation.passed else "did not pass"),
-                evidence_kind=EvidenceKind.TEST_REPORT,
-                supports=probe.criteria,
-            )
-            findings: list[Finding] = []
-            if evaluation.readiness == "UNAVAILABLE":
-                status = ResultStatus.BLOCKED
-                findings.append(
-                    results.record_finding(
-                        execution,
-                        validator_id=validator_id,
-                        rule_id=PROBE_UNAVAILABLE_RULE,
-                        category="verification-ladder",
-                        severity=FindingSeverity.HIGH,
-                        message=(
-                            f"Probe {probe.probe_id} could not run: "
-                            + "; ".join(evaluation.problems[:3])
-                        ),
-                        evidence_refs=(ref,),
-                        recommendation="Make the probe's command available or waive it in "
-                        "preflight (harness verification decide --continue-uncertified).",
-                    )
-                )
-            elif not evaluation.passed:
-                status = ResultStatus.FAILED
-                for item in evaluation.results:
-                    if item.passed:
-                        continue
-                    findings.append(
-                        results.record_finding(
-                            execution,
-                            validator_id=validator_id,
-                            rule_id=PROBE_FAILED_RULE,
-                            category="verification-ladder",
-                            severity=severity,
-                            message=(
-                                f"Probe {probe.probe_id}"
-                                + (f" variant {item.variant}" if item.variant else "")
-                                + f", assertion {item.index} ({item.kind}): {item.detail}"
-                            ),
-                            evidence_refs=(ref,),
-                            introduced=True,
-                        )
-                    )
-            else:
-                status = ResultStatus.PASSED
-            result = results.record_validation(
-                execution,
-                validator_id=validator_id,
-                digest=change_set.digest,
-                status=status,
-                kind=ValidationKind.SUCCESS
-                if status is ResultStatus.PASSED
-                else ValidationKind.VALIDATION_FAILURE
-                if status is ResultStatus.FAILED
-                else ValidationKind.CONFIGURATION_ERROR,
-                mandatory=enforce or status is ResultStatus.BLOCKED,
-                summary=(
-                    f"{len(evaluation.variants)} variant(s): "
-                    + (
-                        "every assertion held"
-                        if evaluation.passed
-                        else f"{len(findings)} problem(s)"
-                    )
-                ),
-                findings=tuple(findings),
-                evidence_refs=(ref,),
-            )
-            outputs.append(ValidatorOutput(result, tuple(findings)))
-        return outputs, evaluations
+                for item in evaluation.results
+                if not item.passed
+            ]
+        else:
+            status = ResultStatus.PASSED
+            findings = []
+        outcome = "every assertion held" if evaluation.passed else f"{len(findings)} problem(s)"
+        result = results.record_validation(
+            execution,
+            validator_id=validator_id,
+            digest=change_set.digest,
+            status=status,
+            kind=_PROBE_KINDS[status],
+            mandatory=enforce or status is ResultStatus.BLOCKED,
+            summary=f"{len(evaluation.variants)} variant(s): {outcome}",
+            findings=tuple(findings),
+            evidence_refs=(ref,),
+        )
+        return ValidatorOutput(result, tuple(findings)), evaluation
+
+    def _unavailable_probe(
+        self, execution: Execution, probe: ProbeDefinition, evaluation: ProbeEvaluation, ref: str
+    ) -> Finding:
+        return self.engine.results.record_finding(
+            execution,
+            validator_id=f"probe.{probe.probe_id}",
+            rule_id=PROBE_UNAVAILABLE_RULE,
+            category="verification-ladder",
+            severity=FindingSeverity.HIGH,
+            message=f"Probe {probe.probe_id} could not run: " + "; ".join(evaluation.problems[:3]),
+            evidence_refs=(ref,),
+            recommendation="Make the probe's command available or waive it in "
+            "preflight (harness verification decide --continue-uncertified).",
+        )
 
     # ----- certification --------------------------------------------------------------------------
     def corpus(self) -> TestCorpus:
@@ -809,34 +880,24 @@ class VerificationLadder:
             item for item in validations if item.mandatory and item.validator_id not in own
         ]
         passed = {item.validator_id for item in validations if item.status is ResultStatus.PASSED}
-        probes: list[ProbeOutcome] = []
         definitions = {probe.probe_id: probe for probe in self.probes(task)}
         if evaluations is None:
-            evaluations = {}
-            for item in validations:
-                if item.validator_id.startswith("probe.") and item.validator_id[6:] in definitions:
-                    evaluations[item.validator_id[6:]] = ProbeEvaluation(
-                        item.validator_id[6:],
-                        "UNAVAILABLE" if item.status is ResultStatus.BLOCKED else "READY",
-                        item.status is ResultStatus.PASSED,
-                    )
+            evaluations = _recorded_evaluations(validations, definitions)
         refs = {
             item.validator_id: item.evidence_refs[0] for item in validations if item.evidence_refs
         }
-        for probe_id, evaluation in evaluations.items():
-            definition = definitions.get(probe_id)
-            if definition is None:
-                continue
-            probes.append(
-                ProbeOutcome(
-                    probe_id,
-                    definition.level,
-                    definition.criteria,
-                    evaluation.passed,
-                    evaluation.readiness,
-                    refs.get(f"probe.{probe_id}"),
-                )
+        probes = [
+            ProbeOutcome(
+                probe_id,
+                definitions[probe_id].level,
+                definitions[probe_id].criteria,
+                evaluation.passed,
+                evaluation.readiness,
+                refs.get(f"probe.{probe_id}"),
             )
+            for probe_id, evaluation in evaluations.items()
+            if probe_id in definitions
+        ]
         acceptance_ran = any(
             item.validator_id == "harness.acceptance-tests" and item.status is ResultStatus.PASSED
             for item in validations
