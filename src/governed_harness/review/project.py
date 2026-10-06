@@ -4,11 +4,17 @@ and linters (#57). Shared by INDEPENDENT_REVIEW and ``harness review-code``."""
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from governed_harness.agents.routing import provider_family, select_reviewer
+from governed_harness.agents.routing import (
+    RoutingDecision,
+    flags_for,
+    invoking_model,
+    provider_family,
+    select_reviewer,
+)
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.models import ResolvedConfiguration
 from governed_harness.configuration.review import ReviewPanelConfig
@@ -145,10 +151,15 @@ def panel_context(
     return {"untrustedContent": context}, UNTRUSTED_NOTICE
 
 
-def reviewer_route(resolved: ResolvedConfiguration) -> Route:
+RouteObserver = Callable[[Reviewer, str, RoutingDecision], None]
+"""Hears the routing decision of a reviewer on a provider (#85: recorded per call)."""
+
+
+def reviewer_route(resolved: ResolvedConfiguration, observer: RouteObserver | None = None) -> Route:
     """The model and effort of a reviewer on a provider: the reviewer's own ``models`` entry
     (provider id or family) and ``effort``, else the routing table (``reviewers``, ``review``)
-    under ``agentRouting: tiered``, else the provider's default."""
+    under ``agentRouting: tiered`` (capped at the invoking model under ``anchored``, #85), else
+    the provider's default. ``observer`` hears every decision."""
     project = resolved.project
     policy = project.agent_routing
 
@@ -156,13 +167,31 @@ def reviewer_route(resolved: ResolvedConfiguration) -> Route:
         configured = project.agent_providers.get(provider_id)
         command = (*(configured.command or ()), configured.kind) if configured else ()
         family = provider_family(provider_id, command, policy.families if policy else None)
+        decision = select_reviewer(
+            reviewer.reviewer_id,
+            policy,
+            family=family,
+            anchor=invoking_model(project, provider_id),
+        )
         model = reviewer.model_for(provider_id, family)
         effort = reviewer.spec.effort
-        if model is None:
-            decision = select_reviewer(reviewer.reviewer_id, policy, family=family)
-            model = decision.model
-            effort = effort or decision.effort
-        return model, effort
+        if model is not None:
+            # The reviewer's own model wins over the tables, as a call's own setting does.
+            decision = replace(
+                decision,
+                rule=f"reviewer:{reviewer.reviewer_id}",
+                model=model,
+                effort=effort,
+                rung=None,
+                flags=flags_for(family, model, effort),
+            )
+        elif effort is not None:
+            decision = replace(
+                decision, effort=effort, flags=flags_for(family, decision.model, effort)
+            )
+        if observer is not None:
+            observer(reviewer, provider_id, decision)
+        return decision.model, decision.effort
 
     return route
 
@@ -313,6 +342,7 @@ def _tool_findings(
 
 __all__ = [
     "ReviewSetup",
+    "RouteObserver",
     "consistency_runner",
     "linter_runner",
     "panel_context",

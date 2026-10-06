@@ -192,8 +192,21 @@
     },
     "AgentRoutingConfig": {
       "additionalProperties": false,
-      "description": "Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,\n``tiered`` chooses from the tables by call kind and task size and escalates on quality\nfailures.",
+      "description": "Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,\n``tiered`` chooses from the tables by call kind and task size and escalates on quality\nfailures.\n\nSince #85 ``anchored`` uses the same tables with the invoking model as the ceiling: a rung\nof a cheaper model is kept, a rung of the invoking model's tier uses the invoking model\nwith the rung's effort, a rung above it becomes the top rung allowed, and escalation climbs\nonly up to that model. The invoking model is ``anchorModel`` when set, else the ``model``\nof the provider that answers the call (for the ``session`` provider, ``agentProvider``),\nelse the ``--model``/``-m`` value of its command or ``args``; when none is known every call\nkeeps the provider's own model.",
       "properties": {
+        "anchorModel": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Anchormodel"
+        },
         "families": {
           "anyOf": [
             {
@@ -233,7 +246,8 @@
             {
               "enum": [
                 "fixed",
-                "tiered"
+                "tiered",
+                "anchored"
               ],
               "type": "string"
             },
@@ -294,6 +308,67 @@
         }
       },
       "title": "AgentRoutingConfig",
+      "type": "object"
+    },
+    "AmbiguityReviewConfig": {
+      "additionalProperties": false,
+      "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the review of 1.1, which neither converges nor stops.",
+      "properties": {
+        "maxQuestions": {
+          "anyOf": [
+            {
+              "maximum": 40,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxquestions"
+        },
+        "maxRounds": {
+          "anyOf": [
+            {
+              "maximum": 20,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxrounds"
+        },
+        "mode": {
+          "default": "agent",
+          "enum": [
+            "agent",
+            "off"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "onExhausted": {
+          "anyOf": [
+            {
+              "enum": [
+                "assume",
+                "block"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Onexhausted"
+        }
+      },
+      "title": "AmbiguityReviewConfig",
       "type": "object"
     },
     "ApiConfig": {
@@ -911,6 +986,36 @@
         }
       },
       "title": "ContextConfig",
+      "type": "object"
+    },
+    "ContractRetryConfig": {
+      "additionalProperties": false,
+      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase\nrejects) is sent once more before the phase blocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1.",
+      "properties": {
+        "fallbackProvider": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fallbackprovider"
+        },
+        "mode": {
+          "default": "once",
+          "enum": [
+            "once",
+            "off"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "ContractRetryConfig",
       "type": "object"
     },
     "DeliveryConfig": {
@@ -1937,7 +2042,7 @@
     },
     "IntakeConfig": {
       "additionalProperties": false,
-      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.",
+      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.\n\nSince #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,\n``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records\nthe open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1\nreview.",
       "properties": {
         "ambiguityReview": {
           "anyOf": [
@@ -1947,6 +2052,9 @@
                 "off"
               ],
               "type": "string"
+            },
+            {
+              "$ref": "#/$defs/AmbiguityReviewConfig"
             },
             {
               "type": "null"
@@ -3711,6 +3819,17 @@
           "minimum": 1,
           "title": "Commandtimeoutseconds",
           "type": "integer"
+        },
+        "contractRetry": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ContractRetryConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "extendedRedaction": {
           "anyOf": [

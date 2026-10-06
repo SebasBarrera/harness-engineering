@@ -82,6 +82,10 @@ class ContractItem:
 class ContractSummary:
     task_digest: str
     items: tuple[ContractItem, ...]
+    assumptions: tuple[dict[str, Any], ...] = ()
+    """Since #79: the points the agent review left open, recorded as assumptions of the task
+    revision (``metadata.assumptions``); part of the summary and its digest only when there
+    are any."""
 
     @property
     def missing(self) -> tuple[str, ...]:
@@ -93,15 +97,21 @@ class ContractSummary:
 
     @property
     def digest(self) -> str:
-        return sha256_json({"taskDigest": self.task_digest, "values": self.values})
+        value: dict[str, Any] = {"taskDigest": self.task_digest, "values": self.values}
+        if self.assumptions:
+            value["assumptions"] = list(self.assumptions)
+        return sha256_json(value)
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value: dict[str, Any] = {
             "digest": self.digest,
             "taskDigest": self.task_digest,
             "items": [item.as_dict() for item in self.items],
             "missing": list(self.missing),
         }
+        if self.assumptions:
+            value["assumptions"] = list(self.assumptions)
+        return value
 
 
 def _item(field: str, value: Any, source: str) -> ContractItem:
@@ -198,7 +208,9 @@ def derive_contract(task: Task, task_digest: str, defaults: dict[str, Any]) -> C
         _setting_item(name, _declared_value(declared, attribute), defaults)
         for name, attribute in _SETTINGS
     )
-    return ContractSummary(task_digest, tuple(items))
+    assumptions = task.metadata.get("assumptions")
+    recorded = tuple(item for item in assumptions or () if isinstance(item, dict))
+    return ContractSummary(task_digest, tuple(items), recorded)
 
 
 __all__ = ["CONTRACT_FIELDS", "QUESTIONS", "ContractItem", "ContractSummary", "derive_contract"]

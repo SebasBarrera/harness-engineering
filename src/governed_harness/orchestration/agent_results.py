@@ -9,6 +9,7 @@ from __future__ import annotations
 import fnmatch
 import json
 from collections.abc import Callable
+from dataclasses import replace
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.agents import (
@@ -20,13 +21,20 @@ from governed_harness.agents import (
     render_instructions,
 )
 from governed_harness.agents.requests import READ_ONLY_KINDS, REQUEST_SCHEMA_VERSION, CallKind
-from governed_harness.agents.routing import RoutingHistory, TaskSignals, provider_family, select
+from governed_harness.agents.routing import (
+    RoutingHistory,
+    TaskSignals,
+    invoking_model,
+    provider_family,
+    select,
+)
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.configuration.agent_results import AgentCallConfig, BudgetConfig
 from governed_harness.configuration.models import ProjectConfiguration
 from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
+    ErrorKind,
     EvidenceKind,
     FindingSeverity,
     PhaseId,
@@ -618,13 +626,93 @@ class AgentResults:
         task: Task,
         instruction_values: dict[str, Any] | None = None,
         instructions_suffix: str = "",
+        validate: Callable[[dict[str, Any]], object] | None = None,
     ) -> AgentCallOutcome:
         """Send a read-only request of ``kind`` and return its structured result.
 
         The request, the provider's output and the routing decision are evidence; a call that
-        changed the workspace is undone and answered with ``ERROR``."""
-        engine = self.engine
+        changed the workspace is undone and answered with ``ERROR``. Under
+        ``runtime.contractRetry`` (#80) an answer that breaks its contract (a protocol error,
+        or a ``result`` that ``validate`` rejects with ``ValueError``) is sent once more, to
+        the fallback provider when one is configured, and both attempts are recorded."""
         provider_id = self.provider_for(execution, kind)
+        first = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=provider_id,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        retry = self.project.runtime.contract_retry
+        problem = contract_problem(first, validate)
+        if retry is None or not retry.enabled or problem is None:
+            return first
+        fallback = retry.fallback_provider or provider_id
+        self._record_contract_retry(execution, phase, kind, first, problem, provider_id, fallback)
+        second = self._call_once(
+            execution,
+            phase,
+            kind,
+            payload,
+            task=task,
+            provider_id=fallback,
+            instruction_values=instruction_values,
+            instructions_suffix=instructions_suffix,
+        )
+        return replace(second, evidence_refs=(*first.evidence_refs, *second.evidence_refs))
+
+    def _record_contract_retry(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        first: AgentCallOutcome,
+        problem: str,
+        provider_id: str,
+        fallback: str,
+    ) -> None:
+        """The first attempt of a read-only call broke its contract: say why and where the
+        second goes."""
+        record = {
+            "callKind": kind,
+            "attempt": 1,
+            "provider": provider_id,
+            "retryProvider": fallback,
+            "problem": problem[:2000],
+            "invocationId": first.invocation_id,
+            "evidenceRefs": list(first.evidence_refs),
+        }
+        ref = self.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-contract-retry",
+            summary=f"The {kind} answer broke its contract; sent again to {fallback}",
+        )
+        self.s.events.append(
+            execution.execution_id,
+            "agent.call.contract-retry",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+
+    def _call_once(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: CallKind,
+        payload: dict[str, Any],
+        *,
+        task: Task,
+        provider_id: str,
+        instruction_values: dict[str, Any] | None,
+        instructions_suffix: str,
+    ) -> AgentCallOutcome:
+        """One attempt of a read-only call on ``provider_id`` (see :meth:`call_agent`)."""
+        engine = self.engine
         built = engine._build_provider(execution, phase, provider_id)
         if not isinstance(built, tuple):
             return AgentCallOutcome(built.status, built.summary, None, None, built.evidence_refs)
@@ -718,6 +806,7 @@ class AgentResults:
             answer.response if answer.execution.status is ResultStatus.PASSED else None,
             answer.execution.invocation.invocation_id,
             refs,
+            protocol_error=protocol_error(answer.execution),
         )
 
     def _call_with_retries(
@@ -815,6 +904,14 @@ class AgentResults:
         # A built-in adapter (kind claude-code, codex, ...) names its family by its kind.
         return (*(configured.command or ()), configured.kind)
 
+    def invoking_model(self, provider_id: str) -> str | None:
+        """The invoking model, ceiling of ``agentRouting.mode: anchored`` (#85), of a call that
+        ``provider_id`` answers: ``agentRouting.anchorModel`` when set, else the provider's
+        ``model``, else the ``--model``/``-m`` value of its command or ``args``. The embedded
+        ``session`` provider stands for the project's ``agentProvider``, which answers the
+        read-only calls of a session run. ``None`` when nothing says it."""
+        return invoking_model(self.project, provider_id)
+
     def routing_for(
         self,
         execution: Execution,
@@ -841,6 +938,7 @@ class AgentResults:
             policy,
             family=family,
             override=override if has_override else None,
+            anchor=self.invoking_model(provider_id),
         )
         record = {**decision.as_dict(), "provider": provider_id, "phase": phase.phase_id}
         ref = self.record_json(
@@ -922,32 +1020,24 @@ class AgentResults:
         """The keys the agent-results settings add to the implement request; with any of
         them the request also carries its kind and rendered instructions (schema 1.1)."""
         extra = self.request_common(execution, phase, "implement", task, provider_id, grants)
+        notes: list[str] = []
         if self.gate.enabled:
-            extra["gate"] = self.gate.contract(execution)
+            # #84: the requirement ids and naming rule, and a check command the agent may run.
+            gate = self.gate.contract(execution, task, grants)
+            extra["gate"] = gate
+            notes.append(self.gate.instructions_note(gate))
             self.gate.write_check_state(execution, task)
         extra.update(self.implement_context(execution, phase, task))
         extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
             extra["acceptanceTests"] = frozen
-        suffix = ""
         if self.engineering.configured:
-            # Standards cards for the files this call works on, testing strategy and layers
-            # (#56), selected deterministically and cached by digest.
-            since = self.baseline_changes(execution)
-            changed = [item.path for item in since.changes] if since is not None else []
-            manifest = extra.get("contextFiles")
-            listed = (
-                [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
-                if isinstance(manifest, dict)
-                else []
-            )
-            paths = self.engineering.candidate_paths(task, changed, listed)
-            engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
-            extra.update(engineering)
+            notes.insert(0, self._engineering_extra(execution, phase, task, extra))
         if not extra:
             return None
         workspace = str(self.s.paths.workspace)
+        suffix = " ".join(item for item in notes if item)
         extra.update(
             {
                 "schemaVersion": REQUEST_SCHEMA_VERSION,
@@ -958,6 +1048,25 @@ class AgentResults:
             }
         )
         return extra
+
+    def _engineering_extra(
+        self, execution: Execution, phase: PhaseExecution, task: Task, extra: dict[str, Any]
+    ) -> str:
+        """Standards cards for the files this call works on, testing strategy and layers (#56),
+        selected deterministically and cached by digest: added to ``extra``; the instructions
+        they add are returned."""
+        since = self.baseline_changes(execution)
+        changed = [item.path for item in since.changes] if since is not None else []
+        manifest = extra.get("contextFiles")
+        listed = (
+            [str(item.get("path")) for item in manifest.get("files", []) if item.get("path")]
+            if isinstance(manifest, dict)
+            else []
+        )
+        paths = self.engineering.candidate_paths(task, changed, listed)
+        engineering, suffix = self.engineering.implement_extra(execution, phase, paths)
+        extra.update(engineering)
+        return suffix
 
     def repository_extra(self, *, read_only: bool) -> dict[str, Any]:
         """The keys ``governance.applyRepositoryPolicies`` adds to a request (#5): the
@@ -1139,7 +1248,7 @@ class AgentResults:
         from governed_harness.agents.routing import can_escalate
 
         policy = self.project.agent_routing
-        if policy is None or policy.mode != "tiered":
+        if policy is None or policy.mode not in {"tiered", "anchored"}:
             return
         history = RoutingHistory(escalations=self.escalations(execution))
         if not can_escalate(history, policy):
@@ -1165,7 +1274,7 @@ class AgentResults:
 
     def implement_model(self, execution: Execution, task: Task) -> str | None:
         """The model an implement call would use (no record): the router's choice under
-        ``agentRouting: tiered``, else the provider's configured model."""
+        ``agentRouting: tiered`` (or ``anchored``), else the provider's configured model."""
         provider_id = self.s.state.get_flag(f"provider:{execution.execution_id}") or "simulated"
         configured = self.project.agent_providers.get(provider_id)
         policy = self.project.agent_routing
@@ -1179,10 +1288,37 @@ class AgentResults:
                 RoutingHistory(escalations=self.escalations(execution)),
                 policy,
                 family=family,
+                anchor=self.invoking_model(provider_id),
             )
             if decision.model:
                 return decision.model
         return configured.model if configured else None
+
+
+# ----- the contract of a read-only answer (#80) ----------------------------------------------
+def protocol_error(result: AgentExecutionResult) -> str | None:
+    """Why an answer broke the provider protocol (no JSON, no ``result`` object), or ``None``."""
+    error = result.invocation.error
+    if result.status is not ResultStatus.ERROR or error is None:
+        return None
+    return error.message if error.kind is ErrorKind.PROTOCOL_ERROR else None
+
+
+def contract_problem(
+    outcome: AgentCallOutcome, validate: Callable[[dict[str, Any]], object] | None
+) -> str | None:
+    """Why a read-only answer breaks its contract: a protocol error, or a ``result`` that the
+    phase's ``validate`` rejects (``ValueError``); ``None`` for an answer that keeps it, and for
+    any other failure (a provider that did not answer, a call that changed the workspace)."""
+    if outcome.protocol_error is not None:
+        return outcome.protocol_error
+    if validate is None or outcome.status is not ResultStatus.PASSED or outcome.result is None:
+        return None
+    try:
+        validate(outcome.result)
+    except ValueError as error:
+        return str(error)
+    return None
 
 
 # ----- the configuration of each read-only call kind -----------------------------------------

@@ -19,9 +19,11 @@ from governed_harness.configuration.agent_results import (
     AgentCallConfig,
     AgentRoutingConfig,
     AmbiguityReview,
+    AmbiguityReviewConfig,
     ArchitectureConfig,
     BudgetConfig,
     ContextConfig,
+    ContractRetryConfig,
     InvariantCheck,
     MemoryConfig,
     PlanningConfig,
@@ -166,6 +168,7 @@ _OPTIONAL_RUNTIME_FIELDS = {
     "reproduce_first": "reproduceFirst",
     "extended_redaction": "extendedRedaction",
     "state_dir": "stateDir",
+    "contract_retry": "contractRetry",
 }
 """Optional runtime keys left out of the serialized configuration while they are unset."""
 
@@ -288,6 +291,9 @@ class RuntimeConfig(ConfigModel):
     """Since 1.1 (#52): the implement request carries the gate contract (validators, review
     rules, blocking severities, the workspace path and the ``harness check`` command) and the
     agent's permissions derived from the capability grants."""
+    contract_retry: ContractRetryConfig | None = Field(default=None, alias="contractRetry")
+    """Since #80: a read-only call whose answer breaks its contract is retried once (on
+    ``fallbackProvider`` when configured) before the phase blocks; both attempts are recorded."""
     reproduce_first: bool | None = Field(default=None, alias="reproduceFirst")
     """Since 1.1 (#52): a correction attempt that changes nothing is a finding, and a correction
     after REQUEST_CHANGES must add a test that fails before it and passes after it."""
@@ -482,10 +488,17 @@ class IntakeConfig(ConfigModel):
     ambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its
     provider, model and effort, and ``validateAnswers`` checks a person's answers for references
     to documents or requirements the task and the workspace do not contain. Absent keys keep the
-    1.0.0 behaviour."""
+    1.0.0 behaviour.
+
+    Since #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,
+    ``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records
+    the open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1
+    review."""
 
     criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
-    ambiguity_review: AmbiguityReview | None = Field(default=None, alias="ambiguityReview")
+    ambiguity_review: AmbiguityReview | AmbiguityReviewConfig | None = Field(
+        default=None, alias="ambiguityReview"
+    )
     clarify_agent: AgentCallConfig | None = Field(default=None, alias="clarifyAgent")
     validate_answers: bool | None = Field(default=None, alias="validateAnswers")
     operational_contract: ContractMode | None = Field(default=None, alias="operationalContract")
@@ -508,7 +521,17 @@ class IntakeConfig(ConfigModel):
 
     @property
     def agent_review_enabled(self) -> bool:
-        return self.ambiguity_review == "agent"
+        value = self.ambiguity_review
+        if isinstance(value, AmbiguityReviewConfig):
+            return value.enabled
+        return value == "agent"
+
+    @property
+    def ambiguity_settings(self) -> AmbiguityReviewConfig | None:
+        """The converging review's settings (#79): only under the object form of
+        ``ambiguityReview``; the bare ``agent`` keeps the 1.1 review."""
+        value = self.ambiguity_review
+        return value if isinstance(value, AmbiguityReviewConfig) and value.enabled else None
 
     @model_serializer(mode="wrap")
     def _omit_absent(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -955,6 +978,18 @@ class ProjectConfiguration(ConfigModel):
         if not value:
             return ("auto",)
         return value
+
+    @model_validator(mode="after")
+    def _known_fallback_provider(self) -> ProjectConfiguration:
+        """``runtime.contractRetry.fallbackProvider`` (#80) names a provider that can answer a
+        read-only call: ``simulated`` or an entry of ``agentProviders``."""
+        retry = self.runtime.contract_retry
+        name = retry.fallback_provider if retry is not None else None
+        if name is not None and name != "simulated" and name not in self.agent_providers:
+            raise ValueError(
+                f"runtime.contractRetry.fallbackProvider {name!r} is not in agentProviders"
+            )
+        return self
 
     @property
     def criteria_policy(self) -> CriteriaPolicy:

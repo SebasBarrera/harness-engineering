@@ -57,6 +57,8 @@ runtime:
   providerRetryDelaySeconds: 60
   extendedRedaction: true
   gateContract: true
+  contractRetry:
+    mode: once
   reproduceFirst: true
   stateDir: auto
 retention:
@@ -65,7 +67,11 @@ retention:
   orphanArtifacts: true
 intake:
   criteriaPolicy: enforce
-  ambiguityReview: agent
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3
+    maxQuestions: 8
+    onExhausted: assume
   validateAnswers: true
   operationalContract: batch
   interruptions:
@@ -183,7 +189,7 @@ memory:
   learnFromFindings: auto
   autoApproveRecurring: false
 agentRouting:
-  mode: tiered
+  mode: anchored
   thresholds:
     requirements:
     - 5
@@ -213,9 +219,9 @@ governance:
   applyNetworkPolicy: true
   stopTheLine: restore
   phasePermissions: true
+  phaseCapabilities: true
   applyRepositoryPolicies: true
   enforceWorkflow: true
-  phaseCapabilities: true
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -341,17 +347,20 @@ Since 1.1 the CLI `harness init` also adds `.harness/` to `.gitignore` and write
 | `review.exceptionDays` | `30`; `init` writes `30` | Validity of an exception when the decision sets none (1 to 365 days). |
 | `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
-| `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes `agent` and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
+| `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes the object form below and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
+| `intake.ambiguityReview.mode`, `maxRounds`, `maxQuestions`, `onExhausted` | the bare `agent` (the 1.1 review) when given as a value; `init` writes `agent`, `3`, `8`, `assume` | Since #79 the object form makes the review converge: it sends the questions already asked with their answers, drops repeated questions, asks at most `maxQuestions` (default 8) a round, and after `maxRounds` (default 3) answered rounds records the open points as assumptions of the task revision (`assume`) or keeps INTENT blocked (`block`, the default). See [a review that converges](../guides/agent-results.md#a-review-that-converges-79). |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
 | `verification.reverifyOnChange` | `false` when absent; `init` writes `true` | `run continue` on a run waiting in DECISION whose ChangeSet changed outside the run records the change as evidence and runs VERIFICATION again on the new ChangeSet (#78). See [re-verification after a change outside the run](#re-verification-after-a-change-outside-the-run). |
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
+| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
+| `agentRouting.mode`, `agentRouting.anchorModel` | `fixed` when absent; `init` writes `anchored` (before #85: `tiered`) | `fixed` keeps the provider's model, `tiered` chooses from the tables, `anchored` chooses from the tables with the invoking model as the ceiling; `anchorModel` names the invoking model when the provider does not (for example an embedded session). See [anchored routing](../guides/agent-results.md#anchored-at-the-invoking-model-85). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |

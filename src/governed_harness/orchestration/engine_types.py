@@ -111,6 +111,8 @@ class AgentCallOutcome:
     result: dict[str, Any] | None
     invocation_id: str | None
     evidence_refs: tuple[str, ...]
+    protocol_error: str | None = None
+    """Since #80: why the answer broke the provider protocol (no JSON, no ``result``)."""
 
 
 @dataclass(frozen=True)

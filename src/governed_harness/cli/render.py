@@ -314,6 +314,7 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
         )
     for item in brief["asked"]["constraints"]:
         lines.append(f"  constraint: {short(item, 100)}")
+    lines.extend(_assumption_lines(brief["asked"].get("assumptions")))
     changed = brief["changed"]
     totals = changed.get("totals") or {"files": 0, "additions": 0, "deletions": 0}
     lines.extend(
@@ -505,7 +506,17 @@ def _contract_lines(contract: Mapping[str, Any] | None) -> list[str]:
         value = item["value"]
         shown = ", ".join(map(str, value)) if isinstance(value, list) else _scalar(value)
         lines.append(f"  {label(item['field']):<20} {short(shown, 70)} ({item['source']})")
+    lines.extend(_assumption_lines(contract.get("assumptions")))
     return lines
+
+
+def _assumption_lines(assumptions: Any) -> list[str]:
+    """The points the agent review left open, recorded as assumptions (#79)."""
+    return [
+        f"  assumption {item.get('assumptionId')}: {short(str(item.get('question')), 90)}"
+        for item in assumptions or []
+        if isinstance(item, Mapping)
+    ]
 
 
 def _interruption_lines(interruptions: Mapping[str, Any] | None) -> list[str]:

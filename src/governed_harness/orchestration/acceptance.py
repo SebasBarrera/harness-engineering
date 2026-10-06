@@ -196,6 +196,7 @@ class AcceptanceTests:
                 "directory": directory,
                 "format": "gherkin" if gherkin else "pytest",
             },
+            validate=lambda result: validate_tests(result, directory, gherkin=gherkin),
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(

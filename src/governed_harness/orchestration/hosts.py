@@ -320,8 +320,10 @@ class ResultsHost(Protocol):
         task: Task,
         instruction_values: dict[str, Any] | None = ...,
         instructions_suffix: str = ...,
+        validate: Callable[[dict[str, Any]], object] | None = ...,
     ) -> AgentCallOutcome:
-        """Send a read-only request and return its structured result."""
+        """Send a read-only request and return its structured result (retried once when the
+        answer breaks its contract, under ``runtime.contractRetry``)."""
 
     def change_requests(self, execution: Execution) -> list[dict[str, Any]]:
         """The structured change requests of the run."""

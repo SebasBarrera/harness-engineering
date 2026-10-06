@@ -126,7 +126,13 @@ class AgentReview:
             checklist, suffix = results.engineering.review_extra(change_set)
             payload.update(checklist)
         outcome = results.call_agent(
-            execution, phase, "review", payload, task=task, instructions_suffix=suffix
+            execution,
+            phase,
+            "review",
+            payload,
+            task=task,
+            instructions_suffix=suffix,
+            validate=_findings_from,
         )
         provider = results.provider_for(execution, "review")
         actor = Actor(actor_type=ActorType.AGENT, actor_id=f"agent.{provider}", version="1")

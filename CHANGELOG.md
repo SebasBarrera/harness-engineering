@@ -2,6 +2,55 @@
 
 ## Unreleased
 
+- The gate contract names what requirement traceability checks and suggests only a command the
+  agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
+  neither the requirement identifiers nor the naming rule the check applies, and it suggested
+  `harness check`, which the agent's grants (the built-in profiles allow `python`, `npm`,
+  `go`...) do not let it run. The `gate` block now carries `traceability` (the policy, each
+  requirement's identifier, the requirements without one and the naming rule) under `enforce`
+  or `warn`, and `checkCommand` only when the agent's `process.execute` grants allow `harness`;
+  otherwise `checkCommands` lists the validator commands they allow (possibly none) and the
+  implement instructions say to run those or to leave the gate to the harness. This is a fix of
+  the contract `runtime.gateContract` already sends, so it applies without a new key; the
+  request of a run with `gateContract` changes accordingly.
+- A second attempt for a read-only answer that breaks its contract (#80). In the 2.0.0 pilot an
+  acceptance call answered with invalid JSON and SPECIFICATION blocked at once, while the review
+  panel retries an invalid answer on its fallback provider. Under `runtime.contractRetry`
+  (`mode: once`, optional `fallbackProvider`; `harness init` writes `{mode: once}`) a `clarify`,
+  `plan`, `acceptance`, `locate`, `architecture` or single-reviewer `review` answer that is a
+  protocol error or that its phase rejects is sent once more, to the fallback provider when one
+  is configured; both attempts stay recorded, with `agent-contract-retry` evidence and an
+  `agent.call.contract-retry` event, and the phase blocks only if the second answer breaks the
+  contract too. A `fallbackProvider` outside `agentProviders` (and not `simulated`) is a
+  configuration error. Without the key the first broken answer blocks, as before.
+- A converging agent ambiguity review (#79). In the 2.0.0 pilot two of four governed Haiku runs
+  never reached IMPLEMENTATION: every answered revision got a new review that raised new
+  questions (10, 8 and 8 in three rounds). `intake.ambiguityReview` now also takes an object
+  (`mode`, `maxRounds`, `maxQuestions`, `onExhausted`), which `harness init` writes as `agent`,
+  3, 8 and `assume`. The `clarify` request then carries the questions already asked with their
+  answers (`previousQuestions`), the round and the limits, and asks only for blocking ambiguity
+  the latest revision introduced or left open; a question already asked (same rule and
+  normalised text) is dropped and a round asks at most `maxQuestions`. After `maxRounds`
+  answered rounds the points the agent still raises are recorded as explicit assumptions of a
+  new task revision (`metadata.assumptions`, shown in the operational contract, the gate
+  contract and the decision brief) and the run continues (`assume`), or INTENT stays blocked
+  (`block`, the default of the object form); both record `intent.ambiguity.exhausted`. The bare
+  `agent` keeps the 1.1 review and its configuration digest. Tested with a fixture agent that
+  keeps asking and with the questions of the pilot's Haiku review on the pilot's task
+  (`tests/integration/test_ambiguity_convergence.py`).
+- Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
+  `harness init` now writes instead of `tiered`, uses the routing tables with the invoking model
+  as the ceiling: rungs of a cheaper tier are kept, rungs of its tier run on it with their
+  effort, rungs above it become the top rung allowed, and escalation climbs only up to it. The
+  invoking model is `agentRouting.anchorModel` (new key), else the `model` of the provider that
+  answers the call (`agentProvider` for the embedded session provider), else the `--model` or
+  `-m` value of its command or `args`; without one each call keeps the provider's model. Every
+  anchored decision records its `anchor`. A `project.yaml` with `tiered`, `fixed` or without
+  `agentRouting` keeps its behaviour and configuration digest. Fix that applies without a key:
+  every reviewer call of the review panel now records `agent.routing.decided` (with `reviewer`
+  and `attempt`) under `agentRouting` or a reviewer's own model, as every other agent call does;
+  `harness routing calibrate` counts the reviewers of one run on the same model once.
+  Guide: `docs/guides/agent-results.md#anchored-at-the-invoking-model-85`.
 - Run lifecycle, wave 9 (findings of the 2.0.0 evaluation). Fixes that restore the documented
   behaviour apply to every project:
   - `harness plan decide --decision APPROVE --no-continue` exits 0 once the approval is recorded,
@@ -42,7 +91,6 @@
     VERIFICATION and the independent review again on the new ChangeSet, instead of leaving an
     `INCONCLUSIVE` gate that forced a new run. A `project.yaml` without the key keeps that
     fail-closed behaviour and its configuration digest.
-
 - Low friction for small changes and local metrics, wave 8 (#58). Every behaviour change is
   behind the optional `friction` section, which `harness init` writes; a `project.yaml` without
   it keeps the 1.0.0 behaviour and configuration digest (`harness config validate` shows it

@@ -44,6 +44,14 @@ project's `agentProvider` (or the provider each call configures), so the author 
 its own change. With `agentProvider: simulated` they get the simulated provider's empty answers;
 configure an adapter (for example `kind: claude-code`) for a real second reviewer.
 
+Under `agentRouting.mode: anchored` (what `harness init` writes, #85) the model of those
+read-only calls never goes above the invoking model. The harness cannot see the model of the
+session itself (the Model Context Protocol does not carry it), so the invoking model is
+`agentRouting.anchorModel` when you set it (set it to the session's model), else the `model` of
+`agentProvider`, else the `--model` value of its `command` or `args`; without any of them each
+call keeps the provider's own model. The session implements with its own model; the harness
+does not route it.
+
 ## The MCP server
 
 `harness mcp serve` speaks JSON-RPC 2.0 over standard input and output, one message per line

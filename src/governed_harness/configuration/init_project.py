@@ -6,6 +6,8 @@ from pathlib import Path
 import yaml
 
 from governed_harness.configuration.agent_results import (
+    DEFAULT_AMBIGUITY_QUESTIONS,
+    DEFAULT_AMBIGUITY_ROUNDS,
     DEFAULT_COARSE_MODELS,
     DEFAULT_CONTEXT_MAX_BYTES,
     DEFAULT_CONTEXT_MAX_FILES,
@@ -105,13 +107,22 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "providerRetryDelaySeconds": 60,
             "extendedRedaction": True,
             "gateContract": True,
+            # #80: a read-only answer that breaks its contract gets a second attempt.
+            "contractRetry": {"mode": "once"},
             "reproduceFirst": True,
             "stateDir": "auto",
         },
         "retention": {"artifactDays": 30, "eventDays": 365, "orphanArtifacts": True},
         "intake": {
             "criteriaPolicy": "enforce",
-            "ambiguityReview": "agent",
+            # #79: the review converges; after its last round the open points become
+            # explicit assumptions and the run continues.
+            "ambiguityReview": {
+                "mode": "agent",
+                "maxRounds": DEFAULT_AMBIGUITY_ROUNDS,
+                "maxQuestions": DEFAULT_AMBIGUITY_QUESTIONS,
+                "onExhausted": "assume",
+            },
             "validateAnswers": True,
             "operationalContract": "batch",
             "interruptions": {
@@ -214,8 +225,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "warnAt": 0.8,
         },
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
+        # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
-            "mode": "tiered",
+            "mode": "anchored",
             "thresholds": {key: list(value) for key, value in DEFAULT_SIZE_THRESHOLDS.items()},
             "maxEscalations": 2,
         },
