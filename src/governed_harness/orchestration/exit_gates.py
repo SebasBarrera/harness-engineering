@@ -36,6 +36,7 @@ if TYPE_CHECKING:
 
 REVIEW_VALIDATOR_ID = "review.independent"
 APPROVALS = frozenset({DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION})
+_NO_CHANGESET = "the run has no current ChangeSet"
 
 
 @dataclass(frozen=True)
@@ -145,7 +146,7 @@ class ExitGateEvaluator:
 
     def _candidate_changeset(self, execution: Execution, phase: PhaseExecution) -> str | None:
         if not execution.change_set_digest:
-            return "the run has no current ChangeSet"
+            return _NO_CHANGESET
         try:
             change_set = self.engine.current_change_set(execution.execution_id)
         except NotFoundError:
@@ -159,7 +160,7 @@ class ExitGateEvaluator:
 
     def _verification_passed(self, execution: Execution, phase: PhaseExecution) -> str | None:
         if not execution.change_set_digest:
-            return "the run has no current ChangeSet"
+            return _NO_CHANGESET
         validations = self._attempt_validations(execution, phase)
         if not validations:
             return "VERIFICATION recorded no validation for the current ChangeSet"
@@ -174,7 +175,7 @@ class ExitGateEvaluator:
 
     def _review_complete(self, execution: Execution, phase: PhaseExecution) -> str | None:
         if not execution.change_set_digest:
-            return "the run has no current ChangeSet"
+            return _NO_CHANGESET
         if REVIEW_VALIDATOR_ID not in self._attempt_validations(execution, phase):
             return "the independent review recorded no result for the current ChangeSet"
         return None
