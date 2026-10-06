@@ -478,7 +478,7 @@ class Friction:
         )
 
     def affected_tests(
-        self, execution: Execution, change_set: ChangeSet, definitions: Sequence[Any]
+        self, change_set: ChangeSet, definitions: Sequence[Any]
     ) -> tuple[Any, list[str]] | None:
         """The pytest validator and the affected test files, when there are any."""
         pytest_definition = next(
@@ -513,72 +513,112 @@ class Friction:
         for the same ChangeSet, baseline and configuration."""
         config = self.fast_verification
         if config is None or not self.fast(execution):
-            outputs = []
-            for definition in definitions:
-                output = prepare(definition)()
-                save(output)
-                outputs.append(output)
+            return self._run_in_order(definitions, prepare, save)
+        outputs = (
+            self._affected_first(execution, change_set, definitions, prepare, save)
+            if config.affected_tests_first
+            else []
+        )
+        if any(item.result.status is not ResultStatus.PASSED for item in outputs):
+            # The affected tests already fail: the full suite would not change the outcome of
+            # this attempt, and it still runs before the gate.
             return outputs
-        outputs = []
-        if config.affected_tests_first:
-            selection = self.affected_tests(execution, change_set, definitions)
-            if selection is not None:
-                pytest_definition, tests = selection
-                command = (*(pytest_definition.command or ()), *tests)
-                affected = pytest_definition.model_copy(
-                    update={"validator_id": AFFECTED_TESTS_ID, "command": command}
-                )
-                output = prepare(affected)()
-                save(output)
-                self.s.events.append(
-                    execution.execution_id,
-                    "verification.affected-tests",
-                    {
-                        "tests": tests,
-                        "status": output.result.status.value,
-                        "digest": change_set.digest,
-                    },
-                )
-                outputs.append(output)
-                if output.result.status is not ResultStatus.PASSED:
-                    # The affected tests already fail: the full suite would not change the
-                    # outcome of this attempt, and it still runs before the gate.
-                    return outputs
-        pending: list[tuple[int, ValidatorDefinition]] = []
-        slots: list[ValidatorOutput | None] = [None] * len(definitions)
-        for index, definition in enumerate(definitions):
-            reused = self._reused(execution, change_set, definition) if config.cache else None
-            if reused is not None:
-                slots[index] = reused
-            else:
-                pending.append((index, definition))
+        cache = bool(config.cache)
+        slots: list[ValidatorOutput | None] = [
+            self._reused(execution, change_set, definition) if cache else None
+            for definition in definitions
+        ]
+        pending = [(index, item) for index, item in enumerate(definitions) if slots[index] is None]
         workers = max(1, min(len(pending), self.project.runtime.max_parallel))
-        if config.parallel and workers > 1:
-            # Contexts are prepared on this thread; only the validator commands run side by side.
-            calls = [(index, prepare(definition)) for index, definition in pending]
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = [(index, pool.submit(call)) for index, call in calls]
-                for index, future in futures:
-                    slots[index] = future.result()
-        else:
-            for index, definition in pending:
-                slots[index] = prepare(definition)()
+        parallel = bool(config.parallel) and workers > 1
+        self._fill(slots, pending, prepare, workers if parallel else 1)
         ran = {index for index, _ in pending}
         for index, definition in enumerate(definitions):
-            slot = slots[index]
-            if slot is None:  # not reached: every slot was reused or run above
-                raise RuntimeError(f"validator {definition.validator_id} has no result")
-            save(slot)
-            if config.cache and index in ran:
+            slot = self._saved(definition, slots[index], save)
+            if cache and index in ran:
                 self._remember(execution, change_set, definition, slot)
             outputs.append(slot)
-        if config.parallel and workers > 1:
+        if parallel:
             self.s.events.append(
                 execution.execution_id,
                 "verification.parallel",
                 {"validators": [item.validator_id for _, item in pending], "workers": workers},
             )
         return outputs
+
+    @staticmethod
+    def _saved(
+        definition: ValidatorDefinition,
+        slot: ValidatorOutput | None,
+        save: Callable[[ValidatorOutput], None],
+    ) -> ValidatorOutput:
+        if slot is None:  # not reached: every slot was reused or run
+            raise RuntimeError(f"validator {definition.validator_id} has no result")
+        save(slot)
+        return slot
+
+    @staticmethod
+    def _run_in_order(
+        definitions: Sequence[ValidatorDefinition],
+        prepare: Callable[[ValidatorDefinition], Callable[[], ValidatorOutput]],
+        save: Callable[[ValidatorOutput], None],
+    ) -> list[ValidatorOutput]:
+        """Every validator one after the other, as outside the fast lane."""
+        outputs = []
+        for definition in definitions:
+            output = prepare(definition)()
+            save(output)
+            outputs.append(output)
+        return outputs
+
+    def _affected_first(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        definitions: Sequence[ValidatorDefinition],
+        prepare: Callable[[ValidatorDefinition], Callable[[], ValidatorOutput]],
+        save: Callable[[ValidatorOutput], None],
+    ) -> list[ValidatorOutput]:
+        """Run the pytest validator on the affected test files only, when there are any."""
+        selection = self.affected_tests(change_set, definitions)
+        if selection is None:
+            return []
+        pytest_definition, tests = selection
+        command = (*(pytest_definition.command or ()), *tests)
+        affected = pytest_definition.model_copy(
+            update={"validator_id": AFFECTED_TESTS_ID, "command": command}
+        )
+        output = prepare(affected)()
+        save(output)
+        self.s.events.append(
+            execution.execution_id,
+            "verification.affected-tests",
+            {
+                "tests": tests,
+                "status": output.result.status.value,
+                "digest": change_set.digest,
+            },
+        )
+        return [output]
+
+    @staticmethod
+    def _fill(
+        slots: list[ValidatorOutput | None],
+        pending: list[tuple[int, ValidatorDefinition]],
+        prepare: Callable[[ValidatorDefinition], Callable[[], ValidatorOutput]],
+        workers: int,
+    ) -> None:
+        """Run the pending validators into their slots, side by side when ``workers`` > 1."""
+        if workers <= 1:
+            for index, definition in pending:
+                slots[index] = prepare(definition)()
+            return
+        # Contexts are prepared on this thread; only the validator commands run side by side.
+        calls = [(index, prepare(definition)) for index, definition in pending]
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [(index, pool.submit(call)) for index, call in calls]
+            for index, future in futures:
+                slots[index] = future.result()
 
     def fast_verification_applies(self, execution: Execution) -> bool:
         """Whether VERIFICATION of this run uses the fast-lane verification."""
