@@ -242,7 +242,7 @@ class Engineering:
                     "Behaviour-driven (BDD): the approved feature files are frozen; write the "
                     "step definitions and the code that make their scenarios pass."
                 )
-        architecture = self.results.architecture.request_extra(execution)
+        architecture = self.results.architecture.request_extra()
         if architecture is not None:
             extra["architecture"] = architecture
             notes.append(

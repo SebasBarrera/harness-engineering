@@ -62,14 +62,17 @@ def source_layout(workspace: Path, depth: int = 4) -> list[str]:
             entries = sorted(directory.iterdir(), key=lambda item: item.name)
         except OSError:
             continue
-        for entry in entries:
-            if entry.name in DEFAULT_EXCLUDES or entry.name.startswith(".") or entry.is_symlink():
-                continue
-            if entry.is_dir() and level < depth:
-                stack.append((entry, level + 1))
-            elif entry.is_file() and is_source(entry.name):
-                found.add(directory.relative_to(root).as_posix() or ".")
+        visible = [entry for entry in entries if not _hidden(entry)]
+        if level < depth:
+            stack.extend((entry, level + 1) for entry in visible if entry.is_dir())
+        if any(entry.is_file() and is_source(entry.name) for entry in visible):
+            found.add(directory.relative_to(root).as_posix() or ".")
     return sorted(found)
+
+
+def _hidden(entry: Path) -> bool:
+    """An excluded, hidden or symbolic-link entry the layout does not look into."""
+    return entry.name in DEFAULT_EXCLUDES or entry.name.startswith(".") or entry.is_symlink()
 
 
 def similarity(left: list[str], right: list[str]) -> float:
@@ -80,35 +83,44 @@ def similarity(left: list[str], right: list[str]) -> float:
 
 
 # ----- validation of the agent's answers ----------------------------------------------------------
-def _layers(value: Any) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
-    raw = value.get("layers") if isinstance(value, dict) else None
-    layers: list[dict[str, Any]] = []
-    for item in raw if isinstance(raw, list) else []:
-        if not isinstance(item, dict) or not str(item.get("name") or "").strip():
-            raise ValueError("every layer needs a name")
-        name = "".join(
-            char if char.isalnum() or char in "-_" else "-" for char in str(item["name"]).lower()
-        )[:40]
-        paths = [str(path) for path in item.get("paths") or [] if str(path).strip()]
-        modules = [str(module) for module in item.get("modules") or [] if str(module).strip()]
-        if any(path.startswith("/") or ".." in path.split("/") for path in paths):
-            raise ValueError(f"layer {name}: paths must be relative globs")
-        if not paths and not modules:
-            raise ValueError(f"layer {name} needs paths or modules")
-        layers.append({"name": name, "paths": paths, "modules": modules})
-    if len(layers) > _MAX_LAYERS:
-        raise ValueError(f"at most {_MAX_LAYERS} layers")
-    names = {item["name"] for item in layers}
-    allow_raw = value.get("allow") if isinstance(value, dict) else None
+def _layer(item: Any) -> dict[str, Any]:
+    """One layer of an answer: a normalised name and relative path globs or modules."""
+    if not isinstance(item, dict) or not str(item.get("name") or "").strip():
+        raise ValueError("every layer needs a name")
+    name = "".join(
+        char if char.isalnum() or char in "-_" else "-" for char in str(item["name"]).lower()
+    )[:40]
+    paths = [str(path) for path in item.get("paths") or [] if str(path).strip()]
+    modules = [str(module) for module in item.get("modules") or [] if str(module).strip()]
+    if any(path.startswith("/") or ".." in path.split("/") for path in paths):
+        raise ValueError(f"layer {name}: paths must be relative globs")
+    if not paths and not modules:
+        raise ValueError(f"layer {name} needs paths or modules")
+    return {"name": name, "paths": paths, "modules": modules}
+
+
+def _allow(raw: Any, names: set[str]) -> dict[str, list[str]]:
+    """The allowed dependencies of an answer, between the layers it names."""
     allow: dict[str, list[str]] = {}
-    for key, targets in (allow_raw or {}).items() if isinstance(allow_raw, dict) else []:
+    if not isinstance(raw, dict):
+        return allow
+    for key, targets in raw.items():
         source = str(key).lower()
         listed = [str(item).lower() for item in targets or []] if isinstance(targets, list) else []
         unknown = [item for item in (source, *listed) if item not in names]
         if unknown:
             raise ValueError(f"allow names unknown layer(s): {', '.join(sorted(set(unknown)))}")
         allow[source] = listed
-    return layers, allow
+    return allow
+
+
+def _layers(value: Any) -> tuple[list[dict[str, Any]], dict[str, list[str]]]:
+    raw = value.get("layers") if isinstance(value, dict) else None
+    layers = [_layer(item) for item in (raw if isinstance(raw, list) else [])]
+    if len(layers) > _MAX_LAYERS:
+        raise ValueError(f"at most {_MAX_LAYERS} layers")
+    allow_raw = value.get("allow") if isinstance(value, dict) else None
+    return layers, _allow(allow_raw, {item["name"] for item in layers})
 
 
 def validate_survey(result: dict[str, Any]) -> dict[str, Any]:
@@ -207,7 +219,7 @@ class ArchitectureFlow:
     def rules(self) -> LayerRules | None:
         return effective_rules(self.config, self.harness_dir)
 
-    def request_extra(self, execution: Execution) -> dict[str, Any] | None:
+    def request_extra(self) -> dict[str, Any] | None:
         rules = self.rules()
         if rules is None or not rules.layers:
             return None
@@ -308,20 +320,8 @@ class ArchitectureFlow:
                 f"--run {execution.execution_id} --decision APPROVE --digest {state['digest']}",
                 (state["ref"],),
             )
-        if state is not None and not state.get("stale"):
-            refresh = (config.refresh or "manual") == "auto"
-            if not refresh or similarity(state.get("layout") or [], layout) >= MATERIAL_CHANGE:
-                self.results.s.events.append(
-                    execution.execution_id,
-                    "architecture.survey.reused",
-                    {
-                        "digest": state.get("digest"),
-                        "status": state.get("status"),
-                        "layoutSimilarity": round(similarity(state.get("layout") or [], layout), 3),
-                    },
-                    phase_execution_id=phase.phase_execution_id,
-                )
-                return None
+        if state is not None and self._reused(execution, phase, config, state, layout):
+            return None
         if self.kind().new:
             return None
         outcome = self.results.call_agent(
@@ -388,6 +388,33 @@ class ArchitectureFlow:
             f"APPROVE --digest {digest}",
             (ref,),
         )
+
+    def _reused(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        config: ArchitectureSettings,
+        state: dict[str, Any],
+        layout: list[str],
+    ) -> bool:
+        """Whether the recorded survey still holds (recorded as reused): it is not stale and,
+        under ``refresh: auto``, the source layout did not change materially."""
+        if state.get("stale"):
+            return False
+        refresh = (config.refresh or "manual") == "auto"
+        if refresh and similarity(state.get("layout") or [], layout) < MATERIAL_CHANGE:
+            return False
+        self.results.s.events.append(
+            execution.execution_id,
+            "architecture.survey.reused",
+            {
+                "digest": state.get("digest"),
+                "status": state.get("status"),
+                "layoutSimilarity": round(similarity(state.get("layout") or [], layout), 3),
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return True
 
     def _malformed(
         self, execution: Execution, error: ValueError, refs: tuple[str, ...]

@@ -412,7 +412,7 @@ class AgentReviewPort(Protocol):
 class ArchitecturePort(Protocol):
     """The architecture flow as siblings use it."""
 
-    def request_extra(self, execution: Execution) -> dict[str, Any] | None:
+    def request_extra(self) -> dict[str, Any] | None:
         """What the architecture adds to an agent request."""
 
     def rules(self) -> LayerRules | None:
