@@ -25,7 +25,11 @@ from governed_harness import __version__
 from governed_harness.capabilities import grants_from_rules
 from governed_harness.checks import parse_unified_diff
 from governed_harness.configuration import ConfigurationResolver
-from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.configuration.models import (
+    ResolvedConfiguration,
+    ValidatorDefinition,
+    VerificationConfig,
+)
 from governed_harness.domain.enums import ActorType, FindingSeverity, ResultStatus
 from governed_harness.domain.errors import NotFoundError
 from governed_harness.domain.models import (
@@ -78,34 +82,7 @@ class GateContract:
         project = resolved.project
         workspace = str(self.results.s.paths.workspace)
         verification = project.verification
-        checks: dict[str, Any] = {}
-        if verification is not None:
-            for name, alias in (
-                ("interface", "interface"),
-                ("constraints", "constraints"),
-                ("weakened_controls", "weakenedControls"),
-                ("ratchet", "ratchet"),
-                ("secrets", "secrets"),
-                ("security_patterns", "securityPatterns"),
-                ("differential", "differential"),
-            ):
-                value = getattr(verification, name)
-                if value not in {None, "off", False}:
-                    checks[alias] = value
-            if verification.architecture is not None:
-                checks["architecture"] = verification.architecture.model_dump(
-                    mode="json", by_alias=True
-                )
-            if verification.test_quality is not None:
-                checks["testQuality"] = verification.test_quality.model_dump(
-                    mode="json", by_alias=True
-                )
-            if verification.risk_factors is not None:
-                checks["riskFactors"] = self.results.verification.risk_actions()
-            if verification.principles is not None:
-                checks["principles"] = verification.principles.model_dump(
-                    mode="json", by_alias=True
-                )
+        checks = self._checks(verification) if verification is not None else {}
         if self.results.engineering.configured:
             layers = self.results.architecture.rules()
             if layers is not None and layers.layers:
@@ -140,6 +117,33 @@ class GateContract:
                 execution.execution_id,
             ],
         }
+
+    def _checks(self, verification: VerificationConfig) -> dict[str, Any]:
+        """The diff checks of ``verification`` the gate runs, as the contract shows them."""
+        checks: dict[str, Any] = {}
+        for name, alias in (
+            ("interface", "interface"),
+            ("constraints", "constraints"),
+            ("weakened_controls", "weakenedControls"),
+            ("ratchet", "ratchet"),
+            ("secrets", "secrets"),
+            ("security_patterns", "securityPatterns"),
+            ("differential", "differential"),
+        ):
+            value = getattr(verification, name)
+            if value not in {None, "off", False}:
+                checks[alias] = value
+        if verification.architecture is not None:
+            checks["architecture"] = verification.architecture.model_dump(
+                mode="json", by_alias=True
+            )
+        if verification.test_quality is not None:
+            checks["testQuality"] = verification.test_quality.model_dump(mode="json", by_alias=True)
+        if verification.risk_factors is not None:
+            checks["riskFactors"] = self.results.verification.risk_actions()
+        if verification.principles is not None:
+            checks["principles"] = verification.principles.model_dump(mode="json", by_alias=True)
+        return checks
 
     def write_check_state(self, execution: Execution, task: Task) -> Path:
         """The task and the baseline ``harness check`` compares the workspace with."""
@@ -186,7 +190,6 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
-    from governed_harness.configuration.models import VerificationConfig
     from governed_harness.orchestration.architecture import effective_rules
     from governed_harness.orchestration.verification_checks import (
         current_files,
