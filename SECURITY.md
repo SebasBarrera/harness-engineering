@@ -25,7 +25,7 @@ process execution, bounded output, redaction, digest-bound decisions. It does no
 processes it launches. An authorized command runs with the file-system, network, CPU and memory
 permissions of the operating-system user. The local API and dashboard authenticate requests with
 a local bearer token only when `project.yaml` has the `api` section (written by `harness init`
-since 1.1, #18); without it they have no authentication, as in 1.0.0. In both cases they must stay
+since 2.0, #18); without it they have no authentication, as in 1.0.0. In both cases they must stay
 on loopback. Run untrusted repositories, agents or plugins only inside a container, VM or
 comparable OS-level sandbox. The model below details what is and is not enforced.
 

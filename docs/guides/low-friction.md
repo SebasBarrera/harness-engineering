@@ -1,6 +1,6 @@
 # Low friction for small changes
 
-A one-line fix should not cost the same as a feature. Since 1.1 (issue #58) the governance of a
+A one-line fix should not cost the same as a feature. Since 2.0 (issue #58) the governance of a
 run is proportional to its size and risk: a small, risk-free task takes a fast lane, a person can
 approve it in advance under a condition the harness checks, several decisions can be taken from
 the inbox at once, and a documentation-only or configuration-only change does not need new

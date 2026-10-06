@@ -471,7 +471,7 @@ def _agent_results_section(
 def _provenance_sections(
     services: EngineServices, execution_id: str, digest: str | None
 ) -> dict[str, Any]:
-    """``provenance`` and ``selfReports`` (``provenance`` settings, since 1.1); absent when the
+    """``provenance`` and ``selfReports`` (``provenance`` settings, since 2.0); absent when the
     run recorded neither, so the brief of other runs keeps its form."""
     sections: dict[str, Any] = {}
     records = [

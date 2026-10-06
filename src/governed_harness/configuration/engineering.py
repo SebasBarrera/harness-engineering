@@ -1,4 +1,4 @@
-"""Configuration of the engineering settings (since 1.1, issue #56).
+"""Configuration of the engineering settings (since 2.0, issue #56).
 
 Forges, language standards packs, engineering principles, the testing strategy, the
 architecture and the project setup questions of a new project. Every section and key is

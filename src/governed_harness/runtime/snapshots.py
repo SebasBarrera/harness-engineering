@@ -1,5 +1,5 @@
 """Workspace snapshots for large repositories (``workspace.snapshot``, ``workspace.baseline``,
-``workspace.snapshotCache``; since 1.1).
+``workspace.snapshotCache``; since 2.0).
 
 In 1.0.0 every snapshot walks the whole workspace, hashes every file, reads the text of every
 file and stores the baseline as one JSON artifact with the text of every file: on a repository
@@ -73,7 +73,7 @@ class SnapshotSettings:
 
     @property
     def scaled(self) -> bool:
-        """Whether any 1.1 setting is on (otherwise everything works as in 1.0.0)."""
+        """Whether any 2.0 setting is on (otherwise everything works as in 1.0.0)."""
         return self.git_listing or self.manifest or self.cache
 
 

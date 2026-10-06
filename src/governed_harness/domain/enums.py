@@ -139,7 +139,7 @@ class CapabilityName(StrEnum):
 
 
 class VerificationLevel(StrEnum):
-    """Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of
+    """Rungs of the verification ladder (since 2.0, ``verification.ladder``): what kind of
     evidence shows that an acceptance criterion holds. A higher rung is stronger evidence of
     the behaviour a person asked for; a rung is reached only by evidence recorded for the
     criterion, never by omission."""

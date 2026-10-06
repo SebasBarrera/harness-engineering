@@ -1,4 +1,4 @@
-"""The agent's structured self-report (``provenance.selfReport``, since 1.1).
+"""The agent's structured self-report (``provenance.selfReport``, since 2.0).
 
 A command provider answers with an optional ``selfReport`` object next to ``status``; a built-in
 adapter asks the agent to end its answer with a fenced JSON block holding

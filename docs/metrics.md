@@ -59,7 +59,7 @@ provider reports nothing, the harness shows the gap instead of estimating it.
 
 ## Aggregated metrics
 
-`harness metrics` (since 1.1, issue #58) aggregates these records over the runs of a repository,
+`harness metrics` (since 2.0, issue #58) aggregates these records over the runs of a repository,
 or of every repository of the run registry, into tokens and cost by agent, model, task and phase,
 lines, delivery, time, quality, friction against per-size targets and trends, with zero model
 calls; costs of providers that report tokens without a cost are estimated from a price table and

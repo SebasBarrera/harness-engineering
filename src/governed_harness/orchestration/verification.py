@@ -1,7 +1,7 @@
 """``harness verify``: check a run's record against its event chain without aborting.
 
 The events are the audit authority; the ``records`` table is a projection that the CLI, the API
-and the gate read. Before 1.1 nobody compared the two: a forged decider written into the
+and the gate read. Before 2.0 nobody compared the two: a forged decider written into the
 projection was shown by ``status`` while the chain still said otherwise, and a chain whose last
 events had been deleted was reported as valid. The verifier reports, for one run:
 

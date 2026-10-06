@@ -2,7 +2,7 @@
 
 An agent is connected in one of two ways:
 
-- a **built-in adapter** (since 1.1) for Claude Code, Codex, Gemini CLI or Aider: the harness runs
+- a **built-in adapter** (since 2.0) for Claude Code, Codex, Gemini CLI or Aider: the harness runs
   the agent CLI itself in its non-interactive mode, renders the task as a prompt and reads the
   CLI's own output, including the tokens and cost it reports (see
   [built-in adapters](#built-in-adapters));
@@ -203,7 +203,7 @@ exit with 0:
 |---|---|
 | `status` | `PASSED`, `FAILED` or `BLOCKED` |
 | `summary` | optional text recorded on the agent invocation |
-| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheTokens` (non-negative integers; `cacheTokens`, since 1.1, is the part of `inputTokens` read from or written to a prompt cache) and `costUsd` (non-negative number), as reported by the agent |
+| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheTokens` (non-negative integers; `cacheTokens`, since 2.0, is the part of `inputTokens` read from or written to a prompt cache) and `costUsd` (non-negative number), as reported by the agent |
 
 When `usage` is present it is stored as a `ResourceUsage` record of quality `REPORTED` and summed
 into the metrics `tokens.*` and `cost.usd`. The harness records what the provider reports and
@@ -288,7 +288,7 @@ status = "PASSED" if result.returncode == 0 else "FAILED"
 print(json.dumps({"status": status, "summary": f"agent exited with {result.returncode}"}))
 ```
 
-Register it and declare the variables it reads; before 1.1 the guide said to set
+Register it and declare the variables it reads; before 2.0 the guide said to set
 `AGENT_COMMAND` in the environment of the harness process, but the provider only received
 `PATH`, `HOME`, `LANG` and `TMPDIR`, and the wrapper failed with `KeyError: 'AGENT_COMMAND'`:
 

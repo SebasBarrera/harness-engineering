@@ -1,4 +1,4 @@
-"""Built-in adapters for agent CLIs (``agentProviders.<id>.kind``, since 1.1).
+"""Built-in adapters for agent CLIs (``agentProviders.<id>.kind``, since 2.0).
 
 A command provider has to speak the harness JSON protocol, so every agent needed a wrapper
 written by the user. A built-in adapter runs the agent CLI itself in its documented
@@ -179,7 +179,7 @@ _IMPLEMENT_EXTRAS = (
 
 
 def render_call_prompt(request: dict[str, Any]) -> str:
-    """A read-only request (``clarify``, ``acceptance``, ``plan``, ``review``, since 1.1) as
+    """A read-only request (``clarify``, ``acceptance``, ``plan``, ``review``, since 2.0) as
     text: the rendered instructions, then the request itself as JSON."""
     payload = {key: value for key, value in request.items() if key not in _CALL_KEYS_LEFT_OUT}
     return (
@@ -295,7 +295,7 @@ class NativeAgentProvider(CommandAgentProvider):
 
     def model_args(self, routing: Mapping[str, str] | None = None) -> tuple[str, ...]:
         """``--model`` of the configured model, or of the model the router chose for the call
-        (``agentRouting``, since 1.1), followed by the CLI's effort option."""
+        (``agentRouting``, since 2.0), followed by the CLI's effort option."""
         routing = routing or {}
         model = routing.get("model") or self.configuration.model
         effort = routing.get("effort")

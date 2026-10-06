@@ -113,7 +113,7 @@ MIN_LITERAL_BYTES = 8
 """Environment values shorter than this are not redacted as literals."""
 
 EXTENDED_RULES: tuple[tuple[str, re.Pattern[bytes], bytes], ...] = (
-    # runtime.extendedRedaction (since 1.1)
+    # runtime.extendedRedaction (since 2.0)
     (
         "anthropic_api_key",
         re.compile(rb"\bsk-ant-[A-Za-z0-9_-]{16,}"),

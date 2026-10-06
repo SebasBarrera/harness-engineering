@@ -385,7 +385,7 @@ class HarnessApplication(ReviewCodeCommands):
 
     @staticmethod
     def _wave4_settings(resolved: Any) -> dict[str, Any]:
-        """Effective workspace, toolchain, provenance and delivery settings (since 1.1;
+        """Effective workspace, toolchain, provenance and delivery settings (since 2.0;
         absent keys resolve to the 1.0.0 behaviour)."""
         project = resolved.project
         workspace = project.workspace

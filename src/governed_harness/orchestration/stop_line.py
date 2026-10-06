@@ -1,6 +1,6 @@
 """Stop the line (#52, N2): what happens to the changes of a run that stops without approval.
 
-Before 1.1 a rejected, failed, timed-out or cancelled run left its changes in the workspace: the
+Before 2.0 a rejected, failed, timed-out or cancelled run left its changes in the workspace: the
 next step of a plan started on top of code the harness never approved, and the evaluated
 deliverable contained seven such steps. Under ``governance.stopTheLine``:
 

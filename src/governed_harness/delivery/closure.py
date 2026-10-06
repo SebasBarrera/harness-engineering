@@ -1,4 +1,4 @@
-"""The closure commit (``delivery.closureCommit``, since 1.1).
+"""The closure commit (``delivery.closureCommit``, since 2.0).
 
 A decision binds the digest of the workspace ChangeSet, but what a team merges is a commit. At
 CLOSURE the harness writes the approved ChangeSet as one commit whose parent is ``HEAD``:

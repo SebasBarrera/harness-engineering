@@ -128,7 +128,7 @@ harness installed from source (`scripts/demo_flows.py quickstart`), and checks e
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl" pytest
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.0/governed_agent_harness-2.0.0-py3-none-any.whl" pytest
 
 # a tiny Python project with a baseline commit
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -158,7 +158,7 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 | A release wheel (recommended) | `pip install <wheel URL from the release page>`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | A release wheel with pipx (isolated CLI) | `pipx install <wheel URL from the release page>`, or `pipx install "governed-agent-harness[api] @ <wheel URL>"` for the dashboard. The harness then lives in its own environment and the validators keep running the project's `python`/`npm` from `PATH`, so install `pytest` in the project's environment, not in the pipx one. Not exercised in CI; `harness --version` confirms the install |
 | Source | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (published from `v1.0.0`; runs as a non-root user) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:2.0.0 --help` (published from `v2.0.0`; runs as a non-root user) |
 
 Requirements: **Python ≥ 3.12** and **Git** (baselines and ChangeSets come from the repository). For
 Node.js projects, **Node.js LTS and npm**. The optional `api` extra installs FastAPI and Uvicorn for
@@ -319,7 +319,7 @@ Claude Code, Codex or any model API**: they are connected through such a wrapper
 the [external agents guide](docs/guides/external-agents.md). The provider only proposes a change;
 verification, review, the gate and the decision stay with the harness.
 
-Since 1.1 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
+Since 2.0 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
 and `harness init --agent-skills`, see the [embedded mode guide](docs/guides/embedded-mode.md)),
 the run can carry the team's language standards, engineering principles, testing strategy and
 architecture ([guide](docs/guides/engineering.md)), and the result can be published on GitHub,
@@ -332,7 +332,7 @@ outside a run as `harness review-code` and a pre-push hook ([review panel](docs/
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requires the `api` extra) serves the
 dashboard at `/` and nine routes: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective`, and
-`POST /api/runs/{id}/decision` (1.1 adds more routes, listed in the reference). Since 1.1 (#18) the `api` section that `harness init` writes requires a
+`POST /api/runs/{id}/decision` (2.0 adds more routes, listed in the reference). Since 2.0 (#18) the `api` section that `harness init` writes requires a
 bearer token on every route, with the roles `viewer`, `reviewer` and `admin` and users declared by
 the name of their token's variable; the token of the person who starts the server is printed once
 on standard error unless `HARNESS_API_TOKEN` provides it. **A `project.yaml` without the section
@@ -381,29 +381,23 @@ overhead on shared runners, not productivity or quality. See [docs/benchmarks.md
 
 ## Limitations and known defects
 
-Open behavioral defects (milestone
-[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); the
-`v0.8.0` tag keeps the evaluated behavior, 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, and
-1.0.0 made memory operable (#6) ([changelog](CHANGELOG.md)):
+There are no open behavioral defects. The `v0.8.0` tag keeps the cut documented in the thesis,
+0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, 1.0.0 made memory operable (#6), and 2.0.0 closed
+the rest of the *thesis-impact* backlog (#3, #4, #5, #7, #8) together with the defects the 2.0.0
+evaluation found (#73–#87) ([changelog](CHANGELOG.md)).
 
-- [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) workflow phase settings (capabilities, attempts, timeouts, exit gates) are recorded but not enforced;
-- [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) capabilities are resolved per run, not per phase, and project grants add to profile grants;
-- [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` and other declared settings are not enforced;
-- [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) pre-existing and introduced errors are not distinguished;
-- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) there is no plan-approval checkpoint.
-
-Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), only
-local token authentication in the dashboard (none without the `api` section), no distributed execution, no external
-signature of evidence, no native provider integrations, token and cost metrics only when a provider
-reports them.
+Declared limitations: the write sandbox confines the agent's writes (`sandbox-exec` on macOS,
+`bwrap` on Linux) but the harness itself runs without container isolation; only local token
+authentication in the dashboard (none without the `api` section); no distributed execution; no
+external signature of evidence; the built-in agent adapters and the forges are tested against fake
+CLIs and transports; token and cost metrics only when a provider reports them (an estimated cost
+when a price table is configured).
 
 ## Roadmap
 
-- Decide and resolve the rest of the `thesis-impact` backlog once the thesis evaluation is closed (#3–#8).
-- Enforce phase-scoped capabilities and the workflow settings that are recorded today (#3, #4).
-- An OS-level sandbox adapter (container) and enforced network policy (#5, #18).
-- Distinguish pre-existing from introduced failures in brownfield repositories (#7).
-- Provider adapters that report token and cost usage.
+- A container adapter for the harness and its validators, and an external signature of evidence.
+- The built-in agent adapters and the forges exercised against live CLIs and services in CI.
+- The review study with participants planned in the thesis (OE5).
 
 ## Academic context
 

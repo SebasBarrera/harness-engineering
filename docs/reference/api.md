@@ -4,7 +4,7 @@
 the same application layer as the CLI. It serves one project.
 
 > [!WARNING]
-> Since 1.1 (#18) the `api` section of `project.yaml`, which `harness init` writes, requires a
+> Since 2.0 (#18) the `api` section of `project.yaml`, which `harness init` writes, requires a
 > bearer token on every route and gives each person a role. **A project without that section has
 > no authentication, no roles and no multi-user model, as in 1.0.0**: anyone who reaches the port
 > can read every run and record a decision under any actor id outside the agent, validator and
@@ -100,7 +100,7 @@ each is set, never a value).
 | `GET` | `/` | The embedded dashboard (HTML) | — |
 
 The thesis cut had nine routes: seven queries, one decision `POST` and the dashboard; the inbox,
-exceptions and review routes were added in 1.1 (#53), the session and configuration routes with
+exceptions and review routes were added in 2.0 (#53), the session and configuration routes with
 authentication (#18). Under authentication every route also answers 401 without a valid token,
 and the decision route 403 without the role `reviewer`. `{run}` also accepts `latest` and a unique
 prefix of a run id. The OpenAPI document is available at `/openapi.json` and the interactive docs at

@@ -1,4 +1,4 @@
-"""Configuration of low-friction small changes and local metrics (since 1.1, issue #58).
+"""Configuration of low-friction small changes and local metrics (since 2.0, issue #58).
 
 Every section and key here is optional. A key that is absent keeps the 1.0.0 behaviour and is
 left out of the serialized configuration, so the configuration snapshot (and its digest) of a

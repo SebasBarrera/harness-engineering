@@ -1,6 +1,6 @@
 # Better agent results
 
-Since 1.1 the harness can do more than verify what an agent delivered: it can ask an agent to
+Since 2.0 the harness can do more than verify what an agent delivered: it can ask an agent to
 review the task before work starts, hand the agent the gate it will face, compare failures with
 the baseline, stop the line when a step is not approved, review the change with a second agent,
 decompose large tasks, bound the context, govern the budget, learn from corrections and route
@@ -62,7 +62,7 @@ event say why and where the second went. The phase uses the second answer: a val
 as a valid first answer would, a broken one blocks as before, with one finding. A provider that
 did not answer, a budget block or a call that changed the workspace is not retried. A
 `fallbackProvider` that is not `simulated` or an entry of `agentProviders` is a configuration
-error. Without the key the first broken answer blocks, as in 1.1. Transient failures of a command
+error. Without the key the first broken answer blocks, as before. Transient failures of a command
 provider keep their own retries (`runtime.providerRetries`).
 
 A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
@@ -133,7 +133,7 @@ intake:
   - `block`: the open points are asked again and INTENT stays blocked, as before #79, with the
     exhaustion recorded.
 
-The bare `agent` keeps the review of 1.1 and its configuration digest.
+The bare `agent` keeps the single-round review and its configuration digest.
 
 ## SPECIFICATION: independent, frozen acceptance tests (#52)
 

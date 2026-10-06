@@ -56,7 +56,7 @@
       "type": "string"
     },
     "VerificationLevel": {
-      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "description": "Rungs of the verification ladder (since 2.0, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
       "enum": [
         "L0",
         "L1",

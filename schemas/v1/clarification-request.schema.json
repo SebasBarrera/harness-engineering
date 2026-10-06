@@ -2,7 +2,7 @@
   "$defs": {
     "ClarificationQuestion": {
       "additionalProperties": false,
-      "description": "A question raised in INTENT by the deterministic intent assessment or, since 1.1, by the\nagent review of the task or the check of earlier answers.\n\n``target`` is the criterion id the question is about, ``task`` for the task as a whole,\nor ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for\nexample ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,\n``Q-2``, ...). ``category`` groups the questions of an agent review (ambiguity,\ncompleteness categories, consistency) and is left out when absent.",
+      "description": "A question raised in INTENT by the deterministic intent assessment or, since 2.0, by the\nagent review of the task or the check of earlier answers.\n\n``target`` is the criterion id the question is about, ``task`` for the task as a whole,\nor ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for\nexample ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,\n``Q-2``, ...). ``category`` groups the questions of an agent review (ambiguity,\ncompleteness categories, consistency) and is left out when absent.",
       "properties": {
         "category": {
           "anyOf": [
@@ -60,7 +60,7 @@
   "$id": "https://example.org/governed-harness/schemas/v1/clarification-request.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
-  "description": "The questions INTENT asked about one revision of a task, identified by its digest.\n\nSince 1.1 (#55) the same request may carry the operational contract (``contract``): the\nsummary of what was agreed and the items nobody settled, so that a person answers\neverything in one message. A request has at least one question or a contract.",
+  "description": "The questions INTENT asked about one revision of a task, identified by its digest.\n\nSince 2.0 (#55) the same request may carry the operational contract (``contract``): the\nsummary of what was agreed and the items nobody settled, so that a person answers\neverything in one message. A request has at least one question or a contract.",
   "properties": {
     "contract": {
       "anyOf": [

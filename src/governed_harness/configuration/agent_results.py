@@ -1,4 +1,4 @@
-"""Configuration of the agent-results settings (since 1.1, issues #37-#44 and #52).
+"""Configuration of the agent-results settings (since 2.0, issues #37-#44 and #52).
 
 Every section and key here is optional. A key that is absent keeps the 1.0.0 behaviour and is
 left out of the serialized configuration, so the configuration snapshot (and its digest) of a
@@ -79,7 +79,7 @@ class AmbiguityReviewConfig(_Section):
     After ``maxRounds`` rounds answered by a person, the points the agent still raises are
     recorded as explicit assumptions and the run continues (``onExhausted: assume``), or they
     are asked again and INTENT stays blocked (``block``, the default). The bare value
-    ``agent`` keeps the review of 1.1, which neither converges nor stops."""
+    ``agent`` keeps the single-round review, which neither converges nor stops."""
 
     mode: AmbiguityReview = "agent"
     max_rounds: int | None = Field(default=None, alias="maxRounds", ge=1, le=20)
@@ -117,7 +117,7 @@ class ContractRetryConfig(_Section):
     breaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase
     rejects) is sent once more before the phase blocks (``mode: once``), to
     ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
-    provider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1."""
+    provider. Both attempts are recorded. Absent: the first broken answer blocks, as before."""
 
     mode: ContractRetryMode = "once"
     fallback_provider: str | None = Field(default=None, alias="fallbackProvider", min_length=1)

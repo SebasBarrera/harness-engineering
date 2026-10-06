@@ -1,4 +1,4 @@
-"""Configuration of the verification ladder, certification and delivery hygiene (since 1.1,
+"""Configuration of the verification ladder, certification and delivery hygiene (since 2.0,
 issue #55).
 
 Every section and key here is optional. A key that is absent keeps the 1.0.0 behaviour and is

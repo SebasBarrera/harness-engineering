@@ -75,7 +75,7 @@ BaselineMode = Literal["text", "manifest"]
 
 
 class WorkspaceConfig(ConfigModel):
-    """The workspace root and, since 1.1, how the workspace is read for large repositories.
+    """The workspace root and, since 2.0, how the workspace is read for large repositories.
 
     * ``snapshot: git`` lists the files through Git (tracked plus untracked files that
       ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are
@@ -175,7 +175,7 @@ _OPTIONAL_RUNTIME_FIELDS = {
 AgentSandboxMode = Literal["enforce", "off"]
 
 DEFAULT_AGENT_SANDBOX: AgentSandboxMode = "off"
-"""Mode of a project.yaml without ``runtime.agentSandbox`` (files written before 1.1)."""
+"""Mode of a project.yaml without ``runtime.agentSandbox`` (files written before 2.0)."""
 
 DEFAULT_SANDBOX_WRITE_PATHS: tuple[tuple[str, str], ...] = (
     # An allow-list entry of the agent's write sandbox, not a file the harness creates.
@@ -209,7 +209,7 @@ def _sandbox_mode_from_yaml(value: Any) -> Any:
 
 
 class RuntimeConfig(ConfigModel):
-    """Process bounds and, since 1.1, the agent sandbox and the feedback loop around the agent
+    """Process bounds and, since 2.0, the agent sandbox and the feedback loop around the agent
     provider.
 
     The sandbox and loop settings are optional: a key that is absent keeps the 1.0.0 behaviour
@@ -283,19 +283,19 @@ class RuntimeConfig(ConfigModel):
         default=None, alias="providerTransientPatterns"
     )
     extended_redaction: bool | None = Field(default=None, alias="extendedRedaction")
-    """Since 1.1: also redact model-API keys (``sk-ant-``, ``sk-``, ``AIza``), Slack tokens,
+    """Since 2.0: also redact model-API keys (``sk-ant-``, ``sk-``, ``AIza``), Slack tokens,
     JSON Web Tokens and credentials in URLs from every stored artifact and from the agent's
     summary. Absent or false keeps the 1.0.0 rules."""
 
     gate_contract: bool | None = Field(default=None, alias="gateContract")
-    """Since 1.1 (#52): the implement request carries the gate contract (validators, review
+    """Since 2.0 (#52): the implement request carries the gate contract (validators, review
     rules, blocking severities, the workspace path and the ``harness check`` command) and the
     agent's permissions derived from the capability grants."""
     contract_retry: ContractRetryConfig | None = Field(default=None, alias="contractRetry")
     """Since #80: a read-only call whose answer breaks its contract is retried once (on
     ``fallbackProvider`` when configured) before the phase blocks; both attempts are recorded."""
     reproduce_first: bool | None = Field(default=None, alias="reproduceFirst")
-    """Since 1.1 (#52): a correction attempt that changes nothing is a finding, and a correction
+    """Since 2.0 (#52): a correction attempt that changes nothing is a finding, and a correction
     after REQUEST_CHANGES must add a test that fails before it and passes after it."""
     state_dir: str | None = Field(default=None, alias="stateDir")
     """Since #55: where the run registry (state database and artifacts) lives. ``auto`` is the
@@ -370,7 +370,7 @@ class RuntimeConfig(ConfigModel):
 
 
 AgentProviderKind = Literal["command", "claude-code", "codex", "gemini-cli", "aider"]
-"""``command`` speaks the harness JSON protocol; the others are built-in adapters (since 1.1)
+"""``command`` speaks the harness JSON protocol; the others are built-in adapters (since 2.0)
 that run the agent CLI in its non-interactive mode and read its own output."""
 
 NATIVE_PROVIDER_KINDS: tuple[str, ...] = ("claude-code", "codex", "gemini-cli", "aider")
@@ -403,7 +403,7 @@ class ProviderEnvReference(ConfigModel):
 class AgentProviderConfiguration(ConfigModel):
     """An agent provider.
 
-    Since 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra
+    Since 2.0 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra
     command-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's
     environment passed as they are) and ``env`` (variables set for the provider, as a literal
     value or ``{fromEnv: NAME}``). Values that come from the environment are redacted from
@@ -474,7 +474,7 @@ class AgentProviderConfiguration(ConfigModel):
 CriteriaPolicy = Literal["enforce", "warn", "off"]
 
 DEFAULT_CRITERIA_POLICY: CriteriaPolicy = "warn"
-"""Policy of a project.yaml without ``intake.criteriaPolicy`` (files written before 1.1)."""
+"""Policy of a project.yaml without ``intake.criteriaPolicy`` (files written before 2.0)."""
 
 
 class IntakeConfig(ConfigModel):
@@ -484,7 +484,7 @@ class IntakeConfig(ConfigModel):
     records the questions as evidence and low-severity findings and lets the run continue,
     ``off`` skips the assessment.
 
-    Since 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for
+    Since 2.0 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for
     ambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its
     provider, model and effort, and ``validateAnswers`` checks a person's answers for references
     to documents or requirements the task and the workspace do not contain. Absent keys keep the
@@ -492,7 +492,7 @@ class IntakeConfig(ConfigModel):
 
     Since #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,
     ``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records
-    the open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1
+    the open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the single-round
     review."""
 
     criteria_policy: CriteriaPolicy = Field(default=DEFAULT_CRITERIA_POLICY, alias="criteriaPolicy")
@@ -510,7 +510,7 @@ class IntakeConfig(ConfigModel):
     """Since #55: the interruption budget and the stop conditions of a run."""
 
     project_setup: ProjectSetupMode | None = Field(default=None, alias="projectSetup")
-    """Since 1.1 (#56): ``ask`` makes INTENT ask, once per project, the architecture, the
+    """Since 2.0 (#56): ``ask`` makes INTENT ask, once per project, the architecture, the
     testing strategy and the standards of a new project, and of an existing project whatever
     detection could not establish (rule ``P1``)."""
 
@@ -529,7 +529,7 @@ class IntakeConfig(ConfigModel):
     @property
     def ambiguity_settings(self) -> AmbiguityReviewConfig | None:
         """The converging review's settings (#79): only under the object form of
-        ``ambiguityReview``; the bare ``agent`` keeps the 1.1 review."""
+        ``ambiguityReview``; the bare ``agent`` keeps the single-round review."""
         value = self.ambiguity_review
         return value if isinstance(value, AmbiguityReviewConfig) and value.enabled else None
 
@@ -554,7 +554,7 @@ RequirementTraceabilityPolicy = Literal["enforce", "warn", "off"]
 
 DEFAULT_REQUIREMENT_TRACEABILITY: RequirementTraceabilityPolicy = "off"
 """Policy of a project.yaml without ``verification.requirementTraceability`` (files written
-before 1.1): no traceability check, as in 1.0.0."""
+before 2.0): no traceability check, as in 1.0.0."""
 
 
 class VerificationConfig(ConfigModel):
@@ -568,11 +568,11 @@ class VerificationConfig(ConfigModel):
         default=DEFAULT_REQUIREMENT_TRACEABILITY, alias="requirementTraceability"
     )
     output_parsers: bool | None = Field(default=None, alias="outputParsers")
-    """Since 1.1: parse the output of failing command validators (JUnit XML, Ruff, Mypy, ESLint,
+    """Since 2.0: parse the output of failing command validators (JUnit XML, Ruff, Mypy, ESLint,
     tsc, SARIF, pytest) into one finding per reported problem, with file, line and rule. Absent
     or false keeps the single summary finding of 1.0.0."""
 
-    # ----- since 1.1, agent results (#40, #52); every key absent keeps 1.0.0 -----------------
+    # ----- since 2.0, agent results (#40, #52); every key absent keeps 1.0.0 -----------------
     interface: Policy | None = None
     """Conformance of a task's declared interface (``metadata.interface``): ``enforce`` makes a
     mismatch HIGH, ``warn`` LOW."""
@@ -608,7 +608,7 @@ class VerificationConfig(ConfigModel):
     """Behaviour probes of the project (each task may declare more)."""
     mutation: MutationConfig | None = None
     principles: PrinciplesConfig | None = None
-    """Since 1.1 (#56): engineering principles as deterministic proxies (duplication, size and
+    """Since 2.0 (#56): engineering principles as deterministic proxies (duplication, size and
     complexity, dependency direction, inheritance depth, unused public API, Boy Scout scope) and
     a checklist inside the existing review call."""
 
@@ -654,7 +654,7 @@ DEFAULT_EXCEPTION_DAYS = 30
 
 
 class ReviewConfig(ConfigModel):
-    """How a person's exceptions are recorded (since 1.1).
+    """How a person's exceptions are recorded (since 2.0).
 
     With ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an
     expiry, a scope (the findings it covers, by rule, path and fingerprint), optional
@@ -666,11 +666,11 @@ class ReviewConfig(ConfigModel):
     exceptions: bool | None = None
     exception_days: int | None = Field(default=None, alias="exceptionDays", ge=1, le=365)
     agent_review: Policy | None = Field(default=None, alias="agentReview")
-    """Since 1.1 (#38): a second agent (call kind ``review``) reviews the ChangeSet in
+    """Since 2.0 (#38): a second agent (call kind ``review``) reviews the ChangeSet in
     INDEPENDENT_REVIEW; under ``enforce`` its HIGH and CRITICAL findings block the gate."""
     reviewer: AgentCallConfig | None = None
     structured_changes: bool | None = Field(default=None, alias="structuredChanges")
-    """Since 1.1 (#52): REQUEST_CHANGES may carry blocking items with a verifiable condition
+    """Since 2.0 (#52): REQUEST_CHANGES may carry blocking items with a verifiable condition
     that VERIFICATION checks until the run closes."""
     manual_checklist: bool | None = Field(default=None, alias="manualChecklist")
     """Since #55: items only a person can verify (``manual`` criteria and the task's
@@ -727,14 +727,14 @@ class WebhookConfig(ConfigModel):
 
 
 class NotificationsConfig(ConfigModel):
-    """Webhooks notified when a run waits for a human decision or finishes (since 1.1).
+    """Webhooks notified when a run waits for a human decision or finishes (since 2.0).
     Absent: nothing is sent, as in 1.0.0."""
 
     webhooks: tuple[WebhookConfig, ...] = ()
 
 
 class RetrospectiveConfig(ConfigModel):
-    """With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and
+    """With ``causal: true`` (since 2.0) the retrospective attributes every blocked gate and
     correction cycle to the reason code, validator or rule that caused it, ignores optional
     validators that had no effect on the gate, and is also generated when a run is rejected or
     cancelled. Absent or false keeps the 1.0.0 retrospective."""
@@ -761,7 +761,7 @@ DEFAULT_DECISION_EXPIRY_HOURS = 72
 
 
 class GovernanceConfig(ConfigModel):
-    """Integrity settings of the human decisions, the workspace and the record (since 1.1).
+    """Integrity settings of the human decisions, the workspace and the record (since 2.0).
 
     Every key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of
     the serialized configuration, so the snapshot digest of an existing project does not
@@ -1070,9 +1070,9 @@ IssueLevel = Literal["error", "warning", "note"]
 
 
 class ValidatorDefinition(ConfigModel):
-    """A validator of a profile or, since 1.1, of the project (``toolchain.validators``).
+    """A validator of a profile or, since 2.0, of the project (``toolchain.validators``).
 
-    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,
+    The keys added in 2.0 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,
     ``parallelSafe``) are
     left out of the serialized definition while they are absent, so a resolved configuration
     without them keeps its digest."""
@@ -1259,7 +1259,7 @@ class ResolvedConfiguration(ConfigModel):
     source_files: tuple[str, ...]
 
 
-# ----- 1.1 sections of wave 4 (integration and scale) ----------------------------------------
+# ----- 2.0 sections of wave 4 (integration and scale) ----------------------------------------
 ProfileDetection = Literal["best", "all"]
 InterpreterMode = Literal["system", "auto"]
 
@@ -1273,7 +1273,7 @@ def _omit_none(model: BaseModel, data: dict[str, Any]) -> dict[str, Any]:
 
 
 class ToolchainConfig(ConfigModel):
-    """Project-defined profiles, validators and interpreter (since 1.1).
+    """Project-defined profiles, validators and interpreter (since 2.0).
 
     * ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology
       profiles in the format of the built-in ones, relative to the workspace root. ``profiles``
@@ -1327,7 +1327,7 @@ class ToolchainConfig(ConfigModel):
 
 
 class ProvenanceConfig(ConfigModel):
-    """Provenance per component (since 1.1).
+    """Provenance per component (since 2.0).
 
     * ``agentSnapshots``: after each agent invocation the harness records a manifest of the
       digests of the files in the ChangeSet scope. A later difference that no invocation
@@ -1390,7 +1390,7 @@ class PublisherConfig(ConfigModel):
 
 
 class DeliveryConfig(ConfigModel):
-    """What CLOSURE delivers to version control (since 1.1).
+    """What CLOSURE delivers to version control (since 2.0).
 
     * ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch
       (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the
@@ -1416,7 +1416,7 @@ class DeliveryConfig(ConfigModel):
     """Comment the decision brief on the pull request: ``notClean`` (exceptions, findings,
     partial certification), ``always`` or ``never``."""
     forge: ForgeConfig | None = None
-    """Since 1.1 (#56): the forge of ``harness pr publish`` and ``harness pr create`` (GitHub,
+    """Since 2.0 (#56): the forge of ``harness pr publish`` and ``harness pr create`` (GitHub,
     GitLab, Bitbucket, Azure DevOps, Gitea), detected from ``origin`` unless set."""
 
     @field_validator("branch")

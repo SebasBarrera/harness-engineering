@@ -129,7 +129,7 @@ class Engineering:
     def strategy(self, project_id: str) -> Strategy:
         """The testing strategy: the configuration, else a person's answer (rule ``P1``), else,
         only under ``testing.strategy: auto``, what the repository shows. Without the
-        ``testing`` section nothing is detected: the 1.1 behaviour (``conventional``)."""
+        ``testing`` section nothing is detected: the earlier behaviour (``conventional``)."""
         config = self.testing_config
         if config is not None and config.strategy not in {None, "auto"}:
             return Strategy(str(config.strategy), "configuration")

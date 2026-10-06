@@ -150,7 +150,7 @@ def configure(
     path = root / ".harness" / "project.yaml"
     config = yaml.safe_load(path.read_text())
     if not wave7:
-        # The wave 6 comparison keeps the single reviewer of #38 and the 1.1 grants and
+        # The wave 6 comparison keeps the single reviewer of #38 and the earlier grants and
         # policies in both configurations.
         for section, keys in WAVE7.items():
             for key in keys:

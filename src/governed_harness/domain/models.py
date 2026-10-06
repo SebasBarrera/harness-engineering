@@ -102,7 +102,7 @@ def _omit_unset(model: BaseModel, data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-# ----- since 1.1 (#55): the verification ladder of a criterion, probes, the checklist ---------
+# ----- since 2.0 (#55): the verification ladder of a criterion, probes, the checklist ---------
 _PROBE_ID = r"^[a-z0-9][a-z0-9_.-]{0,63}$"
 _ITEM_ID = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
 _ENV_NAME = r"(?a)^[A-Za-z_]\w{0,127}$"
@@ -361,7 +361,7 @@ class AcceptanceCriterion(StrictModel):
     verification_hint: str | None = Field(default=None, max_length=4000)
     priority: Literal["MUST", "SHOULD", "COULD"] = "MUST"
     verification: CriterionVerification | None = None
-    """Since 1.1 (#55): the rung of the verification ladder the criterion requires. Left out
+    """Since 2.0 (#55): the rung of the verification ladder the criterion requires. Left out
     of the serialized criterion when absent, so tasks written before it keep their digest."""
 
     @model_serializer(mode="wrap")
@@ -431,11 +431,11 @@ class Task(StrictModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime = Field(default_factory=utc_now)
     probes: tuple[ProbeDefinition, ...] = ()
-    """Since 1.1 (#55): behaviour probes of this task (added to the project's)."""
+    """Since 2.0 (#55): behaviour probes of this task (added to the project's)."""
     checklist: tuple[ChecklistItem, ...] = ()
-    """Since 1.1 (#55): items only a person can verify, ticked in DECISION."""
+    """Since 2.0 (#55): items only a person can verify, ticked in DECISION."""
     contract: OperationalContract | None = None
-    """Since 1.1 (#55): the operational contract the task declares; the rest comes from the
+    """Since 2.0 (#55): the operational contract the task declares; the rest comes from the
     project configuration."""
 
     @field_validator("probes")
@@ -477,7 +477,7 @@ class Task(StrictModel):
         if not self.criteria_pending:
             data.pop("criteriaPending", None)
             data.pop("criteria_pending", None)
-        # Since 1.1 (#55): absent probes, checklist and contract keep the stored form and the
+        # Since 2.0 (#55): absent probes, checklist and contract keep the stored form and the
         # digest of tasks written before them.
         for name in ("probes", "checklist", "contract"):
             if not getattr(self, name):
@@ -486,7 +486,7 @@ class Task(StrictModel):
 
 
 ClarificationRule = Literal["C0", "C1", "C2", "C3", "T1", "A1", "A2", "A3", "P1"]
-"""``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 1.1 ``A1`` is a question an
+"""``C0``-``C3`` and ``T1`` are the deterministic intent rules; since 2.0 ``A1`` is a question an
 agent asked in its ambiguity and completeness review (``intake.ambiguityReview``, #37), ``A2``
 a question about an answer that refers to something the task and the workspace do not contain
 (``intake.validateAnswers``), ``A3`` a question of the localisation call about where to
@@ -495,7 +495,7 @@ strategy, standards) of ``intake.projectSetup`` (#56), with a ``project:<part>``
 
 
 class ClarificationQuestion(StrictModel):
-    """A question raised in INTENT by the deterministic intent assessment or, since 1.1, by the
+    """A question raised in INTENT by the deterministic intent assessment or, since 2.0, by the
     agent review of the task or the check of earlier answers.
 
     ``target`` is the criterion id the question is about, ``task`` for the task as a whole,
@@ -521,7 +521,7 @@ class ClarificationQuestion(StrictModel):
 class ClarificationRequest(StrictModel):
     """The questions INTENT asked about one revision of a task, identified by its digest.
 
-    Since 1.1 (#55) the same request may carry the operational contract (``contract``): the
+    Since 2.0 (#55) the same request may carry the operational contract (``contract``): the
     summary of what was agreed and the items nobody settled, so that a person answers
     everything in one message. A request has at least one question or a contract."""
 
@@ -715,10 +715,10 @@ class AgentInvocation(StrictModel):
         Literal["implement", "clarify", "review", "plan", "acceptance", "architecture", "locate"]
         | None
     ) = None
-    """Since 1.1 (#37): the request kind; left out for an implement call sent in the 1.0 form,
+    """Since 2.0 (#37): the request kind; left out for an implement call sent in the 1.0 form,
     so invocations recorded without the agent-results settings keep their stored form."""
     effort: str | None = None
-    """Since 1.1 (#44): the reasoning effort the router chose, when it chose one."""
+    """Since 2.0 (#44): the reasoning effort the router chose, when it chose one."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_kind(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1017,7 +1017,7 @@ FEEDBACK_TEXT_CHARS = 1000
 FEEDBACK_RATIONALE_CHARS = 4000
 
 FeedbackTrigger = Literal["VERIFICATION_FAILED", "CHANGES_REQUESTED", "REVIEW_FINDINGS"]
-"""Why a correction attempt was sent back to the agent; ``REVIEW_FINDINGS`` since 1.1
+"""Why a correction attempt was sent back to the agent; ``REVIEW_FINDINGS`` since 2.0
 (``review.agentReview``, #38)."""
 
 
@@ -1202,7 +1202,7 @@ class OutcomeRecord(StrictModel):
     provenance: Provenance
 
 
-# ----- wave 4 (since 1.1): provenance per component, agent self-report, evidence bundle -------
+# ----- wave 4 (since 2.0): provenance per component, agent self-report, evidence bundle -------
 class SelfReportItem(StrictModel):
     path: str | None = Field(default=None, max_length=1000)
     description: str = Field(min_length=1, max_length=1000)
@@ -1303,7 +1303,7 @@ class EvidenceBundleManifest(StrictModel):
     entries: tuple[BundleEntry, ...]
 
 
-# ----- since 1.1 (#55): certification, deferred verification and human attachments ---------
+# ----- since 2.0 (#55): certification, deferred verification and human attachments ---------
 CertificationStatus = Literal["CERTIFIED", "PARTIAL", "NOT_CERTIFIED"]
 """Status of a run: every criterion reached its rung, some did (or are pending), none did."""
 CriterionStatus = Literal["CERTIFIED", "PENDING", "NOT_CERTIFIED", "WAIVED"]

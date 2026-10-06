@@ -12,7 +12,7 @@ the setting, counted from the run's last update:
 * ``eventDays``: the run is removed entirely: its events, its records (memory records stay),
   its flags and the artifacts no kept run references.
 
-Since 1.1, ``retention.orphanArtifacts: true`` also deletes the artifacts nothing references:
+Since 2.0, ``retention.orphanArtifacts: true`` also deletes the artifacts nothing references:
 no record, flag or event of any run or of the project names them (left by runs removed before
 the setting, by an interrupted write, or by a version that did not record a reference). An
 artifact written in the last hour is never an orphan, so a run that is writing its evidence in

@@ -1,4 +1,4 @@
-"""The verification ladder (since 1.1, #55): deterministic building blocks.
+"""The verification ladder (since 2.0, #55): deterministic building blocks.
 
 Pure functions and small value types with no access to the engine, the state store or the
 configuration resolver: a JSON path subset for probe assertions, the evaluation of probe

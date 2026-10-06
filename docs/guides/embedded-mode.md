@@ -1,6 +1,6 @@
 # Embedded mode
 
-In embedded mode (since 1.1, #56) an agent drives the governed flow from its own session (Claude
+In embedded mode (since 2.0, #56) an agent drives the governed flow from its own session (Claude
 Code, Codex or any client of the Model Context Protocol) while the harness still enforces every
 phase, gate, digest and decision. The session implements; the harness verifies, reviews (with
 the project's provider, never the session itself) and waits for a person where a person decides.
