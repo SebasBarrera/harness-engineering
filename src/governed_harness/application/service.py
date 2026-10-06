@@ -40,11 +40,13 @@ from governed_harness.domain.enums import (
     ActorType,
     DecisionKind,
     MemoryLevel,
+    PhaseId,
     RecommendationDecision,
     ResultStatus,
 )
 from governed_harness.domain.errors import (
     ConfigurationError,
+    HarnessError,
     IntegrityError,
     NotFoundError,
     PolicyViolationError,
@@ -111,6 +113,17 @@ from .exceptions import (
     record_exception,
 )
 from .forges import create_on_forge, forge_report, publish_on_forge, status_on_forge
+from .friction import (
+    BatchItem,
+    decide_plan_checkpoint,
+    friction_summary,
+    latest_intent_run,
+    open_questions,
+    preauthorize_run,
+    run_summary,
+    task_from_text,
+)
+from .friction import plan_state as checkpoint_state
 from .health import list_outcomes, record_outcome, rule_health
 from .hints import default_hint
 from .isolation import (
@@ -245,8 +258,34 @@ class HarnessApplication(ReviewCodeCommands):
             **self._wave4_settings(resolved),
             "ladder": self._ladder_settings(resolved),
             "engineering": engineering_summary(resolved),
+            "friction": friction_summary(resolved.project),
+            "api": self._api_settings(resolved.project),
             "declarative": declarative,
             "warnings": warnings,
+        }
+
+    @staticmethod
+    def _api_settings(project: ProjectConfiguration) -> dict[str, Any]:
+        """Effective ``harness api serve`` authentication (#18): variable names and whether
+        they are set, never a token."""
+        settings = project.api_settings
+        if not settings.enabled:
+            return {"auth": "off"}
+        return {
+            "auth": "token",
+            "tokenEnv": settings.start_token_env,
+            "tokenSet": bool(os.environ.get(settings.start_token_env)),
+            "tokenUser": settings.start_user,
+            "tokenRole": settings.start_role,
+            "users": [
+                {
+                    "id": user.user_id,
+                    "role": user.role,
+                    "tokenEnv": user.token_env,
+                    "tokenSet": bool(os.environ.get(user.token_env)),
+                }
+                for user in settings.users or ()
+            ],
         }
 
     @staticmethod
@@ -625,14 +664,55 @@ class HarnessApplication(ReviewCodeCommands):
                 return result
 
     def confirm_contract(
-        self, path: Path, *, task_id: str, digest: str, actor_id: str | None = None
+        self,
+        path: Path,
+        *,
+        task_id: str,
+        digest: str,
+        actor_id: str | None = None,
+        pre_approve: bool = False,
+        hours: int | None = None,
+        rationale: str = "",
     ) -> dict[str, Any]:
-        """A person confirms the operational contract of a task's revision (#55)."""
+        """A person confirms the operational contract of a task's revision (#55) and, with
+        ``pre_approve`` (``friction.preAuthorization``, #58), approves the run in advance under
+        the condition gate passed, no risk factor, size S, until ``hours`` from now."""
         with self._services(path) as services:
             decider, display_name = self._decider(services, actor_id)
             require_human_actor(decider, "confirm the operational contract")
             actor = Actor(actor_type=ActorType.HUMAN, actor_id=decider, display_name=display_name)
-            return confirm_contract(services, task_id=task_id, digest=digest, actor=actor)
+            if not pre_approve:
+                return confirm_contract(services, task_id=task_id, digest=digest, actor=actor)
+            execution = latest_intent_run(services, task_id)
+            engine = RunEngine(services)
+            current = engine.friction.contract_digest(execution, engine.run_task(execution))
+            if current != digest:
+                raise PolicyViolationError(
+                    f"the digest does not match the current contract ({current})"
+                )
+            with self._leased(services, "task confirm") as lease:
+                if lease is not None:
+                    lease.bind(execution.execution_id)
+                record = preauthorize_run(
+                    services,
+                    execution,
+                    actor,
+                    hours=hours,
+                    rationale=rationale,
+                    identity_source=self._identity_source(services),
+                    with_contract=True,
+                )
+            return {
+                "executionId": execution.execution_id,
+                "digest": digest,
+                "actorId": decider,
+                "preAuthorization": record,
+                "next": f"harness run continue --run {execution.execution_id}",
+            }
+
+    def _identity_source(self, services: EngineServices) -> str | None:
+        settings = services.resolved.project.governance_settings
+        return self.last_identity_source if settings.git_decider else None
 
     def attach_evidence(
         self,
@@ -770,7 +850,19 @@ class HarnessApplication(ReviewCodeCommands):
     def plan(self, path: Path, execution_id: str) -> dict[str, Any]:
         """The decomposition of a run and the progress of its sub-tasks (#39)."""
         with self._services(path) as services:
-            return plan_state(services, self._run_id(services, execution_id))
+            run_id = self._run_id(services, execution_id)
+            checkpoint = checkpoint_state(services, run_id)
+            try:
+                decomposition: dict[str, Any] | None = plan_state(services, run_id)
+            except NotFoundError:
+                if checkpoint is None:
+                    raise
+                decomposition = None
+            if checkpoint is None:
+                assert decomposition is not None
+                return decomposition
+            # The plan-approval checkpoint of #8 (friction.planApproval, #58).
+            return {**(decomposition or {"executionId": run_id}), "approval": checkpoint}
 
     def decide_plan(
         self,
@@ -789,6 +881,18 @@ class HarnessApplication(ReviewCodeCommands):
             if lease is not None:
                 lease.bind(execution_id)
             decider = self._decider(services, actor_id)[0]
+            checkpoint = checkpoint_state(services, execution_id)
+            if checkpoint is not None and checkpoint.get("status") == "PENDING":
+                # The plan-approval checkpoint (friction.planApproval, #8 through #58).
+                return decide_plan_checkpoint(
+                    services,
+                    execution_id,
+                    decision=decision,
+                    digest=digest,
+                    actor=Actor(actor_type=ActorType.HUMAN, actor_id=decider),
+                    rationale=rationale,
+                    continue_after=continue_after,
+                )
             return decide_plan(
                 services,
                 execution_id,
@@ -870,6 +974,163 @@ class HarnessApplication(ReviewCodeCommands):
         with self._services(path) as services:
             run_id = self._run_id(services, execution_id) if execution_id else None
             return list_outcomes(services, run_id)
+
+    # ----- low friction (#58) ----------------------------------------------------------------
+    def do(
+        self,
+        path: Path,
+        text: str,
+        *,
+        criteria: tuple[str, ...] = (),
+        owned_paths: tuple[str, ...] = (),
+        title: str | None = None,
+        provider: str | None = None,
+        pre_approve: bool = False,
+        hours: int | None = None,
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """``harness do``: create a task from text, run it and, with ``pre_approve``, approve it
+        in advance under the condition gate passed, no risk factor, size S. Returns the task,
+        the run, the lane and what waits for the person (questions or the decision)."""
+        with self._services(path) as services:
+            project = services.resolved.project
+            task = task_from_text(
+                text,
+                project_id=project.project_id,
+                criteria=criteria,
+                owned_paths=owned_paths,
+                title=title,
+            )
+            services.state.put("task", task.task_id, task, project_id=task.project_id)
+            preauthorization: dict[str, Any] | None = None
+            with self._leased(services, "do") as lease:
+                engine = RunEngine(services)
+                execution = engine.create_execution(task, provider=provider)
+                if lease is not None:
+                    lease.bind(execution.execution_id)
+                if pre_approve:
+                    decider, display_name = self._decider(services, actor_id)
+                    require_human_actor(decider, "pre-authorise an approval")
+                    preauthorization = preauthorize_run(
+                        services,
+                        execution,
+                        Actor(
+                            actor_type=ActorType.HUMAN,
+                            actor_id=decider,
+                            display_name=display_name,
+                        ),
+                        hours=hours,
+                        rationale="",
+                        identity_source=self._identity_source(services),
+                        with_contract=True,
+                    )
+                execution = self._after(services, engine.continue_execution(execution.execution_id))
+            return {
+                "task": task.model_dump(mode="json", by_alias=True),
+                "execution": execution.model_dump(mode="json", by_alias=True),
+                "run": run_summary(execution),
+                "lane": RunEngine(services).friction.lane(execution),
+                "preAuthorization": preauthorization,
+                "questions": open_questions(services, execution)
+                if execution.current_phase is PhaseId.INTENT
+                else [],
+            }
+
+    def answer_questions(
+        self,
+        path: Path,
+        *,
+        task_id: str,
+        answers: dict[str, str],
+        actor_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Answers typed on the terminal by ``harness do`` (as ``task clarify`` with a file)."""
+        from governed_harness.intake.clarification import ClarificationInput
+
+        with self._services(path) as services:
+            decider, display_name = self._decider(services, actor_id)
+            with self._leased(services, "task clarify"):
+                record, _task = RunEngine(services).clarify(
+                    task_id=task_id,
+                    clarification=ClarificationInput(answers=answers),
+                    actor=Actor(
+                        actor_type=ActorType.HUMAN, actor_id=decider, display_name=display_name
+                    ),
+                )
+            return {"executionId": record.execution_id, "clarificationId": record.clarification_id}
+
+    def decide_batch(
+        self,
+        path: Path,
+        items: list[BatchItem],
+        *,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Decisions on several runs of the inbox, each bound to its own ChangeSet digest: a
+        stale digest or a refused decision is reported for that run and the others are still
+        recorded."""
+        results: list[dict[str, Any]] = []
+        for item in items:
+            reason = (item.rationale or rationale).strip()
+            try:
+                record, execution = self.decide_gate(
+                    path,
+                    execution_id=item.run,
+                    decision=item.decision,
+                    change_set_digest=item.digest,
+                    actor_id=actor_id,
+                    rationale=reason,
+                    continue_after=continue_after,
+                )
+            except HarnessError as error:
+                results.append(
+                    {
+                        "run": item.run,
+                        "decision": item.decision.value,
+                        "changeSetDigest": item.digest,
+                        "recorded": False,
+                        "error": str(error),
+                        "exitCode": error.exit_code,
+                    }
+                )
+                continue
+            results.append(
+                {
+                    "run": execution.execution_id,
+                    "decision": record.decision.value,
+                    "changeSetDigest": record.change_set_digest,
+                    "recorded": True,
+                    "decisionId": record.decision_id,
+                    "execution": run_summary(execution),
+                }
+            )
+        return {
+            "recorded": sum(1 for item in results if item["recorded"]),
+            "refused": sum(1 for item in results if not item["recorded"]),
+            "results": results,
+        }
+
+    def metrics(
+        self,
+        path: Path,
+        *,
+        filters: Any,
+        prices_file: Path | None = None,
+        narrative: bool = False,
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """``harness metrics``: the report (zero model calls) and its settings; with
+        ``narrative`` one call to ``metrics.narrative.command``, on demand."""
+        from .metrics import metrics_report, narrative_settings, run_narrative
+
+        report, settings = metrics_report(path, filters=filters, prices_file=prices_file)
+        if narrative:
+            command = narrative_settings(settings)
+            report["narrative"] = run_narrative(
+                report, command, Path(report["projects"][0]["workspace"])
+            )
+        return report, settings
 
     def inbox(self, path: Path) -> list[dict[str, Any]]:
         """Runs of the project waiting for a person (decision or clarification answers) and,
@@ -1843,12 +2104,17 @@ class HarnessApplication(ReviewCodeCommands):
         """The decision brief of a run (see ``application.review``)."""
         with self._run_services(path, execution_id) as (services, run_id):
             execution = services.state.get("execution", run_id, Execution)
-            return build_brief(
+            brief = build_brief(
                 services,
                 run_id,
                 include_diff=include_diff,
                 exceptions=brief_exceptions(services, execution),
             )
+            friction = RunEngine(services).friction.brief(execution)
+            if friction is not None:
+                # The lane, the change type and the pre-authorisation (#58).
+                brief["friction"] = friction
+            return brief
 
     def list_exceptions(
         self, path: Path, *, status: str = "all", expiring_within: int | None = None

@@ -13,11 +13,17 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
+from governed_harness.configuration.api import DEFAULT_API_TOKEN_ENV, DEFAULT_API_TOKEN_ROLE
 from governed_harness.configuration.engineering import (
     DEFAULT_DUPLICATION_WINDOW,
     DEFAULT_FEATURES_DIRECTORY,
     DEFAULT_INHERITANCE_DEPTH,
     DEFAULT_MAX_CARDS,
+)
+from governed_harness.configuration.friction import (
+    DEFAULT_FAST_LANE_SKIP,
+    DEFAULT_FRICTION_TARGETS,
+    DEFAULT_PRE_AUTHORIZATION_HOURS,
 )
 from governed_harness.configuration.ladder import (
     DEFAULT_DEFERRED_EXPIRY_DAYS,
@@ -44,6 +50,7 @@ from governed_harness.configuration.review import (
     DEFAULT_PARALLEL,
     DEFAULT_TOKENS_PER_LINE,
 )
+from governed_harness.domain.actors import DEFAULT_API_ACTOR
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -230,6 +237,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "phaseCapabilities": True,
             # Wave 7 (#5): repository content is untrusted, destructive commands are denied.
             "applyRepositoryPolicies": True,
+            "enforceWorkflow": True,
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
@@ -257,6 +265,33 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         },
         "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
         "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
+        # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
+        # condition, documentation-only and configuration-only changes, friction targets.
+        "friction": {
+            "fastLane": {
+                "mode": "auto",
+                "skip": list(DEFAULT_FAST_LANE_SKIP),
+                "verification": {"affectedTestsFirst": True, "parallel": True, "cache": True},
+            },
+            "preAuthorization": {
+                "mode": "allow",
+                "defaultHours": DEFAULT_PRE_AUTHORIZATION_HOURS,
+                "maxHours": 72,
+            },
+            "changeTypes": True,
+            "planApproval": "risk",
+            "targets": {size: dict(values) for size, values in DEFAULT_FRICTION_TARGETS.items()},
+        },
+        # #18: harness api serve requires a bearer token on every route. The token of the
+        # person who starts it comes from tokenEnv, or is generated and shown once; more people
+        # go under users, each with an id, a role and the NAME of their token's variable.
+        "api": {
+            "auth": "token",
+            "tokenEnv": DEFAULT_API_TOKEN_ENV,
+            "tokenUser": DEFAULT_API_ACTOR,
+            "tokenRole": DEFAULT_API_TOKEN_ROLE,
+            "users": [],
+        },
     }
     config_path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
     return config_path

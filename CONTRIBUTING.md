@@ -51,11 +51,12 @@ CI runs all of these; see [monitoring](docs/monitoring.md) for which checks bloc
 - Releases: `release/x.y.z` from `develop`, merged into `main`, tagged, then `main` is merged back
   into `develop`. Hotfixes: `hotfix/*` from `main`, merged into `main` and `develop`.
 
-**Single maintainer.** The repository has one maintainer and GitHub does not allow approving your
-own pull request, so the maintainer pushes the work branch, waits until **every blocking CI job on
-the branch is green**, and merges it into `develop` with a merge commit (`git merge --no-ff`) whose
-message summarizes the change, the verification and the issues it closes. Work branches are kept
-after merging. Rulesets on `main` and `develop` block force pushes and deletion.
+**Single maintainer.** The maintainer also integrates through pull requests: push the work branch,
+open a pull request against `develop` whose description summarizes the change and references its
+issues, wait until **every blocking check of the pull request is green**, and merge it with a merge
+commit (no squash, no rebase). GitHub does not allow approving your own pull request, so no review
+approval is required. Work branches are kept after merging. Rulesets on `main` and `develop` block
+force pushes and deletion.
 
 **External contributors** open a pull request against `develop`: the title must follow Conventional
 Commits, the description must reference an issue (`Closes #n` or `Refs #n`) and state whether the

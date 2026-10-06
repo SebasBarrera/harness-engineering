@@ -31,6 +31,7 @@ from governed_harness.configuration.agent_results import (
     TestQualityConfig,
     off_from_yaml,
 )
+from governed_harness.configuration.api import ApiConfig
 from governed_harness.configuration.engineering import (
     ArchitectureSettings,
     ForgeConfig,
@@ -39,6 +40,7 @@ from governed_harness.configuration.engineering import (
     StandardsConfig,
     TestingConfig,
 )
+from governed_harness.configuration.friction import FrictionConfig, MetricsConfig
 from governed_harness.configuration.ladder import (
     CommentPolicy,
     ContractMode,
@@ -218,8 +220,11 @@ class RuntimeConfig(ConfigModel):
         alias="maxParallel",
         ge=1,
         le=32,
-        description="Declarative: phases and validators run one at a time.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Under governance.enforceWorkflow, the most validators declared parallelSafe that a "
+            "parallelizable VERIFICATION runs at once; otherwise phases and validators run one "
+            "at a time."
+        ),
     )
     allow_network: bool = Field(
         default=False,
@@ -784,7 +789,13 @@ class GovernanceConfig(ConfigModel):
       files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive
       deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or
       permission changes outside the workspace) unless a ``process.destructive`` grant allows
-      them, with a finding for each attempt."""
+      them, with a finding for each attempt.
+    * ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are
+      evaluated from the run's records after a phase attempt passes (an unmet condition leaves
+      the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides
+      which phase may start, and ``parallelizable`` lets the validators declared
+      ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to
+      ``runtime.maxParallel``. An unknown gate or condition is a configuration error."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -804,6 +815,7 @@ class GovernanceConfig(ConfigModel):
     phase_permissions: bool | None = Field(default=None, alias="phasePermissions")
     phase_capabilities: bool | None = Field(default=None, alias="phaseCapabilities")
     apply_repository_policies: bool | None = Field(default=None, alias="applyRepositoryPolicies")
+    enforce_workflow: bool | None = Field(default=None, alias="enforceWorkflow")
 
     @field_validator("stop_the_line", mode="before")
     @classmethod
@@ -873,6 +885,23 @@ class ProjectConfiguration(ConfigModel):
     standards: StandardsConfig | None = None
     testing: TestingConfig | None = None
     architecture: ArchitectureSettings | None = None
+    friction: FrictionConfig | None = None
+    """Since #58: the fast lane, pre-authorised approval, change types and friction targets."""
+    metrics: MetricsConfig | None = None
+    """Since #58: the price table and the narrative command of ``harness metrics``."""
+    api: ApiConfig | None = None
+    """Since #18: authentication and roles of ``harness api serve``; absent, no authentication
+    as in 1.0.0."""
+
+    @property
+    def friction_settings(self) -> FrictionConfig:
+        """The friction settings, all absent (1.0.0 behaviour) when the section is."""
+        return self.friction or FrictionConfig()
+
+    @property
+    def api_settings(self) -> ApiConfig:
+        """The API settings: authentication off (1.0.0 behaviour) when the section is absent."""
+        return self.api or ApiConfig(auth="off")
 
     @property
     def toolchain_settings(self) -> ToolchainConfig:
@@ -962,6 +991,9 @@ class ProjectConfiguration(ConfigModel):
             "standards",
             "testing",
             "architecture",
+            "friction",
+            "metrics",
+            "api",
         ):
             if getattr(self, section) is None:
                 data.pop(section, None)
@@ -997,7 +1029,8 @@ IssueLevel = Literal["error", "warning", "note"]
 class ValidatorDefinition(ConfigModel):
     """A validator of a profile or, since 1.1, of the project (``toolchain.validators``).
 
-    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``) are
+    The keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,
+    ``parallelSafe``) are
     left out of the serialized definition while they are absent, so a resolved configuration
     without them keeps its digest."""
 
@@ -1019,6 +1052,10 @@ class ValidatorDefinition(ConfigModel):
     otherwise)."""
     pass_env: tuple[str, ...] | None = Field(default=None, alias="passEnv")
     """Variables of the harness's environment the command receives as they are."""
+    parallel_safe: bool | None = Field(default=None, alias="parallelSafe")
+    """The command writes nothing another validator reads or writes, so under
+    ``governance.enforceWorkflow`` it may run at the same time as the other parallel-safe
+    validators of a parallelizable VERIFICATION (#3). Absent: it runs alone, as in 1.0.0."""
 
     @field_validator("pass_env")
     @classmethod
@@ -1036,6 +1073,7 @@ class ValidatorDefinition(ConfigModel):
             ("severity", "severity"),
             ("failure_severity", "failureSeverity"),
             ("pass_env", "passEnv"),
+            ("parallel_safe", "parallelSafe"),
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
@@ -1073,14 +1111,19 @@ class WorkflowPhaseDefinition(ConfigModel):
     depends_on: tuple[PhaseId, ...] = Field(
         default=(),
         alias="dependsOn",
-        description="Declarative: the phase order is fixed by the state machine.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Earlier phases whose latest attempt must have passed before this phase starts, "
+            "under governance.enforceWorkflow (the order of the nine phases stays fixed)."
+        ),
     )
     required: bool = True
     parallelizable: bool = Field(
         default=False,
-        description="Declarative: phases run one at a time.",
-        json_schema_extra={"x-declarative": True},
+        description=(
+            "Under governance.enforceWorkflow, the phase's independent read-only work may run "
+            "at once: the validators declared parallelSafe of VERIFICATION. Phases themselves "
+            "and the sub-tasks of a decomposition run one at a time on the run's workspace."
+        ),
     )
     allowed_capabilities: tuple[str, ...] = Field(
         default=(),
@@ -1098,8 +1141,10 @@ class WorkflowPhaseDefinition(ConfigModel):
     exit_gate: str = Field(
         alias="exitGate",
         description=(
-            "Name of the condition the phase must meet to pass; recorded with each attempt "
-            "(exitGate, exitGateMet) under governance.applyWorkflowSettings."
+            "Name of the condition the phase must meet to pass: evaluated from the run's "
+            "records under governance.enforceWorkflow (an unmet one leaves the attempt "
+            "BLOCKED); recorded with each attempt (exitGate, exitGateMet) under "
+            "governance.applyWorkflowSettings or governance.enforceWorkflow."
         ),
     )
     timeout_seconds: int = Field(

@@ -1,5 +1,5 @@
-# Pull-request hygiene for external contributions: Conventional Commits title, area labels by
-# path and a reference to an issue. (The maintainer integrates work branches directly.)
+# Pull-request hygiene for every pull request (maintainer and external): Conventional Commits
+# title, area labels by path and a reference to an issue.
 name: pr-hygiene
 
 on:

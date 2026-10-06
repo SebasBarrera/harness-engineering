@@ -197,7 +197,7 @@ exit with 0:
 |---|---|
 | `status` | `PASSED`, `FAILED` or `BLOCKED` |
 | `summary` | optional text recorded on the agent invocation |
-| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens` (non-negative integers) and `costUsd` (non-negative number), as reported by the agent |
+| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheTokens` (non-negative integers; `cacheTokens`, since 1.1, is the part of `inputTokens` read from or written to a prompt cache) and `costUsd` (non-negative number), as reported by the agent |
 
 When `usage` is present it is stored as a `ResourceUsage` record of quality `REPORTED` and summed
 into the metrics `tokens.*` and `cost.usd`. The harness records what the provider reports and

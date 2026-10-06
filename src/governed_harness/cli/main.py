@@ -6,6 +6,7 @@ import weakref
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from typing import Any
 
@@ -425,16 +426,167 @@ def task_confirm(
         ..., "--digest", help="Digest of the operational contract shown by task questions"
     ),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    pre_approve: bool = typer.Option(
+        False,
+        "--pre-approve",
+        help="Under friction.preAuthorization: also approve the run in advance, applied at "
+        "DECISION only if the gate passed, the ChangeSet has no risk factor and the task is size "
+        "S; otherwise you are asked as usual",
+    ),
+    pre_approve_hours: int | None = typer.Option(
+        None,
+        "--pre-approve-hours",
+        min=1,
+        help="Validity of the pre-authorised approval in hours (default "
+        "friction.preAuthorization.defaultHours, at most maxHours)",
+    ),
+    rationale: str = typer.Option(
+        "", "--rationale", help="Why you approve in advance (recorded with --pre-approve)"
+    ),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
     """Confirm the operational contract of a task's current revision, bound to its digest
     (`intake.operationalContract`). Under `enforce` INTENT waits for it; then `harness run
-    continue`. A stale digest or a non-human actor exits 5."""
+    continue`. With --pre-approve the same act records an approval in advance bound to the
+    contract digest and the condition gate passed, no risk factor, size S. A stale digest, a
+    non-human actor or --pre-approve without `friction.preAuthorization.mode: allow` exits 5."""
     _emit(
-        _call(lambda: _acting().confirm_contract(path, task_id=task, digest=digest, actor_id=actor))
+        _call(
+            lambda: _acting().confirm_contract(
+                path,
+                task_id=task,
+                digest=digest,
+                actor_id=actor,
+                pre_approve=pre_approve,
+                hours=pre_approve_hours,
+                rationale=rationale,
+            )
+        )
     )
+
+
+@app.command("do")
+def do(
+    text: str = typer.Argument(..., help="The change to make, in one sentence or more"),
+    criterion: list[str] | None = typer.Option(
+        None,
+        "--criterion",
+        help="An acceptance criterion (repeatable; default: the text itself)",
+    ),
+    owned: list[str] | None = typer.Option(
+        None, "--owned", help="A workspace path the change may touch (repeatable)"
+    ),
+    title: str | None = typer.Option(None, "--title", help="Task title (default: first line)"),
+    provider: str | None = typer.Option(
+        None, "--provider", help="Agent provider id; defaults to the project agentProvider"
+    ),
+    pre_approve: bool = typer.Option(
+        False,
+        "--pre-approve",
+        help="Approve in advance (friction.preAuthorization): applied at DECISION only if the "
+        "gate passed, the ChangeSet has no risk factor and the task is size S",
+    ),
+    pre_approve_hours: int | None = typer.Option(
+        None, "--pre-approve-hours", min=1, help="Validity of the pre-authorised approval"
+    ),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    interactive: bool = typer.Option(
+        True,
+        "--interactive/--no-interactive",
+        help="On a terminal, answer the questions and decide in the same command",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+    json_output: bool | None = JSON_OPTION,
+) -> None:
+    """Make a change from TEXT in one command: create the task (the text is its intent and,
+    without --criterion, its acceptance criterion), run it and, on a terminal, answer INTENT's
+    questions and show the decision brief and ask for the decision. No task file is needed.
+    Small, risk-free tasks take the fast lane (`friction.fastLane`). With --pre-approve the
+    approval you give now is applied only when the gate passed, there is no risk factor and the
+    task is size S. Exit codes as `run start`: 0 closed, 4 a decision is pending, 6 stopped."""
+    application = _acting()
+    result = _call(
+        lambda: application.do(
+            path,
+            text,
+            criteria=tuple(criterion or ()),
+            owned_paths=tuple(owned or ()),
+            title=title,
+            provider=provider,
+            pre_approve=pre_approve,
+            hours=pre_approve_hours,
+            actor_id=actor,
+        )
+    )
+    run_id = result["run"]["executionId"]
+    task_id = result["task"]["taskId"]
+    terminal = interactive and sys.stdin.isatty() and sys.stdout.isatty()
+    while terminal and result["questions"]:
+        typer.echo(f"INTENT asks about {task_id}:")
+        answers: dict[str, str] = {}
+        for question in result["questions"]:
+            answer = ""
+            while not answer.strip():
+                answer = str(typer.prompt(f"{question['questionId']}: {question['text']}"))
+            answers[question["questionId"]] = answer.strip()
+        _call(partial(application.answer_questions, path, task_id=task_id, answers=answers))
+        execution = _call(lambda: application.continue_run(path, run_id))
+        result["run"] = {
+            "executionId": execution.execution_id,
+            "status": execution.status.value,
+            "currentPhase": execution.current_phase.value,
+            "changeSetDigest": execution.change_set_digest,
+        }
+        result["execution"] = execution.model_dump(mode="json", by_alias=True)
+        result["questions"] = (
+            _open_questions(application, path, run_id)
+            if execution.current_phase.value == "INTENT"
+            else []
+        )
+    status = ResultStatus(result["run"]["status"])
+    phase = result["run"]["currentPhase"]
+    if terminal and status is ResultStatus.BLOCKED and phase == "DECISION":
+        decision, digest, reason = _interactive_decision(
+            application, path, run_id, None, None, None
+        )
+        checked = _interactive_checklist(application, path, run_id, [])
+        record, execution = _call(
+            lambda: application.decide_gate(
+                path,
+                execution_id=run_id,
+                decision=decision,
+                change_set_digest=digest,
+                actor_id=actor,
+                rationale=reason,
+                checked_items=tuple(checked),
+            ),
+            hint=_decide_hint(application, path, run_id),
+        )
+        result["decision"] = record.model_dump(mode="json", by_alias=True)
+        result["execution"] = execution.model_dump(mode="json", by_alias=True)
+        status, phase = execution.status, execution.current_phase.value
+    elif status is ResultStatus.BLOCKED and phase == "DECISION":
+        result["next"] = f"harness review --run {run_id}; harness gate decide --run {run_id}"
+    elif status is ResultStatus.BLOCKED and phase == "INTENT":
+        result["next"] = f"harness task questions --task {task_id}"
+    _emit(result, json_output)
+    _exit_for_execution(status, phase)
+
+
+def _open_questions(application: HarnessApplication, path: Path, run_id: str) -> list[Any]:
+    status = _call(lambda: application.status(path, run_id))
+    task_id = status["execution"]["taskId"]
+    request = _call(lambda: application.list_clarifications(path, task_id))["openRequest"]
+    if not request or status["execution"]["status"] != "BLOCKED":
+        return []
+    return [
+        {"questionId": item["questionId"], "text": item["text"]}
+        for item in request.get("questions") or []
+    ]
 
 
 @run_app.command("start")
@@ -1706,14 +1858,246 @@ def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hi
 @app.command()
 def inbox(
     json_output: bool | None = JSON_OPTION,
+    approve: list[str] | None = typer.Option(
+        None,
+        "--approve",
+        help="Batch: APPROVE a run as RUN=sha256:DIGEST, the digest the inbox shows (repeatable)",
+    ),
+    reject: list[str] | None = typer.Option(
+        None, "--reject", help="Batch: REJECT a run as RUN=sha256:DIGEST (repeatable)"
+    ),
+    request_changes: list[str] | None = typer.Option(
+        None,
+        "--request-changes",
+        help="Batch: REQUEST_CHANGES on a run as RUN=sha256:DIGEST (repeatable)",
+    ),
+    decisions: Path | None = typer.Option(
+        None,
+        "--decisions",
+        exists=True,
+        dir_okay=False,
+        help="Batch file (YAML or JSON): a list of run, decision, changeSetDigest and an "
+        "optional rationale",
+    ),
+    batch: bool = typer.Option(
+        False,
+        "--batch",
+        help="On a terminal: decide every pending decision of the inbox one after the other",
+    ),
+    rationale: str | None = typer.Option(
+        None, "--rationale", help="Batch: the rationale recorded with each decision"
+    ),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     path: Path = typer.Option(
         default_factory=Path.cwd, show_default="current directory", help="Project directory"
     ),
 ) -> None:
     """List the runs of the project that wait for a person, oldest first: a decision in
     DECISION (gate status, digest, blocking findings) or answers to clarification questions in
-    INTENT, each with the next command."""
-    _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+    INTENT, each with the next command. With --approve, --reject, --request-changes,
+    --decisions or --batch it records several decisions, each bound to its own ChangeSet digest:
+    a stale digest or a refused decision is reported for that run (the others are recorded) and
+    the command exits 5 when any was refused."""
+    from governed_harness.application.friction import (
+        BatchItem,
+        load_batch_file,
+        parse_batch_item,
+    )
+
+    items: list[BatchItem] = []
+    for values, kind in (
+        (approve, DecisionKind.APPROVE),
+        (reject, DecisionKind.REJECT),
+        (request_changes, DecisionKind.REQUEST_CHANGES),
+    ):
+        for value in values or ():
+            items.append(_call(partial(parse_batch_item, value, kind)))
+    if decisions is not None:
+        import yaml
+
+        raw = _call(lambda: yaml.safe_load(decisions.read_text(encoding="utf-8")))
+        items.extend(_call(lambda: load_batch_file(raw)))
+    if batch:
+        if not (sys.stdin.isatty() and sys.stdout.isatty()):
+            _report_error(
+                {
+                    "status": "ERROR",
+                    "error": "--batch needs a terminal",
+                    "hint": "Use --approve RUN=DIGEST or --decisions FILE without a terminal.",
+                }
+            )
+            raise typer.Exit(code=2)
+        items.extend(_interactive_batch(path))
+    if not items:
+        _emit(_call(lambda: HarnessApplication().inbox(path)), json_output, kind="inbox")
+        return
+    if rationale is None and any(item.rationale is None for item in items):
+        if sys.stdin.isatty() and sys.stdout.isatty():
+            rationale = str(typer.prompt("Rationale recorded with each decision"))
+        else:
+            _report_error(
+                {
+                    "status": "ERROR",
+                    "error": "a batch decision needs --rationale (or a rationale per decision)",
+                }
+            )
+            raise typer.Exit(code=2)
+    reason = rationale or ""
+    result = _call(lambda: _acting().decide_batch(path, items, rationale=reason, actor_id=actor))
+    _emit(result, json_output)
+    if result["refused"]:
+        raise typer.Exit(code=5)
+
+
+def _interactive_batch(path: Path) -> list[Any]:
+    """Ask, for each run waiting for a decision, what to decide; each answer is bound to the
+    digest shown next to it."""
+    from governed_harness.application.friction import BatchItem
+
+    entries = [
+        item
+        for item in _call(lambda: HarnessApplication().inbox(path))
+        if item.get("kind") == "decision" and item.get("changeSetDigest")
+    ]
+    choices = {
+        "a": DecisionKind.APPROVE,
+        "r": DecisionKind.REQUEST_CHANGES,
+        "j": DecisionKind.REJECT,
+    }
+    items: list[Any] = []
+    for entry in entries:
+        typer.echo(
+            f"{entry['executionId']}  {entry['taskTitle']}\n  gate {entry['gateStatus']}, "
+            f"{entry['blockingFindings']} blocking finding(s), digest {entry['changeSetDigest']}"
+        )
+        answer = ""
+        while answer not in {"a", "r", "j", "s"}:
+            answer = (
+                str(typer.prompt("  [a]pprove, [r]equest changes, re[j]ect, [s]kip", default="s"))
+                .strip()
+                .lower()[:1]
+            )
+        if answer != "s":
+            items.append(BatchItem(entry["executionId"], choices[answer], entry["changeSetDigest"]))
+    if items:
+        confirmed = str(
+            typer.prompt(
+                f"Record {len(items)} decision(s), each bound to the digest shown? (yes/no)",
+                default="no",
+            )
+        )
+        if confirmed.strip().lower() not in {"y", "yes"}:
+            raise typer.Exit(code=5)
+    return items
+
+
+@app.command()
+def metrics(
+    fmt: str | None = typer.Option(
+        None,
+        "--format",
+        help="html, md, json, csv (one row per run) or prometheus; printed, or written to "
+        "--output. Without it, metrics.json, metrics.md and metrics.html are written to "
+        "--output-dir",
+    ),
+    output: Path | None = typer.Option(None, "--output", help="File for --format"),
+    output_dir: Path | None = typer.Option(
+        None,
+        "--output-dir",
+        help="Directory of the three files written without --format (default .harness/metrics)",
+    ),
+    open_report: bool = typer.Option(
+        False, "--open", help="Open the HTML report in the default browser"
+    ),
+    since: str | None = typer.Option(
+        None, "--since", help="Only runs created since DATE (YYYY-MM-DD, ISO 8601, 7d, 2w, 12h)"
+    ),
+    task: str | None = typer.Option(None, "--task", help="Only the runs of this task"),
+    model: str | None = typer.Option(None, "--model", help="Only agent calls of this model"),
+    agent: str | None = typer.Option(
+        None, "--agent", help="Only agent calls of this agent provider id"
+    ),
+    all_repos: bool = typer.Option(
+        False,
+        "--all-repos",
+        help="Every repository of the run registry (runtime.stateDir), not only this one",
+    ),
+    prices: Path | None = typer.Option(
+        None,
+        "--prices",
+        exists=True,
+        dir_okay=False,
+        help="Price table (YAML or JSON, USD per million input, output and cache tokens by "
+        "model id) for providers that report tokens without a cost; overrides metrics.prices",
+    ),
+    narrative: bool = typer.Option(
+        False,
+        "--narrative",
+        help="Add a narrative summary: one call to metrics.narrative.command, on demand",
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Local metrics of the governed runs, with zero model calls: tokens (input, output, cache)
+    and cost by agent, model, task and phase, models used, lines by agent invocation and by
+    person, issues resolved and features delivered, time per task, phase, agent call and human
+    wait, quality, friction against the targets per size and daily and weekly trends. Costs of
+    providers that report only tokens are estimated from the price table and labelled
+    estimated. The HTML file is self-contained (inline CSS and SVG, nothing fetched). No
+    per-person indicator is computed."""
+    import webbrowser
+
+    from governed_harness.application.metrics import write_reports
+    from governed_harness.metrics import FORMATS, Filters, parse_since, render
+
+    if fmt is not None and fmt not in FORMATS:
+        _report_error(
+            {"status": "ERROR", "error": f"--format is one of {', '.join(FORMATS)}, got {fmt!r}"}
+        )
+        raise typer.Exit(code=2)
+    try:
+        filters = Filters(
+            since=parse_since(since),
+            task=task,
+            model=model,
+            agent=agent,
+            all_repos=all_repos,
+        )
+    except ValueError as error:
+        _report_error({"status": "ERROR", "error": str(error)})
+        raise typer.Exit(code=2) from error
+    report, settings = _call(
+        lambda: HarnessApplication().metrics(
+            path, filters=filters, prices_file=prices, narrative=narrative
+        )
+    )
+    html_file: Path | None = None
+    if fmt is None:
+        directory = output_dir or Path(settings["harnessDir"]) / "metrics"
+        written = write_reports(report, directory)
+        html_file = Path(written["html"])
+        typer.echo(
+            json.dumps(
+                {"files": written, "totals": report["totals"], "filters": report["filters"]},
+                indent=2,
+            )
+        )
+    else:
+        text = render(report, fmt)
+        if output is not None:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            output.write_text(text, encoding="utf-8")
+            typer.echo(json.dumps({"file": str(output), "format": fmt}))
+            if fmt == "html":
+                html_file = output
+        else:
+            typer.echo(text, nl=False)
+    if open_report:
+        if html_file is None:
+            directory = output_dir or Path(settings["harnessDir"]) / "metrics"
+            html_file = Path(write_reports(report, directory, ("html",))["html"])
+        webbrowser.open(html_file.resolve().as_uri())
 
 
 @app.command()
@@ -2158,13 +2542,50 @@ def api_serve(
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address; keep the loopback default"),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="TCP port"),
 ) -> None:
-    """Serve the local API and web dashboard. There is no authentication: keep it bound to
-    127.0.0.1."""
+    """Serve the local API and web dashboard. Keep it bound to 127.0.0.1.
+
+    With the api section that harness init writes, every route requires Authorization: Bearer
+    TOKEN. Your token comes from the variable in api.tokenEnv (HARNESS_API_TOKEN by default);
+    when it is not set, a new token is generated and printed once on standard error. Without
+    the section there is no authentication, as in 1.0.0."""
     import uvicorn
 
     from governed_harness.api import create_app
+    from governed_harness.api.auth import api_settings, start_token
 
-    uvicorn.run(create_app(path), host=host, port=port, log_level="info")
+    settings = _call(lambda: api_settings(path))
+    token = None
+    if settings.enabled:
+        token = _call(lambda: start_token(settings))
+        if token.generated:
+            # Shown once, here only: never logged, stored or sent anywhere else.
+            typer.echo(
+                f"API token of {settings.start_user} ({settings.start_role}), shown once: "
+                f"{token.value}\nSet {settings.start_token_env} to choose it instead.",
+                err=True,
+            )
+        else:
+            typer.echo(
+                f"API token of {settings.start_user} ({settings.start_role}) taken from "
+                f"{token.source}.",
+                err=True,
+            )
+    else:
+        typer.echo(
+            "warning: the API has no authentication (no api section in project.yaml, or "
+            "api.auth: off); anyone who reaches the port can read runs and record decisions.",
+            err=True,
+        )
+    if host not in {"127.0.0.1", "::1", "localhost"}:
+        typer.echo(
+            f"warning: binding to {host} exposes the API beyond this machine; the harness is "
+            "not a sandbox and the token travels over plain HTTP.",
+            err=True,
+        )
+    api = _call(lambda: create_app(path, start_token=token))
+    for notice in api.state.auth_notices:
+        typer.echo(f"warning: {notice}", err=True)
+    uvicorn.run(api, host=host, port=port, log_level="info")
 
 
 def main() -> None:

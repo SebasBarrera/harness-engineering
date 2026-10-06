@@ -1,17 +1,29 @@
 from __future__ import annotations
 
+import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal, NoReturn
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, ConfigDict
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from governed_harness import __version__
+from governed_harness.api.auth import (
+    PRINCIPAL_SCOPE_KEY,
+    AuthenticationMiddleware,
+    DecisionAuditLog,
+    Principal,
+    StartToken,
+    TokenAuthenticator,
+    api_settings,
+)
 from governed_harness.application import HarnessApplication
 from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.configuration import ConfigurationResolver
+from governed_harness.configuration.api import ApiConfig, ApiRole
 from governed_harness.domain.actors import DEFAULT_API_ACTOR
 from governed_harness.domain.enums import DecisionKind
 from governed_harness.domain.errors import HarnessError, IntegrityError, NonHumanActorError
@@ -45,19 +57,63 @@ def trusted_hosts(workspace: Path) -> tuple[str, ...] | None:
     return project.governance_settings.trusted_hosts
 
 
-def create_app(workspace: Path) -> FastAPI:
+def create_app(
+    workspace: Path,
+    *,
+    start_token: StartToken | str | None = None,
+    environ: Mapping[str, str] | None = None,
+) -> FastAPI:
+    """The API of ``workspace``. Under the ``api`` section of ``project.yaml`` (#18) every
+    route requires a bearer token: ``start_token`` (``harness api serve`` passes the one it
+    took from ``api.tokenEnv`` or generated; without it, the value of ``api.tokenEnv`` when
+    set) and the tokens of ``api.users``, read from ``environ`` (default ``os.environ``).
+    The notices of the authentication setup (users who cannot sign in) are in
+    ``app.state.auth_notices``."""
     root = workspace.resolve(strict=True)
+    settings = api_settings(root)
     application = HarnessApplication()
     api = FastAPI(
         title="Governed Agent Harness",
         version=__version__,
         description="Local observability and human-decision API for a governed harness workspace.",
     )
+    notices: list[str] = []
+    api.state.auth_notices = notices
+    audit: DecisionAuditLog | None = None
+    if settings.enabled:
+        source = os.environ if environ is None else environ
+        token = start_token if start_token is not None else source.get(settings.start_token_env)
+        authenticator = TokenAuthenticator.from_settings(settings, token, source, notices)
+        if not authenticator.users:
+            notices.append("no API token is available: every request will be refused (401)")
+        api.add_middleware(
+            AuthenticationMiddleware, authenticator=authenticator, sign_in_page=_SIGN_IN
+        )
+        audit = DecisionAuditLog.for_workspace(root)
     hosts = trusted_hosts(root)
     if hosts is not None:
         # A page on another origin can reach a loopback server through DNS rebinding; requests
-        # whose Host header is not a configured name are answered with 400.
+        # whose Host header is not a configured name are answered with 400. Added last, it runs
+        # before the authentication.
         api.add_middleware(TrustedHostMiddleware, allowed_hosts=list(hosts))
+
+    @api.get("/api/session")
+    def session(request: Request) -> dict[str, object]:
+        """Who this request is authenticated as (``authentication: off`` without the ``api``
+        section, or with ``api.auth: off``)."""
+        principal = _authorize(settings, request, "viewer")
+        if principal is None:
+            return {"authentication": "off"}
+        return {"authentication": "token", "userId": principal.user_id, "role": principal.role}
+
+    @api.get("/api/config")
+    def config(request: Request) -> dict[str, object]:
+        """``harness config validate`` of the workspace (role ``admin``)."""
+        _authorize(settings, request, "admin")
+        try:
+            return application.validate_config(root)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
 
     @api.get("/api/health")
     def health() -> dict[str, object]:
@@ -129,7 +185,27 @@ def create_app(workspace: Path) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(error)) from error
 
     @api.post("/api/runs/{execution_id}/decision")
-    def decide(execution_id: str, request: DecisionRequest) -> dict[str, object]:
+    def decide(execution_id: str, request: DecisionRequest, http: Request) -> dict[str, object]:
+        actor_id = request.actor_id
+        audited = _Audited(audit, http, execution_id, request)
+        principal = _authorize(settings, http, "viewer")
+        if principal is not None:
+            # The authenticated person is the decider; the audit attempt is written before
+            # anything is decided (if it cannot be written, nothing is).
+            audited.attempt(principal)
+            if not principal.allows("reviewer"):
+                audited.refuse(
+                    403,
+                    f"user {principal.user_id} has the role {principal.role}; recording a "
+                    "decision needs the role reviewer or admin",
+                )
+            if request.actor_id and request.actor_id != principal.user_id:
+                audited.refuse(
+                    403,
+                    f"actor_id {request.actor_id!r} is not the authenticated user "
+                    f"{principal.user_id!r}; leave it out or send {principal.user_id!r}",
+                )
+            actor_id = principal.user_id
         try:
             acting = HarnessApplication()  # its notices belong to this request only
             decision, execution = acting.decide_gate(
@@ -137,7 +213,7 @@ def create_app(workspace: Path) -> FastAPI:
                 execution_id=execution_id,
                 decision=request.decision,
                 change_set_digest=request.change_set_digest,
-                actor_id=request.actor_id,
+                actor_id=actor_id,
                 rationale=request.rationale,
                 continue_after=request.continue_after,
                 default_actor=DEFAULT_API_ACTOR,
@@ -156,11 +232,12 @@ def create_app(workspace: Path) -> FastAPI:
             }
             if acting.notices:
                 body["warnings"] = list(acting.notices)
-            return body
         except NonHumanActorError as error:
-            raise HTTPException(status_code=403, detail=str(error)) from error
+            audited.refuse(403, str(error), error)
         except Exception as error:
-            raise HTTPException(status_code=409, detail=str(error)) from error
+            audited.refuse(409, str(error), error)
+        audited.recorded(decision.decision_id, decision.actor.actor_id)
+        return body
 
     @api.get("/api/runs/{execution_id}/verification")
     def run_verification(execution_id: str) -> dict[str, object]:
@@ -191,11 +268,113 @@ def create_app(workspace: Path) -> FastAPI:
         except Exception as error:
             raise HTTPException(status_code=400, detail=str(error)) from error
 
+    def metrics_report(
+        since: str | None, task: str | None, model: str | None, agent: str | None, all_repos: bool
+    ) -> dict[str, Any]:
+        from governed_harness.metrics import Filters, parse_since
+
+        try:
+            filters = Filters(
+                since=parse_since(since), task=task, model=model, agent=agent, all_repos=all_repos
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        try:
+            report, _settings = application.metrics(root, filters=filters)
+        except Exception as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        return report
+
+    @api.get("/api/metrics")
+    def metrics(
+        since: str | None = None,
+        task: str | None = None,
+        model: str | None = None,
+        agent: str | None = None,
+        all_repos: bool = False,
+    ) -> dict[str, Any]:
+        """``harness metrics --format json`` (#58): computed from the records, no model call."""
+        return metrics_report(since, task, model, agent, all_repos)
+
+    @api.get("/api/metrics/report", response_class=HTMLResponse)
+    def metrics_page(
+        since: str | None = None,
+        task: str | None = None,
+        model: str | None = None,
+        agent: str | None = None,
+        all_repos: bool = False,
+    ) -> str:
+        """The self-contained HTML report of ``harness metrics --format html``."""
+        from governed_harness.metrics import render
+
+        return render(metrics_report(since, task, model, agent, all_repos), "html")
+
     @api.get("/", response_class=HTMLResponse)
     def index() -> str:
         return _dashboard_html()
 
     return api
+
+
+def _authorize(settings: ApiConfig, request: Request, role: ApiRole) -> Principal | None:
+    """The authenticated person when they hold ``role`` (403 otherwise); ``None`` when the
+    API runs without authentication (no ``api`` section, or ``api.auth: off``)."""
+    if not settings.enabled:
+        return None
+    principal = request.scope.get(PRINCIPAL_SCOPE_KEY)
+    if not isinstance(principal, Principal):
+        raise HTTPException(status_code=401, detail="authentication required")
+    if not principal.allows(role):
+        raise HTTPException(
+            status_code=403,
+            detail=f"user {principal.user_id} has the role {principal.role}; this needs {role}",
+        )
+    return principal
+
+
+class _Audited:
+    """The audit records of one API decision, written only when authentication is on: an
+    attempt before anything is decided and its outcome. Never a token."""
+
+    def __init__(
+        self,
+        log: DecisionAuditLog | None,
+        http: Request,
+        execution_id: str,
+        request: DecisionRequest,
+    ) -> None:
+        self.log = log
+        self.record: dict[str, object] = {
+            "route": f"{http.method} {http.url.path}",
+            "executionId": execution_id,
+            "decision": request.decision.value,
+            "changeSetDigest": request.change_set_digest,
+            "requestedActorId": request.actor_id or None,
+            "clientHost": http.client.host if http.client else None,
+        }
+
+    def _append(self, **fields: object) -> None:
+        if self.log is None:
+            return
+        try:
+            self.log.append({**self.record, **fields})
+        except OSError as error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"cannot write the API audit log {self.log.path}: {error.strerror}",
+            ) from error
+
+    def attempt(self, principal: Principal) -> None:
+        self.record["userId"] = principal.user_id
+        self.record["role"] = principal.role
+        self._append(outcome="attempted")
+
+    def refuse(self, status: int, detail: str, cause: BaseException | None = None) -> NoReturn:
+        self._append(outcome="refused", status=status, reason=detail)
+        raise HTTPException(status_code=status, detail=detail) from cause
+
+    def recorded(self, decision_id: str, actor_id: str) -> None:
+        self._append(outcome="recorded", status=200, decisionId=decision_id, actorId=actor_id)
 
 
 def _dashboard_html() -> str:
@@ -227,12 +406,25 @@ ul { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; } code { overflow-
 .status { font-weight: 700; } .PASSED { color: #34d399; } .BLOCKED,.FAILED,.INCONCLUSIVE { color: #fbbf24; } .ERROR { color: #fb7185; }
 .blocks { color: #fb7185; font-weight: 700; }
 .notice { margin-top: 10px; padding: 9px; border-radius: 8px; background: #0f172a; font-size: 13px; }
+[hidden] { display: none !important; }
+.tabs { display: flex; gap: 8px; padding: 16px 32px 0; } .tabs [aria-selected="true"] { border-color: #34d399; }
+.metrics { margin: 24px 32px; }
 @media (max-width: 850px) { main { grid-template-columns: 1fr; padding: 16px; } .actions { grid-template-columns: 1fr 1fr; } }
 </style>
 </head>
 <body>
-<header><h1>Governed Agent Harness</h1><div>Local observability and explicit, digest-bound human decisions.</div></header>
-<main>
+<header><h1>Governed Agent Harness</h1><div>Local observability and explicit, digest-bound human decisions.</div><div id="session" class="notice"></div></header>
+<nav class="tabs" role="tablist" aria-label="Views">
+<button role="tab" id="tab-runs" aria-selected="true" aria-controls="view-runs">Runs</button>
+<button role="tab" id="tab-metrics" aria-selected="false" aria-controls="view-metrics">Metrics</button>
+</nav>
+<section id="view-metrics" role="tabpanel" aria-labelledby="tab-metrics" class="metrics" hidden>
+<h2>Metrics</h2>
+<div class="notice">Computed from the run records, no model call (<code>harness metrics</code>). <label style="display:inline"><input type="checkbox" id="all-repos" style="width:auto"> All repositories of the registry</label> <button id="metrics-refresh">Refresh</button></div>
+<div id="metrics-summary">Loading...</div>
+<iframe id="metrics-report" title="Metrics report" style="width:100%;height:70vh;border:0;margin-top:12px;background:#fff;border-radius:8px"></iframe>
+</section>
+<main id="view-runs" role="tabpanel" aria-labelledby="tab-runs">
 <section><h2>Waiting for a person</h2><div id="inbox">Loading...</div>
 <h2 style="margin-top:20px">Executions</h2><div id="runs">Loading...</div>
 <h2 style="margin-top:20px">Repositories</h2><div id="registry">Loading...</div>
@@ -241,11 +433,27 @@ ul { margin: 4px 0; padding-left: 20px; } li { margin: 2px 0; } code { overflow-
 <details><summary>Status (JSON)</summary><pre id="detail"></pre></details></section>
 </main>
 <script>
-let selected = null; let brief = null; let selectedId = null; let decisionKey = null;
+let selected = null; let brief = null; let selectedId = null; let decisionKey = null; let session = {authentication:'off'};
+const TOKEN_KEY='governed-harness.api-token';
 function esc(value){ return String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function apiToken(){ try { return sessionStorage.getItem(TOKEN_KEY); } catch(error){ return null; } }
+function signOut(){ try { sessionStorage.removeItem(TOKEN_KEY); } catch(error){} location.reload(); }
+// Every call of the dashboard goes through request(): it sends the token kept in this tab
+// (api.auth: token) as Authorization: Bearer, and signs out when the server refuses it.
 async function request(url, options){
- const response=await fetch(url, options); const body=await response.json();
+ const init={...(options||{})}; const asText=init.asText; delete init.asText;
+ const headers=new Headers(init.headers||{}); const token=apiToken();
+ if(token) headers.set('Authorization','Bearer '+token); init.headers=headers;
+ const response=await fetch(url, init);
+ if(response.status===401 && token){ signOut(); throw new Error('The API token was refused; sign in again.'); }
+ if(asText && response.ok) return await response.text();
+ const body=await response.json();
  if(!response.ok) throw new Error(body.detail || JSON.stringify(body)); return body;
+}
+async function loadSession(){
+ session=await request('/api/session'); const target=document.getElementById('session');
+ if(session.authentication==='token'){ target.innerHTML=`Signed in as <code>${esc(session.userId)}</code> (${esc(session.role)}) <button id="sign-out">Sign out</button>`; document.getElementById('sign-out').onclick=signOut; }
+ else { target.textContent='No authentication (no api section in project.yaml): keep the server on 127.0.0.1.'; }
 }
 async function loadRuns(){
  const runs=await request('/api/runs'); const target=document.getElementById('runs'); target.innerHTML='';
@@ -309,7 +517,7 @@ function renderDecision(id, b){
  if(!b.run.awaitingDecision || !b.run.changeSetDigest){ return; }
  target.innerHTML=`<h3>Human gate</h3>
  <div class="notice">The decision will be bound to <code>${esc(b.run.changeSetDigest)}</code> (${b.changed.files.length} file(s)). Any later change invalidates it.</div>
- <label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>
+ ${session.authentication==='token'?`<label>Actor<input id="actor" value="${esc(session.userId)}" readonly></label>`:'<label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>'}
  <label>Rationale<textarea id="rationale" placeholder="Explain the evidence considered and the reason for the decision. For REQUEST_CHANGES, say what must change."></textarea></label>
  ${(b.checklist||[]).map(c=>`<label><input type="checkbox" class="check" value="${esc(c.itemId)}" style="width:auto"> ${esc(c.itemId)}: ${esc(c.text)}</label>`).join('')}
  <div class="actions">
@@ -334,7 +542,77 @@ async function decide(id, decision){
   decisionKey=null; await refresh();
  } catch(error){ alert(error.message); }
 }
+// The Metrics tab (#58): the summary from /api/metrics and the self-contained report, fetched
+// with the token and shown in a frame from its text (nothing is loaded from elsewhere).
+function showTab(name){
+ for(const tab of ['runs','metrics']){
+  document.getElementById('tab-'+tab).setAttribute('aria-selected', String(tab===name));
+  document.getElementById('view-'+tab).hidden = tab!==name;
+ }
+ if(name==='metrics') loadMetrics();
+}
+async function loadMetrics(){
+ const query=document.getElementById('all-repos').checked?'?all_repos=true':'';
+ const target=document.getElementById('metrics-summary');
+ try {
+  const m=await request('/api/metrics'+query); const t=m.totals;
+  const rows=[['Runs',t.runs],['Tasks',t.tasks],['Agent calls',t.agentCalls],['Tokens (input + output)',t.tokens.total],
+   ['Reported cost (USD)',t.cost.reportedUsd],['Estimated cost (USD, estimated)',t.cost.estimatedUsd],
+   ['Human interactions',t.humanInteractions],['Approvals',t.approvals],['Features delivered',t.featuresDelivered]];
+  target.innerHTML='<table><caption>Totals</caption><tbody>'+rows.map(r=>`<tr><th scope="row">${esc(r[0])}</th><td>${esc(r[1])}</td></tr>`).join('')+'</tbody></table>';
+  document.getElementById('metrics-report').srcdoc=await request('/api/metrics/report'+query,{asText:true});
+ } catch(error){ target.textContent=error.message; }
+}
+document.getElementById('tab-runs').onclick=()=>showTab('runs');
+document.getElementById('tab-metrics').onclick=()=>showTab('metrics');
+document.getElementById('metrics-refresh').onclick=loadMetrics;
+document.getElementById('all-repos').onchange=loadMetrics;
+loadSession().catch(error => { document.getElementById('session').textContent=error.message; });
 refresh(); setInterval(refresh, 5000);
+</script>
+</body>
+</html>"""
+
+_SIGN_IN = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Governed Agent Harness: sign in</title>
+<style>
+:root { font-family: Inter, ui-sans-serif, system-ui, sans-serif; color-scheme: dark; }
+body { margin: 0; background: #111827; color: #e5e7eb; display: grid; place-items: center; min-height: 100vh; }
+form { background: #1f2937; border: 1px solid #374151; border-radius: 12px; padding: 24px; width: min(420px, 90vw); }
+input,button { box-sizing: border-box; width: 100%; margin-top: 8px; border: 1px solid #475569; border-radius: 8px; background: #111827; color: inherit; padding: 10px; }
+#error { color: #fb7185; min-height: 1.2em; margin-top: 8px; font-size: 13px; }
+</style>
+</head>
+<body>
+<form id="sign-in">
+<h1>Governed Agent Harness</h1>
+<label>API token<input id="token" type="password" autocomplete="off" required></label>
+<button type="submit">Sign in</button>
+<div id="error"></div>
+<p style="font-size:13px">The token is kept in this tab only (sessionStorage) and sent as Authorization: Bearer.</p>
+</form>
+<script>
+(() => {
+ const key='governed-harness.api-token';
+ async function open(token){
+  const response=await fetch('/', {headers:{'Authorization':'Bearer '+token}, cache:'no-store'});
+  if(!response.ok){
+   try { sessionStorage.removeItem(key); } catch(error){}
+   document.getElementById('error').textContent=response.status===401?'The token was refused.':'The server answered '+response.status+'.';
+   return;
+  }
+  const page=await response.text();
+  try { sessionStorage.setItem(key, token); } catch(error){}
+  document.open(); document.write(page); document.close();
+ }
+ let kept=null; try { kept=sessionStorage.getItem(key); } catch(error){}
+ if(kept) open(kept);
+ document.getElementById('sign-in').onsubmit=(event)=>{ event.preventDefault(); open(document.getElementById('token').value.trim()); };
+})();
 </script>
 </body>
 </html>"""

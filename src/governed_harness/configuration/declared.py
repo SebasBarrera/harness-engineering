@@ -13,18 +13,14 @@ from governed_harness.configuration.models import ResolvedConfiguration
 
 DECLARATIVE_SETTINGS: dict[str, str] = {
     "workspace.units": "Declared units are not used by the engine.",
-    "runtime.maxParallel": "Phases and validators run one at a time.",
     "policies.ambiguousPackageManager": "No component reads it; the Node.js profile always uses "
     "npm.",
-    "workflow.phases[].dependsOn": "The phase order is fixed by the state machine.",
-    "workflow.phases[].parallelizable": "Phases run one at a time.",
     "workflow.phases[].validators": "The validators come from the profiles and the project.",
     "workflow.invariants": "Names of invariants the engine enforces in code.",
 }
 
 _PROJECT_KEYS = {
     "workspace.units": ("workspace", "units"),
-    "runtime.maxParallel": ("runtime", "maxParallel"),
 }
 _POLICY_KEYS = ("ambiguousPackageManager",)
 
@@ -70,6 +66,17 @@ def declared_settings_report(
             "workflow maxAttempts, timeoutSeconds and exitGate are declared but not applied; "
             "set governance.applyWorkflowSettings: true"
         )
+    if not governance.enforce_workflow:
+        # Since #3 these take effect under governance.enforceWorkflow.
+        warnings.append(
+            "workflow exitGate, dependsOn and parallelizable are declared but not enforced; "
+            "set governance.enforceWorkflow: true"
+        )
+        if _present(raw, ("runtime", "maxParallel")):
+            warnings.append(
+                "runtime.maxParallel is declarative without governance.enforceWorkflow: phases "
+                "and validators run one at a time"
+            )
     if not governance.apply_network_policy and not resolved.project.runtime.allow_network:
         warnings.append(
             "runtime.allowNetwork: false is not enforced; set governance.applyNetworkPolicy: "

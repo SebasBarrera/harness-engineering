@@ -407,13 +407,16 @@ class ClaudeCodeProvider(NativeAgentProvider):
                 if any(item is not None for item in inputs)
                 else None,
                 outputTokens=_int(usage.get("output_tokens")),
+                cacheTokens=sum(item for item in inputs[1:] if item is not None)
+                if any(item is not None for item in inputs[1:])
+                else None,
                 costUsd=cost
                 if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0
                 else None,
             ),
             usage_limitations=(
-                "Claude Code: inputTokens adds input, cache-creation and cache-read tokens; "
-                "costUsd is total_cost_usd.",
+                "Claude Code: inputTokens adds input, cache-creation and cache-read tokens "
+                "(cacheTokens is their cache part); costUsd is total_cost_usd.",
             ),
             session_id=value.get("session_id")
             if isinstance(value.get("session_id"), str)
@@ -455,7 +458,7 @@ class CodexProvider(NativeAgentProvider):
                 events.append(event)
         if not events:
             raise ValueError("codex printed no JSON events")
-        totals = {"input": 0, "output": 0, "reasoning": 0}
+        totals = {"input": 0, "output": 0, "reasoning": 0, "cache": 0}
         seen = False
         messages: list[str] = []
         failure: str | None = None
@@ -470,6 +473,7 @@ class CodexProvider(NativeAgentProvider):
                 totals["input"] += _int(usage.get("input_tokens")) or 0
                 totals["output"] += _int(usage.get("output_tokens")) or 0
                 totals["reasoning"] += _int(usage.get("reasoning_output_tokens")) or 0
+                totals["cache"] += _int(usage.get("cached_input_tokens")) or 0
             elif kind == "item.completed" and isinstance(event.get("item"), dict):
                 item = event["item"]
                 if item.get("type") in {"agent_message", "assistant_message"} and isinstance(
@@ -488,6 +492,7 @@ class CodexProvider(NativeAgentProvider):
                 inputTokens=totals["input"] if seen else None,
                 outputTokens=totals["output"] if seen else None,
                 reasoningTokens=totals["reasoning"] if seen and totals["reasoning"] else None,
+                cacheTokens=totals["cache"] if seen and totals["cache"] else None,
             ),
             usage_limitations=("Codex reports tokens per turn and no cost.",),
             session_id=session,

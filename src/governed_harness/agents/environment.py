@@ -76,7 +76,8 @@ def secret_values(
     project: ProjectConfiguration, source: Mapping[str, str] | None = None
 ) -> tuple[bytes, ...]:
     """The values of every configured provider and project validator that come from the
-    environment (``passEnv`` and ``fromEnv``), to be redacted from the artifacts."""
+    environment (``passEnv`` and ``fromEnv``), and of the API tokens (``api.tokenEnv`` and
+    ``api.users[].tokenEnv``), to be redacted from the artifacts."""
     environ = os.environ if source is None else source
     names: list[str] = []
     for config in project.agent_providers.values():
@@ -88,6 +89,9 @@ def secret_values(
         )
     for validator in project.toolchain_settings.validators or ():
         names.extend(validator.pass_env or ())
+    if project.api is not None:
+        # The API tokens (#18): redacted should an agent or a validator ever echo one.
+        names.extend(project.api.token_env_names)
     return _encoded(environ[name] for name in dict.fromkeys(names) if name in environ)
 
 

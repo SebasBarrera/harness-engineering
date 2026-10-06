@@ -307,7 +307,13 @@ class VerificationLadder:
         capabilities = self.capabilities(execution)
         probes = self.probes(task)
         probe_runs: dict[str, ProbeRun] = {}
-        if config.preflight and probes:
+        friction = self.engine.friction
+        if (
+            config.preflight
+            and probes
+            and not (friction.active and friction.skips(execution, "preflight", PhaseId.PLANNING))
+        ):
+            # The fast lane of #58 leaves the probes on the baseline out (no long preflight).
             probe_runs = self._baseline_probes(execution, probes)
         reasons: list[str] = []
         partial: list[str] = []
@@ -494,7 +500,16 @@ class VerificationLadder:
             added.append(scope)
         probe_outputs, evaluations = self._verify_probes(execution, change_set, task)
         added.extend(probe_outputs)
-        mutation = self.mutation.run(execution, phase, change_set, [*outputs, *added])
+        friction = self.engine.friction
+        mutation = (
+            None
+            if friction.active
+            and (
+                friction.skips(execution, "mutation", PhaseId.VERIFICATION)
+                or friction.tests_exempt(execution, change_set, "light mutation") is not None
+            )
+            else self.mutation.run(execution, phase, change_set, [*outputs, *added])
+        )
         if mutation is not None:
             added.append(mutation)
         if self.config is not None:
