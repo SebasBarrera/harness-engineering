@@ -554,6 +554,10 @@ def main() -> int:
     record["wallSeconds"] = round(time.monotonic() - started, 3)
     calls = load_calls(run_dir / "agent-calls")
     po_calls = load_calls(run_dir / "po-calls")
+    limited = sum(1 for c in calls + po_calls if agentlib.hit_limit(c))
+    if limited:
+        # The account's usage limit stopped a call: the run measures the limit, not the condition.
+        record["invalid"] = f"usage-limit ({limited} call(s))"
     record["agentCalls"] = [
         {k: v for k, v in c.items() if k not in ("summary", "resultText")} for c in calls
     ]
@@ -607,7 +611,10 @@ def main() -> int:
         record["measures"] = measure(args.scenario, workspace, baseline, run_dir, args.cache, HERE)
         record["measures"]["measuredOn"] = "workspace"
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    out = (
+        args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out
+    )
+    with out.open("a", encoding="utf-8") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )
@@ -616,8 +623,9 @@ def main() -> int:
     }
     summary["outcome"] = (record.get("harness") or {}).get("outcome", "direct")
     summary["calls"] = record["agent"]["calls"]
+    summary["invalid"] = record.get("invalid")
     print(json.dumps(summary))
-    return 0
+    return agentlib.LIMIT_EXIT_CODE if record.get("invalid") else 0
 
 
 if __name__ == "__main__":

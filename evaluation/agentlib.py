@@ -288,6 +288,19 @@ def _transient(record: dict[str, Any], result: dict[str, Any], stderr: str) -> b
     return bool(TRANSIENT_TEXT.search(text))
 
 
+LIMIT_EXIT_CODE = 75
+"""Exit code of a runner whose run met the account's usage limit: the run is not a result and is
+written to ``<out>.invalid.jsonl``; the matrix waits and runs the cell again."""
+
+
+def hit_limit(record: dict[str, Any]) -> bool:
+    """A usage record of a call that ended on the account's usage limit (or an overloaded API)."""
+    if not record.get("isError") or record.get("timedOut"):
+        return False
+    text = " ".join(str(record.get(k) or "") for k in ("summary", "resultText", "terminalReason"))
+    return bool(LIMIT_TEXT.search(text))
+
+
 def _limited(record: dict[str, Any], result: dict[str, Any], stderr: str) -> bool:
     """True when the call stopped on the usage limit or an overloaded API, not on the agent's own error."""
     if record["timedOut"] or (result and not result.get("is_error")):

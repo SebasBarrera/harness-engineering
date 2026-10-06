@@ -1,0 +1,26 @@
+{
+ "blocks": {
+  "pilot": {
+   "claudeCode": "2.1.287 (Claude Code)",
+   "codeDigest": "96e78b58f87c1d0d",
+   "harnessPackage": "0.9.0",
+   "harnessVersion": "harness 1.0.0",
+   "os": "Darwin 24.6.0 arm64",
+   "python": "3.12.11",
+   "recordedAt": "2026-10-06T04:38:13+00:00",
+   "source": {
+    "commit": "b9225a0d4bffa5ac2fd5a1bf26945e371772ac00",
+    "dirty": false
+   },
+   "tools": {
+    "bandit": "1.9.4",
+    "coverage": "7.16.1",
+    "freezegun": "1.4.0",
+    "mypy": "2.3.1",
+    "pytest": "8.3.5",
+    "ruff": "0.16.7"
+   },
+   "wheel": null
+  }
+ }
+}

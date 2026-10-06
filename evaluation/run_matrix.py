@@ -14,13 +14,18 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import random
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+LIMIT_EXIT_CODE = 75  # agentlib.LIMIT_EXIT_CODE: the run met the usage limit and is not a result
+LIMIT_WAIT_SECONDS = int(os.environ.get("EVAL_LIMIT_WAIT", "900"))
+LIMIT_MAX_WAITS = int(os.environ.get("EVAL_LIMIT_MAX_WAITS", "48"))
 
 
 def plan(
@@ -110,6 +115,17 @@ def main() -> int:
         if args.core_reference_src:
             command += ["--core-reference-src", str(args.core_reference_src)]
         proc = subprocess.run(command, capture_output=True, text=True)
+        waits = 0
+        while proc.returncode == LIMIT_EXIT_CODE and waits < LIMIT_MAX_WAITS:
+            # The usage limit: the run went to <out>.invalid.jsonl; wait and run the cell again.
+            waits += 1
+            print(
+                f"{datetime.now(UTC).isoformat(timespec='seconds')} usage limit: wait {LIMIT_WAIT_SECONDS} s "
+                f"({waits}/{LIMIT_MAX_WAITS}) and run {scenario} {condition} rep {rep} again",
+                flush=True,
+            )
+            time.sleep(LIMIT_WAIT_SECONDS)
+            proc = subprocess.run(command, capture_output=True, text=True)
         status = "ok" if proc.returncode == 0 else f"FAILED ({proc.returncode})"
         print(
             f"{datetime.now(UTC).isoformat(timespec='seconds')} {status} {scenario} {condition} rep {rep}",

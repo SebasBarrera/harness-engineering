@@ -298,6 +298,8 @@ def load_v2(results: Path) -> list[dict[str, Any]]:
     """Every run record of the 2.0.0 evaluation under ``results`` (any ``*.jsonl``, recursively)."""
     records = []
     for path in sorted(results.rglob("*.jsonl")):
+        if path.name.endswith(".invalid.jsonl"):
+            continue  # runs stopped by the usage limit are not results
         for line in path.read_text(encoding="utf-8").splitlines():
             if not line.strip():
                 continue

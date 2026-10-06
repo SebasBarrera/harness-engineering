@@ -27,11 +27,22 @@ PY
     log "skip $RUN (already recorded)"
     continue
   fi
-  log "start $RUN $MODEL $SC"
-  PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$CODE/run_eval.py" --scenario "$SC" --condition "$CONDITION" \
-    --prompt "$PROMPT" --model "$MODEL" --rep 1 --work "$EVAL_WORK/runs/pilot" --cache "$EVAL_CACHE" \
-    --out "$EVAL_OUT/pilot.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"} ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} \
-    >> "$EVAL_OUT/log-runs.txt" 2>&1 && log "done $RUN" || log "FAILED $RUN"
+  for ATTEMPT in $(seq 1 "${EVAL_LIMIT_MAX_WAITS:-48}"); do
+    log "start $RUN $MODEL $SC (attempt $ATTEMPT)"
+    PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$CODE/run_eval.py" --scenario "$SC" --condition "$CONDITION" \
+      --prompt "$PROMPT" --model "$MODEL" --rep 1 --work "$EVAL_WORK/runs/pilot" --cache "$EVAL_CACHE" \
+      --out "$EVAL_OUT/pilot.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"} ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} \
+      >> "$EVAL_OUT/log-runs.txt" 2>&1
+    CODE_RUN=$?
+    if [ "$CODE_RUN" = "75" ]; then
+      # The usage limit: the run is in pilot.invalid.jsonl; wait and run it again.
+      log "usage limit on $RUN: wait ${EVAL_LIMIT_WAIT:-900} s"
+      sleep "${EVAL_LIMIT_WAIT:-900}"
+      continue
+    fi
+    [ "$CODE_RUN" = "0" ] && log "done $RUN" || log "FAILED $RUN (exit $CODE_RUN)"
+    break
+  done
 done
 "$SLOT/bin/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
 log "PILOT-DONE"
