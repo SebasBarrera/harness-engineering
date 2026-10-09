@@ -69,6 +69,27 @@ provider. The adapters run under the same sandbox, capability grant, timeout, ou
 transient-failure retries as a command provider, and a failed call's summary carries the end of
 its standard error.
 
+A read-only request (`readOnly: true`: `clarify`, `plan`, `acceptance`, `locate`, `architecture`,
+`review` and the reviewers of the panel) runs without the arguments that let the agent edit
+(#92). In the wave 9 pilot a `clarify` call ran with `--permission-mode acceptEdits`, answered
+and also wrote a test file. The request already said it was read-only; the adapters now enforce
+it with what each CLI offers:
+
+| `kind` | A read-only call runs (before `args`) | What it gives |
+|---|---|---|
+| `claude-code` | `claude -p --output-format json --permission-mode default --allowedTools Read,Grep,Glob --disallowedTools Write Edit MultiEdit NotebookEdit Bash` | No tool that writes a file and no shell. A reviewer of the panel keeps its own tool allowlist without those five. |
+| `codex` | `codex exec --json --sandbox read-only --skip-git-repo-check -` | Codex's read-only sandbox. |
+| `gemini-cli` | `gemini --output-format json --approval-mode default` | No approval of edits: the non-interactive CLI leaves out the tools that would ask (write, edit, shell). A limitation: the adapter passes no tool allowlist. |
+| `aider` | the arguments above plus `--chat-mode ask --dry-run --no-suggest-shell-commands` | A limitation: aider has no read-only sandbox; these arguments ask it to answer without editing files or running commands. |
+
+These arguments follow each CLI's documentation and are tested against fake CLIs, not against
+the live agents. They do not replace the check of the harness: the workspace is compared before
+and after every read-only call, a call that changed it is undone and gets a `HIGH`
+`agent.read-only-violation` finding, and under `runtime.contractRetry` it is sent once more (see
+[a second attempt for a broken answer](agent-results.md#a-second-attempt-for-a-broken-answer-80)).
+An implement call keeps the arguments of the first table. This is a fix of the adapters, which
+did not honour the request; it applies always, with no new key.
+
 The prompt holds the task (title, intent, requirements, acceptance criteria, constraints, the
 files it owns or the patches it describes), the plan, the governed memory selected for the run, the
 `feedback` block of a correction attempt (gate, findings with their location, the end of the

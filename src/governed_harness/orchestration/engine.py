@@ -526,7 +526,9 @@ class RunEngine:
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
-        current_change_set = self._refresh_changeset(execution)
+        # #95: comparing must not move the run's digest; a refused decision would otherwise
+        # hide the change from verification.reverifyOnChange on the next run continue.
+        current_change_set = self._refresh_changeset(execution, record_on_run=False)
         execution = self.get_execution(execution_id)
         if current_change_set.digest != change_set_digest:
             raise PolicyViolationError(
@@ -3428,7 +3430,11 @@ class RunEngine:
         value = json.loads(self.s.artifacts.get(baseline_uri))
         return {path: str(item["digest"]) for path, item in value["files"].items()}
 
-    def _refresh_changeset(self, execution: Execution) -> ChangeSet:
+    def _refresh_changeset(self, execution: Execution, *, record_on_run: bool = True) -> ChangeSet:
+        """The current ChangeSet of the run, stored once per digest. ``record_on_run`` also
+        makes its digest the run's ``change_set_digest``; a caller that only compares (a human
+        decision, #95) leaves the run's digest as the gate saw it, so that a change found there
+        is still found by ``verification.reverifyOnChange``."""
         diff = self._compute_owned_diff(execution)
         diff_ref = self.s.artifacts.put(
             diff.unified_diff,
@@ -3492,10 +3498,11 @@ class RunEngine:
                 f"ChangeSet with {len(changeset.files)} changed file(s)",
                 supports=(changeset.change_set_id,),
             )
-        updated = self.get_execution(execution.execution_id).model_copy(
-            update={"change_set_digest": changeset.digest, "updated_at": utc_now()}
-        )
-        self._save_execution(updated)
+        if record_on_run:
+            updated = self.get_execution(execution.execution_id).model_copy(
+                update={"change_set_digest": changeset.digest, "updated_at": utc_now()}
+            )
+            self._save_execution(updated)
         return changeset
 
     def _current_or_evaluate_gate(

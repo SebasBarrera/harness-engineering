@@ -990,7 +990,7 @@
     },
     "ContractRetryConfig": {
       "additionalProperties": false,
-      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase\nrejects) is sent once more before the phase blocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1.",
+      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects\nor, since #92, a call that changed the workspace) is sent once more before the phase\nblocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1.",
       "properties": {
         "fallbackProvider": {
           "anyOf": [

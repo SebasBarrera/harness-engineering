@@ -60,7 +60,10 @@ when it is set, else to the same provider; the first attempt stays recorded (its
 output and invocation) and an `agent-contract-retry` evidence and an `agent.call.contract-retry`
 event say why and where the second went. The phase uses the second answer: a valid one continues
 as a valid first answer would, a broken one blocks as before, with one finding. A provider that
-did not answer, a budget block or a call that changed the workspace is not retried. A
+did not answer or a budget block is not retried. A call that changed the workspace breaks its
+contract too (#92): the write is undone, the `HIGH` `agent.read-only-violation` finding of that
+attempt stays recorded, its answer is not trusted and the call is sent once more; a second
+attempt that writes again blocks the phase, with a finding for each attempt. A
 `fallbackProvider` that is not `simulated` or an entry of `agentProviders` is a configuration
 error. Without the key the first broken answer blocks, as in 1.1. Transient failures of a command
 provider keep their own retries (`runtime.providerRetries`).

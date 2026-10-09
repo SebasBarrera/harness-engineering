@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Read-only calls get read-only tools, and a call that wrote is retried (#92). In the wave 9
+  pilot a `clarify` call answered correctly and also wrote a test file: the harness undid the
+  write, recorded `agent.read-only-violation` and discarded the answer, so INTENT blocked. Two
+  changes:
+  - The built-in adapters enforce `readOnly: true` (`clarify`, `plan`, `acceptance`, `locate`,
+    `architecture`, `review`, the reviewers of the panel) instead of running those calls with
+    the arguments of an implement call: `claude-code` runs with `--permission-mode default
+    --allowedTools Read,Grep,Glob --disallowedTools Write Edit MultiEdit NotebookEdit Bash`
+    (a reviewer keeps its own allowlist without those), `codex` with `--sandbox read-only`,
+    `gemini-cli` with `--approval-mode default` and `aider` with `--chat-mode ask --dry-run
+    --no-suggest-shell-commands` (the last two are documented limitations: no tool allowlist,
+    no sandbox). The arguments follow each CLI's documentation and are tested against fake
+    CLIs, not the live agents. A fix of adapters that did not honour the request; it applies
+    always, with no new key, and the recorded command line of a read-only call changes.
+  - Under `runtime.contractRetry` a read-only call that changed the workspace is sent once more
+    after the harness undoes the change, to `fallbackProvider` when set: both attempts and the
+    `HIGH` finding of the first stay recorded, and the phase blocks only if the second attempt
+    writes again or breaks its contract. Without the key the first write blocks, as before.
+- A refused stale approval no longer hides the change from re-verification (#95). Under
+  `verification.reverifyOnChange`, a `gate decide` refused because its digest no longer matched
+  the ChangeSet (exit 5) recorded the new digest on the run, so the `run continue` that followed
+  saw no change and left an `INCONCLUSIVE` gate instead of re-verifying (found by the fault probes
+  of the 2.0.0 evaluation, `later-change`). A decision now only compares the current ChangeSet
+  with its digest and leaves the run's digest as its gate saw it. A bug fix that restores the
+  documented re-verification; it applies always, with no new key. Without
+  `reverifyOnChange` the outcome is unchanged (exit 5, then an `INCONCLUSIVE` gate), and the
+  `run continue` now also records `approval.invalidated`, as it does when no decision was
+  attempted.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested

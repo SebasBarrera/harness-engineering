@@ -114,8 +114,9 @@ ContractRetryMode = Literal["once", "off"]
 
 class ContractRetryConfig(_Section):
     """A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer
-    breaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase
-    rejects) is sent once more before the phase blocks (``mode: once``), to
+    breaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects
+    or, since #92, a call that changed the workspace) is sent once more before the phase
+    blocks (``mode: once``), to
     ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
     provider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1."""
 
