@@ -327,7 +327,10 @@ metrics `tokens.*` and `cost.usd` stay `NOT_AVAILABLE` (see [metrics](../metrics
 `provenance.selfReport` the request also carries `selfReport`, and the response may answer
 `selfReport` with `assumptions`, `alternativesDiscarded` (lists of text), `lowConfidenceAreas` and
 `unrequestedChanges` (lists of `{path, description}`); it is stored as `REPORTED` data and a
-malformed one is recorded with its `problems`, never as a protocol error.
+malformed one is recorded with its `problems`, never as a protocol error. Under
+`verification.acceptanceTests.disputes` the report may also carry `disputedAcceptanceTests`, a
+list of `{test, reason}` for frozen acceptance tests the agent believes are wrong (see
+[write protection and disputes](agent-results.md#write-protection-and-disputes-94)).
 
 ## External plugins
 

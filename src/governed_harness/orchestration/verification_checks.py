@@ -147,6 +147,7 @@ class VerificationChecks:
             self.results.baseline_text(execution),
             layers=layers,
             layer_policy=architecture.policy if architecture is not None else "enforce",
+            layer_differential=bool(architecture is not None and architecture.differential),
         ):
             outputs.append(
                 self._output(
@@ -788,6 +789,7 @@ def pure_checks(
     *,
     layers: LayerRules | None = None,
     layer_policy: str = "enforce",
+    layer_differential: bool = False,
 ) -> list[CheckResult]:
     """The checks that read only the diff and the files (VERIFICATION and ``harness check``):
     interface, architecture, security patterns, constraints, weakened controls and secrets;
@@ -809,7 +811,12 @@ def pure_checks(
                 LAYERS_ID,
                 layer_policy,
                 lambda: (
-                    check_layers(files, layers, severity=layer_severity),
+                    check_layers(
+                        files,
+                        layers,
+                        severity=layer_severity,
+                        baseline=baseline_text if layer_differential else None,
+                    ),
                     "architecture layer rules",
                 ),
             )

@@ -262,6 +262,8 @@ ARCHITECTURE_STYLES: tuple[str, ...] = (
 )
 ArchitectureMode = Literal["agent", "off"]
 RefreshMode = Literal["auto", "manual"]
+LayerCheckMode = Literal["differential", "full"]
+BaselineConflicts = Literal["allow", "enforce"]
 
 
 class LayerConfig(_Section):
@@ -296,7 +298,17 @@ class ArchitectureSettings(_Section):
     chooses, an ADR is recorded) and an existing project one survey call whose inferred rules a
     person approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on
     demand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of
-    the source directories changed materially."""
+    the source directories changed materially.
+
+    Since 2.0 (#93), two keys keep the rules from blaming a change for what the baseline has:
+
+    * ``layerCheck: differential`` judges only the layers a changed file did not import on the
+      baseline (a new file is judged whole); ``full`` (or absent) judges every import of a
+      changed file;
+    * ``baselineConflicts: allow`` checks the rules a survey infers against the baseline when
+      they are proposed: the dependencies between layers the baseline already has and the
+      rules forbid are listed in the proposal (and in the inbox) and added to ``allow`` in the
+      rules a person approves; ``enforce`` (or absent) keeps the rules as inferred."""
 
     mode: ArchitectureMode | None = None
     style: ArchitectureStyle | None = None
@@ -305,6 +317,8 @@ class ArchitectureSettings(_Section):
     enforce: Policy | None = None
     refresh: RefreshMode | None = None
     agent: AgentCallConfig | None = None
+    layer_check: LayerCheckMode | None = Field(default=None, alias="layerCheck")
+    baseline_conflicts: BaselineConflicts | None = Field(default=None, alias="baselineConflicts")
 
     @field_validator("mode", "enforce", mode="before")
     @classmethod
@@ -329,6 +343,14 @@ class ArchitectureSettings(_Section):
     @property
     def policy(self) -> str:
         return self.enforce or "enforce"
+
+    @property
+    def differential(self) -> bool:
+        return self.layer_check == "differential"
+
+    @property
+    def allows_baseline_conflicts(self) -> bool:
+        return self.baseline_conflicts == "allow"
 
 
 # ----- project setup questions (#56, item 6) ------------------------------------------------
