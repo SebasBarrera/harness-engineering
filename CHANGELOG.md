@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- Frozen acceptance tests the agent cannot rewrite and may dispute (#94). In the wave 9 pilot
+  one implementing agent rewrote the frozen acceptance files, and in another run a correct
+  change failed against approved tests that were wrong. Two keys under
+  `verification.acceptanceTests`, which `harness init` writes: `protect: true` adds the frozen
+  files to the paths the agent sandbox denies writes to and, after every agent invocation, puts
+  back any frozen file that is no longer as approved (HIGH `acceptance.write-undone`);
+  `disputes: person` lets the agent list a test it believes is wrong in its self-report (new
+  optional field `disputedAcceptanceTests`, `[{test, reason}]`), and a VERIFICATION that fails
+  only on the frozen tests then waits for a person (`BLOCKED`, an `acceptance-dispute` entry in
+  `harness inbox`) instead of failing. The new command `harness acceptance dispute --decision
+  UPHOLD|REVISE`, bound to the digest of the dispute, either keeps the tests (the run goes on to
+  its corrections or fails, as before) or removes them and returns the run to SPECIFICATION,
+  where new tests are proposed, approved and frozen with their digests (the earlier ones stay
+  recorded) before the same change is verified again. Without the keys nothing changes: the
+  behaviour and the configuration digest of an existing `project.yaml` stay as they were. The
+  self-report record gains the `disputedAcceptanceTests` list (empty unless the agent gives it).
 - Layer rules no longer blame a change for what the baseline has (#93). In the wave 9 pilot a
   casual task got a HIGH `architecture.layer-violation` for `from .exc import BadData`, an import
   the baseline already had, under a rule the survey inferred and the code itself broke. Two keys

@@ -153,6 +153,80 @@ path where a file already exists, for example the frozen test of an earlier run 
 workspace, is never overwritten: the file is written next to it with the run's suffix
 (`test_ac_1_<run>.py`), and `acceptance show` lists the new name under `renamed` (#82).
 
+### Write protection and disputes (#94)
+
+In the wave 9 pilot the implementing agent rewrote the frozen tests in one run, and in another a
+correct change failed three times against approved tests that were wrong (a typo in an expected
+value, inputs the clarified task says must be rejected). Two keys of
+`verification.acceptanceTests`, which `harness init` writes, cover both; without them the
+behaviour above is unchanged.
+
+| Key | Absent | `init` | Effect |
+|---|---|---|---|
+| `protect` | `false` | `true` | The frozen files are write-protected for the implementing agent. |
+| `disputes` | `off` | `person` | A frozen test the agent disputes waits for a person instead of only failing the run. |
+
+**`protect: true`.** The frozen files join the paths the agent sandbox denies writes to
+(`runtime.agentSandbox: enforce`), next to `.harness` and `.git`, and appear under
+`protectedPaths` in the sandbox evidence. After every agent invocation the harness also compares
+each frozen file with its approved digest, whatever the sandbox mode: a file that was changed,
+deleted or replaced is written back as approved and reported as a HIGH
+`acceptance.write-undone` finding (event `acceptance.write.undone`), so VERIFICATION runs the
+tests a person approved. The implement request says the files are write-protected.
+
+**`disputes: person`.** The `acceptanceTests` block of the implement request tells the agent not
+to change or work around a frozen test it believes is wrong, but to list it in its self-report
+(`provenance.selfReport`):
+
+```json
+{"selfReport": {"disputedAcceptanceTests": [
+  {"test": "tests/acceptance/test_ac_1.py::test_ac_1", "reason": "the criterion says 90, the test expects 91"}
+]}}
+```
+
+The run waits for a person (`BLOCKED` in VERIFICATION, exit code 6) when all of this holds:
+
+- VERIFICATION failed and the frozen acceptance tests (`harness.acceptance-tests`) are among the
+  mandatory validators that failed;
+- every frozen file is as it was approved;
+- any other mandatory validator that failed locates all its failures in the frozen files (the
+  project's own test command usually collects them too; this needs
+  `verification.outputParsers`), and none is blocked, timed out or in error;
+- the self-report of the implementation that produced the ChangeSet lists at least one disputed
+  test with a reason.
+
+Otherwise the run fails as before. A waiting run is not stopped: `governance.stopTheLine` leaves
+its workspace alone. `harness inbox` shows an `acceptance-dispute` entry with the disputed tests,
+the reasons and the digest of the dispute (the ChangeSet, the approved tests and what was
+disputed); `harness acceptance show` shows the same under `dispute`. A person decides, bound to
+that digest:
+
+```bash
+harness acceptance dispute --run <runId> --decision UPHOLD --digest <digest> --rationale "..."
+harness acceptance dispute --run <runId> --decision REVISE --digest <digest> --rationale "..."
+```
+
+- `UPHOLD`: the tests stand. VERIFICATION runs again and fails as it would have without the
+  dispute: the run goes on to the correction cycles of `runtime.verificationCorrections` or
+  stops. The next implement request carries `acceptanceTests.upheld` (the tests, the person's
+  rationale). The same ChangeSet is not disputed twice.
+- `REVISE`: the frozen files are removed and the run returns to SPECIFICATION. The acceptance
+  call runs again with a `revision` block (what was disputed and the person's rationale), and the
+  new proposal waits for `harness acceptance decide` like the first one. On approval the harness
+  writes and freezes the new files; the tests approved before stay recorded under `previous`
+  (proposal digest, files and their digests, who approved them), and `revision` counts the
+  rounds. Because the workspace already holds the change, the "fails before" run uses a copy of
+  the workspace with every other changed path as on the baseline. The plan and the
+  implementation stand: the run goes from SPECIFICATION straight back to VERIFICATION of the
+  same change (event `acceptance.revision.resumed`), and only a failing VERIFICATION sends it to
+  IMPLEMENTATION again. Rejecting the new proposal leaves the run without frozen tests, as a
+  rejection in the first SPECIFICATION does.
+
+The self-report is the agent's word (quality `REPORTED`): it can open the wait, it never changes
+a test, and only a person (never an agent actor, exit code 5) decides. A run whose provider
+gives no self-report (the simulated provider, the embedded session) cannot dispute a test.
+Events: `acceptance.dispute.opened`, `acceptance.dispute.decided`, `acceptance.tests.revision`.
+
 ## PLANNING: decomposition of large tasks (#39)
 
 Above `planning.threshold` requirements (default 12), `planning.decomposition: agent` asks for
@@ -352,6 +426,7 @@ same model once.
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
+| `verification.acceptanceTests.protect`, `disputes` (#94) | `tests/integration/test_acceptance_dispute.py` |
 | `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |
 | `governance.stopTheLine`, `runtime.gateContract`, `governance.phasePermissions`, `harness check` | `tests/integration/test_stop_line_and_contract.py`, `tests/unit/test_gate_contract_terms.py` |
 | `runtime.reproduceFirst` | `tests/integration/test_reproduce_first.py` |
