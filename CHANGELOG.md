@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Spanish user guides and a PyPI channel (#97, items 7, 8 and 10). `docs/es/` has task-oriented
+  pages for a first governed run, a new and an existing project, every file and folder the
+  harness generates (what it is for and whether to commit it), following a run (status, inbox,
+  findings, evidence, trace, budget, verify, dashboard, exit codes, reports), installation (basic
+  and advanced) and publishing, and `docs/es/trabajo-simultaneo.md`, which states what two people
+  can and cannot do at once, with the experiments behind it: parallel runs with
+  `--isolate worktree` on one machine are supported; two runs in one directory without
+  isolation, or two clones, are not coordinated. `release.yml` gains a `publish-pypi` job
+  (`pypa/gh-action-pypi-publish` pinned to the commit of `v1.14.2`, environment `pypi`,
+  `id-token: write` only there) that uploads the distributions the `release` job built and
+  attested, after it and only on tags; it runs only when the repository variable `PYPI_PUBLISH`
+  is `true`, so the release does not depend on the Trusted Publisher until the maintainer sets it
+  up (`docs/maintainer-setup.md`). No behaviour of a run changes.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested
