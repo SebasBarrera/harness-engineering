@@ -58,9 +58,36 @@ protection, Dependabot alerts and security updates. Review them under **Security
 
 ## PyPI
 
-Publication to PyPI is disabled. To enable it, configure a Trusted Publisher on pypi.org for this
-repository and the `release.yml` workflow, then add a publish job using
-`pypa/gh-action-pypi-publish` with `id-token: write`.
+GitHub Packages has no Python registry, so releases go to GitHub Releases (wheel, sdist, SBOM,
+`SHA256SUMS`, attestation) and GHCR (image), and, once you enable it, to PyPI.
+
+`release.yml` already contains the `publish-pypi` job: it needs the `release` job, runs only on
+`v*` tags, uses the `pypi` environment, holds only `id-token: write`, and uploads the same
+distributions the `release` job built and attested (kept as the `python-distributions` workflow
+artifact) with `pypa/gh-action-pypi-publish` pinned to the full commit SHA of `v1.14.2`. It runs
+only when the repository variable `PYPI_PUBLISH` is `true`; without it the job is skipped and the
+release is created as before. What only you can do:
+
+1. Create or sign in to your account on [pypi.org](https://pypi.org) with two-factor
+   authentication, and check that the name `governed-agent-harness` is free (it could not be
+   checked from the automation environment).
+2. Under **Your account → Publishing**, add a *pending publisher*: project
+   `governed-agent-harness`, owner `SebasBarrera`, repository `harness-engineering`, workflow
+   `release.yml`, environment `pypi`.
+3. In GitHub **Settings → Environments**, create the `pypi` environment (it is also created on
+   first use). Adding yourself as a required reviewer gives a manual approval before each upload,
+   which is worth having because PyPI never accepts the same version twice.
+4. Turn publication on:
+
+   ```bash
+   gh variable set PYPI_PUBLISH --body true --repo SebasBarrera/harness-engineering
+   ```
+
+5. Push the next `v*` tag. The first upload creates the project from the pending publisher. Turn
+   it off with `gh variable delete PYPI_PUBLISH`.
+
+The Spanish guide [`es/publicacion.md`](es/publicacion.md) walks through the release flow and
+these steps.
 
 ## Local workspace of the maintainer
 
