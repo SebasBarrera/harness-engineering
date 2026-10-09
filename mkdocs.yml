@@ -88,6 +88,7 @@ nav:
       - Proyecto existente: es/proyecto-existente.md
       - Estructura generada: es/estructura-generada.md
       - Seguimiento de una ejecución: es/seguimiento.md
+      - Reporte de métricas: es/reporte-de-metricas.md
       - Trabajo simultáneo: es/trabajo-simultaneo.md
       - Instalación: es/instalacion.md
       - Instalación avanzada: es/instalacion-avanzada.md
@@ -126,5 +127,3 @@ nav:
           - Research assumptions: research/assumptions.md
           - Backlog: backlog.md
           - Guía rápida (ES): GUIA_RAPIDA_ES.md
-  - Español:
-      - Reporte de métricas: es/reporte-de-metricas.md
