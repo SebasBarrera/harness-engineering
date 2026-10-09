@@ -17,6 +17,11 @@ from typing import TYPE_CHECKING, Any
 from governed_harness.domain.enums import PhaseId, ResultStatus
 from governed_harness.domain.models import Execution, Task, utc_now
 from governed_harness.intake import task_digest
+from governed_harness.orchestration.acceptance_dispute import (
+    DISPUTE_FLAG,
+    DISPUTE_KIND,
+    decide_command,
+)
 from governed_harness.orchestration.architecture import conflicts_summary
 from governed_harness.orchestration.architecture import read_state as architecture_state
 from governed_harness.orchestration.friction import PLAN_APPROVAL_FLAG
@@ -98,6 +103,30 @@ def _acceptance(
     }
 
 
+def _acceptance_dispute(
+    services: EngineServices, execution: Execution, task: Task
+) -> dict[str, Any] | None:
+    """Frozen acceptance tests the agent disputes, the only thing that failed in VERIFICATION
+    (``verification.acceptanceTests.disputes``, #94), wait for a person."""
+    if execution.current_phase is not PhaseId.VERIFICATION:
+        return None
+    state = _flag(services, f"{DISPUTE_FLAG}:{execution.execution_id}")
+    if not state or state.get("status") != "OPEN":
+        return None
+    if state.get("changeSetDigest") != execution.change_set_digest:
+        return None
+    digest = str(state.get("digest"))
+    disputed = state.get("disputed") or []
+    shown = "; ".join(f"{item['test']}: {item['reason']}" for item in disputed[:5])
+    return {
+        "kind": DISPUTE_KIND,
+        "digest": digest,
+        "summary": f"{len(disputed)} frozen acceptance test(s) disputed by the agent ({shown})",
+        "disputed": disputed,
+        "next": f"{decide_command(execution.execution_id, digest)} {RATIONALE}",
+    }
+
+
 def _architecture(
     services: EngineServices, execution: Execution, task: Task
 ) -> dict[str, Any] | None:
@@ -159,7 +188,14 @@ def _contract(services: EngineServices, execution: Execution, task: Task) -> dic
     }
 
 
-WAITS: tuple[Wait, ...] = (_contract, _architecture, _acceptance, _decomposition, _plan)
+WAITS: tuple[Wait, ...] = (
+    _contract,
+    _architecture,
+    _acceptance,
+    _decomposition,
+    _plan,
+    _acceptance_dispute,
+)
 
 
 def _base(execution: Execution, task: Task, now: datetime) -> dict[str, Any]:

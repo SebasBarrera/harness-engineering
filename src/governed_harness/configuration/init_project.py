@@ -155,7 +155,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             },
             "secrets": "context",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
-            "acceptanceTests": {"mode": "agent"},
+            # #94: the frozen files are write-protected and a disputed test waits for a
+            # person.
+            "acceptanceTests": {"mode": "agent", "protect": True, "disputes": "person"},
             "reverifyOnChange": True,
             "ladder": {
                 "mode": "enforce",

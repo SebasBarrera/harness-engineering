@@ -2,7 +2,7 @@
   "$defs": {
     "AcceptanceTestsConfig": {
       "additionalProperties": false,
-      "description": "Independent, frozen acceptance tests (#52, N4): written from the criteria by a separate\ncall (``author``), approved by a person, checked to fail before the change and to pass,\nunchanged, after it.",
+      "description": "Independent, frozen acceptance tests (#52, N4): written from the criteria by a separate\ncall (``author``), approved by a person, checked to fail before the change and to pass,\nunchanged, after it.\n\nSince 2.0 (#94):\n\n* ``protect: true`` keeps the frozen files from the implementing agent: the agent sandbox\n  denies writes to them (as to ``.git`` and ``.harness``), and a frozen file that an agent\n  invocation changed or deleted anyway is put back as approved, with a finding;\n* ``disputes: person`` lets the agent dispute a frozen test instead of failing against it:\n  a VERIFICATION that fails only on the frozen acceptance tests, after an implementation\n  whose self-report lists ``disputedAcceptanceTests``, waits for a person who upholds the\n  tests (the run goes on as before) or sends the run back to SPECIFICATION for new ones.",
       "properties": {
         "author": {
           "anyOf": [
@@ -27,6 +27,22 @@
           "default": null,
           "title": "Directory"
         },
+        "disputes": {
+          "anyOf": [
+            {
+              "enum": [
+                "person",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disputes"
+        },
         "mode": {
           "anyOf": [
             {
@@ -42,6 +58,18 @@
           ],
           "default": null,
           "title": "Mode"
+        },
+        "protect": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Protect"
         }
       },
       "title": "AcceptanceTestsConfig",

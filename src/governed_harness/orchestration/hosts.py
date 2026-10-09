@@ -155,7 +155,7 @@ class EngineHost(Protocol):
     def _latest_validations(self, execution_id: str, digest: str) -> list[ValidationResult]:
         """The latest validation of each validator for a digest."""
 
-    def _protected_paths(self) -> tuple[Path, ...]:
+    def _protected_paths(self, execution: Execution | None = None) -> tuple[Path, ...]:
         """Paths the agent sandbox keeps read-only."""
 
     def _provenance(self, execution: Execution) -> Provenance:

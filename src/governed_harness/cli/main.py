@@ -25,6 +25,7 @@ from governed_harness.domain.enums import (
     ResultStatus,
 )
 from governed_harness.domain.errors import ConfigurationError, HarnessError
+from governed_harness.orchestration.acceptance_dispute import DisputeDecision
 
 app = typer.Typer(no_args_is_help=True, help="Governed Agent Harness CLI")
 config_app = typer.Typer(help="Configuration commands")
@@ -901,6 +902,48 @@ def acceptance_decide(
     non-human actor exits 5."""
     result = _call(
         lambda: _acting().decide_acceptance(
+            path,
+            execution_id=run,
+            decision=decision,
+            digest=digest,
+            rationale=rationale,
+            actor_id=actor,
+            continue_after=continue_after,
+        )
+    )
+    _emit(result, kind="acceptance")
+    execution = result.get("execution")
+    if execution:
+        _exit_for_execution(ResultStatus(execution["status"]), execution["currentPhase"])
+
+
+@acceptance_app.command("dispute")
+def acceptance_dispute(
+    run: str = RUN_OPTION,
+    decision: DisputeDecision = typer.Option(
+        ..., "--decision", case_sensitive=False, help="UPHOLD or REVISE"
+    ),
+    digest: str = typer.Option(..., "--digest", help="Digest of the dispute (harness inbox)"),
+    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
+    continue_after: bool = typer.Option(
+        True, "--continue/--no-continue", help="Resume the run after recording the decision"
+    ),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Decide a dispute of the frozen acceptance tests
+    (`verification.acceptanceTests.disputes`): a run whose VERIFICATION failed only on those
+    tests, after an implementation whose self-report says a test is wrong, waits for a person
+    (kind acceptance-dispute in `harness inbox`; `harness acceptance show` lists the disputed
+    tests and the reasons). UPHOLD keeps the tests: the run verifies again and goes on to its
+    correction cycles or fails, as without the dispute. REVISE removes the frozen files and
+    returns the run to SPECIFICATION, where new tests are proposed and wait for `harness
+    acceptance decide`; once approved and frozen the run verifies the same change again. A
+    stale digest or a non-human actor exits 5."""
+    result = _call(
+        lambda: _acting().decide_acceptance_dispute(
             path,
             execution_id=run,
             decision=decision,
@@ -1969,8 +2012,8 @@ def inbox(
     """List the runs of the project that wait for a person, oldest first: a decision in
     DECISION (gate status, digest, blocking findings, the risk factors an APPROVE must
     acknowledge), answers to clarification questions in INTENT, and every other wait before
-    DECISION (kind plan, decomposition, acceptance, architecture, contract, deferred or
-    preflight, with the digest it binds to), each with the next command. With --approve,
+    DECISION (kind plan, decomposition, acceptance, acceptance-dispute, architecture, contract,
+    deferred or preflight, with the digest it binds to), each with the next command. With --approve,
     --reject, --request-changes, --decisions or --batch it records several decisions, each bound
     to its own ChangeSet digest (a batch file may list acknowledgeRisks per decision): a stale
     digest or a refused decision is reported for that run (the others are recorded) and the
