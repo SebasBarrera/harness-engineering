@@ -116,3 +116,5 @@ nav:
           - Research assumptions: research/assumptions.md
           - Backlog: backlog.md
           - Guía rápida (ES): GUIA_RAPIDA_ES.md
+  - Español:
+      - Reporte de métricas: es/reporte-de-metricas.md

@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- The local metrics HTML report is organised like a project overview (wave 11, item 1). It opens
+  with a status of the period (`CLEAR`, `ATTENTION` or `NO_DATA`, derived only from four counts
+  the report already holds: blocked runs, rejected runs, HIGH or CRITICAL findings in runs that
+  did not close, and open runs whose latest gate failed; not a quality certification), summary
+  cards per dimension, anchor navigation and detail groups for cost and tokens, time, friction,
+  quality, delivery, trends and data quality. New fields, all from existing records: `summary`,
+  `quality.findingsBySeverity`, `findingsByFile`, `openBlockingFindings`, `gateResults`,
+  `limitsReached`, `blockedRunsDetail`, `totals.costPerFeatureUsd` and
+  `friction.perTask[].corrections`; every earlier field is kept. The report stays in
+  `.harness/metrics/` (ignored by Git) and one self-contained file with no script. Spanish guide:
+  `docs/es/reporte-de-metricas.md`; the Spanish README no longer says tokens and cost are never
+  available.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested
