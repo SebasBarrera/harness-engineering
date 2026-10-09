@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Layer rules no longer blame a change for what the baseline has (#93). In the wave 9 pilot a
+  casual task got a HIGH `architecture.layer-violation` for `from .exc import BadData`, an import
+  the baseline already had, under a rule the survey inferred and the code itself broke. Two keys
+  under `architecture`, which `harness init` writes: `layerCheck: differential` makes the layer
+  check judge only the layers a changed file did not import on the baseline (a new file is
+  judged whole), for configured layers, an approved survey and an ADR; `baselineConflicts: allow`
+  checks the rules a survey infers against the source files before they are proposed, lists each
+  dependency the code already has and the rules forbid in the proposal (`baselineConflicts`, with
+  examples), in the message of the blocked run and in the `architecture` entry of
+  `harness inbox`, and records the rules in force (`enforced`: the inferred rules with those
+  dependencies allowed) under the digest a person approves. A `project.yaml` without the keys
+  keeps the earlier behaviour (every import of a changed file is judged, rules as inferred) and
+  its configuration digest; `harness config validate` shows both keys under
+  `engineering.architecture`.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested

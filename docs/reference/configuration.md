@@ -267,6 +267,8 @@ architecture:
   mode: agent
   refresh: manual
   enforce: enforce
+  layerCheck: differential
+  baselineConflicts: allow
 friction:
   fastLane:
     mode: auto
@@ -376,6 +378,8 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `verification.principles` | off when absent; `init` writes `mode: enforce` with every proxy on and `severity: MEDIUM` | Engineering principles as deterministic proxies and a checklist in the review call. See [engineering principles](../guides/engineering.md#engineering-principles). |
 | `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
 | `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
+| `architecture.layerCheck` | `full` when absent; `init` writes `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline (a new file is judged whole). See [architecture](../guides/engineering.md#architecture). |
+| `architecture.baselineConflicts` | `enforce` when absent; `init` writes `allow` | `allow`: the dependencies the code already has and a survey's inferred rules forbid are listed in the proposal (and in the inbox) and stay allowed in the rules a person approves. See [architecture](../guides/engineering.md#architecture). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
