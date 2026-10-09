@@ -124,6 +124,10 @@ class AgentResults:
         self.decomposition = Decomposition(self)
         self.lessons = Lessons(self)
         self.acceptance = AcceptanceTests(self)
+        # #94: a frozen acceptance test the agent disputes waits for a person.
+        from governed_harness.orchestration.acceptance_dispute import AcceptanceDisputes
+
+        self.disputes = AcceptanceDisputes(self, self.acceptance)
         # Wave 6 (#56): standards, principles, testing strategy, architecture, project setup.
         from governed_harness.orchestration.architecture import ArchitectureFlow
         from governed_harness.orchestration.engineering import Engineering
@@ -540,7 +544,9 @@ class AgentResults:
         self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
     ) -> None:
         """Account for a finished call: per-call limit, warnings at ``warnAt``, and a crossing
-        that blocks the next call."""
+        that blocks the next call. First, the frozen acceptance tests the call changed are put
+        back (``acceptanceTests.protect``, #94)."""
+        self.acceptance.restore_frozen(execution)
         config = self.project.budget
         if config is None:
             return
@@ -1040,7 +1046,7 @@ class AgentResults:
         extra.update(self.repository_extra(read_only=False))
         frozen = self.acceptance.request_extra(execution)
         if frozen is not None:
-            extra["acceptanceTests"] = frozen
+            extra["acceptanceTests"] = {**frozen, **self.disputes.request_extra(execution)}
         if self.engineering.configured:
             notes.insert(0, self._engineering_extra(execution, phase, task, extra))
         if not extra:

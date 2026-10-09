@@ -18,7 +18,15 @@
 
 The rules are enforced in VERIFICATION by the layer check (``harness.layers``, rule
 ``architecture.layer-violation``), the #40 forbidden-dependency check generalized to every
-language the standards packs know."""
+language the standards packs know.
+
+Since 2.0 (#93), under ``architecture.baselineConflicts: allow`` the rules a survey infers are
+checked against the code as it is before they are proposed: a dependency between two layers that
+the rules forbid and the baseline already has is a conflict. The proposal lists the conflicts
+(``baselineConflicts``, with examples) and carries the rules that will be in force
+(``enforced``: the inferred rules with those dependencies allowed), both under the digest a person
+approves, so a rule the project itself breaks is seen when it is proposed and is not enforced as
+it was written."""
 
 from __future__ import annotations
 
@@ -26,7 +34,7 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from governed_harness.checks.layers import LayerRules
+from governed_harness.checks.layers import LayerRules, crossings
 from governed_harness.checks.principles import is_source
 from governed_harness.configuration.engineering import ARCHITECTURE_STYLES, ArchitectureSettings
 from governed_harness.domain.enums import ActorType, DecisionKind, PhaseId, ResultStatus
@@ -48,6 +56,9 @@ MATERIAL_CHANGE = 0.8
 directories is common to the cached layout and the current one (Jaccard similarity)."""
 _MAX_LAYOUT = 400
 _MAX_LAYERS = 20
+_MAX_SOURCES = 5000
+_MAX_SOURCE_BYTES = 1_000_000
+_MAX_EXAMPLES = 5
 
 
 # ----- layout ---------------------------------------------------------------------------------
@@ -80,6 +91,74 @@ def similarity(left: list[str], right: list[str]) -> float:
     if not a and not b:
         return 1.0
     return len(a & b) / len(a | b)
+
+
+# ----- the rules against the baseline (#93) -------------------------------------------------------
+def baseline_sources(workspace: Path) -> dict[str, str]:
+    """The text of the source files of the workspace (hidden and excluded directories and
+    symbolic links left out), by workspace-relative path."""
+    root = workspace.resolve()
+    files: dict[str, str] = {}
+    stack: list[Path] = [root]
+    while stack and len(files) < _MAX_SOURCES:
+        directory = stack.pop()
+        try:
+            entries = sorted(directory.iterdir(), key=lambda item: item.name)
+        except OSError:
+            continue
+        visible = [entry for entry in entries if not _hidden(entry)]
+        stack.extend(entry for entry in visible if entry.is_dir())
+        for entry in visible:
+            if entry.is_file() and is_source(entry.name):
+                _read_source(files, root, entry)
+    return files
+
+
+def _read_source(files: dict[str, str], root: Path, entry: Path) -> None:
+    try:
+        if entry.stat().st_size <= _MAX_SOURCE_BYTES:
+            files[entry.relative_to(root).as_posix()] = entry.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return
+
+
+def baseline_conflicts(files: dict[str, str], rules: dict[str, Any]) -> list[dict[str, Any]]:
+    """The dependencies between layers that ``rules`` forbid and ``files`` already have: one
+    entry per pair of layers, with the number of imports and a few examples."""
+    layer_rules = LayerRules.from_mapping(rules.get("layers") or [], rules.get("allow") or {})
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for item in crossings(files, layer_rules):
+        grouped.setdefault((item.source, item.layer), []).append(
+            {"path": item.path, "line": item.line, "target": item.target}
+        )
+    return [
+        {"from": source, "to": target, "imports": len(found), "examples": found[:_MAX_EXAMPLES]}
+        for (source, target), found in sorted(grouped.items())
+    ]
+
+
+def allowing(rules: dict[str, Any], conflicts: list[dict[str, Any]]) -> dict[str, Any]:
+    """``rules`` with the dependencies of ``conflicts`` added to ``allow``."""
+    allow = {str(key): list(value) for key, value in (rules.get("allow") or {}).items()}
+    for item in conflicts:
+        targets = allow.setdefault(item["from"], [])
+        if item["to"] not in targets:
+            targets.append(item["to"])
+    return {"layers": rules.get("layers") or [], "allow": allow}
+
+
+def conflicts_summary(state: dict[str, Any]) -> str:
+    """One sentence about the conflicts of a proposal, empty when it has none."""
+    conflicts = state.get("baselineConflicts") or []
+    if not conflicts:
+        return ""
+    shown = ", ".join(
+        f"{item['from']} -> {item['to']} ({item['imports']} import(s))" for item in conflicts[:10]
+    )
+    return (
+        f"the code already breaks {len(conflicts)} inferred rule(s): {shown}; these dependencies "
+        "stay allowed if you approve (harness architecture show lists them)"
+    )
 
 
 # ----- validation of the agent's answers ----------------------------------------------------------
@@ -345,7 +424,8 @@ class ArchitectureFlow:
         except ValueError as error:
             return self._malformed(execution, error, outcome.evidence_refs)
         rules = {"layers": survey["layers"], "allow": survey["allow"]}
-        digest = sha256_json({"style": survey["style"], **rules})
+        checked = self._checked(config, rules)
+        digest = sha256_json({"style": survey["style"], **rules, **checked})
         status = "PROPOSED" if survey["layers"] else "NONE"
         record = {
             "status": status,
@@ -353,6 +433,7 @@ class ArchitectureFlow:
             "style": survey["style"],
             "digest": digest,
             "rules": rules,
+            **checked,
             "layout": layout,
             "layoutDigest": sha256_json(layout),
             "invocationId": outcome.invocation_id,
@@ -378,18 +459,30 @@ class ArchitectureFlow:
                 "status": status,
                 "layers": len(survey["layers"]),
                 "evidenceRef": ref,
+                **({"baselineConflicts": len(checked["baselineConflicts"])} if checked else {}),
             },
             phase_execution_id=phase.phase_execution_id,
         )
         if status == "NONE":
             return None
+        conflicts = conflicts_summary(record)
         return PhaseOutcome(
             ResultStatus.BLOCKED,
-            f"The survey inferred {len(survey['layers'])} layer(s): a person approves the rules "
-            f"with harness architecture decide --run {execution.execution_id} --decision "
-            f"APPROVE --digest {digest}",
+            f"The survey inferred {len(survey['layers'])} layer(s)"
+            + (f" ({conflicts})" if conflicts else "")
+            + ": a person approves the rules with harness architecture decide --run "
+            f"{execution.execution_id} --decision APPROVE --digest {digest}",
             (ref,),
         )
+
+    def _checked(self, config: ArchitectureSettings, rules: dict[str, Any]) -> dict[str, Any]:
+        """Under ``baselineConflicts: allow`` (#93): the dependencies the baseline has and the
+        inferred rules forbid, and the rules in force once a person approves. Empty without
+        the key, so the proposal and its digest are the ones of the earlier behaviour."""
+        if not config.allows_baseline_conflicts or not rules["layers"]:
+            return {}
+        conflicts = baseline_conflicts(baseline_sources(self.results.s.paths.workspace), rules)
+        return {"baselineConflicts": conflicts, "enforced": allowing(rules, conflicts)}
 
     def _reused(
         self,
@@ -544,7 +637,8 @@ def effective_rules(config: ArchitectureSettings | None, harness_dir: Path) -> L
     state = read_state(harness_dir)
     if state is None or state.get("status") != "APPROVED":
         return None
-    rules = state.get("rules") or {}
+    # #93: the rules a person approved with the baseline's own dependencies allowed.
+    rules = state.get("enforced") or state.get("rules") or {}
     return LayerRules.from_mapping(rules.get("layers") or [], rules.get("allow") or {})
 
 
@@ -554,6 +648,10 @@ __all__ = [
     "STATE_FILE",
     "SURVEY_FILE",
     "ArchitectureFlow",
+    "allowing",
+    "baseline_conflicts",
+    "baseline_sources",
+    "conflicts_summary",
     "effective_rules",
     "read_state",
     "render_adr",

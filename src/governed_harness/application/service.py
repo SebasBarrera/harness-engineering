@@ -73,6 +73,7 @@ from governed_harness.domain.models import (
 from governed_harness.forges import render_code_quality
 from governed_harness.intake import task_digest
 from governed_harness.memory import APPROVAL_REQUIRED, MemoryStore
+from governed_harness.orchestration.acceptance_dispute import DisputeDecision
 from governed_harness.orchestration.engine import EngineServices, RunEngine, run_is_open
 from governed_harness.orchestration.gate_contract import run_check
 from governed_harness.orchestration.retention import RetentionCollector
@@ -88,6 +89,7 @@ from .agent_results import (
     agent_results_summary,
     budget_state,
     decide_acceptance,
+    decide_acceptance_dispute,
     decide_plan,
     parse_change_requests,
     plan_state,
@@ -923,6 +925,37 @@ class HarnessApplication(ReviewCodeCommands):
                 lease.bind(execution_id)
             decider = self._decider(services, actor_id)[0]
             return decide_acceptance(
+                services,
+                execution_id,
+                decision=decision,
+                digest=digest,
+                actor_id=decider,
+                rationale=rationale,
+                continue_after=continue_after,
+            )
+
+    def decide_acceptance_dispute(
+        self,
+        path: Path,
+        *,
+        execution_id: str,
+        decision: DisputeDecision,
+        digest: str,
+        rationale: str,
+        actor_id: str | None = None,
+        continue_after: bool = True,
+    ) -> dict[str, Any]:
+        """Uphold or revise the frozen acceptance tests an agent disputes (digest-bound, a
+        person; #94)."""
+        with (
+            self._services(path) as services,
+            self._leased(services, "acceptance dispute") as lease,
+        ):
+            execution_id = self._run_id(services, execution_id)
+            if lease is not None:
+                lease.bind(execution_id)
+            decider = self._decider(services, actor_id)[0]
+            return decide_acceptance_dispute(
                 services,
                 execution_id,
                 decision=decision,

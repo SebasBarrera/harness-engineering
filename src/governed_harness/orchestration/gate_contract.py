@@ -400,6 +400,7 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             baseline_text,
             layers=layers,
             layer_policy=architecture.policy if architecture is not None else "enforce",
+            layer_differential=bool(architecture is not None and architecture.differential),
         ):
             checks.append(
                 {
