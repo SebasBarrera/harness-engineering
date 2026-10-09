@@ -8,12 +8,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
 from governed_harness.cli.main import app
 from governed_harness.domain.enums import DecisionKind, PhaseId, ResultStatus
+from governed_harness.domain.errors import PolicyViolationError
 from tests.integration import test_decomposition as decomposition
 from tests.integration.test_friction import configure, risky_task
 from tests.integration.test_friction import start as start_task
@@ -218,6 +220,62 @@ def test_run_continue_verifies_an_out_of_band_change_again(
         rationale="Verified again after the edit",
     )
     assert execution.status is ResultStatus.PASSED
+
+
+def test_a_refused_stale_approval_keeps_the_change_for_reverification(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#95: the approval of the evaluated digest is refused after the edit, and the refusal
+    must not record the new digest on the run, so run continue still re-verifies."""
+    set_keys(python_workspace, verification={"reverifyOnChange": True})
+    application, run, evaluated = edited_after_the_gate(python_workspace, tmp_path)
+    code, output = cli(
+        "gate",
+        "decide",
+        "--path",
+        str(python_workspace),
+        "--run",
+        run,
+        "--decision",
+        "APPROVE",
+        "--change-set-digest",
+        evaluated,
+        "--rationale",
+        "Approved before the edit",
+        "--actor",
+        ACTOR,
+    )
+    assert code == 5, output
+    assert application.status(python_workspace, run)["execution"]["changeSetDigest"] == evaluated
+    code, output = cli("--json", "run", "continue", "--path", str(python_workspace), "--run", run)
+    assert code == 4, output
+    status = application.status(python_workspace, run)
+    assert status["gate"]["status"] == "PASSED"
+    assert status["gate"]["changeSetDigest"] != evaluated
+    [authorized] = events(application, python_workspace, run, "verification.reverify.authorized")
+    assert authorized.payload["previousDigest"] == evaluated
+
+
+def test_without_the_key_a_refused_approval_still_invalidates_on_continue(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#95 without verification.reverifyOnChange: the gate stays INCONCLUSIVE as before, and
+    the change is recorded as approval.invalidated, as when no decision was attempted."""
+    application, run, evaluated = edited_after_the_gate(python_workspace, tmp_path)
+    with pytest.raises(PolicyViolationError, match="stale"):
+        application.decide_gate(
+            python_workspace,
+            execution_id=run,
+            decision=DecisionKind.APPROVE,
+            change_set_digest=evaluated,
+            actor_id=ACTOR,
+            rationale="Approved before the edit",
+        )
+    application.continue_run(python_workspace, run)
+    status = application.status(python_workspace, run)
+    assert status["gate"]["status"] == "INCONCLUSIVE"
+    [invalidated] = events(application, python_workspace, run, "approval.invalidated")
+    assert invalidated.payload["previousDigest"] == evaluated
 
 
 def test_without_the_key_the_changed_run_stays_inconclusive(

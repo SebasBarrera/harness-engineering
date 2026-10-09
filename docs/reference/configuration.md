@@ -804,6 +804,13 @@ the independent review runs again and DECISION asks for a decision bound to the 
 decision recorded for the earlier digest stays stale. A failed re-verification follows the usual
 correction rules. The key never applies to a run that is not in DECISION.
 
+A `gate decide` refused because its digest is stale (exit 5) only compares: it leaves the run's
+recorded digest as the gate saw it, so the `run continue` that follows still finds the change and
+re-verifies it (#95). Before, the refusal recorded the new digest on the run and the change went
+unnoticed: the gate stayed `INCONCLUSIVE`. Without the key the outcome is the `INCONCLUSIVE`
+gate described above, now with its `approval.invalidated` event as when no decision was
+attempted.
+
 ## Governance
 
 The `governance` section protects the human decision, the workspace and the record. Every key is

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- A refused stale approval no longer hides the change from re-verification (#95). Under
+  `verification.reverifyOnChange`, a `gate decide` refused because its digest no longer matched
+  the ChangeSet (exit 5) recorded the new digest on the run, so the `run continue` that followed
+  saw no change and left an `INCONCLUSIVE` gate instead of re-verifying (found by the fault probes
+  of the 2.0.0 evaluation, `later-change`). A decision now only compares the current ChangeSet
+  with its digest and leaves the run's digest as its gate saw it. A bug fix that restores the
+  documented re-verification; it applies always, with no new key. Without
+  `reverifyOnChange` the outcome is unchanged (exit 5, then an `INCONCLUSIVE` gate), and the
+  `run continue` now also records `approval.invalidated`, as it does when no decision was
+  attempted.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested
