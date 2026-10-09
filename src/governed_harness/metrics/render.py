@@ -45,6 +45,18 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"{totals['runs']} run(s) of {len(report['projects'])} project(s). "
         "Deterministic: no model was called.",
         "",
+        "## Status of the period",
+        "",
+        f"**{report['summary']['status']}**. {report['summary']['rule']}",
+        "",
+        *_table(
+            ["Condition", "Count", "Met"],
+            [
+                [item["label"], item["count"], "yes" if item["met"] else "no"]
+                for item in report["summary"]["conditions"]
+            ],
+        ),
+        "",
         "## Totals",
         "",
         *_table(
@@ -66,6 +78,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 ["Human wait (minutes)", round(totals["humanWaitMs"] / 60000, 2)],
                 ["Issues resolved", totals["issuesResolved"]],
                 ["Features delivered", totals["featuresDelivered"]],
+                ["Cost per delivered feature (USD)", totals["costPerFeatureUsd"]],
             ],
         ),
         "",
@@ -132,6 +145,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             ["Rejected runs", quality["rejectedRuns"]],
             ["Closed runs", quality["closedRuns"]],
             ["Pre-authorised approvals applied", quality["preAuthorizedApprovals"]],
+            ["Open HIGH or CRITICAL findings", quality["openBlockingFindings"]],
+            *[[f"Findings {name}", count] for name, count in quality["findingsBySeverity"].items()],
+            *[
+                [f"Limit reached: {name}", count]
+                for name, count in quality["limitsReached"].items()
+            ],
         ],
     )
     lines += ["", "## Friction per task", ""]

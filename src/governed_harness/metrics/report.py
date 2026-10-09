@@ -25,13 +25,14 @@ from governed_harness.configuration.friction import (
     FrictionTarget,
     ModelPrice,
 )
-from governed_harness.domain.enums import DecisionKind, ResultStatus
+from governed_harness.domain.enums import DecisionKind, FindingSeverity, ResultStatus
 from governed_harness.domain.models import (
     AgentInvocation,
     ChangeSet,
     ComponentProvenance,
     Execution,
     Finding,
+    GateEvaluation,
     HumanDecision,
     PhaseExecution,
     ResourceUsage,
@@ -39,6 +40,7 @@ from governed_harness.domain.models import (
 )
 from governed_harness.events.sqlite_store import SQLiteEventStore, StoredEvent
 from governed_harness.metrics.prices import call_cost
+from governed_harness.metrics.summary import period_status
 from governed_harness.storage.sqlite import SQLiteStateStore
 from governed_harness.telemetry.metrics import HUMAN_INTERACTION_EVENTS, human_interactions
 
@@ -47,6 +49,18 @@ _ISSUE_TEXT = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)\
 _APPROVALS = frozenset({DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION})
 _RELATIVE_UNITS = {"h": "hours", "d": "days", "w": "weeks"}
 _CORRECTION = "correction.authorized"
+# Events that record a limit being reached, with the key they get in quality.limitsReached.
+_LIMIT_EVENTS = {
+    "budget.exceeded": "budget",
+    "phase.attempts.exhausted": "phaseAttempts",
+    "correction.exhausted": "corrections",
+}
+_BLOCKING_SEVERITIES = frozenset({FindingSeverity.HIGH, FindingSeverity.CRITICAL})
+_FAILED_GATES = frozenset(
+    {ResultStatus.FAILED, ResultStatus.ERROR, ResultStatus.TIMED_OUT, ResultStatus.INCONCLUSIVE}
+)
+_SEVERITIES = tuple(item.value for item in FindingSeverity)
+_TOP_FILES = 20
 _ESCALATED_LANE = "fast→full"
 _PHASES = (
     "INTENT",
@@ -157,6 +171,7 @@ class _Run:
     size: str
     issues: list[dict[str, Any]] = field(default_factory=list)
     pull_request: dict[str, Any] | None = None
+    latest_gate: ResultStatus | None = None
 
     @property
     def run_id(self) -> str:
@@ -274,6 +289,16 @@ def _calls(state: SQLiteStateStore, run_id: str, filters: Filters) -> list[_Call
     ]
 
 
+def _latest_gate(state: SQLiteStateStore, execution: Execution) -> ResultStatus | None:
+    """The status of the gate evaluation the run points at, if any."""
+    if not execution.gate_evaluation_id:
+        return None
+    try:
+        return state.get("gate", execution.gate_evaluation_id, GateEvaluation).status
+    except Exception:  # noqa: BLE001 - a missing gate record only leaves the status unknown
+        return None
+
+
 def _change_set(state: SQLiteStateStore, execution: Execution) -> ChangeSet | None:
     """The run's current change set, else its latest one."""
     changes = state.list("change_set", ChangeSet, execution_id=execution.execution_id)
@@ -353,6 +378,7 @@ def _run(source: ProjectSource, execution: Execution, filters: Filters) -> _Run 
         lane=lane if isinstance(lane, dict) else None,
         size=_size(state, execution, task),
         pull_request=_pull_request(events, source.forge),
+        latest_gate=_latest_gate(state, execution),
     )
     if task is not None:
         run.issues = [
@@ -597,6 +623,15 @@ class _Aggregate:
     tasks: dict[str, dict[str, Any]] = field(default_factory=dict)
     phase_times: dict[str, list[int]] = field(default_factory=lambda: defaultdict(list))
     findings_by_rule: dict[str, dict[str, Any]] = field(default_factory=dict)
+    findings_by_severity: dict[str, int] = field(
+        default_factory=lambda: dict.fromkeys(_SEVERITIES, 0)
+    )
+    findings_by_file: dict[str, dict[str, Any]] = field(default_factory=dict)
+    blocked_detail: list[dict[str, Any]] = field(default_factory=list)
+    limits: dict[str, int] = field(default_factory=lambda: dict.fromkeys(_LIMIT_EVENTS.values(), 0))
+    gate_results: dict[str, int] = field(default_factory=dict)
+    open_blocking: int = 0
+    open_failed_gates: int = 0
     run_rows: list[dict[str, Any]] = field(default_factory=list)
     daily: dict[str, dict[str, Any]] = field(default_factory=dict)
     weekly: dict[str, dict[str, Any]] = field(default_factory=dict)
@@ -605,7 +640,8 @@ class _Aggregate:
         totals = _RunTotals.of(run)
         title = run.task.title if run.task else run.execution.task_id
         self._add_quality(run, totals)
-        self._add_findings(run)
+        self._add_findings(run, totals.closed)
+        self._add_limits_and_gates(run, totals.closed)
         for phase in run.phases:
             elapsed = _phase_ms(phase)
             if elapsed is not None:
@@ -639,7 +675,7 @@ class _Aggregate:
         if totals.closed:
             quality["closedRuns"] += 1
 
-    def _add_findings(self, run: _Run) -> None:
+    def _add_findings(self, run: _Run, closed: bool) -> None:
         for finding in run.findings:
             row = self.findings_by_rule.setdefault(
                 finding.rule_id, {"ruleId": finding.rule_id, "count": 0, "bySeverity": {}}
@@ -647,6 +683,40 @@ class _Aggregate:
             row["count"] += 1
             severity = finding.severity.value
             row["bySeverity"][severity] = row["bySeverity"].get(severity, 0) + 1
+            self.findings_by_severity[severity] += 1
+            if finding.severity in _BLOCKING_SEVERITIES and not closed:
+                self.open_blocking += 1
+            path = finding.location.path if finding.location else None
+            if path:
+                entry = self.findings_by_file.setdefault(
+                    path, {"path": path, "count": 0, "bySeverity": {}}
+                )
+                entry["count"] += 1
+                entry["bySeverity"][severity] = entry["bySeverity"].get(severity, 0) + 1
+
+    def _add_limits_and_gates(self, run: _Run, closed: bool) -> None:
+        """Limits reached (events), the latest gate result of the run and, for a run that
+        stopped, the reason it recorded."""
+        for event in run.events:
+            key = _LIMIT_EVENTS.get(event.event_type)
+            if key:
+                self.limits[key] += 1
+        if run.latest_gate is not None:
+            name = run.latest_gate.value
+            self.gate_results[name] = self.gate_results.get(name, 0) + 1
+            if not closed and run.latest_gate in _FAILED_GATES:
+                self.open_failed_gates += 1
+        execution = run.execution
+        if execution.status is ResultStatus.BLOCKED and execution.current_phase.value != "DECISION":
+            self.blocked_detail.append(
+                {
+                    "projectId": run.project_id,
+                    "runId": run.run_id,
+                    "taskId": execution.task_id,
+                    "phase": execution.current_phase.value,
+                    "reason": execution.terminal_reason,
+                }
+            )
 
     def _add_lines(self, run: _Run) -> tuple[int, int]:
         """Adds the run's changed lines, attributed to an agent, a person or neither."""
@@ -703,6 +773,7 @@ class _Aggregate:
                 "runs": 0,
                 "interactions": 0,
                 "approvals": 0,
+                "corrections": 0,
                 "humanWaitMs": 0,
                 "agentMs": 0,
                 "tokens": 0,
@@ -715,6 +786,7 @@ class _Aggregate:
         entry["runs"] += 1
         entry["interactions"] += totals.interactions
         entry["approvals"] += totals.approvals
+        entry["corrections"] += totals.corrections
         entry["humanWaitMs"] += totals.wait_ms
         entry["agentMs"] += sum(call.duration_ms for call in run.calls)
         entry["tokens"] += totals.tokens
@@ -827,6 +899,7 @@ def _friction(
                 "runs": entry["runs"],
                 "interactions": entry["interactions"],
                 "approvals": entry["approvals"],
+                "corrections": entry["corrections"],
                 "wallMinutes": wall_minutes,
                 "humanWaitMinutes": round(entry["humanWaitMs"] / 60000, 2),
                 "agentMinutes": round(entry["agentMs"] / 60000, 2),
@@ -929,6 +1002,9 @@ def build_report(
             "humanWaitMs": sum(row["humanWaitMs"] for row in run_rows),
             "issuesResolved": len(aggregate.issues),
             "featuresDelivered": len(aggregate.features),
+            "costPerFeatureUsd": round(totals["costUsd"] / len(aggregate.features), 6)
+            if aggregate.features
+            else None,
         },
         "tokens": {
             "byAgent": _finish_rows(tables.by["agent"]),
@@ -970,6 +1046,18 @@ def build_report(
                 aggregate.findings_by_rule.values(),
                 key=lambda item: (-item["count"], item["ruleId"]),
             ),
+            "findingsBySeverity": aggregate.findings_by_severity,
+            "findingsByFile": sorted(
+                aggregate.findings_by_file.values(),
+                key=lambda item: (-item["count"], item["path"]),
+            )[:_TOP_FILES],
+            "openBlockingFindings": aggregate.open_blocking,
+            "gateResults": {
+                "latestByRun": dict(sorted(aggregate.gate_results.items())),
+                "openFailed": aggregate.open_failed_gates,
+            },
+            "limitsReached": aggregate.limits,
+            "blockedRunsDetail": aggregate.blocked_detail,
         },
         "friction": {
             "targets": {
@@ -986,6 +1074,16 @@ def build_report(
         },
         "runs": run_rows,
     }
+    report["summary"] = period_status(
+        {
+            "blockedRuns": quality["blockedRuns"],
+            "rejectedRuns": quality["rejectedRuns"],
+            "openBlockingFindings": aggregate.open_blocking,
+            "openFailedGates": aggregate.open_failed_gates,
+            "waitingDecision": quality["waitingDecision"],
+        },
+        len(runs),
+    )
     return report
 
 
