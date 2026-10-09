@@ -630,10 +630,11 @@ class AgentResults:
         """Send a read-only request of ``kind`` and return its structured result.
 
         The request, the provider's output and the routing decision are evidence; a call that
-        changed the workspace is undone and answered with ``ERROR``. Under
-        ``runtime.contractRetry`` (#80) an answer that breaks its contract (a protocol error,
-        or a ``result`` that ``validate`` rejects with ``ValueError``) is sent once more, to
-        the fallback provider when one is configured, and both attempts are recorded."""
+        changed the workspace is undone, gets a ``HIGH`` finding and is answered with
+        ``ERROR``. Under ``runtime.contractRetry`` (#80) an answer that breaks its contract (a
+        protocol error, a ``result`` that ``validate`` rejects with ``ValueError`` or, since
+        #92, a call that changed the workspace) is sent once more, to the fallback provider
+        when one is configured, and both attempts are recorded."""
         provider_id = self.provider_for(execution, kind)
         first = self._call_once(
             execution,
@@ -799,12 +800,14 @@ class AgentResults:
                 evidence_refs=refs,
                 recommendation="Use a provider that honours readOnly requests.",
             )
+            discarded = f"The {kind} call changed the workspace; its answer was discarded"
             return AgentCallOutcome(
                 ResultStatus.ERROR,
-                f"The {kind} call changed the workspace; its answer was discarded",
+                discarded,
                 None,
                 answer.execution.invocation.invocation_id,
                 refs,
+                workspace_violation=f"{discarded} ({shown})",
             )
         return AgentCallOutcome(
             answer.execution.status,
@@ -1313,11 +1316,14 @@ def protocol_error(result: AgentExecutionResult) -> str | None:
 def contract_problem(
     outcome: AgentCallOutcome, validate: Callable[[dict[str, Any]], object] | None
 ) -> str | None:
-    """Why a read-only answer breaks its contract: a protocol error, or a ``result`` that the
-    phase's ``validate`` rejects (``ValueError``); ``None`` for an answer that keeps it, and for
-    any other failure (a provider that did not answer, a call that changed the workspace)."""
+    """Why a read-only answer breaks its contract: a protocol error, a call that changed the
+    workspace (#92: its answer is not trusted), or a ``result`` that the phase's ``validate``
+    rejects (``ValueError``); ``None`` for an answer that keeps it, and for any other failure
+    (a provider that did not answer)."""
     if outcome.protocol_error is not None:
         return outcome.protocol_error
+    if outcome.workspace_violation is not None:
+        return outcome.workspace_violation
     if validate is None or outcome.status is not ResultStatus.PASSED or outcome.result is None:
         return None
     try:

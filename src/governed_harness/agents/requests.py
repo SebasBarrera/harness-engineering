@@ -17,7 +17,8 @@ rules cannot give:
 
 These kinds are read-only by contract: the request says so (``readOnly: true``) and the harness
 compares the workspace before and after the call; a provider that changed it gets a HIGH
-finding, its changes are undone and its answer is discarded. The agent proposes; only a person
+finding, its changes are undone and its answer is discarded (under ``runtime.contractRetry``
+the call is then sent once more, #92). The agent proposes; only a person
 answers clarification questions and approves a plan.
 
 The response of every kind is the JSON object of the 1.0 protocol (``status``, ``summary``,

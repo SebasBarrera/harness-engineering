@@ -32,7 +32,8 @@ TASK = (
 )
 
 # BROKEN: how many of this provider's read-only answers break their contract before it answers
-# well; SHAPE: "json" prints something that is not JSON, "result" a result the phase rejects.
+# well; SHAPE: "json" prints something that is not JSON, "result" a result the phase rejects,
+# "write" a good answer from a call that also wrote a file (#92).
 AGENT = """\
 import json, sys
 from pathlib import Path
@@ -45,7 +46,9 @@ log.write_text(json.dumps(calls))
 kind = request.get("kind", "implement")
 mine = [item for item in calls if item["name"] == NAME and item.get("kind") == kind]
 if kind in {"acceptance", "clarify"}:
-    if len(mine) <= BROKEN:
+    if len(mine) <= BROKEN and SHAPE == "write":
+        Path("tests/test_written_by_the_call.py").write_text("x = 1\\n")
+    elif len(mine) <= BROKEN:
         if SHAPE == "json":
             print("Here are the tests you asked for: {not json")
         else:
@@ -234,6 +237,82 @@ def test_a_clarify_answer_is_retried_too(python_workspace: Path, tmp_path: Path)
     assert application.status(python_workspace, run)["execution"]["currentPhase"] != (
         PhaseId.INTENT
     )
+
+
+# ----- #92: a read-only call that answered and wrote a file ---------------------------------------
+WRITTEN = Path("tests") / "test_written_by_the_call.py"
+
+
+def violations(application: HarnessApplication, workspace: Path, run: str) -> list[Any]:
+    return [
+        item
+        for item in application.list_findings(workspace, run)
+        if item.rule_id == "agent.read-only-violation"
+    ]
+
+
+def test_without_the_key_a_call_that_wrote_blocks_at_once(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """The defect of the wave 9 pilot: the answer was good, the write discarded it."""
+    log = configure(python_workspace, tmp_path, broken=1, shape="write")
+    application, run = start(python_workspace, tmp_path)
+    assert len(calls_of(log, "acceptance")) == 1
+    assert application.status(python_workspace, run)["execution"]["status"] == ResultStatus.BLOCKED
+    assert len(violations(application, python_workspace, run)) == 1
+    assert not (python_workspace / WRITTEN).exists()
+
+
+def test_a_call_that_wrote_is_undone_and_retried_once(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    log = configure(python_workspace, tmp_path, broken=1, shape="write", retry={"mode": "once"})
+    application, run = start(python_workspace, tmp_path)
+    assert len(calls_of(log, "acceptance")) == 2
+    assert not (python_workspace / WRITTEN).exists()
+    assert application.acceptance(python_workspace, run)["status"] == "PROPOSED"
+    [retry] = retries(application, python_workspace, run)
+    assert retry["callKind"] == "acceptance"
+    assert "changed the workspace" in retry["problem"]
+    assert WRITTEN.as_posix() in retry["problem"]
+    [finding] = violations(application, python_workspace, run)
+    assert finding.severity.value == "HIGH"
+    attempts = invocations(application, python_workspace, run, "acceptance")
+    assert len(attempts) == 2
+    assert retry["invocationId"] == attempts[0].invocation_id
+
+
+def test_a_clarify_call_that_wrote_no_longer_blocks_intent(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """The pilot's case: clarify answered and wrote a test file; INTENT blocked."""
+    log = configure(
+        python_workspace,
+        tmp_path,
+        broken=1,
+        shape="write",
+        retry={"mode": "once"},
+        intake={"criteriaPolicy": "enforce", "ambiguityReview": "agent"},
+    )
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    del config["verification"]["acceptanceTests"]
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, run = start(python_workspace, tmp_path)
+    assert len(calls_of(log, "clarify")) == 2
+    status = application.status(python_workspace, run)
+    assert status["execution"]["currentPhase"] == PhaseId.DECISION
+    assert len(violations(application, python_workspace, run)) == 1
+    assert status["gate"]["status"] == ResultStatus.PASSED
+
+
+def test_a_second_write_blocks(python_workspace: Path, tmp_path: Path) -> None:
+    log = configure(python_workspace, tmp_path, broken=2, shape="write", retry={"mode": "once"})
+    application, run = start(python_workspace, tmp_path)
+    assert len(calls_of(log, "acceptance")) == 2
+    assert application.status(python_workspace, run)["execution"]["status"] == ResultStatus.BLOCKED
+    assert len(violations(application, python_workspace, run)) == 2
+    assert not (python_workspace / WRITTEN).exists()
 
 
 def test_an_unknown_fallback_provider_is_a_configuration_error(
