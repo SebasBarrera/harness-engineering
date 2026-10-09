@@ -277,7 +277,15 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "tools": "detect",
         },
         "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
-        "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
+        # #93: only the layers a change adds are judged, and the dependencies the baseline
+        # already has are listed and allowed when a survey's rules are proposed.
+        "architecture": {
+            "mode": "agent",
+            "refresh": "manual",
+            "enforce": "enforce",
+            "layerCheck": "differential",
+            "baselineConflicts": "allow",
+        },
         # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
         # condition, documentation-only and configuration-only changes, friction targets.
         "friction": {

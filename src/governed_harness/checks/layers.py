@@ -22,7 +22,7 @@ from __future__ import annotations
 import ast
 import posixpath
 import re
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from governed_harness.checks.architecture import module_name
@@ -300,9 +300,15 @@ def check_layers(
     rules: LayerRules,
     *,
     severity: FindingSeverity,
+    baseline: Callable[[str], str | None] | None = None,
 ) -> list[Issue]:
     """Every import of a changed (non-test) file that crosses into a layer its layer may not
-    depend on."""
+    depend on.
+
+    With ``baseline`` (the text of a path before the change, ``None`` for a new file) the
+    check is differential (``architecture.layerCheck: differential``, #93): a layer the file
+    already imported on the baseline is a dependency the change did not add, and is not
+    judged; only an import that reaches a layer the file did not depend on before is."""
     issues: list[Issue] = []
     if not rules.layers:
         return issues
@@ -310,23 +316,77 @@ def check_layers(
         if is_test_path(path):
             continue
         source = source_layer(rules, path, files[path])
-        if source is not None:
-            issues.extend(_violations(rules, path, files[path], source, severity))
+        if source is None:
+            continue
+        before = baseline(path) if baseline is not None else None
+        known = imported_layers(rules, path, before) if before is not None else frozenset()
+        issues.extend(_violations(rules, path, files[path], source, severity, known))
     return issues
 
 
-def _violations(
-    rules: LayerRules, path: str, text: str, source: str, severity: FindingSeverity
-) -> Iterator[Issue]:
-    """The imports of one file that reach a layer ``source`` may not depend on, one issue per
-    line and layer."""
+def imported_layers(rules: LayerRules, path: str, text: str) -> frozenset[str]:
+    """The layers the imports of one file reach."""
+    return frozenset(
+        layer
+        for _line, kind, target in imports(path, text)
+        if (layer := _target_layer(rules, kind, target))
+    )
+
+
+def _target_layer(rules: LayerRules, kind: str, target: str) -> str | None:
+    return rules.layer_of_path(target) if kind == "path" else rules.layer_of_module(target)
+
+
+@dataclass(frozen=True)
+class Crossing:
+    """An import of a file in layer ``source`` that reaches ``layer``, which ``source`` may not
+    depend on."""
+
+    path: str
+    line: int
+    source: str
+    target: str
+    layer: str
+
+
+def crossings(files: Mapping[str, str], rules: LayerRules) -> list[Crossing]:
+    """Every forbidden dependency between layers in ``files`` (non-test files), one per line
+    and layer: what a set of rules forbids in the code as it is (#93)."""
+    found: list[Crossing] = []
+    for path in sorted(files):
+        if is_test_path(path):
+            continue
+        source = source_layer(rules, path, files[path])
+        if source is not None:
+            found.extend(_crossings(rules, path, files[path], source))
+    return found
+
+
+def _crossings(rules: LayerRules, path: str, text: str, source: str) -> Iterator[Crossing]:
     reported: set[tuple[int, str]] = set()
-    allowed = ", ".join(rules.allow.get(source, ())) or "no other layer"
     for line, kind, target in imports(path, text):
-        layer = rules.layer_of_path(target) if kind == "path" else rules.layer_of_module(target)
+        layer = _target_layer(rules, kind, target)
         if layer is None or rules.allowed(source, layer) or (line, layer) in reported:
             continue
         reported.add((line, layer))
+        yield Crossing(path, line, source, target, layer)
+
+
+def _violations(
+    rules: LayerRules,
+    path: str,
+    text: str,
+    source: str,
+    severity: FindingSeverity,
+    known: frozenset[str] = frozenset(),
+) -> Iterator[Issue]:
+    """The imports of one file that reach a layer ``source`` may not depend on, one issue per
+    line and layer; a layer in ``known`` (the file's baseline already reached it) is skipped."""
+    allowed = ", ".join(rules.allow.get(source, ())) or "no other layer"
+    for crossing in _crossings(rules, path, text, source):
+        if crossing.layer in known:
+            continue
+        line, target, layer = crossing.line, crossing.target, crossing.layer
         yield Issue(
             rule_id=RULE_ID,
             severity=severity,
@@ -344,4 +404,14 @@ def _violations(
         )
 
 
-__all__ = ["RULE_ID", "Layer", "LayerRules", "check_layers", "imports", "source_layer"]
+__all__ = [
+    "RULE_ID",
+    "Crossing",
+    "Layer",
+    "LayerRules",
+    "check_layers",
+    "crossings",
+    "imported_layers",
+    "imports",
+    "source_layer",
+]

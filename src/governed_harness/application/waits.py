@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 from governed_harness.domain.enums import PhaseId, ResultStatus
 from governed_harness.domain.models import Execution, Task, utc_now
 from governed_harness.intake import task_digest
+from governed_harness.orchestration.architecture import conflicts_summary
 from governed_harness.orchestration.architecture import read_state as architecture_state
 from governed_harness.orchestration.friction import PLAN_APPROVAL_FLAG
 from governed_harness.orchestration.verification_checks import RISK_ACK_FLAG
@@ -118,12 +119,17 @@ def _architecture(
         }
     if status == "PROPOSED" and execution.current_phase is PhaseId.DISCOVERY:
         layers = (state.get("rules") or {}).get("layers") or []
-        return {
+        conflicts = conflicts_summary(state)
+        entry = {
             "kind": "architecture",
             "digest": digest,
-            "summary": f"{len(layers)} inferred layer rule(s) to approve",
+            "summary": f"{len(layers)} inferred layer rule(s) to approve"
+            + (f"; {conflicts}" if conflicts else ""),
             "next": _decide("architecture", run, digest),
         }
+        if conflicts:
+            entry["baselineConflicts"] = state["baselineConflicts"]
+        return entry
     return None
 
 

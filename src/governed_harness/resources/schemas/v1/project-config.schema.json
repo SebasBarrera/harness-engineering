@@ -556,7 +556,7 @@
     },
     "ArchitectureSettings": {
       "additionalProperties": false,
-      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.",
+      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.\n\nSince 2.0 (#93), two keys keep the rules from blaming a change for what the baseline has:\n\n* ``layerCheck: differential`` judges only the layers a changed file did not import on the\n  baseline (a new file is judged whole); ``full`` (or absent) judges every import of a\n  changed file;\n* ``baselineConflicts: allow`` checks the rules a survey infers against the baseline when\n  they are proposed: the dependencies between layers the baseline already has and the\n  rules forbid are listed in the proposal (and in the inbox) and added to ``allow`` in the\n  rules a person approves; ``enforce`` (or absent) keeps the rules as inferred.",
       "properties": {
         "agent": {
           "anyOf": [
@@ -587,6 +587,22 @@
           "default": null,
           "title": "Allow"
         },
+        "baselineConflicts": {
+          "anyOf": [
+            {
+              "enum": [
+                "allow",
+                "enforce"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Baselineconflicts"
+        },
         "enforce": {
           "anyOf": [
             {
@@ -603,6 +619,22 @@
           ],
           "default": null,
           "title": "Enforce"
+        },
+        "layerCheck": {
+          "anyOf": [
+            {
+              "enum": [
+                "differential",
+                "full"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Layercheck"
         },
         "layers": {
           "anyOf": [
