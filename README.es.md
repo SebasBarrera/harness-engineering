@@ -299,7 +299,8 @@ aprobación dada de antemano que se aplica solo si la compuerta pasa, no hay fac
 tarea es de tamaño `S` ([docs/guides/low-friction.md](docs/guides/low-friction.md), en inglés);
 `harness metrics` informa tokens, costo, entregas, tiempos, calidad y fricción en local, entre
 otros formatos como un único HTML autocontenido, sin llamar a un modelo
-([docs/guides/local-metrics.md](docs/guides/local-metrics.md), en inglés).
+([docs/guides/local-metrics.md](docs/guides/local-metrics.md), en inglés;
+[docs/es/reporte-de-metricas.md](docs/es/reporte-de-metricas.md), en español).
 Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
@@ -367,9 +368,18 @@ bloquea `IMPLEMENTATION` en lugar de ejecutarla sin confinar.
 
 Cada ejecución reporta 20 métricas de proceso (duraciones, intentos, ciclos de corrección y de
 revisión, validaciones, ChangeSets, decisiones, tokens, costo) con una calidad declarada:
-`OBSERVED`, `DERIVED`, `REPORTED` o `NOT_AVAILABLE`. **No hay métricas por persona**, por diseño, y
-tokens y costo quedan en `NOT_AVAILABLE` porque ningún proveedor incluido reporta consumo. Se leen
-con `harness status`, la traza JSON o `GET /api/runs/{id}`. Detalles: [docs/metrics.md](docs/metrics.md).
+`OBSERVED`, `DERIVED`, `REPORTED` o `NOT_AVAILABLE`. **No hay métricas por persona**, por diseño.
+Tokens y costo son `REPORTED` cuando el proveedor del agente devuelve el consumo (un proveedor de
+comando lo hace con el objeto opcional `usage`) y quedan en `NOT_AVAILABLE` cuando no lo reporta;
+nunca se estiman en silencio. Se leen con `harness status`, la traza JSON o `GET /api/runs/{id}`.
+Detalles: [docs/metrics.md](docs/metrics.md).
+
+Para el conjunto de ejecuciones, `harness metrics` agrega esos registros sin llamar a un modelo
+(tokens y costo por agente, modelo, tarea y fase; tiempos; calidad; fricción; entrega) y escribe en
+`.harness/metrics/` el JSON, el Markdown y un reporte HTML autocontenido que se abre sin conexión.
+Esa carpeta está ignorada por Git, así que el reporte es local; `--output` lo exporta a otro lugar.
+Cómo generarlo, abrirlo y leer cada sección:
+[docs/es/reporte-de-metricas.md](docs/es/reporte-de-metricas.md).
 Señales de salud del repositorio y qué hacer con ellas: [docs/monitoring.md](docs/monitoring.md).
 
 ## Benchmarks
