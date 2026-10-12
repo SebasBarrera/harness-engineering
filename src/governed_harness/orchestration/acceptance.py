@@ -699,9 +699,13 @@ def _put_back(workspace: Path, path: str, digest: str, content: bytes | None) ->
 def _frozen_change(target: Path, digest: str) -> str | None:
     """What happened to a frozen file: ``deleted`` when it is no longer a regular file,
     ``modified`` when its content differs, ``None`` when it is as approved."""
-    if target.is_symlink() or not target.is_file():
+    if target.is_symlink():
         return "deleted"
-    return None if sha256_bytes(target.read_bytes()) == digest else "modified"
+    try:
+        current = target.read_bytes()
+    except OSError:
+        return "deleted"
+    return None if sha256_bytes(current) == digest else "modified"
 
 
 __all__ = ["ACCEPTANCE_ID", "WRITE_UNDONE_RULE", "AcceptanceTests", "validate_tests"]
