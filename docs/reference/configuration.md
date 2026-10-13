@@ -113,6 +113,8 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+    protect: true
+    disputes: person
   reverifyOnChange: true
   ladder:
     mode: enforce
@@ -267,6 +269,8 @@ architecture:
   mode: agent
   refresh: manual
   enforce: enforce
+  layerCheck: differential
+  baselineConflicts: allow
 friction:
   fastLane:
     mode: auto
@@ -357,7 +361,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
-| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
+| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract (since #92 also a call that changed the workspace, after the harness undid the change) is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
@@ -376,6 +380,10 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `verification.principles` | off when absent; `init` writes `mode: enforce` with every proxy on and `severity: MEDIUM` | Engineering principles as deterministic proxies and a checklist in the review call. See [engineering principles](../guides/engineering.md#engineering-principles). |
 | `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
 | `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
+| `verification.acceptanceTests.protect` | `false` when absent; `init` writes `true` | The frozen acceptance files are write-protected for the implementing agent: denied by the agent sandbox and put back, with a HIGH `acceptance.write-undone` finding, when an agent invocation changed them. See [write protection and disputes](../guides/agent-results.md#write-protection-and-disputes-94). |
+| `verification.acceptanceTests.disputes` | `off` when absent; `init` writes `person` | A VERIFICATION that fails only on frozen acceptance tests the agent disputes in its self-report (`disputedAcceptanceTests`) waits for a person, who upholds the tests or sends the run back to SPECIFICATION for new ones (`harness acceptance dispute`). See [write protection and disputes](../guides/agent-results.md#write-protection-and-disputes-94). |
+| `architecture.layerCheck` | `full` when absent; `init` writes `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline (a new file is judged whole). See [architecture](../guides/engineering.md#architecture). |
+| `architecture.baselineConflicts` | `enforce` when absent; `init` writes `allow` | `allow`: the dependencies the code already has and a survey's inferred rules forbid are listed in the proposal (and in the inbox) and stay allowed in the rules a person approves. See [architecture](../guides/engineering.md#architecture). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
@@ -471,7 +479,7 @@ happened after a run to it (schema
 a person: a decision in `DECISION` (gate status, digest, blocking findings and the risk factors
 an `APPROVE` must acknowledge, `acknowledgeRisks`) or answers to clarification questions in
 `INTENT`, and every other wait before `DECISION` (`plan`, `decomposition`, `acceptance`,
-`architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
+`acceptance-dispute`, `architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
 and the command that answers it, oldest first. It needs no configuration. The dashboard
 refreshes the inbox, the runs and the selected run every 5 seconds.
 
@@ -803,6 +811,13 @@ provenance of the edit when `provenance.agentSnapshots` is on), and the event
 the independent review runs again and DECISION asks for a decision bound to the new digest. A
 decision recorded for the earlier digest stays stale. A failed re-verification follows the usual
 correction rules. The key never applies to a run that is not in DECISION.
+
+A `gate decide` refused because its digest is stale (exit 5) only compares: it leaves the run's
+recorded digest as the gate saw it, so the `run continue` that follows still finds the change and
+re-verifies it (#95). Before, the refusal recorded the new digest on the run and the change went
+unnoticed: the gate stayed `INCONCLUSIVE`. Without the key the outcome is the `INCONCLUSIVE`
+gate described above, now with its `approval.invalidated` event as when no decision was
+attempted.
 
 ## Governance
 

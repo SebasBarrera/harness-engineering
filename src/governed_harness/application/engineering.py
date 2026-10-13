@@ -232,6 +232,9 @@ def engineering_summary(resolved: Any) -> dict[str, Any]:
             "mode": architecture.mode if architecture else "off",
             "style": architecture.style if architecture else None,
             "layers": len(architecture.layers or ()) if architecture else 0,
+            "layerCheck": (architecture.layer_check if architecture else None) or "full",
+            "baselineConflicts": (architecture.baseline_conflicts if architecture else None)
+            or "enforce",
         },
         "projectSetup": project.intake.project_setup if project.intake else None,
         "forge": forge.kind if forge and forge.kind else "auto",

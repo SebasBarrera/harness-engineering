@@ -102,6 +102,8 @@ rule id (`principles.srp` and so on) the reviewer uses for its findings.
 | `enforce` | `enforce` | `enforce` | Layer violations are HIGH (`enforce`) or LOW (`warn`). |
 | `refresh` | `manual` | `manual` | `auto` also surveys again when the source directory layout changed materially (fewer than 80 % of the directories in common). |
 | `agent` | the run's provider | none | Provider, model and effort of the architecture call. |
+| `layerCheck` | `full` | `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline; `full`: every import of a changed file. |
+| `baselineConflicts` | `enforce` | `allow` | `allow`: the dependencies the code already has and a survey's rules forbid are listed in the proposal and stay allowed in the rules a person approves; `enforce`: the rules as inferred. |
 
 **Existing project.** DISCOVERY surveys it once: the call reads the layout and a few files and
 answers the style, a short Markdown description and the layer rules it can infer. The answer is
@@ -115,6 +117,17 @@ harness architecture decide --run RUN --decision APPROVE --digest DIGEST --ratio
 ```
 
 `harness architecture refresh` marks the survey stale; the next run surveys again.
+
+A survey can infer a rule the project itself breaks (in the 2.0.0 pilot, "`encoding` may depend on
+no other layer" for a module that imports `from .exc import BadData`). Under
+`baselineConflicts: allow` the harness checks the inferred rules against the source files before
+it proposes them. Each dependency between two layers that the rules forbid and the code already
+has is a conflict: the proposal lists it under `baselineConflicts` (the two layers, the number of
+imports and up to five examples with path and line), the message of the blocked run and the
+`architecture` entry of `harness inbox` name it, and the proposal carries the rules that will be
+in force under `enforced`: the inferred rules with those dependencies added to `allow`. The digest
+a person approves covers the inferred rules, the conflicts and the enforced rules. To keep a rule
+as it was inferred, reject the proposal and configure `layers` and `allow` by hand.
 
 **New project.** INTENT asks the call for two to four options with their trade-offs (benefits,
 costs, fit) and one recommendation. A person chooses, bound to the digest of the options; the
@@ -132,6 +145,13 @@ AST; JavaScript and TypeScript `import`/`require` with relative paths resolved; 
 Scala `import`; C# `using`; PHP `use`; Go import paths; Rust `use crate::`; Swift `import`; Ruby
 `require`) and resolved to a layer by path glob, module prefix or declared package. The implement
 request carries the layers and what each may depend on, and `harness check` runs the same check.
+
+Under `layerCheck: differential` the check compares each changed file with its baseline text, as
+the validators' ratchet does: a layer the file already imported before the change is a dependency
+the change did not add and is not judged, whatever the rules say; an import that reaches a layer
+the file did not depend on before is judged, and a new file is judged whole. It applies to
+configured layers, an approved survey and an ADR alike. Without the key every import of a changed
+file is judged, so a change is blamed for an import the baseline already had.
 
 ## New and existing projects
 

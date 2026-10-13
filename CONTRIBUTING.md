@@ -32,7 +32,7 @@ Node.js LTS and npm are needed only for the Node.js end-to-end test.
 | One family | `python -m pytest tests/unit` (also `contract`, `integration`, `security`, `e2e`, `performance`) |
 | Coverage (XML, JSON, JUnit under `reports/`) | `make coverage` |
 | Lint and format | `ruff check src tests scripts` and `ruff format --check src tests scripts` |
-| Types | `mypy` (strict, package mode) |
+| Types | `mypy` (strict, package mode). It needs both extras of the setup above: without the type stubs of `dev` and the FastAPI and Uvicorn of `api` it reports import errors and untyped decorators in `api/app.py` (34 errors in 12 files with mypy 2.3.1, which is clean with both extras, as 1.20.2 is) |
 | Schemas after a model change | `make schemas`, then `git diff -- schemas src/governed_harness/resources/schemas` |
 | Generated references | `python scripts/gen_cli_docs.py`, `python scripts/gen_schema_docs.py` |
 | Documented flows and exit codes | `python scripts/demo_flows.py all` |
