@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791810028823,
+  "lastUpdate": 1792406374214,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -3577,6 +3577,68 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 2.994,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera",
+            "email": "sebasbarrera981119@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "aa184505d0e68bdc926c96b759b6b81a17e32c3d",
+          "message": "Merge pull request #72 from SebasBarrera/test/evaluation-2-0-0-runner\n\ntest(evaluation): agent-run evaluator for 2.0.0",
+          "timestamp": "2026-10-06T20:48:35Z",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/aa184505d0e68bdc926c96b759b6b81a17e32c3d"
+        },
+        "date": 1792406373672,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001202,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001853,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.011095,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.074659,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.258336,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 10.920759,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.509906,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 5.594,
             "unit": "%"
           }
         ]
