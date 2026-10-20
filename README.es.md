@@ -25,6 +25,7 @@
 
 ## Contenido
 
+- [Guías en español](#guías-en-español)
 - [Qué es y qué no es](#qué-es-y-qué-no-es)
 - [Conceptos](#conceptos)
 - [Arquitectura](#arquitectura)
@@ -48,6 +49,18 @@
 - [Hoja de ruta](#hoja-de-ruta)
 - [Contexto académico](#contexto-académico)
 - [Contribuir, seguridad y licencia](#contribuir-seguridad-y-licencia)
+
+## Guías en español
+
+Pensadas para empezar sin conocer los detalles internos (también en el
+[sitio de documentación](https://sebasbarrera.github.io/harness-engineering/), sección Español):
+
+- [Primeros pasos](docs/es/primeros-pasos.md): qué problema resuelve, cómo instalarlo y tu primera ejecución.
+- [Proyecto nuevo](docs/es/proyecto-nuevo.md) y [proyecto existente](docs/es/proyecto-existente.md).
+- [Estructura generada](docs/es/estructura-generada.md): cada archivo y carpeta que crea el harness, para qué sirve y si se versiona.
+- [Seguimiento](docs/es/seguimiento.md): estado, avance, bloqueos, límites alcanzados, reportes y métricas.
+- [Trabajo simultáneo](docs/es/trabajo-simultaneo.md): qué se puede hacer entre dos personas y qué no.
+- [Instalación](docs/es/instalacion.md), [instalación avanzada](docs/es/instalacion-avanzada.md) y [publicación de versiones](docs/es/publicacion.md).
 
 ## Qué es y qué no es
 
@@ -163,8 +176,11 @@ La tarea usada es [`docs/guides/task.yaml`](docs/guides/task.yaml); la
 
 Requisitos: **Python ≥ 3.12** y **Git** (los baselines y ChangeSets salen del repositorio). Para
 proyectos Node.js, **Node.js LTS y npm**. El extra opcional `api` instala FastAPI y Uvicorn para el
-tablero. El harness es un paquete de Python: **no se instala con npm ni con npx**. No está publicado
-en PyPI.
+tablero. El harness es un paquete de Python: **no se instala con npm ni con npx**. Las versiones
+están en GitHub Releases y GHCR. La publicación en PyPI (`pip install governed-agent-harness`)
+con un Trusted Publisher está preparada en `release.yml` y sigue apagada hasta que el mantenedor
+la configure ([publicación](docs/es/publicacion.md)); mientras tanto usa el wheel del release.
+Guías: [instalación](docs/es/instalacion.md) y [instalación avanzada](docs/es/instalacion-avanzada.md).
 
 ## Guía greenfield
 
@@ -299,7 +315,8 @@ aprobación dada de antemano que se aplica solo si la compuerta pasa, no hay fac
 tarea es de tamaño `S` ([docs/guides/low-friction.md](docs/guides/low-friction.md), en inglés);
 `harness metrics` informa tokens, costo, entregas, tiempos, calidad y fricción en local, entre
 otros formatos como un único HTML autocontenido, sin llamar a un modelo
-([docs/guides/local-metrics.md](docs/guides/local-metrics.md), en inglés).
+([docs/guides/local-metrics.md](docs/guides/local-metrics.md), en inglés;
+[docs/es/reporte-de-metricas.md](docs/es/reporte-de-metricas.md), en español).
 Referencia completa: [docs/reference/configuration.md](docs/reference/configuration.md).
 
 ## Perfiles tecnológicos
@@ -367,9 +384,18 @@ bloquea `IMPLEMENTATION` en lugar de ejecutarla sin confinar.
 
 Cada ejecución reporta 20 métricas de proceso (duraciones, intentos, ciclos de corrección y de
 revisión, validaciones, ChangeSets, decisiones, tokens, costo) con una calidad declarada:
-`OBSERVED`, `DERIVED`, `REPORTED` o `NOT_AVAILABLE`. **No hay métricas por persona**, por diseño, y
-tokens y costo quedan en `NOT_AVAILABLE` porque ningún proveedor incluido reporta consumo. Se leen
-con `harness status`, la traza JSON o `GET /api/runs/{id}`. Detalles: [docs/metrics.md](docs/metrics.md).
+`OBSERVED`, `DERIVED`, `REPORTED` o `NOT_AVAILABLE`. **No hay métricas por persona**, por diseño.
+Tokens y costo son `REPORTED` cuando el proveedor del agente devuelve el consumo (un proveedor de
+comando lo hace con el objeto opcional `usage`) y quedan en `NOT_AVAILABLE` cuando no lo reporta;
+nunca se estiman en silencio. Se leen con `harness status`, la traza JSON o `GET /api/runs/{id}`.
+Detalles: [docs/metrics.md](docs/metrics.md).
+
+Para el conjunto de ejecuciones, `harness metrics` agrega esos registros sin llamar a un modelo
+(tokens y costo por agente, modelo, tarea y fase; tiempos; calidad; fricción; entrega) y escribe en
+`.harness/metrics/` el JSON, el Markdown y un reporte HTML autocontenido que se abre sin conexión.
+Esa carpeta está ignorada por Git, así que el reporte es local; `--output` lo exporta a otro lugar.
+Cómo generarlo, abrirlo y leer cada sección:
+[docs/es/reporte-de-metricas.md](docs/es/reporte-de-metricas.md).
 Señales de salud del repositorio y qué hacer con ellas: [docs/monitoring.md](docs/monitoring.md).
 
 ## Benchmarks

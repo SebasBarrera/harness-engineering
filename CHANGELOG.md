@@ -30,6 +30,31 @@
   `reverifyOnChange` the outcome is unchanged (exit 5, then an `INCONCLUSIVE` gate), and the
   `run continue` now also records `approval.invalidated`, as it does when no decision was
   attempted.
+- The local metrics HTML report is organised like a project overview (wave 11, item 1). It opens
+  with a status of the period (`CLEAR`, `ATTENTION` or `NO_DATA`, derived only from four counts
+  the report already holds: blocked runs, rejected runs, HIGH or CRITICAL findings in runs that
+  did not close, and open runs whose latest gate failed; not a quality certification), summary
+  cards per dimension, anchor navigation and detail groups for cost and tokens, time, friction,
+  quality, delivery, trends and data quality. New fields, all from existing records: `summary`,
+  `quality.findingsBySeverity`, `findingsByFile`, `openBlockingFindings`, `gateResults`,
+  `limitsReached`, `blockedRunsDetail`, `totals.costPerFeatureUsd` and
+  `friction.perTask[].corrections`; every earlier field is kept. The report stays in
+  `.harness/metrics/` (ignored by Git) and one self-contained file with no script. Spanish guide:
+  `docs/es/reporte-de-metricas.md`; the Spanish README no longer says tokens and cost are never
+  available.
+- Spanish user guides and a PyPI channel (#97, items 7, 8 and 10). `docs/es/` has task-oriented
+  pages for a first governed run, a new and an existing project, every file and folder the
+  harness generates (what it is for and whether to commit it), following a run (status, inbox,
+  findings, evidence, trace, budget, verify, dashboard, exit codes, reports), installation (basic
+  and advanced) and publishing, and `docs/es/trabajo-simultaneo.md`, which states what two people
+  can and cannot do at once, with the experiments behind it: parallel runs with
+  `--isolate worktree` on one machine are supported; two runs in one directory without
+  isolation, or two clones, are not coordinated. `release.yml` gains a `publish-pypi` job
+  (`pypa/gh-action-pypi-publish` pinned to the commit of `v1.14.2`, environment `pypi`,
+  `id-token: write` only there) that uploads the distributions the `release` job built and
+  attested, after it and only on tags; it runs only when the repository variable `PYPI_PUBLISH`
+  is `true`, so the release does not depend on the Trusted Publisher until the maintainer sets it
+  up (`docs/maintainer-setup.md`). No behaviour of a run changes.
 - Frozen acceptance tests the agent cannot rewrite and may dispute (#94). In the wave 9 pilot
   one implementing agent rewrote the frozen acceptance files, and in another run a correct
   change failed against approved tests that were wrong. Two keys under

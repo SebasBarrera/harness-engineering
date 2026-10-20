@@ -55,6 +55,14 @@ the project's table. An estimate is always reported apart from the reported cost
 
 ## The HTML file
 
+The report is written to `.harness/metrics/`, which Git ignores, so it stays local; `--output`
+exports it elsewhere. It opens with a status of the period (`CLEAR`, `ATTENTION` or `NO_DATA`:
+`ATTENTION` when any of blocked runs, rejected runs, HIGH or CRITICAL findings in runs that did not
+close, or open runs whose latest gate failed is above zero; it is an aid to read the report, not a
+quality certification), then summary cards per dimension, an anchor navigation and the detail
+groups. The Spanish guide [reporte-de-metricas.md](../es/reporte-de-metricas.md) explains each
+section.
+
 One file, inline CSS and inline SVG charts, no script, no font, no image and nothing fetched from
 the network: it opens offline from the file system. Every chart has a title, a description and a
 table with the same numbers; identity is never color alone; light and dark color schemes are

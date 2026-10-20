@@ -162,8 +162,12 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 
 Requirements: **Python ≥ 3.12** and **Git** (baselines and ChangeSets come from the repository). For
 Node.js projects, **Node.js LTS and npm**. The optional `api` extra installs FastAPI and Uvicorn for
-the dashboard. The harness is a Python package: **it is not installed with npm or npx**. It is not
-published on PyPI.
+the dashboard. The harness is a Python package: **it is not installed with npm or npx**. Releases
+are on GitHub Releases and GHCR. Publication on PyPI (`pip install governed-agent-harness`)
+through a Trusted Publisher is wired into `release.yml` and stays off until the maintainer
+configures it ([maintainer setup](docs/maintainer-setup.md#pypi)); until then use the release
+wheel. Spanish installation guides: [`docs/es/instalacion.md`](docs/es/instalacion.md) and
+[`docs/es/instalacion-avanzada.md`](docs/es/instalacion-avanzada.md).
 
 ## Greenfield guide
 
