@@ -584,7 +584,7 @@
     },
     "ArchitectureSettings": {
       "additionalProperties": false,
-      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.\n\nSince 2.0 (#93), two keys keep the rules from blaming a change for what the baseline has:\n\n* ``layerCheck: differential`` judges only the layers a changed file did not import on the\n  baseline (a new file is judged whole); ``full`` (or absent) judges every import of a\n  changed file;\n* ``baselineConflicts: allow`` checks the rules a survey infers against the baseline when\n  they are proposed: the dependencies between layers the baseline already has and the\n  rules forbid are listed in the proposal (and in the inbox) and added to ``allow`` in the\n  rules a person approves; ``enforce`` (or absent) keeps the rules as inferred.",
+      "description": "The architecture of the project and how it is enforced.\n\n``style`` and ``layers`` with ``allow`` (the layers each layer may depend on; a layer may\nalways use itself) are the rules: every import across layers that ``allow`` does not list is\na forbidden dependency (the #40 check), ``enforce`` makes it HIGH, ``warn`` LOW. With\n``mode: agent`` a new project gets one advise call (options with trade-offs, a person\nchooses, an ADR is recorded) and an existing project one survey call whose inferred rules a\nperson approves; the survey is cached in ``.harness/architecture.md`` and refreshed only on\ndemand (``harness architecture refresh``) or, under ``refresh: auto``, when the layout of\nthe source directories changed materially.\n\nSince 2.0 (#93), two keys keep the rules from blaming a change for what the baseline has:\n\n* ``layerCheck: differential`` judges only the layers a changed file did not import on the\n  baseline (a new file is judged whole); ``full`` (or absent) judges every import of a\n  changed file;\n* ``baselineConflicts: allow`` checks the rules a survey infers against the baseline when\n  they are proposed: the dependencies between layers the baseline already has and the\n  rules forbid are listed in the proposal (and in the inbox) and added to ``allow`` in the\n  rules a person approves; ``enforce`` (or absent) keeps the rules as inferred.\n\nSince 2.0 (#97), two more keys:\n\n* ``catalogue: experts`` offers the ten styles of the catalogue to a new project: the advise\n  call recommends one with its reasons and the characteristics of the project that support\n  it, a person accepts it or chooses another style of the catalogue, and an expert for the\n  chosen style organises the project and travels, as a prompt, with every later request;\n* ``documentation: project`` makes the survey of an existing project write persistent\n  reverse engineering documents under ``.harness/reverse-engineering`` (structure,\n  components, conventions and how the harness acts) that later requests point to; the\n  survey is not repeated while they hold.",
       "properties": {
         "agent": {
           "anyOf": [
@@ -630,6 +630,38 @@
           ],
           "default": null,
           "title": "Baselineconflicts"
+        },
+        "catalogue": {
+          "anyOf": [
+            {
+              "enum": [
+                "experts",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalogue"
+        },
+        "documentation": {
+          "anyOf": [
+            {
+              "enum": [
+                "project",
+                "off"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Documentation"
         },
         "enforce": {
           "anyOf": [
@@ -723,6 +755,8 @@
                 "microservices",
                 "mvvm",
                 "mvi",
+                "event-driven",
+                "cqrs",
                 "custom"
               ],
               "type": "string"

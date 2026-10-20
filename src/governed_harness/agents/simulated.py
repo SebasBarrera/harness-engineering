@@ -62,6 +62,8 @@ def _call_result(kind: CallKind, request: dict[str, Any]) -> dict[str, Any]:
         # No layering inferred and no option proposed: nothing waits for a person (#56).
         if request.get("mode") == "advise":
             return {"options": []}
+        if request.get("mode") == "organize":
+            return {"summary": "Simulated organization: no plan.", "structure": [], "practices": []}
         return {
             "style": "custom",
             "summary": "Simulated survey: no layering was inferred.",

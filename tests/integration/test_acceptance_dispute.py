@@ -392,3 +392,7 @@ def test_init_writes_the_keys_and_config_validate_shows_them(tmp_path: Path) -> 
     assert shown["agentResults"]["checks"]["acceptanceTests"]["protect"] is True
     assert shown["engineering"]["architecture"]["layerCheck"] == "differential"
     assert shown["engineering"]["architecture"]["baselineConflicts"] == "allow"
+    assert written["architecture"]["catalogue"] == "experts"
+    assert written["architecture"]["documentation"] == "project"
+    assert shown["engineering"]["architecture"]["catalogue"] == "experts"
+    assert shown["engineering"]["architecture"]["documentation"] == "project"

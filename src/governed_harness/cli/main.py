@@ -1337,6 +1337,11 @@ def architecture_decide(
     option: str | None = typer.Option(
         None, "--option", help="The architecture option chosen for a new project"
     ),
+    style: str | None = typer.Option(
+        None,
+        "--style",
+        help="A style of the catalogue chosen for a new project (architecture.catalogue: experts)",
+    ),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
@@ -1347,7 +1352,8 @@ def architecture_decide(
 ) -> None:
     """Decide the architecture, bound to the digest of the proposal: approve or reject the
     layer rules a survey inferred (existing project), or choose one of the options of a new
-    project, which is recorded as an ADR. The approved rules are enforced as forbidden
+    project, which is recorded as an ADR; under architecture.catalogue: experts --style chooses
+    any style of the catalogue instead. The approved rules are enforced as forbidden
     dependencies in VERIFICATION. A stale digest or a non-human actor exits 5."""
     result = _call(
         lambda: _acting().decide_architecture(
@@ -1359,6 +1365,7 @@ def architecture_decide(
             option=option,
             actor_id=actor,
             continue_after=continue_after,
+            style=style,
         )
     )
     _emit(result)

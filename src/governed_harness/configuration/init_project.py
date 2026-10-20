@@ -287,6 +287,10 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "enforce": "enforce",
             "layerCheck": "differential",
             "baselineConflicts": "allow",
+            # #97: the ten-style catalogue with its experts for a new project and persistent
+            # reverse engineering documents for an existing one.
+            "catalogue": "experts",
+            "documentation": "project",
         },
         # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
         # condition, documentation-only and configuration-only changes, friction targets.

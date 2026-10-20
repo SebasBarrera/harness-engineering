@@ -208,8 +208,31 @@ ARCHITECTURE_INSTRUCTIONS: Final[dict[str, str]] = {
             '"allow": {{"<layer>": ["<layer>"]}}}}]}}',
         )
     ),
+    "organize": (
+        "A person chose the {style} architecture for the new project in the workspace at "
+        "{workspace}. You are the expert for that style (your guidance follows). From the task "
+        "below and the chosen layer rules, plan how the project is organised: the directories "
+        "and modules with their purpose, and the best practices of the style that apply. The "
+        "implementation follows your plan, so name concrete relative paths. "
+        + _READ_ONLY
+        + " "
+        + _JSON.replace(
+            "RESULT",
+            '{{"summary": "<markdown>", "structure": [{{"path": "<relative path>", '
+            '"purpose": "<text>"}}], "practices": ["<text>"]}}',
+        )
+    ),
 }
-"""Instructions of the ``architecture`` call by its mode (#56)."""
+"""Instructions of the ``architecture`` call by its mode (#56, ``organize`` since #97)."""
+
+ADVISE_CATALOGUE_SUFFIX: Final[str] = (
+    "Offer only styles of the catalogue in the request (each one with what it is for and when "
+    "it fits). Besides the fields above, give every option a 'fit' that explains why it suits "
+    "this project and a 'supports' list with the characteristics of the project, from the task "
+    "and its scaffolding, that make it suitable. Mark exactly one option as recommended: a "
+    "person reads your report, then accepts it or chooses another style."
+)
+"""Added to the instructions of the advise call under ``architecture.catalogue: experts``."""
 
 ACCEPTANCE_GHERKIN: Final[str] = (
     "Write the acceptance criteria and requirements of the task below as Gherkin feature files "
@@ -238,6 +261,7 @@ def render_instructions(kind: CallKind, *, workspace: str, **values: Any) -> str
         "directory": "tests/acceptance",
         "maxLocations": 20,
         "styles": "",
+        "style": "",
     }
     fields.update(values)
     if kind == "acceptance" and fields.get("format") == "gherkin":
