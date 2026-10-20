@@ -685,17 +685,27 @@ def _put_back(workspace: Path, path: str, digest: str, content: bytes | None) ->
     """Write the approved content of a frozen file that changed; what had happened to it
     (``deleted`` or ``modified``), or ``None`` when it is as approved or cannot be restored."""
     target = workspace / path
-    present = target.is_file() and not target.is_symlink()
-    if present and sha256_bytes(target.read_bytes()) == digest:
-        return None
-    if content is None or sha256_bytes(content) != digest:
+    change = _frozen_change(target, digest)
+    if change is None or content is None or sha256_bytes(content) != digest:
         return None
     if target.is_symlink():
         target.unlink()
     safe = contained_path(workspace, Path(path))
     safe.parent.mkdir(parents=True, exist_ok=True)
     safe.write_bytes(content)
-    return "modified" if present else "deleted"
+    return change
+
+
+def _frozen_change(target: Path, digest: str) -> str | None:
+    """What happened to a frozen file: ``deleted`` when it is no longer a regular file,
+    ``modified`` when its content differs, ``None`` when it is as approved."""
+    if target.is_symlink():
+        return "deleted"
+    try:
+        current = target.read_bytes()
+    except OSError:
+        return "deleted"
+    return None if sha256_bytes(current) == digest else "modified"
 
 
 __all__ = ["ACCEPTANCE_ID", "WRITE_UNDONE_RULE", "AcceptanceTests", "validate_tests"]

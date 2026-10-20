@@ -335,7 +335,9 @@ def test_protect_adds_the_frozen_files_to_the_sandbox_deny_paths(
     )
     plan = build_sandbox(python_workspace, (), host, protected=protected)
     denied = plan.profile.split("(deny file-write*\n")[1]
-    assert f'(subpath "{frozen}")' in denied
+    # The profile escapes backslashes, which a Windows path has.
+    quoted = str(frozen).replace("\\", "\\\\")
+    assert f'(subpath "{quoted}")' in denied
 
 
 def test_without_protect_the_frozen_files_are_not_deny_paths(
