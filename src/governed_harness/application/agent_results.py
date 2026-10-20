@@ -12,6 +12,7 @@ from governed_harness.domain.actors import require_human_actor
 from governed_harness.domain.enums import ActorType, DecisionKind, PhaseId, ResultStatus
 from governed_harness.domain.errors import ConfigurationError, NotFoundError, PolicyViolationError
 from governed_harness.domain.models import Actor, ChangeRequestItem
+from governed_harness.orchestration.acceptance_dispute import DisputeDecision
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine import EngineServices
@@ -168,10 +169,45 @@ def acceptance_state(services: EngineServices, execution_id: str) -> dict[str, A
     from governed_harness.orchestration.engine import RunEngine
 
     engine = RunEngine(services)
-    state = engine.results.acceptance.state(engine.get_execution(execution_id))
+    execution = engine.get_execution(execution_id)
+    state = engine.results.acceptance.state(execution)
     if state is None:
         raise NotFoundError(f"run {execution_id} has no acceptance tests")
-    return {"executionId": execution_id, **state}
+    dispute = engine.results.disputes.state(execution)
+    return {"executionId": execution_id, **state, **({"dispute": dispute} if dispute else {})}
+
+
+def decide_acceptance_dispute(
+    services: EngineServices,
+    execution_id: str,
+    *,
+    decision: DisputeDecision,
+    digest: str,
+    actor_id: str,
+    rationale: str,
+    continue_after: bool,
+) -> dict[str, Any]:
+    """Uphold the frozen acceptance tests an agent disputes, or have them written again
+    (``verification.acceptanceTests.disputes``, #94; a person only)."""
+    from governed_harness.orchestration.engine import RunEngine
+
+    require_human_actor(actor_id, "decide a dispute of acceptance tests")
+    engine = RunEngine(services)
+    state = engine.results.disputes.decide(
+        engine.get_execution(execution_id),
+        decision=decision,
+        digest=digest,
+        actor=Actor(actor_type=ActorType.HUMAN, actor_id=actor_id),
+        rationale=rationale,
+    )
+    result: dict[str, Any] = {"executionId": execution_id, "dispute": state}
+    if continue_after:
+        result["execution"] = engine.continue_execution(execution_id).model_dump(
+            mode="json", by_alias=True
+        )
+    else:
+        engine.anchor_chain(execution_id)
+    return result
 
 
 def decide_acceptance(

@@ -114,8 +114,9 @@ ContractRetryMode = Literal["once", "off"]
 
 class ContractRetryConfig(_Section):
     """A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer
-    breaks its contract (no valid JSON, no ``result`` object, or a ``result`` its phase
-    rejects) is sent once more before the phase blocks (``mode: once``), to
+    breaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects
+    or, since #92, a call that changed the workspace) is sent once more before the phase
+    blocks (``mode: once``), to
     ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
     provider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1."""
 
@@ -195,19 +196,32 @@ class InvariantCheck(_Section):
 
 
 AcceptanceMode = Literal["agent", "off"]
+AcceptanceDisputes = Literal["person", "off"]
 DEFAULT_ACCEPTANCE_DIRECTORY = "tests/acceptance"
 
 
 class AcceptanceTestsConfig(_Section):
     """Independent, frozen acceptance tests (#52, N4): written from the criteria by a separate
     call (``author``), approved by a person, checked to fail before the change and to pass,
-    unchanged, after it."""
+    unchanged, after it.
+
+    Since 2.0 (#94):
+
+    * ``protect: true`` keeps the frozen files from the implementing agent: the agent sandbox
+      denies writes to them (as to ``.git`` and ``.harness``), and a frozen file that an agent
+      invocation changed or deleted anyway is put back as approved, with a finding;
+    * ``disputes: person`` lets the agent dispute a frozen test instead of failing against it:
+      a VERIFICATION that fails only on the frozen acceptance tests, after an implementation
+      whose self-report lists ``disputedAcceptanceTests``, waits for a person who upholds the
+      tests (the run goes on as before) or sends the run back to SPECIFICATION for new ones."""
 
     mode: AcceptanceMode | None = None
     author: AgentCallConfig | None = None
     directory: str | None = None
+    protect: bool | None = None
+    disputes: AcceptanceDisputes | None = None
 
-    @field_validator("mode", mode="before")
+    @field_validator("mode", "disputes", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
         return off_from_yaml(value)
@@ -228,6 +242,10 @@ class AcceptanceTestsConfig(_Section):
     @property
     def path(self) -> str:
         return (self.directory or DEFAULT_ACCEPTANCE_DIRECTORY).rstrip("/")
+
+    @property
+    def disputes_enabled(self) -> bool:
+        return self.disputes == "person"
 
 
 RiskAction = Literal["block", "acknowledge", "inform", "off"]

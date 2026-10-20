@@ -27,6 +27,29 @@ aider       ``aider``    ``--yes-always --no-auto-commits --no-dirty-commits --n
                          and history files in the null device (``--model``); prompt in
                          ``--message``
 =========== ============ ===================================================================
+
+A read-only request (``readOnly: true``: ``clarify``, ``plan``, ``acceptance``, ``locate``,
+``architecture``, ``review`` and the reviewers of the panel) runs with the CLI's read-only
+arguments instead (#92), so that the agent has no tool to write with; the workspace comparison
+of the harness stays as the check that does not depend on the CLI:
+
+=========== ========================================================================
+kind        arguments of a read-only call (before ``args``)
+=========== ========================================================================
+claude-code ``-p --output-format json --permission-mode default --allowedTools
+            Read,Grep,Glob`` and ``--disallowedTools Write Edit MultiEdit
+            NotebookEdit Bash`` (a reviewer keeps its own allowlist without those)
+codex       ``exec --json --sandbox read-only --skip-git-repo-check``
+gemini-cli  ``--output-format json --approval-mode default``: without an approval
+            mode that accepts edits, the non-interactive CLI leaves out the tools
+            that ask (write, edit, shell); it has no tool allowlist option here
+aider       the base arguments with ``--chat-mode ask --dry-run
+            --no-suggest-shell-commands``: aider has no read-only sandbox; these ask
+            it to answer without editing or running commands
+=========== ========================================================================
+
+Like the base arguments, the read-only ones follow each CLI's documentation and are not
+verified against the live agents.
 """
 
 from __future__ import annotations
@@ -55,6 +78,15 @@ PROMPT_PLACEHOLDER = "<prompt>"
 """Recorded in place of a prompt passed on the command line (aider)."""
 MCP_PLACEHOLDER = "<mcp-config>"
 """Recorded in place of the MCP configuration of a reviewer (it may carry credentials)."""
+
+READ_ONLY_TOOLS: tuple[str, ...] = ("Read", "Grep", "Glob")
+"""The Claude Code tools of a read-only call (#92)."""
+CLAUDE_WRITE_TOOLS: tuple[str, ...] = ("Write", "Edit", "MultiEdit", "NotebookEdit", "Bash")
+"""The Claude Code tools a read-only call is denied: the ones that write files and the shell."""
+_OUTPUT_FORMAT = "--output-format"
+_PERMISSION_MODE = "--permission-mode"
+_APPROVAL_MODE = "--approval-mode"
+_SKIP_GIT_CHECK = "--skip-git-repo-check"
 
 DEFAULT_EXECUTABLES = NATIVE_DEFAULT_COMMANDS
 
@@ -289,8 +321,23 @@ class NativeAgentProvider(CommandAgentProvider):
         call read-only); the adapters that have them override this method."""
         return None
 
-    def policy_args(self, policy: Any) -> tuple[str, ...]:
-        """The CLI options of the command policy (#5); none for a CLI without them."""
+    def read_only_args(self) -> tuple[str, ...] | None:
+        """The base arguments of a read-only call (#92): the CLI's mode without write tools.
+        ``None``: the CLI has none and keeps its base arguments."""
+        return None
+
+    def call_args(self, request: Mapping[str, object]) -> tuple[str, ...]:
+        """The base arguments of a request: a reviewer's isolation first, then the read-only
+        mode of a request that says ``readOnly``, else the arguments that let the agent edit."""
+        isolation = request.get("isolation")
+        chosen = self.isolated_args(isolation) if isinstance(isolation, Mapping) else None
+        if chosen is None and request.get("readOnly") is True:
+            chosen = self.read_only_args()
+        return chosen if chosen is not None else self.base_args()
+
+    def policy_args(self, policy: Any, *, read_only: bool = False) -> tuple[str, ...]:
+        """The CLI options of the command policy (#5) and, for a read-only call, of the tools
+        it is denied (#92); none for a CLI without them."""
         return ()
 
     def model_args(self, routing: Mapping[str, str] | None = None) -> tuple[str, ...]:
@@ -316,13 +363,13 @@ class NativeAgentProvider(CommandAgentProvider):
             prompt = render_call_prompt(request)
         else:
             prompt = render_prompt(request, self_report=self.configuration.self_report)
-        isolation = request.get("isolation")
-        isolated = self.isolated_args(isolation) if isinstance(isolation, Mapping) else None
         head = (
             *self.configuration.argv_prefix,
-            *(isolated if isolated is not None else self.base_args()),
+            *self.call_args(request),
             *self.model_args(request_routing(request)),
-            *self.policy_args(request.get("commandPolicy")),
+            *self.policy_args(
+                request.get("commandPolicy"), read_only=request.get("readOnly") is True
+            ),
             *self.configuration.extra_args,
         )
         tail = self.prompt_args(prompt)
@@ -354,20 +401,35 @@ class ClaudeCodeProvider(NativeAgentProvider):
     kind = "claude-code"
 
     def base_args(self) -> tuple[str, ...]:
-        return ("-p", "--output-format", "json", "--permission-mode", "acceptEdits")
+        return ("-p", _OUTPUT_FORMAT, "json", _PERMISSION_MODE, "acceptEdits")
 
-    def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
-        tools = [str(item) for item in isolation.get("tools") or []]
-        servers = isolation.get("mcpConfig")
-        mcp = {"mcpServers": dict(servers) if isinstance(servers, Mapping) else {}}
+    def read_only_args(self) -> tuple[str, ...] | None:
+        return self._allowing(READ_ONLY_TOOLS)
+
+    @staticmethod
+    def _allowing(tools: tuple[str, ...]) -> tuple[str, ...]:
+        """Print mode without accepted edits and with ``tools`` as the allowlist."""
         return (
             "-p",
-            "--output-format",
+            _OUTPUT_FORMAT,
             "json",
-            "--permission-mode",
+            _PERMISSION_MODE,
             "default",
             "--allowedTools",
             ",".join(tools),
+        )
+
+    def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
+        # #92: a reviewer never keeps a tool that writes, whatever its definition lists.
+        tools = tuple(
+            str(item)
+            for item in isolation.get("tools") or []
+            if str(item).split("(", 1)[0] not in CLAUDE_WRITE_TOOLS
+        )
+        servers = isolation.get("mcpConfig")
+        mcp = {"mcpServers": dict(servers) if isinstance(servers, Mapping) else {}}
+        return (
+            *self._allowing(tools),
             "--strict-mcp-config",
             "--mcp-config",
             json.dumps(mcp, sort_keys=True),
@@ -378,9 +440,12 @@ class ClaudeCodeProvider(NativeAgentProvider):
     def effort_args(self, effort: str) -> tuple[str, ...]:
         return ("--effort", effort)
 
-    def policy_args(self, policy: Any) -> tuple[str, ...]:
+    def policy_args(self, policy: Any, *, read_only: bool = False) -> tuple[str, ...]:
         from governed_harness.capabilities.repository import CLAUDE_DISALLOWED
 
+        if read_only:
+            # One option: denying Bash covers the destructive commands of the policy too.
+            return ("--disallowedTools", *CLAUDE_WRITE_TOOLS)
         if isinstance(policy, Mapping) and policy.get("destructive") == "deny":
             return ("--disallowedTools", *CLAUDE_DISALLOWED)
         return ()
@@ -437,10 +502,13 @@ class CodexProvider(NativeAgentProvider):
     kind = "codex"
 
     def base_args(self) -> tuple[str, ...]:
-        return ("exec", "--json", "--full-auto", "--skip-git-repo-check")
+        return ("exec", "--json", "--full-auto", _SKIP_GIT_CHECK)
+
+    def read_only_args(self) -> tuple[str, ...] | None:
+        return ("exec", "--json", "--sandbox", "read-only", _SKIP_GIT_CHECK)
 
     def isolated_args(self, isolation: Mapping[str, Any]) -> tuple[str, ...] | None:
-        return ("exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check")
+        return self.read_only_args()
 
     def effort_args(self, effort: str) -> tuple[str, ...]:
         return ("-c", f'model_reasoning_effort="{effort}"')
@@ -511,7 +579,10 @@ class GeminiCliProvider(NativeAgentProvider):
     kind = "gemini-cli"
 
     def base_args(self) -> tuple[str, ...]:
-        return ("--output-format", "json", "--approval-mode", "auto_edit")
+        return (_OUTPUT_FORMAT, "json", _APPROVAL_MODE, "auto_edit")
+
+    def read_only_args(self) -> tuple[str, ...] | None:
+        return (_OUTPUT_FORMAT, "json", _APPROVAL_MODE, "default")
 
     def prompt_args(self, prompt: str) -> tuple[str, ...]:
         return ("--prompt", "Follow the instructions given on standard input.")
@@ -584,6 +655,15 @@ class AiderProvider(NativeAgentProvider):
             os.devnull,
             "--chat-history-file",
             os.devnull,
+        )
+
+    def read_only_args(self) -> tuple[str, ...] | None:
+        return (
+            *self.base_args(),
+            "--chat-mode",
+            "ask",
+            "--dry-run",
+            "--no-suggest-shell-commands",
         )
 
     def prompt_args(self, prompt: str) -> tuple[str, ...]:

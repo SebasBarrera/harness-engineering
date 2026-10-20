@@ -526,7 +526,9 @@ class RunEngine:
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
-        current_change_set = self._refresh_changeset(execution)
+        # #95: comparing must not move the run's digest; a refused decision would otherwise
+        # hide the change from verification.reverifyOnChange on the next run continue.
+        current_change_set = self._refresh_changeset(execution, record_on_run=False)
         execution = self.get_execution(execution_id)
         if current_change_set.digest != change_set_digest:
             raise PolicyViolationError(
@@ -961,10 +963,15 @@ class RunEngine:
                 update={"status": ResultStatus.PASSED, "updated_at": utc_now()}
             )
         transition = self.state_machine.advance(phase_id, ResultStatus.PASSED)
+        target = self._next_phase(phase_id, transition.target)
+        if phase_id is PhaseId.SPECIFICATION:
+            # acceptanceTests.disputes (#94): after a revision of the frozen tests the plan
+            # and the implementation stand, and the run verifies the same change again.
+            target = self.results.disputes.resume_target(execution_id) or target
         return latest.model_copy(
             update={
                 "status": ResultStatus.PENDING,
-                "current_phase": self._next_phase(phase_id, transition.target),
+                "current_phase": target,
                 # A run that moves on has no reason to have stopped (#77): the reason of an
                 # earlier stop it was resumed from does not stay on it.
                 "terminal_reason": None,
@@ -1547,7 +1554,7 @@ class RunEngine:
                     self.s.paths.workspace,
                     self.s.resolved.project.runtime.sandbox_write_paths or (),
                     self.sandbox_host,
-                    protected=self._protected_paths(),
+                    protected=self._protected_paths(execution),
                     allow_network=self._agent_network_allowed(),
                 )
             except SandboxUnavailable as error:
@@ -2262,11 +2269,14 @@ class RunEngine:
     def _protects_excluded_paths(self) -> bool:
         return bool(self.s.resolved.project.governance_settings.protect_excluded_paths)
 
-    def _protected_paths(self) -> tuple[Path, ...]:
+    def _protected_paths(self, execution: Execution | None = None) -> tuple[Path, ...]:
         """Paths the agent sandbox keeps read-only: the harness state and Git of the workspace
-        (``governance.protectExcludedPaths``) and the run registry when it lives outside the
-        workspace (``runtime.stateDir``, #55)."""
+        (``governance.protectExcludedPaths``), the run registry when it lives outside the
+        workspace (``runtime.stateDir``, #55) and, for a run with frozen acceptance tests,
+        those files (``verification.acceptanceTests.protect``, #94)."""
         external = (self.s.paths.state_root,) if self.s.paths.state_root is not None else ()
+        if execution is not None and self.results.active:
+            external = (*external, *self.results.acceptance.protected_paths(execution))
         if not self._protects_excluded_paths():
             return external
         return (self.s.paths.harness_dir, self.s.paths.workspace / ".git", *external)
@@ -2511,6 +2521,10 @@ class RunEngine:
         change_set = self._refresh_changeset(execution)
         if not change_set.files:
             return PhaseOutcome(ResultStatus.FAILED, "Current ChangeSet is empty")
+        waiting = self.results.disputes.waiting(execution, change_set)
+        if waiting is not None:
+            # acceptanceTests.disputes (#94): a person has not decided the dispute yet.
+            return waiting
         if self.friction.active:
             # friction (#58): risk factors, size and change type of the ChangeSet; a fast run
             # with a risk factor or a ChangeSet larger than S leaves the fast lane here.
@@ -2537,20 +2551,34 @@ class RunEngine:
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
             outputs.extend(self.ladder.verification(execution, change_set, outputs))
+        return self._verification_outcome(execution, change_set, outputs)
+
+    def _verification_outcome(
+        self, execution: Execution, change_set: ChangeSet, outputs: list[Any]
+    ) -> PhaseOutcome:
+        """The result of VERIFICATION from its validators: passed, or the worst status of the
+        mandatory ones that did not pass. When only the frozen acceptance tests failed and the
+        agent disputed them, the run waits for a person instead
+        (``acceptanceTests.disputes``, #94)."""
         mandatory_non_passed = [
             output.result
             for output in outputs
             if output.result.mandatory and output.result.status is not ResultStatus.PASSED
         ]
         evidence = tuple(ref for output in outputs for ref in output.result.evidence_refs)
-        if mandatory_non_passed:
-            status = self._worst_status([item.status for item in mandatory_non_passed])
+        if not mandatory_non_passed:
             return PhaseOutcome(
-                status,
-                f"{len(mandatory_non_passed)} mandatory validator(s) did not pass",
-                evidence,
+                ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence
             )
-        return PhaseOutcome(ResultStatus.PASSED, f"Executed {len(outputs)} validator(s)", evidence)
+        disputed = self.results.disputes.open(execution, change_set, mandatory_non_passed)
+        if disputed is not None:
+            return disputed
+        status = self._worst_status([item.status for item in mandatory_non_passed])
+        return PhaseOutcome(
+            status,
+            f"{len(mandatory_non_passed)} mandatory validator(s) did not pass",
+            evidence,
+        )
 
     def _fast_validators(self, execution: Execution, change_set: ChangeSet) -> list[Any]:
         """fastLane.verification (#58): affected tests first, side by side, reused by digest."""
@@ -3428,7 +3456,11 @@ class RunEngine:
         value = json.loads(self.s.artifacts.get(baseline_uri))
         return {path: str(item["digest"]) for path, item in value["files"].items()}
 
-    def _refresh_changeset(self, execution: Execution) -> ChangeSet:
+    def _refresh_changeset(self, execution: Execution, *, record_on_run: bool = True) -> ChangeSet:
+        """The current ChangeSet of the run, stored once per digest. ``record_on_run`` also
+        makes its digest the run's ``change_set_digest``; a caller that only compares (a human
+        decision, #95) leaves the run's digest as the gate saw it, so that a change found there
+        is still found by ``verification.reverifyOnChange``."""
         diff = self._compute_owned_diff(execution)
         diff_ref = self.s.artifacts.put(
             diff.unified_diff,
@@ -3492,10 +3524,11 @@ class RunEngine:
                 f"ChangeSet with {len(changeset.files)} changed file(s)",
                 supports=(changeset.change_set_id,),
             )
-        updated = self.get_execution(execution.execution_id).model_copy(
-            update={"change_set_digest": changeset.digest, "updated_at": utc_now()}
-        )
-        self._save_execution(updated)
+        if record_on_run:
+            updated = self.get_execution(execution.execution_id).model_copy(
+                update={"change_set_digest": changeset.digest, "updated_at": utc_now()}
+            )
+            self._save_execution(updated)
         return changeset
 
     def _current_or_evaluate_gate(
