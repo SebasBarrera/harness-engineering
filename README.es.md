@@ -336,6 +336,13 @@ La segunda revisión es un panel de revisores por dominio con un catálogo de re
 también disponible fuera de una ejecución como `harness review-code` y un hook pre-push
 ([panel de revisión](docs/guides/review-panel.md)).
 
+Cada llamada a un agente puede ir bajo un contrato JSON versionado (`agentContract`): contexto mínimo
+por tipo de llamada, respuesta acotada, un tope de 5 iteraciones por agente, presupuesto de tokens y
+tiempo según el tamaño de la tarea, y los scripts como cajas negras. Ver el
+[contrato entre agentes](docs/es/contrato-de-agentes.md), los
+[límites de iteraciones, tokens y tiempo](docs/es/limites-de-agentes.md) y los
+[scripts como cajas negras](docs/es/scripts-caja-negra.md).
+
 ## Tablero web y API
 
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requiere el extra `api`) sirve el

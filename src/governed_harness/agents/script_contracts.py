@@ -21,10 +21,10 @@ ValueType = Literal["string", "integer", "boolean", "path", "array", "object"]
 
 BLACK_BOX_NOTICE: Final = (
     "Scripts and commands are black boxes: use only the contract listed in "
-    "agentContract.scripts (invocation, inputs, outputs, errors). Do not read their source "
+    "scriptContracts (invocation, inputs, outputs, errors). Do not read their source "
     "code, do not work out how they work inside, run them and use only the answer they give."
 )
-"""The sentence added to the instructions of every call of a run with ``agentContract``."""
+"""The sentence added to the instructions of an implement call under ``agentContract``."""
 
 
 class _Contract(BaseModel):

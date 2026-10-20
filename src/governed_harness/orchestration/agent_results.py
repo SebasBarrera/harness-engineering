@@ -771,7 +771,12 @@ class AgentResults:
         if self.agent_contract.enabled:
             # #97: the minimal request of this kind, with the request contract.
             limits = self.agent_contract.limits(execution, task)
-            sent = self.agent_contract.apply_read_only(execution, kind, request, limits)
+            try:
+                sent = self.agent_contract.apply_read_only(execution, kind, request, limits)
+            except ValueError as error:
+                # A request that breaks its own contract is not sent (fail closed).
+                message = f"agent.contract.invalid: {error}"
+                return AgentCallOutcome(ResultStatus.BLOCKED, message, None, None, ())
         request_ref = self.record_json(
             execution,
             phase.phase_id,

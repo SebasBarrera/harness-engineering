@@ -49,7 +49,7 @@ def validate_document(name: str, path: Path, call_kind: str | None = None) -> di
     if name not in DOCUMENT_KINDS:
         raise ConfigurationError(f"unknown document {name!r}; known: {', '.join(DOCUMENT_KINDS)}")
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(path.read_text(encoding="utf-8-sig"))
     except (OSError, ValueError) as error:
         raise ConfigurationError(f"cannot read {path} as JSON: {error}") from error
     try:
