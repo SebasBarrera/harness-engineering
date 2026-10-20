@@ -14,6 +14,7 @@ from pydantic import (
     model_validator,
 )
 
+from governed_harness.configuration.agent_contract import AgentContractConfig
 from governed_harness.configuration.agent_results import (
     AcceptanceTestsConfig,
     AgentCallConfig,
@@ -906,6 +907,9 @@ class ProjectConfiguration(ConfigModel):
     budget: BudgetConfig | None = None
     memory: MemoryConfig | None = None
     agent_routing: AgentRoutingConfig | None = Field(default=None, alias="agentRouting")
+    agent_contract: AgentContractConfig | None = Field(default=None, alias="agentContract")
+    """Since #97: the versioned request and response contract of agent calls, the cap of
+    iterations and the token budget and time limit by task size."""
     toolchain: ToolchainConfig | None = None
     provenance: ProvenanceConfig | None = None
     delivery: DeliveryConfig | None = None
@@ -1043,6 +1047,9 @@ class ProjectConfiguration(ConfigModel):
         if self.agent_routing is None:
             data.pop("agent_routing", None)
             data.pop("agentRouting", None)
+        if self.agent_contract is None:
+            data.pop("agent_contract", None)
+            data.pop("agentContract", None)
         return data
 
 

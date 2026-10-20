@@ -388,6 +388,9 @@ def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
         "agentRouting": project.agent_routing.model_dump(mode="json", by_alias=True)
         if project.agent_routing
         else {"mode": "fixed"},
+        "agentContract": project.agent_contract.model_dump(mode="json", by_alias=True)
+        if project.agent_contract
+        else {"mode": "off"},
     }
 
 
