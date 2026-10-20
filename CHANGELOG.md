@@ -2,6 +2,31 @@
 
 ## Unreleased
 
+- A catalogue of ten architecture styles with an expert for each, and persistent reverse
+  engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
+  `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests
+  and configuration digest.
+  - `architecture.catalogue: experts`: a new project is offered layered, hexagonal, clean, ddd,
+    modular-monolith, microservices, mvvm, mvi, event-driven and cqrs (the last two are new
+    values of `architecture.style`). Each style ships as a file in `resources/architecture`
+    (purpose, when it fits, structure, best practices, dependency rules, a layer template and the
+    expert prompt) and is in the wheel. The advise call must recommend exactly one style with
+    its reason and the project characteristics that support it, otherwise the result is
+    malformed and INTENT blocks; the harness writes the report to
+    `.harness/architecture-options.md`. A person accepts the recommendation, picks another
+    proposed option or any style of the catalogue (`harness architecture decide --style`). After
+    the decision a read-only call by the style's expert plans the organization
+    (`.harness/architecture-organization.md`, event `architecture.organization.proposed`), and
+    the expert prompt, the plan and the style document ride in the `architecture` block of every
+    later request.
+  - `architecture.documentation: project`: the survey of an existing project also describes the
+    components, the organization of files and folders, the conventions and how to act, and
+    writes them to `.harness/reverse-engineering` (index, structure, components, conventions,
+    working agreement). Requests point to them. The survey is reused while the layout holds and
+    the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
+    the documents. `harness architecture refresh` redoes it. Guides in Spanish:
+    `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+
 - Read-only calls get read-only tools, and a call that wrote is retried (#92). In the wave 9
   pilot a `clarify` call answered correctly and also wrote a test file: the harness undid the
   write, recorded `agent.read-only-violation` and discarded the answer, so INTENT blocked. Two

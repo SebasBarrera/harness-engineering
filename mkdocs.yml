@@ -104,6 +104,9 @@ nav:
       - ADR 0004 Trust and capabilities: adr/0004-trust-and-capabilities.md
       - ADR 0005 Technology extension model: adr/0005-technology-extension-model.md
       - ADR 0006 Repository topology: adr/0006-repository-topology.md
+  - Español:
+      - Arquitecturas para proyectos nuevos: es/arquitecturas.md
+      - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
   - Thesis:
       - Context: thesis.md
       - Provenance: provenance.md
