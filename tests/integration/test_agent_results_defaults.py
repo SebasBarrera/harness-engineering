@@ -51,9 +51,13 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
     }
     assert config["review"]["agentReview"] == "enforce"
     assert config["governance"]["stopTheLine"] == "restore"
-    assert {"planning", "context", "budget", "memory", "agentRouting"} <= set(config)
+    assert {"planning", "context", "budget", "memory", "agentRouting", "agentContract"} <= set(
+        config
+    )
     # #85: the invoking model is the ceiling of the routing tables.
     assert config["agentRouting"]["mode"] == "anchored"
+    # #97: the contract of agent calls, one cap of five iterations per agent.
+    assert config["agentContract"] == {"mode": "enforce", "maxIterations": 5}
     # #80: a broken read-only answer gets a second attempt.
     assert config["runtime"]["contractRetry"] == {"mode": "once"}
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
@@ -88,7 +92,9 @@ def test_a_run_with_the_init_defaults_reaches_a_decision(
 def test_a_file_without_the_settings_keeps_its_serialized_form() -> None:
     raw = {"configVersion": "1.0", "projectId": "p", "workspace": {"root": ".."}}
     dumped = ProjectConfiguration.model_validate(raw).model_dump(mode="json", by_alias=True)
-    assert not {"planning", "context", "budget", "memory", "agentRouting"} & set(dumped)
+    assert not {"planning", "context", "budget", "memory", "agentRouting", "agentContract"} & set(
+        dumped
+    )
     assert not {"standards", "testing", "architecture"} & set(dumped)
     assert "forge" not in dumped.get("delivery", {})
     assert set(dumped["runtime"]) == {

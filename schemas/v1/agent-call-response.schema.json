@@ -1,0 +1,184 @@
+{
+  "$defs": {
+    "Usage": {
+      "additionalProperties": false,
+      "properties": {
+        "inputTokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Inputtokens"
+        },
+        "outputTokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outputtokens"
+        },
+        "reasoningTokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoningtokens"
+        }
+      },
+      "title": "Usage",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/agent-call-response.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "What the parent receives from a call (schema ``agent-call-response.schema.json``).",
+  "properties": {
+    "callKind": {
+      "enum": [
+        "implement",
+        "clarify",
+        "review",
+        "plan",
+        "acceptance",
+        "architecture",
+        "locate"
+      ],
+      "title": "Callkind",
+      "type": "string"
+    },
+    "contractVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "finalStatus": {
+      "enum": [
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "ERROR",
+        "CANCELLED",
+        "LIMIT_REACHED",
+        "CONTRACT_VIOLATION",
+        "ITERATIONS_EXHAUSTED"
+      ],
+      "title": "Finalstatus",
+      "type": "string"
+    },
+    "invocationId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Invocationid"
+    },
+    "iteration": {
+      "minimum": 1,
+      "title": "Iteration",
+      "type": "integer"
+    },
+    "limitReached": {
+      "anyOf": [
+        {
+          "enum": [
+            "tokens",
+            "time"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Limitreached"
+    },
+    "result": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result"
+    },
+    "status": {
+      "anyOf": [
+        {
+          "enum": [
+            "PASSED",
+            "FAILED",
+            "BLOCKED"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Status"
+    },
+    "summary": {
+      "maxLength": 5000,
+      "title": "Summary",
+      "type": "string"
+    },
+    "usage": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Usage"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "violations": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Violations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "callKind",
+    "iteration",
+    "finalStatus",
+    "summary"
+  ],
+  "title": "AgentCallResponse",
+  "type": "object"
+}

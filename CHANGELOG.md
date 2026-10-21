@@ -26,7 +26,30 @@
     the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
     the documents. `harness architecture refresh` redoes it. Guides in Spanish:
     `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
-
+- A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
+  `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
+  `project.yaml` without it behaves, and digests, as before.
+  - Contract: JSON Schemas `agent-call-request`, `agent-call-response` and `script-contract`
+    (41 schemas) generated from the typed models; the request states the task, allowed context,
+    authorized resources, constraints, token budget, time limit, iteration, expected response and
+    what returns to the parent; `harness agent-contract schema|validate|scripts|calls`.
+  - Minimal request: a read-only call sends only the task fields its kind needs; every call is
+    recorded (`agent-call-record`, `agent.call.recorded`) and `harness agent-contract calls`
+    shows what was sent, what the parent received and whether the stored request matches its
+    digest and the context the contract allowed. Context files stay guidance.
+  - Minimal response: a summary cap and `result` caps (keys of the kind, bytes, text fields, no
+    file contents where a conclusion is due); an answer outside them fails closed as
+    `agent.contract.violation` and is retried under `runtime.contractRetry`.
+  - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
+    corrections, contract retries, escalations and calls cut by a limit count; at the cap the
+    phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+  - Token budget and time limit per call from the router's S/M/L size (starting values, to be
+    calibrated): the time limit stops the process, the token budget is checked on the usage the
+    provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
+  - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
+    commands and the embedded MCP tools; the implement instructions tell the agent to use only
+    that contract.
+  - Documentation in Spanish under `docs/es/`.
 - Read-only calls get read-only tools, and a call that wrote is retried (#92). In the wave 9
   pilot a `clarify` call answered correctly and also wrote a test file: the harness undid the
   write, recorded `agent.read-only-violation` and discarded the answer, so INTENT blocked. Two

@@ -119,6 +119,70 @@
       "title": "AgentCallConfig",
       "type": "object"
     },
+    "AgentContractConfig": {
+      "additionalProperties": false,
+      "description": "The agent contract of a run (wave 11, #97).\n\n* ``maxIterations``: the cap of iterations of one agent in a run, at most 6 (default 5);\n  an iteration is one call to the agent with its own outcome;\n* ``budgets``: token budget and time limit of a call by task size (S, M, L);\n* ``limits``: caps of the response (summary characters, result bytes, characters of any\n  text field of the result).",
+      "properties": {
+        "budgets": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/SizeBudget"
+              },
+              "propertyNames": {
+                "enum": [
+                  "S",
+                  "M",
+                  "L"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budgets"
+        },
+        "limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ResponseLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "maxIterations": {
+          "anyOf": [
+            {
+              "maximum": 6,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maxiterations"
+        },
+        "mode": {
+          "default": "enforce",
+          "enum": [
+            "enforce",
+            "off"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "AgentContractConfig",
+      "type": "object"
+    },
     "AgentProviderConfiguration": {
       "additionalProperties": false,
       "description": "An agent provider.\n\nSince 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra\ncommand-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's\nenvironment passed as they are) and ``env`` (variables set for the provider, as a literal\nvalue or ``{fromEnv: NAME}``). Values that come from the environment are redacted from\nevery artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized\nconfiguration.",
@@ -3521,6 +3585,54 @@
       "title": "PullRequestConfig",
       "type": "object"
     },
+    "ResponseLimits": {
+      "additionalProperties": false,
+      "description": "Caps on what an agent may send back to its parent (per field).",
+      "properties": {
+        "fieldChars": {
+          "anyOf": [
+            {
+              "minimum": 80,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fieldchars"
+        },
+        "resultBytes": {
+          "anyOf": [
+            {
+              "minimum": 256,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resultbytes"
+        },
+        "summaryChars": {
+          "anyOf": [
+            {
+              "maximum": 5000,
+              "minimum": 40,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Summarychars"
+        }
+      },
+      "title": "ResponseLimits",
+      "type": "object"
+    },
     "RetrospectiveConfig": {
       "additionalProperties": false,
       "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
@@ -4160,6 +4272,40 @@
         }
       },
       "title": "SecondOpinionConfig",
+      "type": "object"
+    },
+    "SizeBudget": {
+      "additionalProperties": false,
+      "description": "The token budget and the time limit of one agent call for a task size.",
+      "properties": {
+        "tokens": {
+          "anyOf": [
+            {
+              "minimum": 1000,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tokens"
+        },
+        "wallSeconds": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wallseconds"
+        }
+      },
+      "title": "SizeBudget",
       "type": "object"
     },
     "SizeThresholds": {
@@ -5214,6 +5360,17 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "agentContract": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentContractConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "agentProvider": {
       "default": "simulated",
       "title": "Agentprovider",

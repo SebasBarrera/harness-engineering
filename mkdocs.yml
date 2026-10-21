@@ -89,6 +89,12 @@ nav:
       - Local API: reference/api.md
       - Exit codes: reference/exit-codes.md
       - Python API: reference/python-api.md
+  - Español:
+      - Contrato entre agentes: es/contrato-de-agentes.md
+      - Límites de iteraciones, tokens y tiempo: es/limites-de-agentes.md
+      - Scripts como cajas negras: es/scripts-caja-negra.md
+      - Arquitecturas para proyectos nuevos: es/arquitecturas.md
+      - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
   - Operations:
       - Metrics: metrics.md
       - Monitoring: monitoring.md
@@ -104,9 +110,6 @@ nav:
       - ADR 0004 Trust and capabilities: adr/0004-trust-and-capabilities.md
       - ADR 0005 Technology extension model: adr/0005-technology-extension-model.md
       - ADR 0006 Repository topology: adr/0006-repository-topology.md
-  - Español:
-      - Arquitecturas para proyectos nuevos: es/arquitecturas.md
-      - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
   - Thesis:
       - Context: thesis.md
       - Provenance: provenance.md

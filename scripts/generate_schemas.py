@@ -14,6 +14,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from governed_harness.agents.contract import AgentCallRequestContract, AgentCallResponse
+from governed_harness.agents.script_contracts import ScriptContract
 from governed_harness.configuration.models import ProjectConfiguration, WorkflowDefinition
 from governed_harness.domain.models import (
     AgentInvocation,
@@ -56,6 +58,8 @@ RESOURCE_ROOT = ROOT / "src" / "governed_harness" / "resources" / "schemas" / "v
 type SchemaModel = type[BaseModel]
 
 MODELS: dict[str, SchemaModel] = {
+    "agent-call-request.schema.json": AgentCallRequestContract,
+    "agent-call-response.schema.json": AgentCallResponse,
     "agent-invocation.schema.json": AgentInvocation,
     "agent-self-report.schema.json": AgentSelfReport,
     "artifact.schema.json": Artifact,
@@ -88,6 +92,7 @@ MODELS: dict[str, SchemaModel] = {
     "resource-usage.schema.json": ResourceUsage,
     "retrospective-recommendation.schema.json": Recommendation,
     "retrospective.schema.json": Retrospective,
+    "script-contract.schema.json": ScriptContract,
     "task.schema.json": Task,
     "tool-invocation.schema.json": ToolInvocation,
     "validation-result.schema.json": ValidationResult,
