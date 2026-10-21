@@ -93,6 +93,8 @@ nav:
       - Contrato entre agentes: es/contrato-de-agentes.md
       - Límites de iteraciones, tokens y tiempo: es/limites-de-agentes.md
       - Scripts como cajas negras: es/scripts-caja-negra.md
+      - Arquitecturas para proyectos nuevos: es/arquitecturas.md
+      - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
   - Operations:
       - Metrics: metrics.md
       - Monitoring: monitoring.md

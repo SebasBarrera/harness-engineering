@@ -20,7 +20,12 @@ from governed_harness.orchestration.architecture import (
     read_state,
     source_layout,
 )
+from governed_harness.orchestration.architecture_catalogue import (
+    ORGANIZATION_FILE,
+    RECOMMENDATION_FILE,
+)
 from governed_harness.orchestration.engineering import detect_testing
+from governed_harness.orchestration.reverse_engineering import DIRECTORY
 from governed_harness.standards import (
     BUILTIN_PACKS,
     describe_pack,
@@ -102,6 +107,29 @@ def architecture_report(services: EngineServices) -> dict[str, Any]:
         "layout": source_layout(services.paths.workspace),
         "survey": survey.read_text(encoding="utf-8") if survey.is_file() else None,
         "adr": adr.read_text(encoding="utf-8") if adr.is_file() else None,
+        "recommendation": _read_text(harness_dir / RECOMMENDATION_FILE),
+        "organization": _read_text(harness_dir / ORGANIZATION_FILE),
+        "reverseEngineering": _documents(harness_dir, state),
+    }
+
+
+def _read_text(path: Path) -> str | None:
+    return path.read_text(encoding="utf-8") if path.is_file() else None
+
+
+def _documents(harness_dir: Path, state: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The reverse engineering documents of an existing project (#97): where they are, their
+    digests (the record the survey made) and whether each file is still in the project."""
+    record = (state or {}).get("documentation")
+    if not isinstance(record, dict):
+        return None
+    return {
+        "directory": record.get("directory"),
+        "digest": record.get("digest"),
+        "files": {
+            name: {"digest": digest, "present": (harness_dir / DIRECTORY / name).is_file()}
+            for name, digest in (record.get("files") or {}).items()
+        },
     }
 
 
@@ -115,6 +143,7 @@ def decide_architecture(
     decision: DecisionKind | None,
     option: str | None,
     continue_after: bool,
+    style: str | None = None,
 ) -> dict[str, Any]:
     """A person approves or rejects the inferred rules, or chooses an option (an ADR)."""
     from governed_harness.orchestration.engine import RunEngine
@@ -128,6 +157,7 @@ def decide_architecture(
         rationale=rationale,
         decision=decision,
         option=option,
+        style=style,
     )
     result: dict[str, Any] = {"executionId": execution_id, "architecture": state}
     if continue_after:
@@ -235,6 +265,8 @@ def engineering_summary(resolved: Any) -> dict[str, Any]:
             "layerCheck": (architecture.layer_check if architecture else None) or "full",
             "baselineConflicts": (architecture.baseline_conflicts if architecture else None)
             or "enforce",
+            "catalogue": (architecture.catalogue if architecture else None) or "off",
+            "documentation": (architecture.documentation if architecture else None) or "off",
         },
         "projectSetup": project.intake.project_setup if project.intake else None,
         "forge": forge.kind if forge and forge.kind else "auto",

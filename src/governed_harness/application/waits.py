@@ -127,6 +127,16 @@ def _acceptance_dispute(
     }
 
 
+def _recommended_hint(state: dict[str, Any]) -> str:
+    """The recommended option of a catalogue proposal (its options carry ``supports``)."""
+    marked = [
+        str(item.get("id"))
+        for item in state.get("options") or []
+        if item.get("recommended") and "supports" in item
+    ]
+    return f" (recommended: {marked[0]})" if marked else ""
+
+
 def _architecture(
     services: EngineServices, execution: Execution, task: Task
 ) -> dict[str, Any] | None:
@@ -140,10 +150,11 @@ def _architecture(
     run = execution.execution_id
     if status == "OPTIONS" and execution.current_phase is PhaseId.INTENT:
         options = [str(item.get("id")) for item in state.get("options") or []]
+        hint = _recommended_hint(state)
         return {
             "kind": "architecture",
             "digest": digest,
-            "summary": f"{len(options)} architecture option(s): {', '.join(options)}",
+            "summary": f"{len(options)} architecture option(s): {', '.join(options)}{hint}",
             "next": _decide("architecture", run, digest, "--option <id>"),
         }
     if status == "PROPOSED" and execution.current_phase is PhaseId.DISCOVERY:

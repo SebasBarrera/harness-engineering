@@ -1337,7 +1337,8 @@ harness architecture show [OPTIONS]
 
 Decide the architecture, bound to the digest of the proposal: approve or reject the
 layer rules a survey inferred (existing project), or choose one of the options of a new
-project, which is recorded as an ADR. The approved rules are enforced as forbidden
+project, which is recorded as an ADR; under architecture.catalogue: experts --style chooses
+any style of the catalogue instead. The approved rules are enforced as forbidden
 dependencies in VERIFICATION. A stale digest or a non-human actor exits 5.
 
 ```text
@@ -1351,6 +1352,7 @@ harness architecture decide [OPTIONS]
 | `--rationale` | str | yes |  | Justification recorded |
 | `--decision` | `APPROVE` \| `REJECT` \| `REQUEST_CHANGES` \| `APPROVE_EXCEPTION` | no |  | APPROVE or REJECT the layer rules a survey inferred |
 | `--option` | str | no |  | The architecture option chosen for a new project |
+| `--style` | str | no |  | A style of the catalogue chosen for a new project (architecture.catalogue: experts) |
 | `--actor` | str | no |  | Identifier of the person acting (recorded, not authenticated). Defaults to the Git user under governance.deciderIdentity: git, otherwise human.local. Ids of agents, validators and the harness (agent.*, validator.*, harness.*) are refused with exit code 5. |
 | `--continue`, `--no-continue` | flag | no | --continue | Resume the run after recording the decision |
 | `--path` | path | no |  | Project directory |

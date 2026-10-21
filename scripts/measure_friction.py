@@ -62,7 +62,7 @@ results = {
     "architecture": (
         {"options": []}
         if request.get("mode") == "advise"
-        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
+        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}, "organization": "None.", "components": [{"name": "app", "path": ".", "responsibility": "The project."}], "conventions": [], "guidance": ["Follow the structure."]}
     ),
 }
 if kind == "implement":
