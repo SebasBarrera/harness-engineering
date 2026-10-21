@@ -17,8 +17,8 @@ Absent the section, nothing here runs."""
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Final, cast
+from dataclasses import replace
+from typing import Any, Final, cast
 
 from governed_harness.agents import AgentCallResult, AgentExecutionResult
 from governed_harness.agents.contract import (
@@ -50,10 +50,8 @@ from governed_harness.agents.script_contracts import BLACK_BOX_NOTICE, brief, re
 from governed_harness.configuration.agent_contract import AgentContractConfig
 from governed_harness.domain.enums import FindingSeverity, ResultStatus
 from governed_harness.domain.models import Execution, PhaseExecution, Task
+from governed_harness.orchestration.agent_contract_types import CallLimits, SentInfo
 from governed_harness.orchestration.engine_types import AgentCallOutcome, PhaseOutcome
-
-if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
 
 ITERATION_EVENT: Final = "agent.iteration"
 RECORD_EVENT: Final = "agent.call.recorded"
@@ -84,31 +82,14 @@ _FINAL = {
 _REPORTED = frozenset({"PASSED", "FAILED", "BLOCKED"})
 
 
-@dataclass(frozen=True)
-class CallLimits:
-    """The token budget and the time limit of one call, from the size of its task."""
-
-    size: str
-    tokens: int
-    seconds: int
-
-
-@dataclass(frozen=True)
-class SentInfo:
-    """What the harness did to the request of a call: the task fields it kept and left out."""
-
-    kept: tuple[str, ...]
-    omitted: tuple[str, ...]
-    iteration: int
-
-
 class AgentContractFlow:
-    def __init__(self, results: AgentResults) -> None:
+    def __init__(self, results: Any) -> None:
         self.results = results
 
     @property
     def config(self) -> AgentContractConfig | None:
-        return self.results.project.agent_contract
+        config: AgentContractConfig | None = self.results.project.agent_contract
+        return config
 
     @property
     def enabled(self) -> bool:
@@ -172,7 +153,7 @@ class AgentContractFlow:
             "possibleCauses": list(POSSIBLE_CAUSES),
             "recommendation": RECOMMENDATION,
         }
-        ref = self.results.record_json(
+        ref: str = self.results.record_json(
             execution,
             phase.phase_id,
             record,
@@ -485,7 +466,7 @@ class AgentContractFlow:
                 "receive it.",
             },
         }
-        ref = self.results.record_json(
+        ref: str = self.results.record_json(
             execution,
             phase.phase_id,
             record,

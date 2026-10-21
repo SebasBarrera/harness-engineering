@@ -58,6 +58,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.agent_contract_types import CallLimits, SentInfo
 from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
 from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
 from governed_harness.orchestration.engine_types import PhaseOutcome
@@ -77,7 +78,6 @@ from governed_harness.runtime.snapshots import StoredSnapshot
 from governed_harness.runtime.workspace import WorkspaceDiff
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_contract import CallLimits, SentInfo
     from governed_harness.orchestration.engine_types import EngineServices
     from governed_harness.orchestration.hosts import EngineHost
 
