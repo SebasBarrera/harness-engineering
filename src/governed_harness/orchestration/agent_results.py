@@ -58,6 +58,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.orchestration import budget as budget_rules
+from governed_harness.orchestration.agent_contract_types import CallLimits, SentInfo
 from governed_harness.orchestration.engine_types import READ_ONLY_RULE as READ_ONLY_RULE
 from governed_harness.orchestration.engine_types import AgentCallOutcome as AgentCallOutcome
 from governed_harness.orchestration.engine_types import PhaseOutcome
@@ -136,6 +137,10 @@ class AgentResults:
         self.engineering = Engineering(self)
         self.architecture = ArchitectureFlow(self)
         self.project_setup = ProjectSetup(self)
+        # Wave 11 (#97): the versioned request and response contract of agent calls.
+        from governed_harness.orchestration.agent_contract import AgentContractFlow
+
+        self.agent_contract = AgentContractFlow(self)
         self._baselines: dict[str, StoredSnapshot | None] = {}
 
     def after_verification(
@@ -251,6 +256,7 @@ class AgentResults:
                 project.budget is not None,
                 project.memory is not None,
                 project.agent_routing is not None,
+                project.agent_contract is not None,
                 self.engineering.configured,
                 bool(governance.apply_repository_policies),
             )
@@ -513,7 +519,11 @@ class AgentResults:
         self, execution: Execution, phase: PhaseExecution, kind: CallKind
     ) -> PhaseOutcome | None:
         """Fail closed before an agent call when a limit is already crossed (or a call crossed
-        its per-call limit and no person raised it since)."""
+        its per-call limit and no person raised it since). Under ``agentContract`` the call is
+        first counted as one iteration of its agent, and refused when the agent used its cap."""
+        capped = self.agent_contract.begin(execution, phase, kind)
+        if capped is not None:
+            return capped
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -756,6 +766,17 @@ class AgentResults:
             request.update(repository)
             if "untrustedContent" in repository:
                 request["instructions"] += " " + repository["untrustedContent"]["notice"]
+        limits: CallLimits | None = None
+        sent: SentInfo | None = None
+        if self.agent_contract.enabled:
+            # #97: the minimal request of this kind, with the request contract.
+            limits = self.agent_contract.limits(execution, task)
+            try:
+                sent = self.agent_contract.apply_read_only(execution, kind, request, limits)
+            except ValueError as error:
+                # A request that breaks its own contract is not sent (fail closed).
+                message = f"agent.contract.invalid: {error}"
+                return AgentCallOutcome(ResultStatus.BLOCKED, message, None, None, ())
         request_ref = self.record_json(
             execution,
             phase.phase_id,
@@ -773,7 +794,7 @@ class AgentResults:
             process_runner=engine._runner(execution),
             patch_applier=PatchApplier(self.s.paths.workspace),
             provenance=engine._provenance(execution).model_copy(update={"actor": actor}),
-            timeout_seconds=engine._bounded_timeout(runtime.command_timeout_seconds),
+            timeout_seconds=self._call_timeout(runtime.command_timeout_seconds, limits),
             max_output_bytes=runtime.max_output_bytes,
             cancellation=CancellationToken(lambda: engine.is_cancelled(execution.execution_id)),
         )
@@ -786,6 +807,37 @@ class AgentResults:
         refs = (request_ref, *sandbox_refs) + (
             (answer.execution.output_ref,) if answer.execution.output_ref else ()
         )
+        outcome = self._read_only_outcome(execution, kind, answer, before, refs)
+        if limits is None or sent is None:
+            return outcome
+        return self.agent_contract.settle(
+            execution,
+            phase,
+            kind,
+            outcome,
+            answer,
+            request=request,
+            request_ref=request_ref,
+            limits=limits,
+            sent=sent,
+        )
+
+    def _call_timeout(self, command_timeout: int, limits: CallLimits | None) -> int:
+        """The time a call may run: the command timeout, shortened to the time limit of the
+        task's size under ``agentContract``."""
+        bounded = self.engine._bounded_timeout(command_timeout)
+        return bounded if limits is None else self.agent_contract.timeout(bounded, limits)
+
+    def _read_only_outcome(
+        self,
+        execution: Execution,
+        kind: CallKind,
+        answer: AgentCallResult,
+        before: WorkspaceSnapshot,
+        refs: tuple[str, ...],
+    ) -> AgentCallOutcome:
+        """The outcome of a finished read-only call: its answer, or an error when it changed
+        the workspace (undone, with a ``HIGH`` finding)."""
         diff = changes_since(self.s.paths.workspace, before)
         if diff.changes:
             restored, unrestorable = restore_changes(
@@ -1049,8 +1101,11 @@ class AgentResults:
             extra["acceptanceTests"] = {**frozen, **self.disputes.request_extra(execution)}
         if self.engineering.configured:
             notes.insert(0, self._engineering_extra(execution, phase, task, extra))
-        if not extra:
+        contract = self.agent_contract.enabled
+        if not extra and not contract:
             return None
+        if contract:
+            notes.append(self.agent_contract.black_box_notice())
         workspace = str(self.s.paths.workspace)
         suffix = " ".join(item for item in notes if item)
         extra.update(
@@ -1062,6 +1117,9 @@ class AgentResults:
                 + (f" {suffix}" if suffix else ""),
             }
         )
+        if contract:
+            limits = self.agent_contract.limits(execution, task)
+            self.agent_contract.apply_implement(execution, task, extra, limits)
         return extra
 
     def _engineering_extra(

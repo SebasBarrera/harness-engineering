@@ -1,0 +1,181 @@
+{
+  "$defs": {
+    "ScriptError": {
+      "additionalProperties": false,
+      "properties": {
+        "agentAction": {
+          "title": "Agentaction",
+          "type": "string"
+        },
+        "code": {
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "meaning": {
+          "title": "Meaning",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "meaning",
+        "agentAction"
+      ],
+      "title": "ScriptError",
+      "type": "object"
+    },
+    "ScriptInput": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "title": "Required",
+          "type": "boolean"
+        },
+        "valueType": {
+          "enum": [
+            "string",
+            "integer",
+            "boolean",
+            "path",
+            "array",
+            "object"
+          ],
+          "title": "Valuetype",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "valueType",
+        "required",
+        "description"
+      ],
+      "title": "ScriptInput",
+      "type": "object"
+    },
+    "ScriptOutput": {
+      "additionalProperties": false,
+      "properties": {
+        "channel": {
+          "enum": [
+            "stdout",
+            "exit-code",
+            "file",
+            "result"
+          ],
+          "title": "Channel",
+          "type": "string"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        },
+        "format": {
+          "title": "Format",
+          "type": "string"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "channel",
+        "format",
+        "description"
+      ],
+      "title": "ScriptOutput",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/script-contract.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The contract of one script (schema ``script-contract.schema.json``).",
+  "properties": {
+    "contractVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "errors": {
+      "items": {
+        "$ref": "#/$defs/ScriptError"
+      },
+      "minItems": 1,
+      "title": "Errors",
+      "type": "array"
+    },
+    "inputs": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ScriptInput"
+      },
+      "title": "Inputs",
+      "type": "array"
+    },
+    "invocation": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Invocation",
+      "type": "array"
+    },
+    "kind": {
+      "enum": [
+        "harness-command",
+        "validator",
+        "mcp-tool"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "outputs": {
+      "items": {
+        "$ref": "#/$defs/ScriptOutput"
+      },
+      "minItems": 1,
+      "title": "Outputs",
+      "type": "array"
+    },
+    "scriptId": {
+      "minLength": 1,
+      "title": "Scriptid",
+      "type": "string"
+    },
+    "sourceIsOpaque": {
+      "const": true,
+      "default": true,
+      "title": "Sourceisopaque",
+      "type": "boolean"
+    },
+    "summary": {
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "scriptId",
+    "kind",
+    "summary",
+    "invocation",
+    "outputs",
+    "errors"
+  ],
+  "title": "ScriptContract",
+  "type": "object"
+}

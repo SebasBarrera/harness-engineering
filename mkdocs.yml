@@ -89,6 +89,10 @@ nav:
       - Local API: reference/api.md
       - Exit codes: reference/exit-codes.md
       - Python API: reference/python-api.md
+  - Español:
+      - Contrato entre agentes: es/contrato-de-agentes.md
+      - Límites de iteraciones, tokens y tiempo: es/limites-de-agentes.md
+      - Scripts como cajas negras: es/scripts-caja-negra.md
   - Operations:
       - Metrics: metrics.md
       - Monitoring: monitoring.md

@@ -84,6 +84,7 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
+from .agent_contract import agent_calls
 from .agent_results import (
     acceptance_state,
     agent_results_summary,
@@ -871,6 +872,14 @@ class HarnessApplication(ReviewCodeCommands):
         """Cost per approved task of the routing decisions recorded in the project (#44)."""
         with self._services(path) as services:
             return routing_calibration(services)
+
+    def agent_calls(
+        self, path: Path, execution_id: str, kind: str | None = None, iteration: int | None = None
+    ) -> dict[str, Any]:
+        """The agent calls of a run, the iterations each agent used and, for one call, exactly
+        what was sent and what the parent received (#97)."""
+        with self._services(path) as services:
+            return agent_calls(services, self._run_id(services, execution_id), kind, iteration)
 
     def budget(self, path: Path, execution_id: str) -> dict[str, Any]:
         """Usage of a run and its task against the budget limits (#42)."""
