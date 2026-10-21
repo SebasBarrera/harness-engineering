@@ -69,6 +69,14 @@ def _call_result(kind: CallKind, request: dict[str, Any]) -> dict[str, Any]:
             "summary": "Simulated survey: no layering was inferred.",
             "layers": [],
             "allow": {},
+            # The documentation fields of architecture.documentation: project (#97); ignored
+            # when the key is off.
+            "organization": "Simulated survey: no organization was inferred.",
+            "components": [
+                {"name": "project", "path": ".", "responsibility": "Simulated component."}
+            ],
+            "conventions": [],
+            "guidance": ["Simulated survey: follow the existing structure."],
         }
     if kind == "plan":
         return _plan_result(request)
