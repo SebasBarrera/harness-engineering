@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793625589133,
+  "lastUpdate": 1794231893932,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -3891,6 +3891,68 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 4.598,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera",
+            "email": "sebasbarrera981119@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "f3477bc4861e9e44e6f33615261a52a3ad7dbe9e",
+          "message": "Merge pull request #102 from SebasBarrera/feat/wave11-agent-contract\n\nfeat: versioned agent contract with iteration, token and time limits (wave 11, part 2)",
+          "timestamp": "2026-10-21T00:27:53Z",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/f3477bc4861e9e44e6f33615261a52a3ad7dbe9e"
+        },
+        "date": 1794231893013,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.000721,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001042,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.00635,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.03331,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.164494,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 8.30716,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 8.35373,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 4.628,
             "unit": "%"
           }
         ]
