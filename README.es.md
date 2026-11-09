@@ -17,9 +17,6 @@
 
 [English](README.md) · Español · [Sitio de documentación](https://sebasbarrera.github.io/harness-engineering/) (en inglés)
 
-Guías en español: [arquitecturas para proyectos nuevos](docs/es/arquitecturas.md) ·
-[ingeniería inversa de proyectos existentes](docs/es/ingenieria-inversa.md)
-
 > [!WARNING]
 > Beta de investigación. **Esto no es un sandbox**: los comandos que ejecuta el harness conservan
 > los permisos de tu usuario del sistema operativo y el tablero local solo se autentica con un token
@@ -62,6 +59,8 @@ Pensadas para empezar sin conocer los detalles internos (también en el
 - [Proyecto nuevo](docs/es/proyecto-nuevo.md) y [proyecto existente](docs/es/proyecto-existente.md).
 - [Estructura generada](docs/es/estructura-generada.md): cada archivo y carpeta que crea el harness, para qué sirve y si se versiona.
 - [Seguimiento](docs/es/seguimiento.md): estado, avance, bloqueos, límites alcanzados, reportes y métricas.
+- [Contrato entre agentes](docs/es/contrato-de-agentes.md), [límites de iteraciones, tokens y tiempo](docs/es/limites-de-agentes.md) y [scripts como cajas negras](docs/es/scripts-caja-negra.md).
+- [Arquitecturas para proyectos nuevos](docs/es/arquitecturas.md) e [ingeniería inversa de proyectos existentes](docs/es/ingenieria-inversa.md).
 - [Trabajo simultáneo](docs/es/trabajo-simultaneo.md): qué se puede hacer entre dos personas y qué no.
 - [Instalación](docs/es/instalacion.md), [instalación avanzada](docs/es/instalacion-avanzada.md) y [publicación de versiones](docs/es/publicacion.md).
 
