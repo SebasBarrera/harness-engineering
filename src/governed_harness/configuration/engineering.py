@@ -247,9 +247,11 @@ ArchitectureStyle = Literal[
     "microservices",
     "mvvm",
     "mvi",
+    "event-driven",
+    "cqrs",
     "custom",
 ]
-ARCHITECTURE_STYLES: tuple[str, ...] = (
+BASE_STYLES: tuple[str, ...] = (
     "ddd",
     "hexagonal",
     "clean",
@@ -260,10 +262,29 @@ ARCHITECTURE_STYLES: tuple[str, ...] = (
     "mvi",
     "custom",
 )
+"""The styles the architecture calls listed before the catalogue (wave 11): without
+``architecture.catalogue`` the requests keep this list and so their prompt digests."""
+CATALOGUE_STYLES: tuple[str, ...] = (
+    "layered",
+    "hexagonal",
+    "clean",
+    "ddd",
+    "modular-monolith",
+    "microservices",
+    "mvvm",
+    "mvi",
+    "event-driven",
+    "cqrs",
+)
+"""The ten styles of the catalogue (wave 11, #97): each has packaged documentation and an
+expert prompt (``resources/architecture``)."""
+ARCHITECTURE_STYLES: tuple[str, ...] = (*BASE_STYLES[:-1], "event-driven", "cqrs", "custom")
 ArchitectureMode = Literal["agent", "off"]
 RefreshMode = Literal["auto", "manual"]
 LayerCheckMode = Literal["differential", "full"]
 BaselineConflicts = Literal["allow", "enforce"]
+CatalogueMode = Literal["experts", "off"]
+DocumentationMode = Literal["project", "off"]
 
 
 class LayerConfig(_Section):
@@ -308,7 +329,18 @@ class ArchitectureSettings(_Section):
     * ``baselineConflicts: allow`` checks the rules a survey infers against the baseline when
       they are proposed: the dependencies between layers the baseline already has and the
       rules forbid are listed in the proposal (and in the inbox) and added to ``allow`` in the
-      rules a person approves; ``enforce`` (or absent) keeps the rules as inferred."""
+      rules a person approves; ``enforce`` (or absent) keeps the rules as inferred.
+
+    Since 2.0 (#97), two more keys:
+
+    * ``catalogue: experts`` offers the ten styles of the catalogue to a new project: the advise
+      call recommends one with its reasons and the characteristics of the project that support
+      it, a person accepts it or chooses another style of the catalogue, and an expert for the
+      chosen style organises the project and travels, as a prompt, with every later request;
+    * ``documentation: project`` makes the survey of an existing project write persistent
+      reverse engineering documents under ``.harness/reverse-engineering`` (structure,
+      components, conventions and how the harness acts) that later requests point to; the
+      survey is not repeated while they hold."""
 
     mode: ArchitectureMode | None = None
     style: ArchitectureStyle | None = None
@@ -319,8 +351,10 @@ class ArchitectureSettings(_Section):
     agent: AgentCallConfig | None = None
     layer_check: LayerCheckMode | None = Field(default=None, alias="layerCheck")
     baseline_conflicts: BaselineConflicts | None = Field(default=None, alias="baselineConflicts")
+    catalogue: CatalogueMode | None = None
+    documentation: DocumentationMode | None = None
 
-    @field_validator("mode", "enforce", mode="before")
+    @field_validator("mode", "enforce", "catalogue", "documentation", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
         return off_from_yaml(value)
@@ -351,6 +385,14 @@ class ArchitectureSettings(_Section):
     @property
     def allows_baseline_conflicts(self) -> bool:
         return self.baseline_conflicts == "allow"
+
+    @property
+    def experts(self) -> bool:
+        return self.catalogue == "experts"
+
+    @property
+    def documents(self) -> bool:
+        return self.documentation == "project"
 
 
 # ----- project setup questions (#56, item 6) ------------------------------------------------

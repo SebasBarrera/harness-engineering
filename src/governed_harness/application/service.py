@@ -1663,8 +1663,10 @@ class HarnessApplication(ReviewCodeCommands):
         option: str | None = None,
         actor_id: str | None = None,
         continue_after: bool = True,
+        style: str | None = None,
     ) -> dict[str, Any]:
-        """Approve or reject inferred layer rules, or choose an architecture option (#56)."""
+        """Approve or reject inferred layer rules, or choose an architecture option (#56) or,
+        under ``architecture.catalogue: experts``, a style of the catalogue (#97)."""
         with (
             self._services(path) as services,
             self._leased(services, "architecture decide") as lease,
@@ -1682,6 +1684,7 @@ class HarnessApplication(ReviewCodeCommands):
                 decision=decision,
                 option=option,
                 continue_after=continue_after,
+                style=style,
             )
 
     def refresh_architecture(self, path: Path) -> dict[str, Any]:

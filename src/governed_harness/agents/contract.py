@@ -69,7 +69,21 @@ RESULT_KEYS: Final[dict[str, tuple[str, ...]]] = {
     "plan": ("subtasks",),
     "acceptance": ("tests",),
     "locate": ("locations", "questions"),
-    "architecture": ("style", "summary", "layers", "allow", "options"),
+    "architecture": (
+        "style",
+        "summary",
+        "layers",
+        "allow",
+        "options",
+        # The survey under ``architecture.documentation: project`` (reverse engineering).
+        "organization",
+        "components",
+        "conventions",
+        "guidance",
+        # The expert's organization plan under ``architecture.catalogue: experts``.
+        "structure",
+        "practices",
+    ),
 }
 """The keys the ``result`` object of each call kind may carry."""
 

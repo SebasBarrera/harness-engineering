@@ -34,14 +34,31 @@ import json
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from governed_harness.agents.requests import ADVISE_CATALOGUE_SUFFIX
 from governed_harness.checks.layers import LayerRules, crossings
 from governed_harness.checks.principles import is_source
-from governed_harness.configuration.engineering import ARCHITECTURE_STYLES, ArchitectureSettings
+from governed_harness.configuration.engineering import (
+    ARCHITECTURE_STYLES,
+    BASE_STYLES,
+    CATALOGUE_STYLES,
+    ArchitectureSettings,
+)
 from governed_harness.domain.enums import ActorType, DecisionKind, PhaseId, ResultStatus
 from governed_harness.domain.errors import NotFoundError, PolicyViolationError
 from governed_harness.domain.models import Actor, Execution, PhaseExecution, Task, utc_now
 from governed_harness.evidence.hashing import sha256_json
 from governed_harness.intake.project_kind import ProjectKind, detect_project_kind
+from governed_harness.orchestration import reverse_engineering
+from governed_harness.orchestration.architecture_catalogue import (
+    ORGANIZATION_FILE,
+    RECOMMENDATION_FILE,
+    STYLE_DOC_FILE,
+    catalogue,
+    expert_block,
+    in_catalogue,
+    render_recommendation,
+    style_entry,
+)
 from governed_harness.orchestration.engine_types import PhaseOutcome
 from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 
@@ -225,23 +242,69 @@ def validate_options(result: dict[str, Any]) -> list[dict[str, Any]]:
         if style not in ARCHITECTURE_STYLES:
             raise ValueError(f"option {index} has an unknown style {item.get('style')!r}")
         layers, allow = _layers(item)
-        options.append(
-            {
-                "id": str(item.get("id") or f"option-{index}")[:40],
-                "style": style,
-                "title": str(item.get("title") or style)[:200],
-                "benefits": [str(text)[:400] for text in item.get("benefits") or []][:10],
-                "costs": [str(text)[:400] for text in item.get("costs") or []][:10],
-                "fit": str(item.get("fit") or "")[:1000],
-                "recommended": bool(item.get("recommended")),
-                "layers": layers,
-                "allow": allow,
-            }
-        )
+        option = {
+            "id": str(item.get("id") or f"option-{index}")[:40],
+            "style": style,
+            "title": str(item.get("title") or style)[:200],
+            "benefits": [str(text)[:400] for text in item.get("benefits") or []][:10],
+            "costs": [str(text)[:400] for text in item.get("costs") or []][:10],
+            "fit": str(item.get("fit") or "")[:1000],
+            "recommended": bool(item.get("recommended")),
+            "layers": layers,
+            "allow": allow,
+        }
+        if "supports" in item:  # the catalogue (#97); absent keeps the earlier options and digest
+            option["supports"] = [str(text)[:400] for text in item.get("supports") or []][:10]
+        options.append(option)
     ids = [item["id"] for item in options]
     if len(ids) != len(set(ids)):
         raise ValueError("option ids must be unique")
     return options
+
+
+def validate_catalogue_options(result: dict[str, Any]) -> list[dict[str, Any]]:
+    """The options of an advise call under ``architecture.catalogue: experts``: styles of the
+    catalogue, the reasons and project characteristics behind each, and exactly one
+    recommended, so the report a person reads is complete (fail closed)."""
+    options = validate_options(result)
+    for item in options:
+        if not in_catalogue(item["style"]):
+            raise ValueError(f"option {item['id']} is not a style of the catalogue")
+        if not item["fit"].strip() or not item.get("supports"):
+            raise ValueError(f"option {item['id']} needs a 'fit' reason and 'supports'")
+    if options and sum(1 for item in options if item["recommended"]) != 1:
+        raise ValueError("mark exactly one option as recommended")
+    return options
+
+
+def validate_organization(result: dict[str, Any]) -> dict[str, Any]:
+    """The plan of the expert for the chosen style: where things go and the practices to apply."""
+    summary = result.get("summary")
+    structure = result.get("structure")
+    practices = result.get("practices")
+    if not isinstance(summary, str) or not summary.strip():
+        raise ValueError("the organization needs a 'summary' text")
+    if not isinstance(structure, list) or not isinstance(practices, list):
+        raise ValueError("the organization needs 'structure' and 'practices' lists")
+    entries = [
+        {"path": str(item.get("path") or "")[:300], "purpose": str(item.get("purpose") or "")[:400]}
+        for item in structure[:60]
+        if isinstance(item, dict) and str(item.get("path") or "").strip()
+    ]
+    if any(item["path"].startswith("/") or ".." in item["path"].split("/") for item in entries):
+        raise ValueError("structure paths must be relative")
+    return {
+        "summary": summary.strip()[:20_000],
+        "structure": entries,
+        "practices": [str(text)[:400] for text in practices[:20]],
+    }
+
+
+def validate_documented_survey(result: dict[str, Any]) -> dict[str, Any]:
+    """A survey answer with the reverse engineering documentation (``documentation: project``)."""
+    survey = validate_survey(result)
+    survey["documentation"] = reverse_engineering.validate_documentation(result)
+    return survey
 
 
 def render_adr(option: dict[str, Any], *, decided_by: str, rationale: str, digest: str) -> str:
@@ -269,6 +332,27 @@ def render_adr(option: dict[str, Any], *, decided_by: str, rationale: str, diges
         allowed = ", ".join(option["allow"].get(layer["name"], [])) or "no other layer"
         where = ", ".join([*layer["paths"], *layer["modules"]])
         lines.append(f"- {layer['name']} ({where}) may depend on: {allowed}")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _recommended(options: list[dict[str, Any]]) -> str:
+    """The id of the recommended option (the first one when none is marked)."""
+    marked = [item["id"] for item in options if item.get("recommended")]
+    return str(marked[0] if marked else options[0]["id"])
+
+
+def _render_organization(title: str, plan: dict[str, Any]) -> str:
+    """The plan of the expert for the chosen style (Markdown)."""
+    lines = [
+        f"# Organization of the project ({title})",
+        "",
+        plan["summary"],
+        "",
+        "## Structure",
+        "",
+    ]
+    lines += [f"- `{item['path']}`: {item['purpose']}" for item in plan["structure"]]
+    lines += ["", "## Practices", "", *[f"- {item}" for item in plan["practices"]]]
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -300,14 +384,48 @@ class ArchitectureFlow:
 
     def request_extra(self) -> dict[str, Any] | None:
         rules = self.rules()
-        if rules is None or not rules.layers:
-            return None
         state = self.state() or {}
-        return {
-            "style": (self.config.style if self.config and self.config.style else None)
-            or state.get("style"),
-            **rules.as_dict(),
-        }
+        block: dict[str, Any] = {}
+        if rules is not None and rules.layers:
+            block = {
+                "style": (self.config.style if self.config and self.config.style else None)
+                or state.get("style"),
+                **rules.as_dict(),
+            }
+        block.update(self._guidance(state))
+        return block or None
+
+    def _guidance(self, state: dict[str, Any]) -> dict[str, Any]:
+        """What the requests carry besides the rules (#97): the expert prompt of the chosen
+        style and its organisation (``catalogue: experts``), and where the reverse engineering
+        documents of an existing project are (``documentation: project``)."""
+        config = self.config
+        if config is None:
+            return {}
+        extra: dict[str, Any] = {}
+        style = state.get("style")
+        if (
+            config.experts
+            and state.get("status") == "APPROVED"
+            and isinstance(style, str)
+            and in_catalogue(style)
+        ):
+            extra["style"] = style
+            extra["expert"] = expert_block(style)
+            organization = state.get("organization")
+            if isinstance(organization, dict):
+                extra["organization"] = organization.get("summary")
+        if config.documents:
+            docs = reverse_engineering.request_block(self.harness_dir, state.get("documentation"))
+            if docs is not None:
+                extra["reverseEngineering"] = docs
+        return extra
+
+    def _styles(self, *, full: bool = False) -> tuple[str, ...]:
+        """The styles listed in the requests: the catalogue (advise) or the earlier list."""
+        if self.config is not None and self.config.experts:
+            return ARCHITECTURE_STYLES if full else CATALOGUE_STYLES
+        return BASE_STYLES
 
     # ----- INTENT: options for a new project -------------------------------------------------
     def advise(
@@ -317,28 +435,17 @@ class ArchitectureFlow:
         if config is None or not config.agent_enabled or config.layers or config.style:
             return None
         state = self.state()
-        if state is not None and state.get("status") in {"APPROVED", "REJECTED", "NONE"}:
+        status = state.get("status") if state is not None else None
+        if state is not None and status == "APPROVED" and config.experts:
+            return self._organize(execution, phase, task, state)
+        if status in {"APPROVED", "REJECTED", "NONE"}:
             return None
-        if state is not None and state.get("status") == "OPTIONS":
-            return PhaseOutcome(
-                ResultStatus.BLOCKED,
-                f"{len(state['options'])} architecture option(s) wait for a person: harness "
-                f"architecture decide --run {execution.execution_id} --option <id> --digest "
-                f"{state['digest']}",
-                (state["ref"],),
-            )
+        if state is not None and status == "OPTIONS":
+            return self._waiting(execution, state)
         kind = self.kind()
         if not kind.new:
             return None
-        outcome = self.results.call_agent(
-            execution,
-            phase,
-            "architecture",
-            {"mode": "advise", "styles": list(ARCHITECTURE_STYLES), "projectKind": kind.as_dict()},
-            task=task,
-            instruction_values={"mode": "advise", "styles": ", ".join(ARCHITECTURE_STYLES)},
-            validate=validate_options,
-        )
+        outcome = self._advice_call(execution, phase, task, kind, config)
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
@@ -346,9 +453,55 @@ class ArchitectureFlow:
                 outcome.evidence_refs,
             )
         try:
-            options = validate_options(outcome.result)
+            options = (
+                validate_catalogue_options(outcome.result)
+                if config.experts
+                else validate_options(outcome.result)
+            )
         except ValueError as error:
             return self._malformed(execution, error, outcome.evidence_refs)
+        return self._proposed(execution, phase, kind, outcome, options)
+
+    def _advice_call(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        kind: ProjectKind,
+        config: ArchitectureSettings,
+    ) -> Any:
+        """The advise call: the earlier request, or under ``catalogue: experts`` the ten styles
+        with what each one is for and the report fields a person needs to decide."""
+        styles = self._styles()
+        payload: dict[str, Any] = {
+            "mode": "advise",
+            "styles": list(styles),
+            "projectKind": kind.as_dict(),
+        }
+        suffix = ""
+        if config.experts:
+            payload["catalogue"] = [item.summary() for item in catalogue()]
+            suffix = ADVISE_CATALOGUE_SUFFIX
+        return self.results.call_agent(
+            execution,
+            phase,
+            "architecture",
+            payload,
+            task=task,
+            instruction_values={"mode": "advise", "styles": ", ".join(styles)},
+            instructions_suffix=suffix,
+            validate=validate_catalogue_options if config.experts else validate_options,
+        )
+
+    def _proposed(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        kind: ProjectKind,
+        outcome: Any,
+        options: list[dict[str, Any]],
+    ) -> PhaseOutcome | None:
+        """Record the options (and, with the catalogue, the report a person reads)."""
         digest = sha256_json({"options": options})
         record = {
             "status": "OPTIONS" if options else "NONE",
@@ -367,20 +520,91 @@ class ArchitectureFlow:
             summary=f"Architecture options for a new project: {len(options)}",
         )
         self._write({**record, "ref": ref, "executionId": execution.execution_id})
+        payload: dict[str, Any] = {
+            "digest": digest,
+            "options": [item["id"] for item in options],
+            "evidenceRef": ref,
+        }
+        if self.config is not None and self.config.experts and options:
+            (self.harness_dir / RECOMMENDATION_FILE).write_text(
+                render_recommendation(options, kind.as_dict()), encoding="utf-8"
+            )
+            payload["recommended"] = _recommended(options)
         self.results.s.events.append(
             execution.execution_id,
             "architecture.options.proposed",
-            {"digest": digest, "options": [item["id"] for item in options], "evidenceRef": ref},
+            payload,
             phase_execution_id=phase.phase_execution_id,
         )
         if not options:
             return None
-        return PhaseOutcome(
-            ResultStatus.BLOCKED,
-            f"{len(options)} architecture option(s) wait for a person: harness architecture "
-            f"decide --run {execution.execution_id} --option <id> --digest {digest}",
-            (ref,),
+        return self._waiting(execution, {**record, "ref": ref})
+
+    def _waiting(self, execution: Execution, state: dict[str, Any]) -> PhaseOutcome:
+        """The options wait for a person; with the catalogue the message names the recommended
+        one and the report to read."""
+        text = (
+            f"{len(state['options'])} architecture option(s) wait for a person: harness "
+            f"architecture decide --run {execution.execution_id} --option <id> --digest "
+            f"{state['digest']}"
         )
+        if self.config is not None and self.config.experts:
+            text += (
+                f" (recommended: {_recommended(state['options'])}; the report is "
+                f".harness/{RECOMMENDATION_FILE}; --style <style> chooses any style of the "
+                "catalogue)"
+            )
+        return PhaseOutcome(ResultStatus.BLOCKED, text, (state["ref"],))
+
+    def _organize(
+        self, execution: Execution, phase: PhaseExecution, task: Task, state: dict[str, Any]
+    ) -> PhaseOutcome | None:
+        """Once the style is chosen, one call by its expert plans how the project is organised
+        (the read-only plan the implementation then follows); recorded in the state, so it is
+        not asked again."""
+        style = state.get("style")
+        if state.get("mode") != "advise" or "organization" in state or not in_catalogue(style):
+            return None
+        entry = style_entry(str(style))
+        outcome = self.results.call_agent(
+            execution,
+            phase,
+            "architecture",
+            {"mode": "organize", "style": entry.style, "rules": state.get("rules") or {}},
+            task=task,
+            instruction_values={"mode": "organize", "style": entry.title},
+            instructions_suffix=entry.expert_prompt,
+            validate=validate_organization,
+        )
+        if outcome.status is not ResultStatus.PASSED or outcome.result is None:
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"The {entry.style} expert did not answer ({outcome.status}): {outcome.summary}",
+                outcome.evidence_refs,
+            )
+        try:
+            plan = validate_organization(outcome.result)
+        except ValueError as error:
+            return self._malformed(execution, error, outcome.evidence_refs)
+        organization = {**plan, "digest": sha256_json(plan), "invocationId": outcome.invocation_id}
+        ref = self.results.record_json(
+            execution,
+            PhaseId.INTENT,
+            {"style": entry.style, **organization},
+            kind="architecture-organization",
+            summary=f"Organization of the project by the {entry.style} expert",
+        )
+        (self.harness_dir / ORGANIZATION_FILE).write_text(
+            _render_organization(entry.title, plan), encoding="utf-8"
+        )
+        self._write({**state, "organization": {**organization, "ref": ref}})
+        self.results.s.events.append(
+            execution.execution_id,
+            "architecture.organization.proposed",
+            {"style": entry.style, "digest": organization["digest"], "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return None
 
     # ----- DISCOVERY: survey of an existing project ------------------------------------------
     def survey(
@@ -404,14 +628,17 @@ class ArchitectureFlow:
             return None
         if self.kind().new:
             return None
+        validate = validate_documented_survey if config.documents else validate_survey
+        styles = self._styles(full=True)
         outcome = self.results.call_agent(
             execution,
             phase,
             "architecture",
-            {"mode": "survey", "layout": layout, "styles": list(ARCHITECTURE_STYLES)},
+            {"mode": "survey", "layout": layout, "styles": list(styles)},
             task=task,
-            instruction_values={"mode": "survey", "styles": ", ".join(ARCHITECTURE_STYLES)},
-            validate=validate_survey,
+            instruction_values={"mode": "survey", "styles": ", ".join(styles)},
+            instructions_suffix=reverse_engineering.SURVEY_SUFFIX if config.documents else "",
+            validate=validate,
         )
         if outcome.status is not ResultStatus.PASSED or outcome.result is None:
             return PhaseOutcome(
@@ -420,7 +647,7 @@ class ArchitectureFlow:
                 outcome.evidence_refs,
             )
         try:
-            survey = validate_survey(outcome.result)
+            survey = validate(outcome.result)
         except ValueError as error:
             return self._malformed(execution, error, outcome.evidence_refs)
         rules = {"layers": survey["layers"], "allow": survey["allow"]}
@@ -450,17 +677,23 @@ class ArchitectureFlow:
             f"# Architecture of the project ({survey['style']})\n\n{survey['summary']}\n",
             encoding="utf-8",
         )
+        completed: dict[str, Any] = {
+            "digest": digest,
+            "status": status,
+            "layers": len(survey["layers"]),
+            "evidenceRef": ref,
+            **({"baselineConflicts": len(checked["baselineConflicts"])} if checked else {}),
+        }
+        if survey.get("documentation") is not None:
+            record["documentation"] = reverse_engineering.write_documents(
+                self.harness_dir, survey, survey["documentation"], layout, digest=digest
+            )
+            completed["documentation"] = record["documentation"]["digest"]
         self._write({**record, "ref": ref, "executionId": execution.execution_id})
         self.results.s.events.append(
             execution.execution_id,
             "architecture.survey.completed",
-            {
-                "digest": digest,
-                "status": status,
-                "layers": len(survey["layers"]),
-                "evidenceRef": ref,
-                **({"baselineConflicts": len(checked["baselineConflicts"])} if checked else {}),
-            },
+            completed,
             phase_execution_id=phase.phase_execution_id,
         )
         if status == "NONE":
@@ -499,14 +732,22 @@ class ArchitectureFlow:
         refresh = (config.refresh or "manual") == "auto"
         if refresh and similarity(state.get("layout") or [], layout) < MATERIAL_CHANGE:
             return False
+        if config.documents and not reverse_engineering.present(
+            self.harness_dir, state.get("documentation")
+        ):
+            return False  # the documents are missing: one survey writes them again
+        reused: dict[str, Any] = {
+            "digest": state.get("digest"),
+            "status": state.get("status"),
+            "layoutSimilarity": round(similarity(state.get("layout") or [], layout), 3),
+        }
+        if config.documents:
+            reused["documentation"] = state["documentation"]["digest"]
+            reused["agentCalls"] = 0
         self.results.s.events.append(
             execution.execution_id,
             "architecture.survey.reused",
-            {
-                "digest": state.get("digest"),
-                "status": state.get("status"),
-                "layoutSimilarity": round(similarity(state.get("layout") or [], layout), 3),
-            },
+            reused,
             phase_execution_id=phase.phase_execution_id,
         )
         return True
@@ -541,6 +782,7 @@ class ArchitectureFlow:
         rationale: str,
         decision: DecisionKind | None = None,
         option: str | None = None,
+        style: str | None = None,
     ) -> dict[str, Any]:
         if actor.actor_type is not ActorType.HUMAN:
             raise PolicyViolationError("only a person decides the architecture")
@@ -557,11 +799,10 @@ class ArchitectureFlow:
             "decidedAt": utc_now().isoformat(),
             "decisionExecutionId": execution.execution_id,
         }
+        updated: dict[str, Any]
+        event: dict[str, Any]
         if state["status"] == "OPTIONS":
-            chosen = next((item for item in state["options"] if item["id"] == option), None)
-            if option is None or chosen is None:
-                known = ", ".join(item["id"] for item in state["options"])
-                raise PolicyViolationError(f"choose one option with --option ({known})")
+            chosen = self._chosen(state, option, style)
             adr = render_adr(chosen, decided_by=actor.actor_id, rationale=rationale, digest=digest)
             adr_ref = self.results.s.artifacts.put(
                 adr.encode("utf-8"),
@@ -588,6 +829,11 @@ class ArchitectureFlow:
                 "adrRef": adr_ref.uri,
                 "adrDigest": adr_ref.digest,
             }
+            if self.config is not None and self.config.experts:
+                event["style"] = chosen["style"]
+                event["acceptedRecommendation"] = bool(chosen.get("recommended"))
+                updated["acceptedRecommendation"] = event["acceptedRecommendation"]
+                self._write_style_doc(chosen["style"])
         else:
             if decision not in {DecisionKind.APPROVE, DecisionKind.REJECT}:
                 raise PolicyViolationError("inferred rules are approved or rejected")
@@ -599,6 +845,42 @@ class ArchitectureFlow:
             execution.execution_id, "architecture.decided", event, actor=actor
         )
         return updated
+
+    def _chosen(
+        self, state: dict[str, Any], option: str | None, style: str | None
+    ) -> dict[str, Any]:
+        """The option a person chose: one of the proposed (``--option``) or, under
+        ``catalogue: experts``, any style of the catalogue (``--style``; the proposed option of
+        that style when there is one, else the style with its template rules)."""
+        options: list[dict[str, Any]] = state["options"]
+        if style is not None:
+            return self._chosen_style(options, option, style)
+        chosen = next((item for item in options if item["id"] == option), None)
+        if option is None or chosen is None:
+            known = ", ".join(item["id"] for item in options)
+            raise PolicyViolationError(f"choose one option with --option ({known})")
+        return chosen
+
+    def _chosen_style(
+        self, options: list[dict[str, Any]], option: str | None, style: str
+    ) -> dict[str, Any]:
+        if option is not None:
+            raise PolicyViolationError("choose with --option or with --style, not both")
+        if self.config is None or not self.config.experts:
+            raise PolicyViolationError("--style needs architecture.catalogue: experts")
+        if not in_catalogue(style):
+            raise PolicyViolationError(
+                f"{style!r} is not a style of the catalogue ({', '.join(CATALOGUE_STYLES)})"
+            )
+        proposed = next((item for item in options if item["style"] == style), None)
+        return proposed or style_entry(style).as_option()
+
+    def _write_style_doc(self, style: str) -> None:
+        """Copy the documentation of the chosen style into the project; requests point to it."""
+        if in_catalogue(style):
+            (self.harness_dir / STYLE_DOC_FILE).write_text(
+                style_entry(style).document, encoding="utf-8"
+            )
 
     def refresh(self) -> dict[str, Any]:
         state = self.state()
@@ -657,7 +939,10 @@ __all__ = [
     "render_adr",
     "similarity",
     "source_layout",
+    "validate_catalogue_options",
+    "validate_documented_survey",
     "validate_options",
+    "validate_organization",
     "validate_survey",
     "write_state",
 ]

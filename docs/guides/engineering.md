@@ -104,6 +104,8 @@ rule id (`principles.srp` and so on) the reviewer uses for its findings.
 | `agent` | the run's provider | none | Provider, model and effort of the architecture call. |
 | `layerCheck` | `full` | `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline; `full`: every import of a changed file. |
 | `baselineConflicts` | `enforce` | `allow` | `allow`: the dependencies the code already has and a survey's rules forbid are listed in the proposal and stay allowed in the rules a person approves; `enforce`: the rules as inferred. |
+| `catalogue` | `off` | `experts` | `experts`: a new project chooses among the ten styles of the catalogue (layered, hexagonal, clean, ddd, modular-monolith, microservices, mvvm, mvi, event-driven, cqrs) with a recommendation report, and an expert for the chosen style rides with every later request. See [architectures](../es/arquitecturas.md) (Spanish). |
+| `documentation` | `off` | `project` | `project`: the survey of an existing project writes persistent documents in `.harness/reverse-engineering` that later requests point to. See [reverse engineering](../es/ingenieria-inversa.md) (Spanish). |
 
 **Existing project.** DISCOVERY surveys it once: the call reads the layout and a few files and
 answers the style, a short Markdown description and the layer rules it can infer. The answer is

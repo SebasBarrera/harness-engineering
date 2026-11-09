@@ -17,6 +17,9 @@
 
 [English](README.md) · Español · [Sitio de documentación](https://sebasbarrera.github.io/harness-engineering/) (en inglés)
 
+Guías en español: [arquitecturas para proyectos nuevos](docs/es/arquitecturas.md) ·
+[ingeniería inversa de proyectos existentes](docs/es/ingenieria-inversa.md)
+
 > [!WARNING]
 > Beta de investigación. **Esto no es un sandbox**: los comandos que ejecuta el harness conservan
 > los permisos de tu usuario del sistema operativo y el tablero local solo se autentica con un token
