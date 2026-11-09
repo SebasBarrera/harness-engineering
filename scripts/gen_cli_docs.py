@@ -16,7 +16,7 @@ import argparse
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import typer
 
@@ -61,10 +61,24 @@ def describe_default(param: Any) -> str:
 def param_type(param: Any) -> str:
     if getattr(param, "is_flag", False):
         return "flag"
+    if not hasattr(param, "type"):
+        # Typer >= 0.29 describes a parameter with ``type_descriptor`` instead of a Click type.
+        descriptor = param.type_descriptor
+        if descriptor.is_choice:
+            return " \\| ".join(f"`{_choice(c)}`" for c in descriptor.choices or ())
+        if descriptor.is_list:
+            # A repeatable option is documented by its element type, as earlier Typer releases did.
+            (element,) = get_args(descriptor.annotation)
+            return "path" if issubclass(element, Path) else str(element.__name__)
+        return str(param.display_type(None)).removeprefix("<").removesuffix(">")
     kind = param.type
     if hasattr(kind, "choices"):
         return " \\| ".join(f"`{c}`" for c in kind.choices)
     return kind.name.lower()
+
+
+def _choice(value: Any) -> str:
+    return str(getattr(value, "value", value))
 
 
 def option_rows(params: list[Any]) -> list[str]:
@@ -77,7 +91,9 @@ def option_rows(params: list[Any]) -> list[str]:
             flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])
             help_text = (param.help or "").replace("|", "\\|")
         else:
-            flags = f"`{param.human_readable_name}`"
+            # ``display_name_raw`` is the Typer >= 0.29 name of ``human_readable_name``.
+            name = getattr(param, "human_readable_name", None) or param.display_name_raw
+            flags = f"`{name}`"
             help_text = ""
         required = "yes" if param.required else "no"
         rows.append(
