@@ -13,7 +13,7 @@ from typing import Any, NoReturn
 import typer
 
 from governed_harness import __version__
-from governed_harness.application import HarnessApplication
+from governed_harness.application import HarnessApplication, agent_contract
 from governed_harness.application.exceptions import ExceptionOptions
 from governed_harness.application.hints import default_hint
 from governed_harness.application.onboarding import IgnoreFile
@@ -47,6 +47,9 @@ plan_app = typer.Typer(help="Decomposition of large tasks into governed sub-task
 acceptance_app = typer.Typer(help="Independent, frozen acceptance tests")
 budget_app = typer.Typer(help="Governed budget of agent calls")
 routing_app = typer.Typer(help="Model and effort routing of agent calls")
+agent_contract_app = typer.Typer(
+    help="The contract between a parent and its agent calls: schemas, validation, scripts, calls"
+)
 verification_app = typer.Typer(
     help="Verification ladder: plan, preflight, certification and deferred items"
 )
@@ -76,6 +79,7 @@ app.add_typer(plan_app, name="plan")
 app.add_typer(acceptance_app, name="acceptance")
 app.add_typer(budget_app, name="budget")
 app.add_typer(routing_app, name="routing")
+app.add_typer(agent_contract_app, name="agent-contract")
 app.add_typer(pr_app, name="pr")
 app.add_typer(verification_app, name="verification")
 app.add_typer(standards_app, name="standards")
@@ -825,6 +829,59 @@ def routing_calibrate(
     _emit(_call(lambda: HarnessApplication().routing_calibration(path)), kind="routing")
 
 
+@agent_contract_app.command("schema")
+def agent_contract_schema(
+    contract: str = typer.Argument(..., help="request, response or script"),
+) -> None:
+    """Print the JSON Schema of the request contract (what a parent sends an agent call), of
+    the response contract (what the parent receives) or of a script contract."""
+    _emit(_call(lambda: agent_contract.contract_schema(contract)))
+
+
+@agent_contract_app.command("validate")
+def agent_contract_validate(
+    document: str = typer.Argument(..., help="request, response, script or output"),
+    file: Path = typer.Argument(..., help="The JSON file to validate"),
+    kind: str | None = typer.Option(
+        None, "--kind", help="Call kind whose limits `output` is checked against"
+    ),
+) -> None:
+    """Validate a JSON file against a contract; `output` is the JSON an agent prints, checked
+    against the limits of its call kind. Exit 0 when it keeps the contract, 6 when it does not
+    (the violation is printed)."""
+    result = _call(lambda: agent_contract.validate_document(document, file, kind))
+    _emit(result)
+    if not result["valid"]:
+        raise typer.Exit(code=6)
+
+
+@agent_contract_app.command("scripts")
+def agent_contract_scripts(
+    script: str | None = typer.Argument(None, help="A script id, such as harness.check"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """List the scripts and commands agents may call as black boxes, or show the contract
+    (invocation, inputs, outputs, errors) of one."""
+    _emit(_call(lambda: agent_contract.script_contracts(path, script)))
+
+
+@agent_contract_app.command("calls")
+def agent_contract_calls(
+    run: str = RUN_OPTION,
+    kind: str | None = typer.Option(None, "--kind", help="Show one call kind"),
+    iteration: int | None = typer.Option(None, "--iteration", help="Show one iteration"),
+    path: Path = typer.Option(
+        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    ),
+) -> None:
+    """Show the agent calls of a run, the iterations each agent used against its cap and, with
+    --kind (and --iteration), exactly what was sent, what the parent received, and whether the
+    stored request matches its digest and the context the contract allowed."""
+    _emit(_call(lambda: HarnessApplication().agent_calls(path, run, kind, iteration)))
+
+
 @budget_app.command("show")
 def budget_show(
     run: str = RUN_OPTION,
@@ -1337,6 +1394,11 @@ def architecture_decide(
     option: str | None = typer.Option(
         None, "--option", help="The architecture option chosen for a new project"
     ),
+    style: str | None = typer.Option(
+        None,
+        "--style",
+        help="A style of the catalogue chosen for a new project (architecture.catalogue: experts)",
+    ),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     continue_after: bool = typer.Option(
         True, "--continue/--no-continue", help="Resume the run after recording the decision"
@@ -1347,7 +1409,8 @@ def architecture_decide(
 ) -> None:
     """Decide the architecture, bound to the digest of the proposal: approve or reject the
     layer rules a survey inferred (existing project), or choose one of the options of a new
-    project, which is recorded as an ADR. The approved rules are enforced as forbidden
+    project, which is recorded as an ADR; under architecture.catalogue: experts --style chooses
+    any style of the catalogue instead. The approved rules are enforced as forbidden
     dependencies in VERIFICATION. A stale digest or a non-human actor exits 5."""
     result = _call(
         lambda: _acting().decide_architecture(
@@ -1359,6 +1422,7 @@ def architecture_decide(
             option=option,
             actor_id=actor,
             continue_after=continue_after,
+            style=style,
         )
     )
     _emit(result)

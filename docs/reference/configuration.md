@@ -203,6 +203,9 @@ agentRouting:
     - 2000
     - 10000
   maxEscalations: 2
+agentContract:
+  mode: enforce
+  maxIterations: 5
 governance:
   deciderIdentity: git
   confirmDecisionDigest: true
@@ -384,6 +387,8 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `verification.acceptanceTests.disputes` | `off` when absent; `init` writes `person` | A VERIFICATION that fails only on frozen acceptance tests the agent disputes in its self-report (`disputedAcceptanceTests`) waits for a person, who upholds the tests or sends the run back to SPECIFICATION for new ones (`harness acceptance dispute`). See [write protection and disputes](../guides/agent-results.md#write-protection-and-disputes-94). |
 | `architecture.layerCheck` | `full` when absent; `init` writes `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline (a new file is judged whole). See [architecture](../guides/engineering.md#architecture). |
 | `architecture.baselineConflicts` | `enforce` when absent; `init` writes `allow` | `allow`: the dependencies the code already has and a survey's inferred rules forbid are listed in the proposal (and in the inbox) and stay allowed in the rules a person approves. See [architecture](../guides/engineering.md#architecture). |
+| `architecture.catalogue` | `off` when absent; `init` writes `experts` | `experts`: a new project is offered the ten styles of the catalogue; the advise call recommends one with its reasons and the project characteristics that support it (report in `.harness/architecture-options.md`), a person accepts it or picks any style (`harness architecture decide --style`), and an expert for the chosen style plans the organization and rides with every later request. See [architectures (Spanish)](../es/arquitecturas.md). |
+| `architecture.documentation` | `off` when absent; `init` writes `project` | `project`: the survey of an existing project also writes persistent reverse engineering documents in `.harness/reverse-engineering` that later requests point to; the survey is reused while they hold. See [reverse engineering (Spanish)](../es/ingenieria-inversa.md). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
@@ -1311,6 +1316,27 @@ confirmContract: true
 | `delivery.pullRequest` | none | `create: false`, `draft: true` | `create` the pull or merge request after the push, and `draft` (over `delivery.forge.draft`). The forge, the repository, the base (`delivery.forge.baseBranch`, else the remote's default branch), the labels and the template (followed by the decision brief) are the forge layer's: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from `origin` unless `delivery.forge` names it (see [forges](../guides/forges.md)). Created once per run; the contract's `createPullRequest` overrides `create`. |
 | `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request through the same forge (one comment per run, updated on a retry) when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
 | `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
+
+## Agent contract
+
+`agentContract` (since wave 11, #97) turns on the versioned request and response contract of every
+agent call. `harness init` writes `mode: enforce` and `maxIterations: 5`; a `project.yaml` without
+the section behaves, and digests, as before. The guide in Spanish is
+[Contrato entre agentes](../es/contrato-de-agentes.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
+| `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
+| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. |
+| `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
+| `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
+| `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |
+
+`harness agent-contract schema request|response|script` prints the schemas,
+`harness agent-contract validate` checks a document, `harness agent-contract scripts` lists the
+script contracts and `harness agent-contract calls --run RUN` shows what each call received and
+returned.
 
 ## Friction
 

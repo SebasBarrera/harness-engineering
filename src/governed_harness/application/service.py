@@ -84,6 +84,7 @@ from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
 from governed_harness.telemetry import MetricsProjector
 
+from .agent_contract import agent_calls
 from .agent_results import (
     acceptance_state,
     agent_results_summary,
@@ -872,6 +873,14 @@ class HarnessApplication(ReviewCodeCommands):
         with self._services(path) as services:
             return routing_calibration(services)
 
+    def agent_calls(
+        self, path: Path, execution_id: str, kind: str | None = None, iteration: int | None = None
+    ) -> dict[str, Any]:
+        """The agent calls of a run, the iterations each agent used and, for one call, exactly
+        what was sent and what the parent received (#97)."""
+        with self._services(path) as services:
+            return agent_calls(services, self._run_id(services, execution_id), kind, iteration)
+
     def budget(self, path: Path, execution_id: str) -> dict[str, Any]:
         """Usage of a run and its task against the budget limits (#42)."""
         with self._services(path) as services:
@@ -1654,8 +1663,10 @@ class HarnessApplication(ReviewCodeCommands):
         option: str | None = None,
         actor_id: str | None = None,
         continue_after: bool = True,
+        style: str | None = None,
     ) -> dict[str, Any]:
-        """Approve or reject inferred layer rules, or choose an architecture option (#56)."""
+        """Approve or reject inferred layer rules, or choose an architecture option (#56) or,
+        under ``architecture.catalogue: experts``, a style of the catalogue (#97)."""
         with (
             self._services(path) as services,
             self._leased(services, "architecture decide") as lease,
@@ -1673,6 +1684,7 @@ class HarnessApplication(ReviewCodeCommands):
                 decision=decision,
                 option=option,
                 continue_after=continue_after,
+                style=style,
             )
 
     def refresh_architecture(self, path: Path) -> dict[str, Any]:

@@ -501,3 +501,8 @@ __all__ = [
     "task_terms",
     "traceability_terms",
 ]
+
+
+def gate_definitions(resolved: ResolvedConfiguration) -> list[ValidatorDefinition]:
+    """The validators of the gate (the project's and the invariants), as the check runs them."""
+    return _definitions(resolved)

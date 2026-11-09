@@ -17,6 +17,9 @@
 
 [English](README.md) · Español · [Sitio de documentación](https://sebasbarrera.github.io/harness-engineering/) (en inglés)
 
+Guías en español: [arquitecturas para proyectos nuevos](docs/es/arquitecturas.md) ·
+[ingeniería inversa de proyectos existentes](docs/es/ingenieria-inversa.md)
+
 > [!WARNING]
 > Beta de investigación. **Esto no es un sandbox**: los comandos que ejecuta el harness conservan
 > los permisos de tu usuario del sistema operativo y el tablero local solo se autentica con un token
@@ -352,6 +355,13 @@ publicarse en GitHub, GitLab, Bitbucket, Azure DevOps o Gitea
 La segunda revisión es un panel de revisores por dominio con un catálogo de reglas por capas,
 también disponible fuera de una ejecución como `harness review-code` y un hook pre-push
 ([panel de revisión](docs/guides/review-panel.md)).
+
+Cada llamada a un agente puede ir bajo un contrato JSON versionado (`agentContract`): contexto mínimo
+por tipo de llamada, respuesta acotada, un tope de 5 iteraciones por agente, presupuesto de tokens y
+tiempo según el tamaño de la tarea, y los scripts como cajas negras. Ver el
+[contrato entre agentes](docs/es/contrato-de-agentes.md), los
+[límites de iteraciones, tokens y tiempo](docs/es/limites-de-agentes.md) y los
+[scripts como cajas negras](docs/es/scripts-caja-negra.md).
 
 ## Tablero web y API
 

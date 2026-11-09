@@ -1435,7 +1435,7 @@ class RunEngine:
             process_runner=runner,
             patch_applier=PatchApplier(self.s.paths.workspace),
             provenance=self._provenance(execution).model_copy(update={"actor": actor}),
-            timeout_seconds=self._bounded_timeout(runtime.command_timeout_seconds),
+            timeout_seconds=self._implement_timeout(runtime.command_timeout_seconds, request_extra),
             max_output_bytes=runtime.max_output_bytes,
             cancellation=cancellation,
             context_manifest_ref=context_uri,
@@ -1479,6 +1479,9 @@ class RunEngine:
                 self._check_excluded_paths(execution, phase, guard, guard_before)
         if self.results.active:
             self.results.after_agent_call(execution, phase, result)
+            limited = self._implement_limit(execution, phase, result, request_extra)
+            if limited is not None:
+                return limited
             if result.status is ResultStatus.PASSED:
                 self.results.corrections.end(execution, phase, result)
         if (
@@ -1519,6 +1522,29 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    def _implement_timeout(self, command_timeout: int, request_extra: dict[str, Any] | None) -> int:
+        """The time an implement call may run: the command timeout, shortened to the time limit
+        of the task's size when the request carries ``agentContract`` (#97)."""
+        bounded = self._bounded_timeout(command_timeout)
+        contract = (request_extra or {}).get("agentContract")
+        if not isinstance(contract, dict):
+            return bounded
+        return min(bounded, int(contract["timeLimitSeconds"]))
+
+    def _implement_limit(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        request_extra: dict[str, Any] | None,
+    ) -> PhaseOutcome | None:
+        """Record an implement call under ``agentContract`` and end the phase in a controlled
+        way when the call reached its time limit or token budget (#97)."""
+        contract = (request_extra or {}).get("agentContract")
+        if not isinstance(contract, dict):
+            return None
+        return self.results.agent_contract.settle_implement(execution, phase, result, contract)
 
     def _build_provider(
         self, execution: Execution, phase: PhaseExecution, provider_id: str

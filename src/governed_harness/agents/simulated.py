@@ -62,11 +62,21 @@ def _call_result(kind: CallKind, request: dict[str, Any]) -> dict[str, Any]:
         # No layering inferred and no option proposed: nothing waits for a person (#56).
         if request.get("mode") == "advise":
             return {"options": []}
+        if request.get("mode") == "organize":
+            return {"summary": "Simulated organization: no plan.", "structure": [], "practices": []}
         return {
             "style": "custom",
             "summary": "Simulated survey: no layering was inferred.",
             "layers": [],
             "allow": {},
+            # The documentation fields of architecture.documentation: project (#97); ignored
+            # when the key is off.
+            "organization": "Simulated survey: no organization was inferred.",
+            "components": [
+                {"name": "project", "path": ".", "responsibility": "Simulated component."}
+            ],
+            "conventions": [],
+            "guidance": ["Simulated survey: follow the existing structure."],
         }
     if kind == "plan":
         return _plan_result(request)

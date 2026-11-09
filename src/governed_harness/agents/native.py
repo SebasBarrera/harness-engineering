@@ -207,6 +207,8 @@ _IMPLEMENT_EXTRAS = (
     "acceptanceTests",
     "budget",
     "commandPolicy",
+    "agentContract",
+    "scriptContracts",
 )
 
 

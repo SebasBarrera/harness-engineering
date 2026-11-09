@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from governed_harness.configuration.agent_contract import DEFAULT_MAX_ITERATIONS
 from governed_harness.configuration.agent_results import (
     DEFAULT_AMBIGUITY_QUESTIONS,
     DEFAULT_AMBIGUITY_ROUNDS,
@@ -227,6 +228,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "warnAt": 0.8,
         },
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
+        # Wave 11 (#97): the versioned request and response contract of agent calls, one cap of
+        # iterations per agent and the token budget and time limit by task size.
+        "agentContract": {"mode": "enforce", "maxIterations": DEFAULT_MAX_ITERATIONS},
         # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
             "mode": "anchored",
@@ -287,6 +291,10 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "enforce": "enforce",
             "layerCheck": "differential",
             "baselineConflicts": "allow",
+            # #97: the ten-style catalogue with its experts for a new project and persistent
+            # reverse engineering documents for an existing one.
+            "catalogue": "experts",
+            "documentation": "project",
         },
         # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
         # condition, documentation-only and configuration-only changes, friction targets.
