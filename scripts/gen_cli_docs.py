@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{TARGET.relative_to(ROOT)} is up to date")
         return 0
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(content, encoding="utf-8")
+    TARGET.write_text(content, encoding="utf-8", newline="\n")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 
