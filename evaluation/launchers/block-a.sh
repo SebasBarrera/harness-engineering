@@ -20,7 +20,7 @@ run_part() {  # conditions reps tag
     for SC in $EVAL_SCENARIOS; do
       i=$((i + 1))
       SLOT=$(make_slot "a$i")
-      CMD=("$SLOT/bin/python" "$CODE/run_matrix.py" --model "$MODEL" --reps "$reps" --scenarios "$SC"
+      CMD=("$SLOT/$VENV_BIN/python" "$CODE/run_matrix.py" --model "$MODEL" --reps "$reps" --scenarios "$SC"
         --prompt full --conditions "$conditions" --work "$EVAL_WORK/runs/block-a/$MODEL"
         --cache "$EVAL_CACHE" --out "$EVAL_OUT/A-$tag-$MODEL-$SC.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"})
       if [ "$EVAL_PARALLEL" = "1" ]; then
@@ -36,5 +36,5 @@ run_part() {  # conditions reps tag
 run_part "${EVAL_CONDITIONS:-direct,harness}" "$EVAL_REPS" main
 run_part harness-anchored "${EVAL_ANCHORED_REPS:-2}" anchored
 SLOT=$(make_slot a1)
-"$SLOT/bin/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+"$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
 log "BLOCK-A-DONE"

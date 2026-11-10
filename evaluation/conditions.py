@@ -216,7 +216,7 @@ def write_config(
         claude_bin=claude_bin,
         resumable=resumable,
     )
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     return config
 
 
