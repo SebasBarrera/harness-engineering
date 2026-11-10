@@ -40,6 +40,7 @@ from governed_harness.capabilities.repository import (
 )
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
+    RuntimeConfig,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
@@ -66,6 +67,7 @@ from governed_harness.domain.models import (
     HARNESS_ACTOR,
     Actor,
     Artifact,
+    CapabilityGrant,
     ChangedFile,
     ChangeRequestItem,
     ChangeSet,
@@ -1497,17 +1499,7 @@ class RunEngine:
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         if self._leases_workspace():
-            # The workspace as this attempt found it: an interrupted attempt is undone to it
-            # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
-            snapshot = self.snapshots.take(for_storage=True)
-            ref = self.snapshots.store(
-                snapshot,
-                metadata={"kind": "implementation-start", "executionId": execution.execution_id},
-            )
-            self.s.state.set_flag(
-                f"implstart:{execution.execution_id}",
-                json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
-            )
+            self._record_implementation_start(execution, phase)
         task = self.run_task(execution)
         plan_id = self.s.state.get_flag(f"plan:{execution.execution_id}")
         if not plan_id:
@@ -1530,23 +1522,11 @@ class RunEngine:
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
         runner = self._runner(execution)
         context_uri = self.s.state.get_flag(f"context:{execution.execution_id}")
-        memory_context: dict[str, Any] | None = None
-        if context_uri:
-            manifest = json.loads(self.s.artifacts.get(context_uri))
-            memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
+        memory_context = self._memory_context(context_uri)
         runtime = self.s.resolved.project.runtime
-        request_extra: dict[str, Any] | None = None
-        if self.results.active:
-            task = self.results.implementation_task(execution, task)
-            request_extra = self.results.implement_extras(
-                execution, phase, task, provider_id, actor, grants
-            )
-        if self.ladder.active:
-            # Locations of the locate call and a person's intake attachments, only when there
-            # are any (#55).
-            ladder_extra = self.ladder.implement_extras(execution, task)
-            if ladder_extra:
-                request_extra = {**(request_extra or {}), **ladder_extra}
+        task, request_extra = self._implement_request_extra(
+            execution, phase, task, provider_id, actor, grants
+        )
         context = SimulatedAgentContext(
             execution_id=execution.execution_id,
             workspace=self.s.paths.workspace,
@@ -1563,63 +1543,32 @@ class RunEngine:
             feedback=self._pending_feedback(execution, phase),
             request_extra=request_extra,
         )
-        guard = (
-            ExcludedPathGuard(
-                self.s.paths.workspace,
-                include_ignored=self.snapshots.settings.git_listing,
-            )
-            if self._protects_excluded_paths()
-            else None
+        invoked = self._invoke_implement(
+            execution, phase, provider, task, plan, context, sandbox, runtime
         )
-        guard_before = guard.fingerprint() if guard else None
-        retries = 0
-        try:
-            while True:
-                self.provenance.before_invocation(execution)
-                result = provider.implement(task, plan, context)
-                self._save_agent_result(execution, phase, result)
-                self.provenance.after_invocation(execution, result)
-                cause = (
-                    self._transient_cause(result)
-                    if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                    else None
-                )
-                if cause is None:
-                    break
-                retries += 1
-                # The repeated call runs through the same provider, so under the same sandbox
-                # prefix; a write the sandbox denied on the failed call is still reported.
-                if sandbox is not None:
-                    self._record_denied_writes(execution, result.tool_invocations)
-                self._record_provider_retry(execution, phase, result, cause, retries)
-                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
-        finally:
-            if guard is not None and guard_before is not None:
-                self._check_excluded_paths(execution, phase, guard, guard_before)
+        if isinstance(invoked, PhaseOutcome):
+            return invoked
+        return self._implementation_outcome(
+            execution, phase, invoked, request_extra, runtime, sandbox, sandbox_refs
+        )
+
+    def _implementation_outcome(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        request_extra: dict[str, Any] | None,
+        runtime: RuntimeConfig,
+        sandbox: SandboxPlan | None,
+        sandbox_refs: tuple[str, ...],
+    ) -> PhaseOutcome:
+        """The outcome of IMPLEMENTATION after the implement call: the claim to check, the
+        self-report and the candidate ChangeSet."""
         if self.results.active:
-            self.results.after_agent_call(execution, phase, result)
-            limited = self._implement_limit(execution, phase, result, request_extra)
+            limited = self._after_implement_call(execution, phase, result, request_extra)
             if limited is not None:
                 return limited
-            if result.status is ResultStatus.PASSED:
-                self.results.corrections.end(execution, phase, result)
-        if (
-            result.status is ResultStatus.PASSED
-            and runtime.claim_check_enabled
-            and self._external_provider(execution.execution_id)
-        ):
-            self.s.state.set_flag(
-                f"claim:{execution.execution_id}",
-                json.dumps(
-                    {
-                        "invocationId": result.invocation.invocation_id,
-                        "status": result.status.value,
-                        "summary": result.summary,
-                        "outputRef": result.output_ref,
-                    }
-                ),
-            )
+        self._record_claim(execution, result, runtime)
         if result.status is not ResultStatus.PASSED:
             if sandbox is not None:
                 self._record_denied_writes(execution, result.tool_invocations)
@@ -1642,6 +1591,150 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    def _record_claim(
+        self, execution: Execution, result: AgentExecutionResult, runtime: RuntimeConfig
+    ) -> None:
+        """Keep the passed claim of an external provider for the claim check."""
+        if (
+            result.status is ResultStatus.PASSED
+            and runtime.claim_check_enabled
+            and self._external_provider(execution.execution_id)
+        ):
+            self.s.state.set_flag(
+                f"claim:{execution.execution_id}",
+                json.dumps(
+                    {
+                        "invocationId": result.invocation.invocation_id,
+                        "status": result.status.value,
+                        "summary": result.summary,
+                        "outputRef": result.output_ref,
+                    }
+                ),
+            )
+
+    def _record_implementation_start(self, execution: Execution, phase: PhaseExecution) -> None:
+        """Store the snapshot of the workspace as this IMPLEMENTATION attempt found it."""
+        # The workspace as this attempt found it: an interrupted attempt is undone to it
+        # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
+        snapshot = self.snapshots.take(for_storage=True)
+        ref = self.snapshots.store(
+            snapshot,
+            metadata={"kind": "implementation-start", "executionId": execution.execution_id},
+        )
+        self.s.state.set_flag(
+            f"implstart:{execution.execution_id}",
+            json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
+        )
+
+    def _memory_context(self, context_uri: str | None) -> dict[str, Any] | None:
+        """The memory records and digest of the run's context manifest, when there is one."""
+        memory_context: dict[str, Any] | None = None
+        if context_uri:
+            manifest = json.loads(self.s.artifacts.get(context_uri))
+            memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
+        return memory_context
+
+    def _implement_request_extra(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        provider_id: str,
+        actor: Actor,
+        grants: list[CapabilityGrant],
+    ) -> tuple[Task, dict[str, Any] | None]:
+        """The task the implement call receives and the extra request fields of the agent
+        results and the ladder."""
+        request_extra: dict[str, Any] | None = None
+        if self.results.active:
+            task = self.results.implementation_task(execution, task)
+            request_extra = self.results.implement_extras(
+                execution, phase, task, provider_id, actor, grants
+            )
+        if self.ladder.active:
+            # Locations of the locate call and a person's intake attachments, only when there
+            # are any (#55).
+            ladder_extra = self.ladder.implement_extras(execution, task)
+            if ladder_extra:
+                request_extra = {**(request_extra or {}), **ladder_extra}
+        return task, request_extra
+
+    def _retry_cause(
+        self,
+        provider: AgentProvider,
+        result: AgentExecutionResult,
+        retries: int,
+        runtime: RuntimeConfig,
+    ) -> str | None:
+        """The transient cause that lets a command provider's failed call be repeated."""
+        return (
+            self._transient_cause(result)
+            if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+            else None
+        )
+
+    def _invoke_implement(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider: AgentProvider,
+        task: Task,
+        plan: Plan,
+        context: SimulatedAgentContext,
+        sandbox: SandboxPlan | None,
+        runtime: RuntimeConfig,
+    ) -> AgentExecutionResult | PhaseOutcome:
+        """The implement call, repeated after a transient failure within the retry limit,
+        with the excluded paths guarded; a CANCELLED outcome when a wait is cancelled."""
+        guard = (
+            ExcludedPathGuard(
+                self.s.paths.workspace,
+                include_ignored=self.snapshots.settings.git_listing,
+            )
+            if self._protects_excluded_paths()
+            else None
+        )
+        guard_before = guard.fingerprint() if guard else None
+        retries = 0
+        try:
+            while True:
+                self.provenance.before_invocation(execution)
+                result = provider.implement(task, plan, context)
+                self._save_agent_result(execution, phase, result)
+                self.provenance.after_invocation(execution, result)
+                cause = self._retry_cause(provider, result, retries, runtime)
+                if cause is None:
+                    break
+                retries += 1
+                # The repeated call runs through the same provider, so under the same sandbox
+                # prefix; a write the sandbox denied on the failed call is still reported.
+                if sandbox is not None:
+                    self._record_denied_writes(execution, result.tool_invocations)
+                self._record_provider_retry(execution, phase, result, cause, retries)
+                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
+        finally:
+            if guard is not None and guard_before is not None:
+                self._check_excluded_paths(execution, phase, guard, guard_before)
+        return result
+
+    def _after_implement_call(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        request_extra: dict[str, Any] | None,
+    ) -> PhaseOutcome | None:
+        """Record the implement call for the agent results; an outcome when its contract
+        limits end the phase."""
+        self.results.after_agent_call(execution, phase, result)
+        limited = self._implement_limit(execution, phase, result, request_extra)
+        if limited is not None:
+            return limited
+        if result.status is ResultStatus.PASSED:
+            self.results.corrections.end(execution, phase, result)
+        return None
 
     def _implement_timeout(self, command_timeout: int, request_extra: dict[str, Any] | None) -> int:
         """The time an implement call may run: the command timeout, shortened to the time limit
