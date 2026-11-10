@@ -82,7 +82,7 @@ class Differential:
         self.results = results
 
     @property
-    def differential(self) -> bool:
+    def enabled(self) -> bool:
         config = self.results.project.verification
         return bool(config and config.differential)
 
@@ -97,7 +97,7 @@ class Differential:
         change_set: ChangeSet,
         outputs: list[Any],
     ) -> list[Any]:
-        if not self.differential and self.ratchet == "off":
+        if not self.enabled and self.ratchet == "off":
             return outputs
         definitions = {
             item.validator_id: item for item in self.results.s.resolved.effective_validators
@@ -105,7 +105,7 @@ class Differential:
         failing_mandatory = [
             index
             for index, output in enumerate(outputs)
-            if self.differential
+            if self.enabled
             and output.result.mandatory
             and output.result.status is ResultStatus.FAILED
             and output.result.validator_id in definitions
