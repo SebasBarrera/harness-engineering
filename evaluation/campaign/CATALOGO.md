@@ -91,7 +91,7 @@ Costos de referencia por corrida de agente (mediana de celda): `evaluation/resul
 | Id | Qué mide | Script / launcher | Condiciones | Costo | Resultados | Lectura y cifra (fuente) |
 |---|---|---|---|---|---|---|
 | P09+P10+N10 (bloque A; en 0.9.0 la «matriz principal») | Tarea completa × escenarios (greenfield, brownfield, security) × 3 modelos | `run_matrix.py`, `launchers/block-a.sh` | direct, harness ×3 reps; harness-anchored ×2 reps | **Sí**: 54 + 18 = 72 corridas. En 0.9.0: 90 corridas × 2 condiciones (45 + 45) | 0.9.0: `results/claude-*.jsonl`, `summary.json`; 2.0.0: `results-2.0.0/block-a/` (no existe aún) | Mixto (0.9.0, `docs/evaluation/results.md`): pruebas ocultas 1,064/1,065 sin harness vs 1,065/1,065 con harness (favorece, diferencia de una prueba); regresiones brownfield 0 en 15 vs 0 en 15 (neutral); literal tipo credencial en pruebas entregadas 6/15 vs 0/13 (favorece); **contraseña real aprobada 2/15 vs 3/13 (no favorece)**; **costo USD 7.23 vs 8.99 (+24 %, calculado)**; sobrecarga mediana 4.34 s (2.89–8.43); trazabilidad 45/45. Por celda, el costo mediano de Opus security pasó de 0.191723 a 0.443573 USD (+131 %) y 65.1 a 146.4 s (calculado de `summary.json`), mientras Sonnet brownfield bajó de 0.07657 a 0.048781 USD |
-| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («It works.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 3 modelos × 3 escenarios × 3 reps = 162 (27 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo: `dry-run-checks.json`, caso `casual-core`) | 0.9.0: `claude-casual-*.jsonl`, `claude-minimal-*.jsonl`, `summary-prompts.json`; 2.0.0: `block-b/` (no existe) | Mixto (0.9.0): estructurar la tarea explica casi toda la mejora (defecto 5/27 sin harness con tarea mínima vs 1/45 con tarea completa sin harness); con tarea mínima y harness 4 entregas defectuosas de 21 entregadas, **5 correctas bloqueadas** (costo: falsos bloqueos) y 1 defectuosa bloqueada; los 6 sin pruebas en greenfield/security bloqueados (favorece) (`summary-prompts.json`, `promptLevels`). El harness rechaza el prompt de una línea (`casual-harness-rejection.json`) |
+| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («It works.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual\|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 3 modelos × 3 escenarios × 3 reps = 162 (27 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo: `dry-run-checks.json`, caso `casual-core`) | 0.9.0: `claude-casual-*.jsonl`, `claude-minimal-*.jsonl`, `summary-prompts.json`; 2.0.0: `block-b/` (no existe) | Mixto (0.9.0): estructurar la tarea explica casi toda la mejora (defecto 5/27 sin harness con tarea mínima vs 1/45 con tarea completa sin harness); con tarea mínima y harness 4 entregas defectuosas de 21 entregadas, **5 correctas bloqueadas** (costo: falsos bloqueos) y 1 defectuosa bloqueada; los 6 sin pruebas en greenfield/security bloqueados (favorece) (`summary-prompts.json`, `promptLevels`). El harness rechaza el prompt de una línea (`casual-harness-rejection.json`) |
 | P13+P20+N01-b (bloque D) | Desarrollo iterativo: 5 incrementos, oráculo de 25 pruebas ocultas, hasta 2 rondas de reportes de bug | `longitudinal/run_session.py`, `launchers/block-d.sh` | baseline casual, structured directo, harness | **Sí**: 3 condiciones × 3 modelos × 3 sesiones = 27 sesiones (0.9.0: 18 sesiones, 17 válidas, sin la condición `structured`) | `results/longitudinal-*.jsonl`, `summary-longitudinal.json` | Mixto (0.9.0): Sonnet y Opus con harness sin ninguna solicitud de corrección (0 vs 5 y 7) y menor costo (Sonnet 0.39 vs 0.65 USD, Opus 1.41 vs 1.98) y tiempo (Sonnet 218 vs 282 s; Opus 345 vs 577 s, medianas de `summary-longitudinal.json`). **Haiku al revés**: 0 sesiones completas con harness vs 1 sin él, 12 vs 7 solicitudes de corrección, costo 1.53 vs 0.75 USD y 1168 vs 622 s (+88 % tiempo, calculado); el defecto `path.endswith` sobre `Path` pasó con pruebas propias verdes (`docs/evaluation/results.md`) |
 | N08 (embebido) | Claude Code como host de la sesión sobre `harness mcp serve` y la skill | `run_embedded.py`, `launchers/block-embedded.sh` | `harness` embebido; factor: modelo host | **Sí**: 3 modelos × 2 reps = 6 (brownfield) | `results-2.0.0/block-embedded/` (no existe); dry run: `dry-run/embedded-dry.jsonl` | Sin resultado con modelo; el dry run aprueba la configuración `init` (`dry-run/embedded-dry.jsonl`, caso `embedded-init`) |
 | P15 | Segundos por fase y recomendaciones retrospectivas de las corridas gobernadas | `report_phases.py` | solo gobernadas (45) | No (post-hoc) | `results/phases-retrospective.jsonl`, `summary-phases.json` | Favorece: en 36 corridas aprobadas sin corrección, IMPLEMENTATION ocupó la mediana de 97.1 % del tiempo de fases; las otras siete fases suman 0.303 s (mediana) (`summary-phases.json`). Nota: no incluye tiempo humano |
@@ -139,6 +139,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.1 Intercepción de defectos
 
 **H01 Prueba borrada, debilitada o silenciada** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: un cambio que borra una prueba, quita un `assert`, añade `skip`, sube un umbral o añade supresiones pasa
   las pruebas visibles (D\* lo entrega) y el harness lo bloquea o lo marca como HIGH.
 - Beneficio: intercepción de defectos de «hacer verde la suite trampeando».
@@ -156,6 +157,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   adicionales proponen 10 cambios «adversarios» sin leer `weakened.py`, y se reportan aparte.
 
 **H02 Pruebas que mienten: aserción trivial, sin aserción, mock del sujeto, no ejercitada** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: tests tautológicos (`assert True`, `assert x == x`), sin aserción o que no ejercitan el cambio pasan la
   suite visible y el harness los detecta por `tests.assertion-free`, `tests.change-not-exercised`, `tests.weak`,
   `tests.mock-of-subject`, `tests.changed-lines-uncovered`.
@@ -172,6 +174,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   matriz 0.9.0 si se conservaron (no están en el repo; marcar «no disponible» si no).
 
 **H03 Secretos: formas y contexto, incluida la contraseña de desarrollo declarada** — Esfuerzo S · Modelo: 0 (variante con modelo en H25)
+
 - Hipótesis: 2.0.0 detecta la contraseña de desarrollo que 0.9.0 aprobó (3/13) y los formatos usuales de secreto;
   D\* los entrega todos.
 - Beneficio: intercepción; corrige con evidencia el único resultado de 0.9.0 donde el harness no superó al directo
@@ -193,6 +196,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   dos conjuntos por separado.
 
 **H04 Scope creep (cambios fuera del alcance declarado)** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: un cambio válido que además toca archivos fuera de `ownedPaths` o escribe fuera del ChangeSet
   (archivo ignorado, enlace simbólico, hooks, venv) es entregado por D\* y detenido por el harness.
 - Beneficio: intercepción; extiende P08 `out-of-scope` y N12.
@@ -208,6 +212,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: la sonda `out-of-scope` de P08 ya existe. Mitigación: reportar la nueva prueba como réplica ampliada.
 
 **H05 Dependencia nueva no declarada** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: añadir una dependencia (pip, npm, go, cargo) o un import fuera de la biblioteca estándar cuando la
   tarea lo prohíbe pasa las pruebas en D\* y el harness exige reconocimiento humano o bloquea.
 - Beneficio: intercepción de cadena de suministro y de restricciones de la tarea.
@@ -224,6 +229,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   no se ve. Mitigación: incluir 5 casos de ese tipo y reportar los que escapan.
 
 **H06 Violación de capas por clase** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: una importación nueva que viola las capas aprobadas es entregada por D\* y bloqueada por H; con
   `architecture.layerCheck: differential` no se culpa al cambio de importaciones que la línea base ya tenía.
 - Beneficio: intercepción de erosión arquitectónica y reducción de falsos positivos (el piloto de la ola 9 mostró
@@ -242,6 +248,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   survey simulado).
 
 **H07 Afirmación no sustentada del agente** — Esfuerzo S · Modelo: 0 (variante real en H25)
+
 - Hipótesis: el agente que reporta «todo pasa» sobre un cambio que falla la verificación deja un hallazgo
   `agent.unsupported-claim` y la puerta evalúa el cambio, no la afirmación.
 - Beneficio: auditabilidad y control de «agente que se declara listo».
@@ -256,6 +263,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   la mejora real es de trazabilidad. Mitigación: declararlo y no atribuirle bloqueo.
 
 **H08 Instrucción inyectada en el repositorio** — Esfuerzo M · Modelo: 0 (detección); 6 corridas Haiku (obediencia)
+
 - Hipótesis: instrucciones dirigidas a agentes dentro de archivos del repo (README, comentarios, datos de prueba,
   `.cursorrules`, YAML de CI) son marcadas y el contenido llega citado como no confiable; sin harness el agente
   puede obedecerlas.
@@ -275,6 +283,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   extrapolar.
 
 **H09 Cambio tras la aprobación: digest y `verify-approval` en CI** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: cualquier modificación posterior a la aprobación (un byte, renombrar, cambio de modo, archivo nuevo,
   rebase que altera el diff, squash) invalida la aprobación en la puerta y en la verificación del PR.
 - Beneficio: no repudio e intercepción de «aprobado A, mergeado B».
@@ -290,6 +299,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   localmente.
 
 **H10 Regresión que la suite no cubre (prueba de neutralidad)** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: si el defecto no lo detecta ninguna prueba ni regla, el harness NO lo intercepta (igual que el directo);
   lo que agrega son señales indirectas (`ratchet`, `principles`, diferencial).
 - Beneficio: acota honestamente la afirmación de intercepción; evita la sobregeneralización.
@@ -305,6 +315,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   mutaciones automáticas (p. ej. operadores de mutación genéricos) y no a mano.
 
 **H11 Tasa de escape de defectos: corpus integrado (agregador)** — Esfuerzo L · Modelo: 0
+
 - Hipótesis: sobre un corpus mixto de defectos de H01–H10 más N01-a y N02-a, la tasa de escape del harness es menor
   que la de D\*, con intervalos reportados.
 - Beneficio: cifra única para la tesis, con el denominador completo (incluye los casos que escapan).
@@ -320,6 +331,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   (defectos reales de historiales públicos de `itsdangerous`) y reportar por separado.
 
 **H12 Pruebas de aceptación congeladas: reescritura y disputa** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: un agente que reescribe las pruebas de aceptación aprobadas es detectado y revertido; una prueba
   errónea congelada se puede disputar con digest.
 - Beneficio: intercepción de «agente cambia el juez»; en el piloto de la ola 9 ocurrió (`acceptance.modified`).
@@ -337,6 +349,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.2 Auditabilidad y no repudio
 
 **H13 Reconstrucción de «quién aprobó qué digest» sin el espacio de trabajo** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: desde solo el bundle exportado un tercero responde 8 preguntas de auditoría; desde `git log` + salida
   de CI (directo) responde menos.
 - Beneficio: auditabilidad y no repudio.
@@ -352,6 +365,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   responde mejor (p. ej. autor del commit, mensaje de commit) y reportarlas.
 
 **H14 Manipulación de eventos: 25 tipos** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: toda manipulación de la cadena de eventos, de los registros o de los artefactos se detecta con
   `harness verify`/`trace`; con `chainAnchor: off` la reescritura completa no se detecta.
 - Beneficio: no repudio; mide qué añade el ancla externa y su límite (atacante con acceso al ancla).
@@ -367,6 +381,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   y no al ancla) y excluir expresamente lo demás.
 
 **H15 Trazabilidad requisito→prueba→decisión, post-hoc en directo y harness** — Esfuerzo S · Modelo: 0 (reutiliza corridas del bloque A)
+
 - Hipótesis: con ids de requisitos en el prompt (`evaluation/README.md`, «The adapter»), la trazabilidad se completa
   en el harness y es mucho menor en el directo medida con el mismo script.
 - Beneficio: auditabilidad sin costo extra de modelo.
@@ -381,6 +396,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el prompt del directo también muestra los ids (esto reduce la ventaja del harness). Mitigación: declararlo.
 
 **H16 Identidad y no repudio de quien decide (CLI y API)** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: un agente, un validador, un usuario con rol `viewer` o un token inválido no puede aprobar; una
   excepción exige razón y vence.
 - Beneficio: no repudio.
@@ -394,6 +410,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: pocos. Mitigación: incluir 5 intentos legítimos para detectar sobre-bloqueo.
 
 **H17 La evidencia sobrevive a retención y recolección** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: `harness gc --apply` borra solo lo que la política permite; los runs conservados siguen verificando.
 - Beneficio: auditabilidad a largo plazo; costo de almacenamiento.
 - Condiciones: H con `retention.artifactDays`, `eventDays`, `orphanArtifacts`.
@@ -406,6 +423,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.3 Control de recursos
 
 **H18 Agente que no converge: tope de iteraciones** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: un agente que nunca arregla el cambio es detenido en `agentContract.maxIterations` (5) y en
   `runtime.verificationCorrections` (2) con evidencia; D\* en bucle sin tope consume N llamadas.
 - Beneficio: control de recursos.
@@ -422,6 +440,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el fixture no imita convergencia lenta real. Mitigación: H21 con modelo real.
 
 **H19 Presupuestos de tokens y tiempo por tamaño S/M/L** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: el router clasifica correctamente por requisitos/archivos/líneas (umbrales 5/15, 5/20, 2000/10000) y
   el contrato corta la llamada que excede `budgets.S/M/L` (50 000 tok/600 s; 200 000/1800 s; 800 000/5400 s).
 - Beneficio: control de recursos con valores «de partida, a calibrar» (`docs/reference/configuration.md`, «Agent contract»);
@@ -438,6 +457,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   de los bloques A/D (`harness routing calibrate`) y reportar ambas calibraciones.
 
 **H20 Techos de costo acumulado en USD** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: `budget.perCall/perTask/perRun`, `warnAt` y `budget raise` se comportan según lo documentado.
 - Beneficio: control de recursos; extiende la sonda `budget`.
 - Condiciones: H con techos por defecto, reducidos, y reducidos con `budget raise`.
@@ -449,6 +469,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: ninguno relevante. Mitigación: no aplica.
 
 **H21 Agente que no converge vs directo sin tope de iteración (con modelo real)** — Esfuerzo M · Modelo: 6 corridas Haiku
+
 - Hipótesis: ante una tarea sin solución (criterios contradictorios), el harness se detiene antes y gasta menos
   que un directo que solo tiene tope de dinero y tiempo.
 - Beneficio: control de recursos con agente real.
@@ -464,6 +485,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.4 Contexto mínimo y contrato
 
 **H22 Bytes y tokens enviados por tipo de llamada vs contexto completo** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: con `agentContract: enforce`, las llamadas de solo lectura envían solo los campos de la tarea que su
   tipo necesita y su solicitud pesa menos que con el contrato apagado y que el prompt directo.
 - Beneficio: contexto mínimo y costo.
@@ -479,6 +501,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: los bytes no son la calidad. Mitigación: H25 mide el efecto en resultado.
 
 **H23 Respuestas que violan el contrato** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: toda respuesta fuera de contrato falla cerrada como `agent.contract.violation`, se reintenta una vez
   (`runtime.contractRetry`) y el padre solo recibe una respuesta acotada.
 - Beneficio: contrato y robustez; evita que respuestas enormes inflen el contexto posterior.
@@ -492,6 +515,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: respuestas sintéticas. Mitigación: añadir las respuestas malformadas observadas en los pilotos.
 
 **H24 Contexto excesivo en repos grandes** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: `context.manifest`, `maxFiles` y `maxBytes` acotan el contexto que viaja con `implement` aunque el repo
   crezca.
 - Beneficio: contexto mínimo.
@@ -503,6 +527,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el repo sintético tiene archivos de ~11.7 kB (como N16). Mitigación: añadir itsdangerous.
 
 **H25 Contrato mínimo con modelo real: efecto en costo y calidad** — Esfuerzo M · Modelo: 6 corridas Haiku (3+3)
+
 - Hipótesis: `agentContract: enforce` reduce tokens de entrada de gobierno sin empeorar las pruebas ocultas.
 - Beneficio: costo; mitiga el costo de P09.
 - Condiciones: `harness` con `agentContract` enforce vs off; brownfield, Haiku.
@@ -515,6 +540,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.5 Arquitectura
 
 **H26 Recomendación de arquitectura por perfil de proyecto (10 estilos)** — Esfuerzo M · Modelo: 120 llamadas de solo lectura (Haiku)
+
 - Hipótesis: con el catálogo y los expertos, el agente recomienda un estilo aceptable para 20 perfiles (CRUD web,
   móvil con estado, pipeline de eventos, lectura/escritura asimétrica, multi-equipo, biblioteca de datos, CLI…)
   con más acuerdo y consistencia que un agente al que se le pide «qué arquitectura» sin catálogo.
@@ -531,6 +557,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   archivos de estilos; dos etiquetadores con acuerdo medido.
 
 **H27 Reglas de capas diferenciales por estilo** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: las plantillas de capas (layered, hexagonal, clean, ddd, mvvm, mvi, cqrs) detectan violaciones nuevas y
   no culpan preexistentes; los estilos sin plantilla (modular-monolith, microservices, event-driven) no generan
   falsas violaciones.
@@ -543,6 +570,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: rutas genéricas de la plantilla (`**/domain/**`). Mitigación: probar también con nombres alternativos.
 
 **H28 Reutilización de la ingeniería inversa con 0 llamadas** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: tras el primer survey, las corridas siguientes reutilizan los documentos con `agentCalls: 0` mientras el
   layout no cambie; `harness architecture refresh` o cambios del layout o documentos borrados los regeneran.
 - Beneficio: costo repetido de explorar el proyecto.
@@ -558,6 +586,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el fixture no imita el costo de exploración real. Mitigación: H29.
 
 **H29 Exactitud de la ingeniería inversa (con modelo)** — Esfuerzo M · Modelo: 6 llamadas (3 Haiku + 3 Sonnet)
+
 - Hipótesis: los componentes y convenciones descritos coinciden con la estructura real; los directorios los lista el
   harness, no el agente.
 - Beneficio: arquitectura; reduce el costo de orientar al agente en proyectos existentes.
@@ -570,6 +599,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: verdad escrita por el autor. Mitigación: segunda persona verifica.
 
 **H30 Adherencia a la organización propuesta por el experto (con modelo)** — Esfuerzo M · Modelo: 6 corridas Haiku
+
 - Hipótesis: tras la decisión de estilo, el cambio ubica los archivos nuevos donde el plan del experto dice.
 - Beneficio: arquitectura; mide el valor de `architecture-organization.md`.
 - Condiciones: greenfield con experto vs sin catálogo, Haiku, 3 reps.
@@ -582,6 +612,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.6 Buenas prácticas y calidad
 
 **H31 TDD rojo-verde** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: con `testing.strategy: tdd`, las pruebas que pasan antes del cambio se marcan
   (`acceptance.passes-before`) y las que fallan antes y pasan después quedan registradas.
 - Beneficio: buenas prácticas con evidencia.
@@ -594,6 +625,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: ninguno relevante.
 
 **H32 BDD: escenarios Gherkin congelados** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: con `bdd`, los escenarios aprobados se congelan, el agente escribe los pasos y los escenarios no se
   pueden editar.
 - Beneficio: buenas prácticas.
@@ -605,6 +637,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: depende del runner BDD (p. ej. behave); registrar versión.
 
 **H33 Estándares por lenguaje (15 packs)** — Esfuerzo L · Modelo: 0
+
 - Hipótesis: para cada pack (`resources/standards/`: angular, csharp, go, java, javascript, kotlin, node, php, python,
   react, ruby, rust, swift, typescript, vue) la selección de tarjetas es determinista, acotada por `maxCards` y el
   validador de herramienta detecta una violación sembrada cuando la herramienta está instalada.
@@ -619,6 +652,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: requiere 15 toolchains. Mitigación: ejecutar donde estén y marcar los demás «no evaluado».
 
 **H34 Revisión independiente vs autorrevisión del agente (con modelo)** — Esfuerzo M · Modelo: 69 invocaciones de panel (23 casos × 3) con Haiku, más 23 × 3 autorrevisiones
+
 - Hipótesis: el panel con reglas y reviewers independientes detecta más defectos sembrados que pedir al mismo agente
   que revise su cambio, a costo de tokens que se reporta.
 - Beneficio: buenas prácticas; completa N02-b.
@@ -633,6 +667,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el corpus lo diseñó el autor del panel. Mitigación: añadir 5 casos de terceros.
 
 **H35 Mutación ligera: off/warn/enforce** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: la mutación ligera detecta pruebas que cubren pero no afirman, a un costo medible en segundos.
 - Beneficio: calidad; mitiga el falso verde de la cobertura.
 - Condiciones: H `mutation.mode` off/warn/enforce; cobertura de cambio sola (`diffCoverage 80`).
@@ -644,6 +679,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: los operadores son pocos. Mitigación: declarar la lista de operadores.
 
 **H36 Principios (DRY, KISS, YAGNI, boy scout) y deuda introducida** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: `verification.principles` detecta duplicación, símbolos públicos sin uso, funciones largas y regresión
   del trabajo de limpieza sin bloquear reformateos.
 - Beneficio: calidad; el directo en 0.9.0 introdujo hallazgos de Ruff (`ruffIntroduced`, p. ej. 14 en Haiku greenfield
@@ -658,6 +694,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.7 Cuándo usar cada modo
 
 **H37 Curva del precio de la gobernanza por tamaño (S/M/L)** — Esfuerzo M · Modelo: 0 (proyección con medianas reales)
+
 - Hipótesis: el costo fijo del harness es mayor en proporción para tareas S y se amortiza en M y L; el carril rápido
   recorta el costo en S.
 - Beneficio: decide con datos cuándo usar carril rápido o gobierno completo.
@@ -674,6 +711,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   interacción declarados como supuesto.
 
 **H38 Tasa de falso carril rápido con todos los factores de riesgo** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: ningún cambio con factor de riesgo se entrega sin persona en carril rápido, pre-aprobación incluida.
 - Beneficio: seguridad del modo de baja fricción.
 - Condiciones: carril rápido; carril rápido + `--pre-approve`; flujo completo.
@@ -687,6 +725,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el cambio de riesgo es explícito. Mitigación: añadir 8 casos donde el riesgo es indirecto.
 
 **H39 Ablación por característica** — Esfuerzo L · Modelo: 0
+
 - Hipótesis: cada característica (aceptación congelada, panel, escalera, mutación, contrato, carril, principios,
   trazabilidad) aporta intercepción medible a un costo medible; algunas no valen su costo en ciertos casos.
 - Beneficio: da el «cuándo apagar qué»; honestidad sobre costos.
@@ -699,6 +738,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: interacciones entre características. Mitigación: fraccionado factorial 2^(8-4) (16 configuraciones).
 
 **H40 Embebido (MCP) frente a proveedor de comando: conformidad y seguridad** — Esfuerzo M · Modelo: 0 (N08 cubre el modelo)
+
 - Hipótesis: el servidor MCP no expone ninguna herramienta que decida por una persona y el modo embebido llega a
   DECISION con el mismo contrato de evidencias que el modo comando.
 - Beneficio: elección de modo; seguridad.
@@ -714,6 +754,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: host simulado. Mitigación: complementar con N08.
 
 **H41 Anclado vs fijo: invariantes del router y proyección de costo** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: el modo anclado nunca elige un modelo por encima del ancla, respeta `maxEscalations` y su costo
   proyectado con la tabla de precios no excede el modo fijo.
 - Beneficio: costo; mitiga la diferencia de USD de P09.
@@ -729,6 +770,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.8 Experiencia y fricción
 
 **H42 Tiempo hasta la primera ejecución** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: de una máquina limpia a la primera ejecución gobernada con proveedor simulado hay menos de N minutos y
   M comandos; el directo es inmediato (costo de adopción que se reporta).
 - Beneficio: experiencia; mitiga con el camino `harness init` + `harness do`.
@@ -742,6 +784,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: el autor conoce el camino. Mitigación: personas externas.
 
 **H43 Interacciones humanas por tarea frente al objetivo por tamaño** — Esfuerzo S · Modelo: 0 (post-hoc sobre bloques A/B/D)
+
 - Hipótesis: las interacciones humanas medianas por tamaño están dentro de `friction.targets` (S 1, M 3, L 6).
 - Beneficio: experiencia; compara con el objetivo declarado.
 - Condiciones: corridas gobernadas de los bloques y de H37.
@@ -753,6 +796,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: la persona simulada responde siempre (no mide dudas). Mitigación: declarar y complementar con H42.
 
 **H44 Claridad y ejecutabilidad de los bloqueos** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: cada bloqueo trae regla, ubicación y un comando siguiente que se ejecuta sin error de uso.
 - Beneficio: experiencia.
 - Condiciones: los ~25 estados BLOCKED de P08/N12/N13 y los nuevos H.
@@ -766,6 +810,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: calificadores conocen el sistema. Mitigación: calificadores externos.
 
 **H45 Falsos positivos y carga de revisión en cambios limpios** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: en cambios correctos el harness produce pocos hallazgos bloqueantes; los que aparecen se reportan.
 - Beneficio: honestidad sobre fricción; el piloto de la ola 9 tuvo `architecture.layer-violation` y
   `ratchet.regressed` sobre un cambio correcto.
@@ -780,6 +825,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.9 Portabilidad y robustez
 
 **H46 Portabilidad Linux/macOS/Windows** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: las suites deterministas dan los mismos resultados en las tres plataformas, salvo diferencias
   esperadas y documentadas (sandbox, directorio de estado, rutas).
 - Beneficio: portabilidad; hoy solo hay evidencia en macOS.
@@ -793,6 +839,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: las sondas usan rutas POSIX. Mitigación: adaptar las rutas en el script, sin cambiar la expectativa.
 
 **H47 Caída y reanudación (SIGKILL y corte)** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: tras un `kill -9` en cualquiera de 10 puntos del flujo, `harness run continue` recupera la ejecución
   sin duplicar decisiones y con cadena válida.
 - Beneficio: robustez; ampliación de `lease-sigterm`.
@@ -804,6 +851,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: bajo. No hay comparador directo; se declara.
 
 **H48 Concurrencia de corridas** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: 3 y 10 corridas con `--isolate worktree` llegan a DECISION sin contaminarse; dos corridas en el mismo
   directorio sin aislamiento se rechazan con exit 5.
 - Beneficio: robustez y uso en equipo.
@@ -816,6 +864,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: misma máquina. Mitigación: declararlo (la guía ya dice que entre máquinas no hay coordinación).
 
 **H49 Curva de escala en repositorios grandes** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: el arranque crece sublinealmente con `snapshot: git`, `manifest` y caché; hay un umbral en que el
   harness deja de ser práctico.
 - Beneficio: mitiga el costo de N16 y define el límite de uso.
@@ -828,6 +877,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: archivos sintéticos. Mitigación: añadir un repo real grande.
 
 **H50 Proveedor degradado: reintentos, respaldo y falla cerrada** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: salida basura, timeouts y errores transitorios se reintentan hasta `runtime.providerRetries`, se
   usa `fallbackProvider` y nunca se corrompe el estado.
 - Beneficio: robustez.
@@ -840,6 +890,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: bajo.
 
 **H51 `harness doctor` y entorno incompleto** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: `doctor` detecta los defectos de entorno más comunes y dice cómo arreglarlos.
 - Beneficio: experiencia y portabilidad.
 - Condiciones: 10 entornos defectuosos (sin git, sin pytest, árbol sucio, sin bubblewrap, Python viejo, `.harness`
@@ -851,6 +902,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: bajo.
 
 **H52 Determinismo de digests entre corridas y plataformas** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: la misma tarea y el mismo cambio dan el mismo digest de ChangeSet, de configuración y de gate en 10
   corridas y en las 3 plataformas.
 - Beneficio: base de todas las pruebas de no repudio.
@@ -864,6 +916,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 2.10 Otros
 
 **H53 Reporte de métricas tipo Sonar: validez del estado del período** — Esfuerzo S · Modelo: 0
+
 - Hipótesis: el estado `CLEAR`/`ATTENTION`/`NO_DATA` se deriva solo de cuatro conteos y coincide con la verdad en
   proyectos sembrados; no hay indicador por persona.
 - Beneficio: utilidad y honestidad del reporte.
@@ -876,6 +929,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: bajo.
 
 **H54 Memoria y aprendizaje entre corridas** — Esfuerzo M · Modelo: 0 (determinista); 6 corridas Haiku (opcional)
+
 - Hipótesis: un hallazgo recurrente se convierte en lección tras aprobación y la segunda corrida lo evita.
 - Beneficio: mejora acumulada; mitiga el costo de correcciones repetidas.
 - Condiciones: H con `memory.learnFromFindings: auto`; apagada.
@@ -886,6 +940,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Sesgos: bajo en lo determinista; alto en la variante con modelo (n pequeño).
 
 **H55 Forjas y plantillas de CI: la puerta `verify-approval` en un pipeline** — Esfuerzo M · Modelo: 0
+
 - Hipótesis: las plantillas generadas (GitHub Actions, GitLab CI, Jenkins, Azure) son válidas y fallan un PR sin
   aprobación ligada al digest.
 - Beneficio: auditabilidad en el flujo de entrega.

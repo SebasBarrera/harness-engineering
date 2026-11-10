@@ -8,7 +8,7 @@ con el equipo anterior, y no debe volver a pasar.
 |---|---|
 | [`CATALOGO.md`](CATALOGO.md) | Inventario de las pruebas existentes y 55 pruebas nuevas propuestas (H01–H55), con hipótesis, método, métricas, criterio de éxito, costo y sesgos; plan y reglas de integridad. |
 | `run_deterministic.py` | Corre todas las suites deterministas (sin modelo) sobre un wheel: crea los entornos, verifica el archivo de `itsdangerous` y registra el código de salida de cada suite en `campaign-summary.json`. Sale con 1 si alguna falló. |
-| `../../.github/workflows/evaluation.yml` | El mismo script en Linux de GitHub Actions, con `bwrap` (sandbox real), para cualquier rama o etiqueta (`workflow_dispatch`). Los resultados quedan como artefacto para revisarlos y versionarlos. |
+| `../../.github/workflows/evaluation.yml` | El mismo script en Linux de GitHub Actions, con `bwrap` (sandbox real), lanzado a mano sobre la rama o etiqueta a evaluar (`workflow_dispatch`, «Use workflow from»): esa rama debe traer estos scripts. Los resultados quedan como artefacto para revisarlos y versionarlos. |
 
 ## Reglas de integridad
 
