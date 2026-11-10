@@ -430,56 +430,81 @@ class RunEngine:
         if self._enforces_workflow:
             self._record_workflow_schedule(execution_id)
         while True:
-            execution = self.get_execution(execution_id)
-            if execution.current_phase is PhaseId.DECISION:
-                if self._decision_waits(execution):
-                    return self.get_execution(execution_id)
-                execution = self.get_execution(execution_id)
-            elif execution.current_phase is PhaseId.CLOSURE:
-                self._run_phase(execution, self._phase_closure)
+            stopped = self._step(execution_id)
+            if stopped is not None:
+                return stopped
+
+    def _step(self, execution_id: str) -> Execution | None:
+        """One step of the run loop: the current phase runs; the run where the loop stops, or
+        ``None`` when the loop goes on."""
+        execution = self.get_execution(execution_id)
+        if execution.current_phase is PhaseId.DECISION:
+            if self._decision_waits(execution):
                 return self.get_execution(execution_id)
-            else:
-                handler = {
-                    PhaseId.INTENT: self._phase_intent,
-                    PhaseId.DISCOVERY: self._phase_discovery,
-                    PhaseId.SPECIFICATION: self._phase_specification,
-                    PhaseId.PLANNING: self._phase_planning,
-                    PhaseId.IMPLEMENTATION: self._phase_implementation,
-                    PhaseId.VERIFICATION: self._phase_verification,
-                    PhaseId.INDEPENDENT_REVIEW: self._phase_independent_review,
-                }[execution.current_phase]
-                phase_id = execution.current_phase
-                outcome = self._run_phase(execution, handler)
-                execution = self.get_execution(execution_id)
-                if outcome.status is not ResultStatus.PASSED:
-                    if self._exit_gate_unmet is not None:
-                        # The phase's own work passed but its exit gate did not (#3): no
-                        # correction cycle starts on a record the phase failed to leave.
-                        return execution
-                    if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(
-                        execution, outcome
-                    ):
-                        continue
-                    if (
-                        phase_id is PhaseId.INDEPENDENT_REVIEW
-                        and self.results.active
-                        and self.results.after_failed_review(execution, outcome.summary)
-                    ):
-                        continue
-                    return execution
-                if (
-                    phase_id is PhaseId.VERIFICATION
-                    and self.results.active
-                    and self.results.after_passed_verification(execution)
-                ):
-                    # planning.decomposition: the next sub-task starts (#39).
-                    continue
-            if execution.status in {
-                ResultStatus.PASSED,
-                ResultStatus.CANCELLED,
-                ResultStatus.ERROR,
-            }:
+            execution = self.get_execution(execution_id)
+        elif execution.current_phase is PhaseId.CLOSURE:
+            self._run_phase(execution, self._phase_closure)
+            return self.get_execution(execution_id)
+        else:
+            execution, action = self._step_work_phase(execution_id, execution)
+            if action == "stop":
                 return execution
+            if action == "next":
+                return None
+        if execution.status in {
+            ResultStatus.PASSED,
+            ResultStatus.CANCELLED,
+            ResultStatus.ERROR,
+        }:
+            return execution
+        return None
+
+    def _step_work_phase(
+        self, execution_id: str, execution: Execution
+    ) -> tuple[Execution, Literal["stop", "next", "check"]]:
+        """Run a phase between INTENT and INDEPENDENT_REVIEW: whether the loop stops on the
+        run, goes on to the next step, or checks whether the run ended."""
+        handler = {
+            PhaseId.INTENT: self._phase_intent,
+            PhaseId.DISCOVERY: self._phase_discovery,
+            PhaseId.SPECIFICATION: self._phase_specification,
+            PhaseId.PLANNING: self._phase_planning,
+            PhaseId.IMPLEMENTATION: self._phase_implementation,
+            PhaseId.VERIFICATION: self._phase_verification,
+            PhaseId.INDEPENDENT_REVIEW: self._phase_independent_review,
+        }[execution.current_phase]
+        phase_id = execution.current_phase
+        outcome = self._run_phase(execution, handler)
+        execution = self.get_execution(execution_id)
+        if outcome.status is not ResultStatus.PASSED:
+            return execution, self._after_failed_phase(execution, phase_id, outcome)
+        if (
+            phase_id is PhaseId.VERIFICATION
+            and self.results.active
+            and self.results.after_passed_verification(execution)
+        ):
+            # planning.decomposition: the next sub-task starts (#39).
+            return execution, "next"
+        return execution, "check"
+
+    def _after_failed_phase(
+        self, execution: Execution, phase_id: PhaseId, outcome: PhaseOutcome
+    ) -> Literal["stop", "next"]:
+        """After a phase that did not pass: a correction cycle goes on to the next step,
+        otherwise the loop stops on the run."""
+        if self._exit_gate_unmet is not None:
+            # The phase's own work passed but its exit gate did not (#3): no
+            # correction cycle starts on a record the phase failed to leave.
+            return "stop"
+        if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(execution, outcome):
+            return "next"
+        if (
+            phase_id is PhaseId.INDEPENDENT_REVIEW
+            and self.results.active
+            and self.results.after_failed_review(execution, outcome.summary)
+        ):
+            return "next"
+        return "stop"
 
     def _decision_waits(self, execution: Execution) -> bool:
         """Run DECISION; whether the run stops there (BLOCKED). A ChangeSet that changed
@@ -2746,22 +2771,7 @@ class RunEngine:
         execution = self.get_execution(execution.execution_id)
         # A later change to an owned path invalidates previous gate/approval.
         if previous_digest and previous_digest != change_set.digest:
-            execution = execution.model_copy(
-                update={
-                    "gate_evaluation_id": None,
-                    "human_decision_id": None,
-                    "updated_at": utc_now(),
-                }
-            )
-            self._save_execution(execution)
-            self.s.events.append(
-                execution.execution_id,
-                "approval.invalidated",
-                {
-                    "previousDigest": previous_digest,
-                    "currentDigest": change_set.digest,
-                },
-            )
+            execution = self._invalidate_approval(execution, previous_digest, change_set)
         current_decision = (
             self.s.state.get("decision", execution.human_decision_id, HumanDecision)
             if execution.human_decision_id
@@ -2771,45 +2781,9 @@ class RunEngine:
         self.provenance.attribute(execution, change_set, PhaseId.DECISION)
         execution = self.get_execution(execution.execution_id)
         if current_decision:
-            if current_decision.change_set_digest != change_set.digest:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
-                )
-            if current_decision.acceptance_contract_digest is not None:
-                try:
-                    contract = self._current_contract_digest(execution)
-                except PolicyViolationError as error:
-                    return PhaseOutcome(ResultStatus.BLOCKED, str(error))
-                if contract != current_decision.acceptance_contract_digest:
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED,
-                        "Human decision is stale: it is bound to another acceptance contract",
-                    )
-            if (
-                current_decision.expires_at is not None
-                and current_decision.expires_at <= utc_now()
-                and current_decision.decision is not DecisionKind.REJECT
-            ):
-                # The expiry of an exception (review.exceptions) or of any decision
-                # (governance.decisionExpiryHours): a new decision is required.
-                kind = (
-                    "Exception"
-                    if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
-                    else "Human decision"
-                )
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED,
-                    f"{kind} {current_decision.decision_id} expired at "
-                    f"{current_decision.expires_at.isoformat()}; a new decision is required",
-                )
-            if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
-                return PhaseOutcome(
-                    ResultStatus.PASSED,
-                    f"Human decision {current_decision.decision} is bound to the current ChangeSet",
-                    (f"record://decision/{current_decision.decision_id}",),
-                )
-            if current_decision.decision is DecisionKind.REJECT:
-                return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+            decided = self._decided_outcome(execution, current_decision, change_set)
+            if decided is not None:
+                return decided
         elif self.friction.active:
             # friction.preAuthorization (#58): the approval a person gave in advance, applied
             # only when its condition holds; otherwise the person is asked as usual.
@@ -2826,6 +2800,84 @@ class RunEngine:
             f"Human decision required for gate {gate.gate_evaluation_id} and digest {change_set.digest}",
             (f"record://gate/{gate.gate_evaluation_id}",),
         )
+
+    def _invalidate_approval(
+        self, execution: Execution, previous_digest: str, change_set: ChangeSet
+    ) -> Execution:
+        """Drop the gate and the approval of a run whose ChangeSet changed, and record it."""
+        execution = execution.model_copy(
+            update={
+                "gate_evaluation_id": None,
+                "human_decision_id": None,
+                "updated_at": utc_now(),
+            }
+        )
+        self._save_execution(execution)
+        self.s.events.append(
+            execution.execution_id,
+            "approval.invalidated",
+            {
+                "previousDigest": previous_digest,
+                "currentDigest": change_set.digest,
+            },
+        )
+        return execution
+
+    def _decided_outcome(
+        self, execution: Execution, current_decision: HumanDecision, change_set: ChangeSet
+    ) -> PhaseOutcome | None:
+        """The outcome of DECISION under the run's human decision; ``None`` when the decision
+        neither applies nor ends the run, so a person is asked again."""
+        stale = self._stale_decision(execution, current_decision, change_set)
+        if stale is not None:
+            return stale
+        if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
+            return PhaseOutcome(
+                ResultStatus.PASSED,
+                f"Human decision {current_decision.decision} is bound to the current ChangeSet",
+                (f"record://decision/{current_decision.decision_id}",),
+            )
+        if current_decision.decision is DecisionKind.REJECT:
+            return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+        return None
+
+    def _stale_decision(
+        self, execution: Execution, current_decision: HumanDecision, change_set: ChangeSet
+    ) -> PhaseOutcome | None:
+        """A BLOCKED outcome when the human decision no longer holds: bound to another
+        ChangeSet or acceptance contract, or expired."""
+        if current_decision.change_set_digest != change_set.digest:
+            return PhaseOutcome(
+                ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
+            )
+        if current_decision.acceptance_contract_digest is not None:
+            try:
+                contract = self._current_contract_digest(execution)
+            except PolicyViolationError as error:
+                return PhaseOutcome(ResultStatus.BLOCKED, str(error))
+            if contract != current_decision.acceptance_contract_digest:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    "Human decision is stale: it is bound to another acceptance contract",
+                )
+        if (
+            current_decision.expires_at is not None
+            and current_decision.expires_at <= utc_now()
+            and current_decision.decision is not DecisionKind.REJECT
+        ):
+            # The expiry of an exception (review.exceptions) or of any decision
+            # (governance.decisionExpiryHours): a new decision is required.
+            kind = (
+                "Exception"
+                if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
+                else "Human decision"
+            )
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"{kind} {current_decision.decision_id} expired at "
+                f"{current_decision.expires_at.isoformat()}; a new decision is required",
+            )
+        return None
 
     def _reverify_after_change(self, execution: Execution) -> bool:
         """Under ``verification.reverifyOnChange`` (#78): a run in DECISION whose ChangeSet
