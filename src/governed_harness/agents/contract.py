@@ -207,6 +207,9 @@ class Usage(_Contract):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    """The part of ``input_tokens`` read from the provider's prompt cache, when reported; the
+    token budget does not count it."""
 
 
 class AgentCallResponse(_Contract):

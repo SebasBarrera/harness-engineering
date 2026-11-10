@@ -36,7 +36,7 @@ está en `schemas/v1/agent-call-request.schema.json` y se imprime con
 | `allowedContext` | El contexto permitido: todas las claves de primer nivel de la solicitud. Lo que no está aquí no se envió. |
 | `resources` | Archivos y recursos autorizados: `readPaths`, `writePaths`, `guidancePaths` (opcional, los archivos de contexto), `denyPaths` (opcional), `commands` (opcional) y `scripts` (opcional, ids del registro de scripts). |
 | `constraints` | Restricciones de ejecución: `readOnly`, `workspace`, `scriptsAreBlackBoxes` y `contextFilesAreGuidance`. |
-| `tokenBudget` | Presupuesto de tokens de la llamada. |
+| `tokenBudget` | Presupuesto de tokens de la llamada. Cuenta el trabajo de la llamada según lo que reporta el proveedor: entrada nueva, creación de caché, salida y razonamiento. Las lecturas de la caché de prompts (`cacheReadTokens`) se registran, pero no cuentan; un proveedor que no reporta esa división cuenta toda su entrada. |
 | `timeLimitSeconds` | Límite de tiempo de la llamada, en segundos. |
 | `sizeClass` | Tamaño de la tarea (`S`, `M` o `L`) del que salen los dos límites anteriores. |
 | `iteration` | Número de iteración (`number`) y tope del agente (`max`, entre 1 y 6). |
@@ -142,7 +142,7 @@ Una respuesta válida de una llamada que alcanzó un límite:
   "iteration": 1,
   "finalStatus": "LIMIT_REACHED",
   "limitReached": "tokens",
-  "summary": "agent.limit.reached: the call used 5010 tokens of a budget of 1000"
+  "summary": "agent.limit.reached: the call used 5010 counted tokens (input, cache creation, output and reasoning) of a budget of 1000; 0 prompt-cache read tokens were recorded and not counted"
 }
 ```
 

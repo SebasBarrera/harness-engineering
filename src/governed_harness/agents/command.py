@@ -345,6 +345,7 @@ _USAGE_FIELDS = {
     "reasoningTokens": "reasoning_tokens",
     "costUsd": "cost_usd",
     "cacheTokens": "cache_tokens",
+    "cacheReadTokens": "cache_read_tokens",
 }
 
 

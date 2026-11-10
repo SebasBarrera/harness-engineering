@@ -46,6 +46,17 @@
   - Token budget and time limit per call from the router's S/M/L size (starting values, to be
     calibrated): the time limit stops the process, the token budget is checked on the usage the
     provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
+  - The token budget counts the work of a call, not its prompt-cache reads (#70). In a five-run
+    Haiku pilot every governed run blocked in INTENT: Claude Code re-reads its cached context on
+    each turn, the adapter folded those reads into `inputTokens`, and one read-only `clarify`
+    call reported 350160 tokens, almost all cache reads, against the M budget of 200000. Usage
+    gains `cacheReadTokens` (the part of `cacheTokens` read from the cache; protocol, the
+    `resource-usage` and `agent-call-response` schemas), reported by `claude-code`
+    (`cache_read_input_tokens`), `codex` (`cached_input_tokens`) and `gemini-cli` (`cached`, which
+    also fills `cacheTokens` now). The budget counts fresh input, cache creation, output and
+    reasoning; cache reads are recorded with the usage, the response and the metrics
+    (`tokens.cacheRead`) but not counted, and the limit message gives both numbers. A provider
+    that reports no cache-read split counts its whole input, as before.
   - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
     commands and the embedded MCP tools; the implement instructions tell the agent to use only
     that contract.

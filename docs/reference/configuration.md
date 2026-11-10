@@ -1328,7 +1328,7 @@ the section behaves, and digests, as before. The guide in Spanish is
 |---|---|---|
 | `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
 | `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
-| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. |
+| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. The token budget counts the work of the call as the provider reports it: fresh input, cache creation, output and reasoning. Prompt-cache reads (`cacheReadTokens`) are recorded with the call's usage, its response and the metrics, but do not count; a provider that reports no cache-read split counts its whole input. The limit message gives both numbers. |
 | `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
 | `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
 | `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |
