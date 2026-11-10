@@ -1,6 +1,6 @@
 # Documentation toolchain (pinned; used by the pages and docs-smoke workflows)
 mkdocs==1.6.1
-mkdocs-material==9.8.0
+mkdocs-material==9.8.1
 mkdocstrings==1.0.8
 mkdocstrings-python==2.0.10
 markdown-callouts==0.4.0
