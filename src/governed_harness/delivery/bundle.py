@@ -293,6 +293,123 @@ def decision_entries(events: list[dict[str, Any]], now: datetime) -> list[dict[s
     return found
 
 
+def _entry_problems(contents: BundleContents, manifest: EvidenceBundleManifest) -> list[str]:
+    """Entries missing, altered or unlisted, and artifacts whose name is not their digest."""
+    problems: list[str] = []
+    listed = {entry.path: entry for entry in manifest.entries}
+    for name, entry in listed.items():
+        actual = contents.files.get(name)
+        if actual is None:
+            problems.append(f"entry {name} is listed but missing")
+        elif actual != (entry.digest, entry.size_bytes):
+            problems.append(f"entry {name} does not match its digest or size")
+    for name in contents.files:
+        if name != MANIFEST and name not in listed:
+            problems.append(f"entry {name} is not listed in the manifest")
+    for name, (digest, _size) in contents.files.items():
+        is_artifact = name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
+        if is_artifact and digest != f"sha256:{name.removeprefix('artifacts/')}":
+            problems.append(f"artifact {name} does not match its name")
+    return problems
+
+
+def _read_events(contents: BundleContents, problems: list[str]) -> list[dict[str, Any]]:
+    """The events of the bundle; none (and a problem) when ``events.jsonl`` cannot be read."""
+    try:
+        return [
+            json.loads(line)
+            for line in contents.data.get(EVENTS, b"").decode("utf-8").splitlines()
+            if line.strip()
+        ]
+    except ValueError as error:  # UnicodeDecodeError is a ValueError
+        problems.append(f"events.jsonl cannot be read: {error}")
+        return []
+
+
+def _chain_problems(events: list[dict[str, Any]], manifest: EvidenceBundleManifest) -> list[str]:
+    """The event chain, its length and its head against the manifest."""
+    problems = list(_check_chain(events, manifest.execution_id))
+    if len(events) != manifest.event_count:
+        problems.append(
+            f"the bundle holds {len(events)} event(s); the manifest says {manifest.event_count}"
+        )
+    head = events[-1].get("eventDigest") if events else None
+    if head != manifest.event_chain_head:
+        problems.append("the last event is not the chain head of the manifest")
+    return problems
+
+
+def _read_records(contents: BundleContents, problems: list[str]) -> Any:
+    """The records of the bundle; empty (and a problem) when ``records.json`` cannot be read."""
+    try:
+        return json.loads(contents.data.get(RECORDS, b"{}"))
+    except ValueError as error:
+        problems.append(f"records.json cannot be read: {error}")
+        return {}
+
+
+def _record_problems(records: Any, decisions: list[dict[str, Any]]) -> list[str]:
+    """Decision records that cannot be read or that no decision event matches."""
+    problems: list[str] = []
+    recorded = {item["decisionId"]: item for item in decisions}
+    for raw in records.get("decision", []):
+        try:
+            record = HumanDecision.model_validate(raw)
+        except ValueError:
+            problems.append("a decision record cannot be read")
+            continue
+        event = recorded.get(record.decision_id)
+        if event is None or (event["decision"], event["changeSetDigest"]) != (
+            record.decision.value,
+            record.change_set_digest,
+        ):
+            problems.append(f"decision record {record.decision_id} has no matching event")
+    return problems
+
+
+def _missing_artifacts(
+    contents: BundleContents, events: list[dict[str, Any]], records: Any
+) -> list[str]:
+    """Referenced artifacts that are neither in the bundle nor recorded as pruned."""
+    present = {
+        name.removeprefix(_ARTIFACTS_DIR)
+        for name in contents.files
+        if name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
+    }
+    referenced = artifact_refs(events) | artifact_refs(records)
+    # Artifacts that harness gc pruned under retention.artifactDays are recorded as such.
+    pruned = {
+        str(uri)
+        for event in events
+        if event.get("eventType") == PRUNED_EVENT
+        for uri in (event.get("payload") or {}).get("artifactRefs", [])
+    }
+    return sorted(
+        uri for uri in referenced - pruned if uri.removeprefix(ARTIFACT_PREFIX) not in present
+    )
+
+
+def _manifest_summary(manifest: EvidenceBundleManifest | None) -> dict[str, Any]:
+    """The manifest fields of a bundle report; all ``None`` without a manifest."""
+    if not manifest:
+        return {
+            "executionId": None,
+            "taskId": None,
+            "status": None,
+            "changeSetDigest": None,
+            "eventCount": None,
+            "eventChainHead": None,
+        }
+    return {
+        "executionId": manifest.execution_id,
+        "taskId": manifest.task_id,
+        "status": manifest.status.value,
+        "changeSetDigest": manifest.change_set_digest,
+        "eventCount": manifest.event_count,
+        "eventChainHead": manifest.event_chain_head,
+    }
+
+
 def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
     """Verify a bundle without the workspace; ``valid`` is false on any problem."""
     contents = read_bundle(path)
@@ -300,83 +417,19 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
     manifest = contents.manifest
     decisions: list[dict[str, Any]] = []
     if manifest is not None:
-        listed = {entry.path: entry for entry in manifest.entries}
-        for name, entry in listed.items():
-            actual = contents.files.get(name)
-            if actual is None:
-                problems.append(f"entry {name} is listed but missing")
-            elif actual != (entry.digest, entry.size_bytes):
-                problems.append(f"entry {name} does not match its digest or size")
-        for name in contents.files:
-            if name != MANIFEST and name not in listed:
-                problems.append(f"entry {name} is not listed in the manifest")
-        for name, (digest, _size) in contents.files.items():
-            is_artifact = name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
-            if is_artifact and digest != f"sha256:{name.removeprefix('artifacts/')}":
-                problems.append(f"artifact {name} does not match its name")
-        events: list[dict[str, Any]] = []
-        try:
-            events = [
-                json.loads(line)
-                for line in contents.data.get(EVENTS, b"").decode("utf-8").splitlines()
-                if line.strip()
-            ]
-        except ValueError as error:  # UnicodeDecodeError is a ValueError
-            problems.append(f"events.jsonl cannot be read: {error}")
-        problems.extend(_check_chain(events, manifest.execution_id))
-        if len(events) != manifest.event_count:
-            problems.append(
-                f"the bundle holds {len(events)} event(s); the manifest says {manifest.event_count}"
-            )
-        head = events[-1].get("eventDigest") if events else None
-        if head != manifest.event_chain_head:
-            problems.append("the last event is not the chain head of the manifest")
+        problems.extend(_entry_problems(contents, manifest))
+        events = _read_events(contents, problems)
+        problems.extend(_chain_problems(events, manifest))
         decisions = decision_entries(events, now or utc_now())
-        try:
-            records = json.loads(contents.data.get(RECORDS, b"{}"))
-        except ValueError as error:
-            records = {}
-            problems.append(f"records.json cannot be read: {error}")
-        recorded = {item["decisionId"]: item for item in decisions}
-        for raw in records.get("decision", []):
-            try:
-                record = HumanDecision.model_validate(raw)
-            except ValueError:
-                problems.append("a decision record cannot be read")
-                continue
-            event = recorded.get(record.decision_id)
-            if event is None or (event["decision"], event["changeSetDigest"]) != (
-                record.decision.value,
-                record.change_set_digest,
-            ):
-                problems.append(f"decision record {record.decision_id} has no matching event")
-        present = {
-            name.removeprefix(_ARTIFACTS_DIR)
-            for name in contents.files
-            if name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
-        }
-        referenced = artifact_refs(events) | artifact_refs(records)
-        # Artifacts that harness gc pruned under retention.artifactDays are recorded as such.
-        pruned = {
-            str(uri)
-            for event in events
-            if event.get("eventType") == PRUNED_EVENT
-            for uri in (event.get("payload") or {}).get("artifactRefs", [])
-        }
-        missing = sorted(
-            uri for uri in referenced - pruned if uri.removeprefix(ARTIFACT_PREFIX) not in present
-        )
+        records = _read_records(contents, problems)
+        problems.extend(_record_problems(records, decisions))
+        missing = _missing_artifacts(contents, events, records)
         if missing:
             problems.append(f"{len(missing)} referenced artifact(s) are not in the bundle")
     return {
         "valid": not problems,
         "bundle": str(path),
-        "executionId": manifest.execution_id if manifest else None,
-        "taskId": manifest.task_id if manifest else None,
-        "status": manifest.status.value if manifest else None,
-        "changeSetDigest": manifest.change_set_digest if manifest else None,
-        "eventCount": manifest.event_count if manifest else None,
-        "eventChainHead": manifest.event_chain_head if manifest else None,
+        **_manifest_summary(manifest),
         "decisions": decisions,
         "problems": problems,
     }

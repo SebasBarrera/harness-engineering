@@ -252,6 +252,32 @@ def _executable(argv0: str, workspace: Path) -> str | None:
     return shutil.which(argv0)
 
 
+def _provider_entry(
+    provider_id: str, provider: Any, default: str, workspace: Path
+) -> dict[str, Any]:
+    """Whether the command of one agent provider is found; only the default one fails."""
+    found = _executable(provider.effective_command[0], workspace)
+    if found:
+        status = "PASSED"
+    elif provider_id == default:
+        status = "FAILED"
+    else:
+        status = "WARNING"
+    entry: dict[str, Any] = {
+        "provider": provider_id,
+        "command": provider.effective_command[0],
+        "status": status,
+    }
+    if found:
+        entry["path"] = found
+    else:
+        entry["hint"] = (
+            f"Install the agent CLI or adapter {provider.effective_command[0]!r} or put it on PATH; "
+            f"runs with provider {provider_id!r} fail in IMPLEMENTATION without it."
+        )
+    return entry
+
+
 def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
     project = resolved.project
     default = project.agent_provider
@@ -264,25 +290,7 @@ def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
         }
     others: list[dict[str, Any]] = []
     for provider_id, provider in project.agent_providers.items():
-        found = _executable(provider.effective_command[0], resolved.workspace_root)
-        if found:
-            status = "PASSED"
-        elif provider_id == default:
-            status = "FAILED"
-        else:
-            status = "WARNING"
-        entry: dict[str, Any] = {
-            "provider": provider_id,
-            "command": provider.effective_command[0],
-            "status": status,
-        }
-        if found:
-            entry["path"] = found
-        else:
-            entry["hint"] = (
-                f"Install the agent CLI or adapter {provider.effective_command[0]!r} or put it on PATH; "
-                f"runs with provider {provider_id!r} fail in IMPLEMENTATION without it."
-            )
+        entry = _provider_entry(provider_id, provider, default, resolved.workspace_root)
         if provider_id == default:
             checks["agentProvider"] = entry
         else:
