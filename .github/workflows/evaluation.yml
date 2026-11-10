@@ -1,0 +1,71 @@
+# Deterministic suites of the 2.0.0 evaluation on Linux (no model is called): fault probes,
+# verification-ladder and review-panel corpora, friction, INTENT equivalence, block 0 and metrics
+# validity. Run by hand on the branch or tag to evaluate ("Use workflow from"): its own code is the
+# harness under test (its wheel, and the checkout block 0 verifies) and its evaluation code runs
+# the suites. The results are an artifact that a person reviews and commits under
+# evaluation/results-2.0.0. Informational: it never gates a merge.
+name: evaluation
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated suites (default: all)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deterministic:
+    name: deterministic suites (report)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Install bubblewrap and GNU time (the agent sandbox and block 0's memory measurement)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q bubblewrap time
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which bwrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+      - name: Build the wheel of this ref
+        run: |
+          python -m pip install -q build
+          python -m build --wheel --outdir dist
+          sha256sum dist/*.whl
+          git rev-parse HEAD | tee dist/commit.txt
+      - name: Run the deterministic suites
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          git config --global user.name "evaluation"
+          git config --global user.email "evaluation@localhost"
+          wheel=$(ls dist/*.whl)
+          python evaluation/campaign/run_deterministic.py --wheel "$wheel" \
+            --work "$RUNNER_TEMP/campaign" --out results/deterministic ${ONLY:+--only "$ONLY"}
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evaluation-deterministic
+          path: |
+            results/
+            dist/
+          if-no-files-found: error
