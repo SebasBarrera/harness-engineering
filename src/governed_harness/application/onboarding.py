@@ -257,10 +257,16 @@ def _provider_entry(
 ) -> dict[str, Any]:
     """Whether the command of one agent provider is found; only the default one fails."""
     found = _executable(provider.effective_command[0], workspace)
+    if found:
+        status = "PASSED"
+    elif provider_id == default:
+        status = "FAILED"
+    else:
+        status = "WARNING"
     entry: dict[str, Any] = {
         "provider": provider_id,
         "command": provider.effective_command[0],
-        "status": "PASSED" if found else "FAILED" if provider_id == default else "WARNING",
+        "status": status,
     }
     if found:
         entry["path"] = found

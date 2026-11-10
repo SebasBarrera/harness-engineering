@@ -40,6 +40,7 @@ from governed_harness.capabilities.repository import (
 )
 from governed_harness.configuration.loader import BUILTIN_PROFILE_IDS
 from governed_harness.configuration.models import (
+    RuntimeConfig,
     ValidatorDefinition,
     WorkflowPhaseDefinition,
 )
@@ -66,6 +67,7 @@ from governed_harness.domain.models import (
     HARNESS_ACTOR,
     Actor,
     Artifact,
+    CapabilityGrant,
     ChangedFile,
     ChangeRequestItem,
     ChangeSet,
@@ -166,6 +168,9 @@ from governed_harness.validators.base import ValidatorOutput
 from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
 
 CANCELLATION_REQUESTED = "Cancellation requested"
+_CORRECTION_AUTHORIZED = "correction.authorized"
+_FINDING_RECORDED = "finding.recorded"
+_FILESYSTEM_READ = "filesystem.read"
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -430,56 +435,81 @@ class RunEngine:
         if self._enforces_workflow:
             self._record_workflow_schedule(execution_id)
         while True:
-            execution = self.get_execution(execution_id)
-            if execution.current_phase is PhaseId.DECISION:
-                if self._decision_waits(execution):
-                    return self.get_execution(execution_id)
-                execution = self.get_execution(execution_id)
-            elif execution.current_phase is PhaseId.CLOSURE:
-                self._run_phase(execution, self._phase_closure)
+            stopped = self._step(execution_id)
+            if stopped is not None:
+                return stopped
+
+    def _step(self, execution_id: str) -> Execution | None:
+        """One step of the run loop: the current phase runs; the run where the loop stops, or
+        ``None`` when the loop goes on."""
+        execution = self.get_execution(execution_id)
+        if execution.current_phase is PhaseId.DECISION:
+            if self._decision_waits(execution):
                 return self.get_execution(execution_id)
-            else:
-                handler = {
-                    PhaseId.INTENT: self._phase_intent,
-                    PhaseId.DISCOVERY: self._phase_discovery,
-                    PhaseId.SPECIFICATION: self._phase_specification,
-                    PhaseId.PLANNING: self._phase_planning,
-                    PhaseId.IMPLEMENTATION: self._phase_implementation,
-                    PhaseId.VERIFICATION: self._phase_verification,
-                    PhaseId.INDEPENDENT_REVIEW: self._phase_independent_review,
-                }[execution.current_phase]
-                phase_id = execution.current_phase
-                outcome = self._run_phase(execution, handler)
-                execution = self.get_execution(execution_id)
-                if outcome.status is not ResultStatus.PASSED:
-                    if self._exit_gate_unmet is not None:
-                        # The phase's own work passed but its exit gate did not (#3): no
-                        # correction cycle starts on a record the phase failed to leave.
-                        return execution
-                    if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(
-                        execution, outcome
-                    ):
-                        continue
-                    if (
-                        phase_id is PhaseId.INDEPENDENT_REVIEW
-                        and self.results.active
-                        and self.results.after_failed_review(execution, outcome.summary)
-                    ):
-                        continue
-                    return execution
-                if (
-                    phase_id is PhaseId.VERIFICATION
-                    and self.results.active
-                    and self.results.after_passed_verification(execution)
-                ):
-                    # planning.decomposition: the next sub-task starts (#39).
-                    continue
-            if execution.status in {
-                ResultStatus.PASSED,
-                ResultStatus.CANCELLED,
-                ResultStatus.ERROR,
-            }:
+            execution = self.get_execution(execution_id)
+        elif execution.current_phase is PhaseId.CLOSURE:
+            self._run_phase(execution, self._phase_closure)
+            return self.get_execution(execution_id)
+        else:
+            execution, action = self._step_work_phase(execution_id, execution)
+            if action == "stop":
                 return execution
+            if action == "next":
+                return None
+        if execution.status in {
+            ResultStatus.PASSED,
+            ResultStatus.CANCELLED,
+            ResultStatus.ERROR,
+        }:
+            return execution
+        return None
+
+    def _step_work_phase(
+        self, execution_id: str, execution: Execution
+    ) -> tuple[Execution, Literal["stop", "next", "check"]]:
+        """Run a phase between INTENT and INDEPENDENT_REVIEW: whether the loop stops on the
+        run, goes on to the next step, or checks whether the run ended."""
+        handler = {
+            PhaseId.INTENT: self._phase_intent,
+            PhaseId.DISCOVERY: self._phase_discovery,
+            PhaseId.SPECIFICATION: self._phase_specification,
+            PhaseId.PLANNING: self._phase_planning,
+            PhaseId.IMPLEMENTATION: self._phase_implementation,
+            PhaseId.VERIFICATION: self._phase_verification,
+            PhaseId.INDEPENDENT_REVIEW: self._phase_independent_review,
+        }[execution.current_phase]
+        phase_id = execution.current_phase
+        outcome = self._run_phase(execution, handler)
+        execution = self.get_execution(execution_id)
+        if outcome.status is not ResultStatus.PASSED:
+            return execution, self._after_failed_phase(execution, phase_id, outcome)
+        if (
+            phase_id is PhaseId.VERIFICATION
+            and self.results.active
+            and self.results.after_passed_verification(execution)
+        ):
+            # planning.decomposition: the next sub-task starts (#39).
+            return execution, "next"
+        return execution, "check"
+
+    def _after_failed_phase(
+        self, execution: Execution, phase_id: PhaseId, outcome: PhaseOutcome
+    ) -> Literal["stop", "next"]:
+        """After a phase that did not pass: a correction cycle goes on to the next step,
+        otherwise the loop stops on the run."""
+        if self._exit_gate_unmet is not None:
+            # The phase's own work passed but its exit gate did not (#3): no
+            # correction cycle starts on a record the phase failed to leave.
+            return "stop"
+        if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(execution, outcome):
+            return "next"
+        if (
+            phase_id is PhaseId.INDEPENDENT_REVIEW
+            and self.results.active
+            and self.results.after_failed_review(execution, outcome.summary)
+        ):
+            return "next"
+        return "stop"
 
     def _decision_waits(self, execution: Execution) -> bool:
         """Run DECISION; whether the run stops there (BLOCKED). A ChangeSet that changed
@@ -522,6 +552,80 @@ class RunEngine:
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
+        execution, gate = self._decision_gate(
+            execution_id, execution, decision, change_set_digest, rationale
+        )
+        if acknowledged_risks or change_requests or self.results.active:
+            # Risk factors to acknowledge and structured change requests (#52).
+            self.results.check_decision(
+                execution, decision, change_set_digest, acknowledged_risks, change_requests
+            )
+        if checked_items or self.ladder.active:
+            # The manual checklist (review.manualChecklist, #55).
+            self.ladder.check_decision(execution, decision, checked_items)
+        record, actor = self._decision_record(
+            execution,
+            gate,
+            execution_id=execution_id,
+            decision=decision,
+            change_set_digest=change_set_digest,
+            actor_id=actor_id,
+            rationale=rationale,
+            actor_display_name=actor_display_name,
+            identity_source=identity_source,
+            expires_at=expires_at,
+            acknowledged_risks=acknowledged_risks,
+            change_requests=change_requests,
+            checked_items=checked_items,
+        )
+        self.s.state.put(
+            "decision",
+            record.decision_id,
+            record,
+            execution_id=execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution_id,
+            "human.decision.recorded",
+            record.model_dump(mode="json"),
+            actor=actor,
+        )
+        if self.ladder.active and decision in {
+            DecisionKind.APPROVE,
+            DecisionKind.APPROVE_EXCEPTION,
+        }:
+            self.ladder.after_decision(execution, record)
+        updated = execution.model_copy(
+            update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
+        )
+        updated = self._decided_execution(
+            execution,
+            updated,
+            record,
+            gate,
+            actor,
+            execution_id,
+            decision,
+            change_set_digest,
+            change_requests,
+        )
+        self._save_execution(updated)
+        if decision is DecisionKind.REJECT and self.results.active:
+            self.results.stop_line.stop(updated, "rejected")
+        self.anchor_chain(execution_id)
+        return record
+
+    def _decision_gate(
+        self,
+        execution_id: str,
+        execution: Execution,
+        decision: DecisionKind,
+        change_set_digest: str,
+        rationale: str,
+    ) -> tuple[Execution, GateEvaluation]:
+        """The run and its gate evaluation for a decision bound to ``change_set_digest``;
+        refuses a stale digest, a missing or different gate and an invalid approval."""
         # #95: comparing must not move the run's digest; a refused decision would otherwise
         # hide the change from verification.reverifyOnChange on the next run continue.
         current_change_set = self._refresh_changeset(execution, record_on_run=False)
@@ -545,17 +649,35 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
-        if acknowledged_risks or change_requests or self.results.active:
-            # Risk factors to acknowledge and structured change requests (#52).
-            self.results.check_decision(
-                execution, decision, change_set_digest, acknowledged_risks, change_requests
-            )
-        if checked_items or self.ladder.active:
-            # The manual checklist (review.manualChecklist, #55).
-            self.ladder.check_decision(execution, decision, checked_items)
+        return execution, gate
+
+    def _decision_record(
+        self,
+        execution: Execution,
+        gate: GateEvaluation,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        actor_id: str,
+        rationale: str,
+        actor_display_name: str | None,
+        identity_source: IdentitySource | None,
+        expires_at: datetime | None,
+        acknowledged_risks: tuple[str, ...],
+        change_requests: tuple[ChangeRequestItem, ...],
+        checked_items: tuple[str, ...],
+    ) -> tuple[HumanDecision, Actor]:
+        """The human decision to record, bound to the run's digests, and its actor."""
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
+        # One expiry, HumanDecision.expires_at: the exception's when one is recorded
+        # (review.exceptions, which the exception ledger reuses), otherwise the decision's
+        # validity (governance.decisionExpiryHours).
+        decision_expires_at = expires_at
+        if decision_expires_at is None and expiry:
+            decision_expires_at = decided_at + timedelta(hours=expiry)
         actor = Actor(
             actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
         )
@@ -572,106 +694,114 @@ class RunEngine:
             acceptance_contract_digest=contract_digest,
             identity_source=identity_source,
             decided_at=decided_at,
-            # One expiry, HumanDecision.expires_at: the exception's when one is recorded
-            # (review.exceptions, which the exception ledger reuses), otherwise the decision's
-            # validity (governance.decisionExpiryHours).
-            expires_at=expires_at
-            if expires_at is not None
-            else (decided_at + timedelta(hours=expiry) if expiry else None),
+            expires_at=decision_expires_at,
             acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
             change_requests=change_requests,
             checked_items=tuple(dict.fromkeys(checked_items)),
         )
-        self.s.state.put(
-            "decision",
-            record.decision_id,
-            record,
-            execution_id=execution_id,
-            project_id=execution.project_id,
-        )
-        self.s.events.append(
-            execution_id,
-            "human.decision.recorded",
-            record.model_dump(mode="json"),
-            actor=actor,
-        )
-        if self.ladder.active and decision in {
-            DecisionKind.APPROVE,
-            DecisionKind.APPROVE_EXCEPTION,
-        }:
-            self.ladder.after_decision(execution, record)
-        updated = execution.model_copy(
-            update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
-        )
+        return record, actor
+
+    def _decided_execution(
+        self,
+        execution: Execution,
+        updated: Execution,
+        record: HumanDecision,
+        gate: GateEvaluation,
+        actor: Actor,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        change_requests: tuple[ChangeRequestItem, ...],
+    ) -> Execution:
+        """The run after the decision: back to a correction, rejected, or pending delivery."""
         if decision is DecisionKind.REQUEST_CHANGES:
-            if change_requests:
-                self.results.open_change_requests(execution, record)
-            transition = self.state_machine.authorize_correction(PhaseId.DECISION)
-            updated = updated.model_copy(
-                update={
-                    "status": ResultStatus.PENDING,
-                    "current_phase": transition.target,
-                    "gate_evaluation_id": None,
-                    "human_decision_id": None,
-                    "updated_at": utc_now(),
-                }
-            )
-            self.s.events.append(
+            return self._request_changes(
+                execution,
+                updated,
+                record,
+                gate,
+                actor,
                 execution_id,
-                "correction.authorized",
-                {
-                    "decisionId": record.decision_id,
-                    "invalidatedPhases": [phase.value for phase in transition.invalidated],
-                    "approvedChangeSetDigest": change_set_digest,
-                },
-                actor=actor,
+                decision,
+                change_set_digest,
+                change_requests,
             )
-            if self._feedback_applies(execution_id):
-                validations, findings = self._gate_inputs(gate)
-                self._record_feedback(
-                    updated,
-                    PhaseId.DECISION,
-                    trigger="CHANGES_REQUESTED",
-                    change_set_digest=change_set_digest,
-                    gate=FeedbackGate(
-                        gate_id="delivery_candidate",
-                        gate_evaluation_id=gate.gate_evaluation_id,
-                        status=gate.status,
-                        reason_codes=gate.reason_codes,
-                    ),
-                    validations=validations,
-                    findings=findings,
-                    decision=FeedbackDecision(
-                        decision=decision,
-                        rationale=head(
-                            record.rationale
-                            + "".join(
-                                f"\n{item.item_id} (blocking, verified by {item.condition}): "
-                                f"{item.description}"
-                                for item in change_requests
-                            ),
-                            FEEDBACK_RATIONALE_CHARS,
-                        ),
-                        actor_id=actor.actor_id,
-                    ),
-                )
-        elif decision is DecisionKind.REJECT:
-            updated = updated.model_copy(
+        if decision is DecisionKind.REJECT:
+            return updated.model_copy(
                 update={
                     "status": ResultStatus.FAILED,
                     "terminal_reason": REJECTED_REASON,
                     "updated_at": utc_now(),
                 }
             )
-        else:
-            updated = updated.model_copy(
-                update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
+        return updated.model_copy(update={"status": ResultStatus.PENDING, "updated_at": utc_now()})
+
+    def _request_changes(
+        self,
+        execution: Execution,
+        updated: Execution,
+        record: HumanDecision,
+        gate: GateEvaluation,
+        actor: Actor,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        change_requests: tuple[ChangeRequestItem, ...],
+    ) -> Execution:
+        """A REQUEST_CHANGES decision: the change requests open, the correction is authorized
+        and, when it applies, the person's feedback is recorded for the next attempt."""
+        if change_requests:
+            self.results.open_change_requests(execution, record)
+        transition = self.state_machine.authorize_correction(PhaseId.DECISION)
+        updated = updated.model_copy(
+            update={
+                "status": ResultStatus.PENDING,
+                "current_phase": transition.target,
+                "gate_evaluation_id": None,
+                "human_decision_id": None,
+                "updated_at": utc_now(),
+            }
+        )
+        self.s.events.append(
+            execution_id,
+            _CORRECTION_AUTHORIZED,
+            {
+                "decisionId": record.decision_id,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+                "approvedChangeSetDigest": change_set_digest,
+            },
+            actor=actor,
+        )
+        if self._feedback_applies(execution_id):
+            validations, findings = self._gate_inputs(gate)
+            self._record_feedback(
+                updated,
+                PhaseId.DECISION,
+                trigger="CHANGES_REQUESTED",
+                change_set_digest=change_set_digest,
+                gate=FeedbackGate(
+                    gate_id="delivery_candidate",
+                    gate_evaluation_id=gate.gate_evaluation_id,
+                    status=gate.status,
+                    reason_codes=gate.reason_codes,
+                ),
+                validations=validations,
+                findings=findings,
+                decision=FeedbackDecision(
+                    decision=decision,
+                    rationale=head(
+                        record.rationale
+                        + "".join(
+                            f"\n{item.item_id} (blocking, verified by {item.condition}): "
+                            f"{item.description}"
+                            for item in change_requests
+                        ),
+                        FEEDBACK_RATIONALE_CHARS,
+                    ),
+                    actor_id=actor.actor_id,
+                ),
             )
-        self._save_execution(updated)
-        if decision is DecisionKind.REJECT and self.results.active:
-            self.results.stop_line.stop(updated, "rejected")
-        self.anchor_chain(execution_id)
-        return record
+        return updated
 
     def clarify(
         self, *, task_id: str, clarification: ClarificationInput, actor: Actor
@@ -1177,7 +1307,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -1304,13 +1434,13 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description=f"Apply implementation instruction using mode {task.implementation.mode}",
-                capabilities=("filesystem.read", "filesystem.write", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "filesystem.write", "process.execute"),
                 expected_evidence=("agent invocation", "ChangeSet"),
             ),
             PlanStep(
                 step_id=new_id("step"),
                 description="Execute technology-profile validators",
-                capabilities=("filesystem.read", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "process.execute"),
                 expected_evidence=tuple(
                     item.validator_id for item in self.s.resolved.effective_validators
                 ),
@@ -1318,7 +1448,7 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description="Perform independent review and evaluate policy",
-                capabilities=("filesystem.read", "approval.request"),
+                capabilities=(_FILESYSTEM_READ, "approval.request"),
                 expected_evidence=("findings", "gate evaluation", "human decision"),
             ),
         )
@@ -1373,17 +1503,7 @@ class RunEngine:
 
     def _phase_implementation(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome:
         if self._leases_workspace():
-            # The workspace as this attempt found it: an interrupted attempt is undone to it
-            # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
-            snapshot = self.snapshots.take(for_storage=True)
-            ref = self.snapshots.store(
-                snapshot,
-                metadata={"kind": "implementation-start", "executionId": execution.execution_id},
-            )
-            self.s.state.set_flag(
-                f"implstart:{execution.execution_id}",
-                json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
-            )
+            self._record_implementation_start(execution, phase)
         task = self.run_task(execution)
         plan_id = self.s.state.get_flag(f"plan:{execution.execution_id}")
         if not plan_id:
@@ -1406,23 +1526,11 @@ class RunEngine:
         cancellation = CancellationToken(lambda: self.is_cancelled(execution.execution_id))
         runner = self._runner(execution)
         context_uri = self.s.state.get_flag(f"context:{execution.execution_id}")
-        memory_context: dict[str, Any] | None = None
-        if context_uri:
-            manifest = json.loads(self.s.artifacts.get(context_uri))
-            memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
+        memory_context = self._memory_context(context_uri)
         runtime = self.s.resolved.project.runtime
-        request_extra: dict[str, Any] | None = None
-        if self.results.active:
-            task = self.results.implementation_task(execution, task)
-            request_extra = self.results.implement_extras(
-                execution, phase, task, provider_id, actor, grants
-            )
-        if self.ladder.active:
-            # Locations of the locate call and a person's intake attachments, only when there
-            # are any (#55).
-            ladder_extra = self.ladder.implement_extras(execution, task)
-            if ladder_extra:
-                request_extra = {**(request_extra or {}), **ladder_extra}
+        task, request_extra = self._implement_request_extra(
+            execution, phase, task, provider_id, grants
+        )
         context = SimulatedAgentContext(
             execution_id=execution.execution_id,
             workspace=self.s.paths.workspace,
@@ -1439,63 +1547,32 @@ class RunEngine:
             feedback=self._pending_feedback(execution, phase),
             request_extra=request_extra,
         )
-        guard = (
-            ExcludedPathGuard(
-                self.s.paths.workspace,
-                include_ignored=self.snapshots.settings.git_listing,
-            )
-            if self._protects_excluded_paths()
-            else None
+        invoked = self._invoke_implement(
+            execution, phase, provider, task, plan, context, sandbox, runtime
         )
-        guard_before = guard.fingerprint() if guard else None
-        retries = 0
-        try:
-            while True:
-                self.provenance.before_invocation(execution)
-                result = provider.implement(task, plan, context)
-                self._save_agent_result(execution, phase, result)
-                self.provenance.after_invocation(execution, result)
-                cause = (
-                    self._transient_cause(result)
-                    if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
-                    else None
-                )
-                if cause is None:
-                    break
-                retries += 1
-                # The repeated call runs through the same provider, so under the same sandbox
-                # prefix; a write the sandbox denied on the failed call is still reported.
-                if sandbox is not None:
-                    self._record_denied_writes(execution, result.tool_invocations)
-                self._record_provider_retry(execution, phase, result, cause, retries)
-                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
-                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
-        finally:
-            if guard is not None and guard_before is not None:
-                self._check_excluded_paths(execution, phase, guard, guard_before)
+        if isinstance(invoked, PhaseOutcome):
+            return invoked
+        return self._implementation_outcome(
+            execution, phase, invoked, request_extra, runtime, sandbox, sandbox_refs
+        )
+
+    def _implementation_outcome(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        request_extra: dict[str, Any] | None,
+        runtime: RuntimeConfig,
+        sandbox: SandboxPlan | None,
+        sandbox_refs: tuple[str, ...],
+    ) -> PhaseOutcome:
+        """The outcome of IMPLEMENTATION after the implement call: the claim to check, the
+        self-report and the candidate ChangeSet."""
         if self.results.active:
-            self.results.after_agent_call(execution, phase, result)
-            limited = self._implement_limit(execution, phase, result, request_extra)
+            limited = self._after_implement_call(execution, phase, result, request_extra)
             if limited is not None:
                 return limited
-            if result.status is ResultStatus.PASSED:
-                self.results.corrections.end(execution, phase, result)
-        if (
-            result.status is ResultStatus.PASSED
-            and runtime.claim_check_enabled
-            and self._external_provider(execution.execution_id)
-        ):
-            self.s.state.set_flag(
-                f"claim:{execution.execution_id}",
-                json.dumps(
-                    {
-                        "invocationId": result.invocation.invocation_id,
-                        "status": result.status.value,
-                        "summary": result.summary,
-                        "outputRef": result.output_ref,
-                    }
-                ),
-            )
+        self._record_claim(execution, result, runtime)
         if result.status is not ResultStatus.PASSED:
             if sandbox is not None:
                 self._record_denied_writes(execution, result.tool_invocations)
@@ -1518,6 +1595,149 @@ class RunEngine:
             f"Candidate ChangeSet contains {len(change_set.files)} file(s)",
             (change_set.diff_ref, *sandbox_refs),
         )
+
+    def _record_claim(
+        self, execution: Execution, result: AgentExecutionResult, runtime: RuntimeConfig
+    ) -> None:
+        """Keep the passed claim of an external provider for the claim check."""
+        if (
+            result.status is ResultStatus.PASSED
+            and runtime.claim_check_enabled
+            and self._external_provider(execution.execution_id)
+        ):
+            self.s.state.set_flag(
+                f"claim:{execution.execution_id}",
+                json.dumps(
+                    {
+                        "invocationId": result.invocation.invocation_id,
+                        "status": result.status.value,
+                        "summary": result.summary,
+                        "outputRef": result.output_ref,
+                    }
+                ),
+            )
+
+    def _record_implementation_start(self, execution: Execution, phase: PhaseExecution) -> None:
+        """Store the snapshot of the workspace as this IMPLEMENTATION attempt found it."""
+        # The workspace as this attempt found it: an interrupted attempt is undone to it
+        # before IMPLEMENTATION runs again, so a change is never implemented twice on top.
+        snapshot = self.snapshots.take(for_storage=True)
+        ref = self.snapshots.store(
+            snapshot,
+            metadata={"kind": "implementation-start", "executionId": execution.execution_id},
+        )
+        self.s.state.set_flag(
+            f"implstart:{execution.execution_id}",
+            json.dumps({"phaseExecutionId": phase.phase_execution_id, "snapshotRef": ref.uri}),
+        )
+
+    def _memory_context(self, context_uri: str | None) -> dict[str, Any] | None:
+        """The memory records and digest of the run's context manifest, when there is one."""
+        memory_context: dict[str, Any] | None = None
+        if context_uri:
+            manifest = json.loads(self.s.artifacts.get(context_uri))
+            memory_context = {"records": manifest["records"], "digest": manifest["digest"]}
+        return memory_context
+
+    def _implement_request_extra(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        provider_id: str,
+        grants: list[CapabilityGrant],
+    ) -> tuple[Task, dict[str, Any] | None]:
+        """The task the implement call receives and the extra request fields of the agent
+        results and the ladder."""
+        request_extra: dict[str, Any] | None = None
+        if self.results.active:
+            task = self.results.implementation_task(execution, task)
+            request_extra = self.results.implement_extras(
+                execution, phase, task, provider_id, grants
+            )
+        if self.ladder.active:
+            # Locations of the locate call and a person's intake attachments, only when there
+            # are any (#55).
+            ladder_extra = self.ladder.implement_extras(execution, task)
+            if ladder_extra:
+                request_extra = {**(request_extra or {}), **ladder_extra}
+        return task, request_extra
+
+    def _retry_cause(
+        self,
+        provider: AgentProvider,
+        result: AgentExecutionResult,
+        retries: int,
+        runtime: RuntimeConfig,
+    ) -> str | None:
+        """The transient cause that lets a command provider's failed call be repeated."""
+        return (
+            self._transient_cause(result)
+            if isinstance(provider, CommandAgentProvider) and retries < runtime.retry_limit
+            else None
+        )
+
+    def _invoke_implement(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        provider: AgentProvider,
+        task: Task,
+        plan: Plan,
+        context: SimulatedAgentContext,
+        sandbox: SandboxPlan | None,
+        runtime: RuntimeConfig,
+    ) -> AgentExecutionResult | PhaseOutcome:
+        """The implement call, repeated after a transient failure within the retry limit,
+        with the excluded paths guarded; a CANCELLED outcome when a wait is cancelled."""
+        guard = (
+            ExcludedPathGuard(
+                self.s.paths.workspace,
+                include_ignored=self.snapshots.settings.git_listing,
+            )
+            if self._protects_excluded_paths()
+            else None
+        )
+        guard_before = guard.fingerprint() if guard else None
+        retries = 0
+        try:
+            while True:
+                self.provenance.before_invocation(execution)
+                result = provider.implement(task, plan, context)
+                self._save_agent_result(execution, phase, result)
+                self.provenance.after_invocation(execution, result)
+                cause = self._retry_cause(provider, result, retries, runtime)
+                if cause is None:
+                    break
+                retries += 1
+                # The repeated call runs through the same provider, so under the same sandbox
+                # prefix; a write the sandbox denied on the failed call is still reported.
+                if sandbox is not None:
+                    self._record_denied_writes(execution, result.tool_invocations)
+                self._record_provider_retry(execution, phase, result, cause, retries)
+                if not self._wait_for_retry(execution.execution_id, runtime.retry_delay_seconds):
+                    return PhaseOutcome(ResultStatus.CANCELLED, CANCELLATION_REQUESTED)
+        finally:
+            if guard is not None and guard_before is not None:
+                self._check_excluded_paths(execution, phase, guard, guard_before)
+        return result
+
+    def _after_implement_call(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        result: AgentExecutionResult,
+        request_extra: dict[str, Any] | None,
+    ) -> PhaseOutcome | None:
+        """Record the implement call for the agent results; an outcome when its contract
+        limits end the phase."""
+        self.results.after_agent_call(execution, phase, result)
+        limited = self._implement_limit(execution, phase, result, request_extra)
+        if limited is not None:
+            return limited
+        if result.status is ResultStatus.PASSED:
+            self.results.corrections.end(execution, phase, result)
+        return None
 
     def _implement_timeout(self, command_timeout: int, request_extra: dict[str, Any] | None) -> int:
         """The time an implement call may run: the command timeout, shortened to the time limit
@@ -2366,7 +2586,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -2534,7 +2754,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -2568,8 +2788,8 @@ class RunEngine:
         if self.results.active:
             # Deterministic checks of the agent-results settings, then the comparison of
             # failing validators with the baseline (verification.differential, #7).
-            outputs.extend(self.results.verification.run(execution, phase, change_set))
-            outputs = self.results.after_verification(execution, phase, change_set, outputs)
+            outputs.extend(self.results.verification.run(execution, change_set))
+            outputs = self.results.after_verification(execution, change_set, outputs)
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
             outputs.extend(self.ladder.verification(execution, change_set, outputs))
@@ -2746,22 +2966,7 @@ class RunEngine:
         execution = self.get_execution(execution.execution_id)
         # A later change to an owned path invalidates previous gate/approval.
         if previous_digest and previous_digest != change_set.digest:
-            execution = execution.model_copy(
-                update={
-                    "gate_evaluation_id": None,
-                    "human_decision_id": None,
-                    "updated_at": utc_now(),
-                }
-            )
-            self._save_execution(execution)
-            self.s.events.append(
-                execution.execution_id,
-                "approval.invalidated",
-                {
-                    "previousDigest": previous_digest,
-                    "currentDigest": change_set.digest,
-                },
-            )
+            execution = self._invalidate_approval(execution, previous_digest, change_set)
         current_decision = (
             self.s.state.get("decision", execution.human_decision_id, HumanDecision)
             if execution.human_decision_id
@@ -2771,45 +2976,9 @@ class RunEngine:
         self.provenance.attribute(execution, change_set, PhaseId.DECISION)
         execution = self.get_execution(execution.execution_id)
         if current_decision:
-            if current_decision.change_set_digest != change_set.digest:
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
-                )
-            if current_decision.acceptance_contract_digest is not None:
-                try:
-                    contract = self._current_contract_digest(execution)
-                except PolicyViolationError as error:
-                    return PhaseOutcome(ResultStatus.BLOCKED, str(error))
-                if contract != current_decision.acceptance_contract_digest:
-                    return PhaseOutcome(
-                        ResultStatus.BLOCKED,
-                        "Human decision is stale: it is bound to another acceptance contract",
-                    )
-            if (
-                current_decision.expires_at is not None
-                and current_decision.expires_at <= utc_now()
-                and current_decision.decision is not DecisionKind.REJECT
-            ):
-                # The expiry of an exception (review.exceptions) or of any decision
-                # (governance.decisionExpiryHours): a new decision is required.
-                kind = (
-                    "Exception"
-                    if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
-                    else "Human decision"
-                )
-                return PhaseOutcome(
-                    ResultStatus.BLOCKED,
-                    f"{kind} {current_decision.decision_id} expired at "
-                    f"{current_decision.expires_at.isoformat()}; a new decision is required",
-                )
-            if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
-                return PhaseOutcome(
-                    ResultStatus.PASSED,
-                    f"Human decision {current_decision.decision} is bound to the current ChangeSet",
-                    (f"record://decision/{current_decision.decision_id}",),
-                )
-            if current_decision.decision is DecisionKind.REJECT:
-                return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+            decided = self._decided_outcome(execution, current_decision, change_set)
+            if decided is not None:
+                return decided
         elif self.friction.active:
             # friction.preAuthorization (#58): the approval a person gave in advance, applied
             # only when its condition holds; otherwise the person is asked as usual.
@@ -2826,6 +2995,84 @@ class RunEngine:
             f"Human decision required for gate {gate.gate_evaluation_id} and digest {change_set.digest}",
             (f"record://gate/{gate.gate_evaluation_id}",),
         )
+
+    def _invalidate_approval(
+        self, execution: Execution, previous_digest: str, change_set: ChangeSet
+    ) -> Execution:
+        """Drop the gate and the approval of a run whose ChangeSet changed, and record it."""
+        execution = execution.model_copy(
+            update={
+                "gate_evaluation_id": None,
+                "human_decision_id": None,
+                "updated_at": utc_now(),
+            }
+        )
+        self._save_execution(execution)
+        self.s.events.append(
+            execution.execution_id,
+            "approval.invalidated",
+            {
+                "previousDigest": previous_digest,
+                "currentDigest": change_set.digest,
+            },
+        )
+        return execution
+
+    def _decided_outcome(
+        self, execution: Execution, current_decision: HumanDecision, change_set: ChangeSet
+    ) -> PhaseOutcome | None:
+        """The outcome of DECISION under the run's human decision; ``None`` when the decision
+        neither applies nor ends the run, so a person is asked again."""
+        stale = self._stale_decision(execution, current_decision, change_set)
+        if stale is not None:
+            return stale
+        if current_decision.decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}:
+            return PhaseOutcome(
+                ResultStatus.PASSED,
+                f"Human decision {current_decision.decision} is bound to the current ChangeSet",
+                (f"record://decision/{current_decision.decision_id}",),
+            )
+        if current_decision.decision is DecisionKind.REJECT:
+            return PhaseOutcome(ResultStatus.FAILED, "Execution rejected by human decision")
+        return None
+
+    def _stale_decision(
+        self, execution: Execution, current_decision: HumanDecision, change_set: ChangeSet
+    ) -> PhaseOutcome | None:
+        """A BLOCKED outcome when the human decision no longer holds: bound to another
+        ChangeSet or acceptance contract, or expired."""
+        if current_decision.change_set_digest != change_set.digest:
+            return PhaseOutcome(
+                ResultStatus.BLOCKED, "Human decision is stale after ChangeSet modification"
+            )
+        if current_decision.acceptance_contract_digest is not None:
+            try:
+                contract = self._current_contract_digest(execution)
+            except PolicyViolationError as error:
+                return PhaseOutcome(ResultStatus.BLOCKED, str(error))
+            if contract != current_decision.acceptance_contract_digest:
+                return PhaseOutcome(
+                    ResultStatus.BLOCKED,
+                    "Human decision is stale: it is bound to another acceptance contract",
+                )
+        if (
+            current_decision.expires_at is not None
+            and current_decision.expires_at <= utc_now()
+            and current_decision.decision is not DecisionKind.REJECT
+        ):
+            # The expiry of an exception (review.exceptions) or of any decision
+            # (governance.decisionExpiryHours): a new decision is required.
+            kind = (
+                "Exception"
+                if current_decision.decision is DecisionKind.APPROVE_EXCEPTION
+                else "Human decision"
+            )
+            return PhaseOutcome(
+                ResultStatus.BLOCKED,
+                f"{kind} {current_decision.decision_id} expired at "
+                f"{current_decision.expires_at.isoformat()}; a new decision is required",
+            )
+        return None
 
     def _reverify_after_change(self, execution: Execution) -> bool:
         """Under ``verification.reverifyOnChange`` (#78): a run in DECISION whose ChangeSet
@@ -3018,12 +3265,11 @@ class RunEngine:
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )
-        summary = (
-            f"Closure commit {commit.commit[:12]} ({commit.status.lower()})"
-            + (f" on branch {commit.branch}" if commit.branch else " on the current branch")
-            if commit.commit
-            else f"Closure commit skipped: {commit.reason}"
-        )
+        if commit.commit:
+            where = f" on branch {commit.branch}" if commit.branch else " on the current branch"
+            summary = f"Closure commit {commit.commit[:12]} ({commit.status.lower()})" + where
+        else:
+            summary = f"Closure commit skipped: {commit.reason}"
         self._record_evidence(
             execution,
             phase.phase_id,
@@ -3087,7 +3333,7 @@ class RunEngine:
         used = sum(
             1
             for event in events
-            if event.event_type == "correction.authorized"
+            if event.event_type == _CORRECTION_AUTHORIZED
             and event.payload.get("trigger") == "VERIFICATION_FAILED"
         )
         limit = runtime.correction_limit
@@ -3131,7 +3377,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "correction.authorized",
+            _CORRECTION_AUTHORIZED,
             {
                 "trigger": "VERIFICATION_FAILED",
                 "cycle": used + 1,
@@ -3247,7 +3493,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -3687,7 +3933,7 @@ class RunEngine:
             )
             self.s.events.append(
                 execution.execution_id,
-                "finding.recorded",
+                _FINDING_RECORDED,
                 finding.model_dump(mode="json"),
                 actor=finding.provenance.actor,
             )
