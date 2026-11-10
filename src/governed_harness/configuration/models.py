@@ -182,7 +182,7 @@ DEFAULT_SANDBOX_WRITE_PATHS: tuple[tuple[str, str], ...] = (
     # An allow-list entry of the agent's write sandbox, not a file the harness creates: Bandit
     # B108 and Sonar S5443 (publicly writable directory) do not apply to a path nothing writes.
     (
-        "/tmp",  # NOSONAR(python:S5443) # nosec B108
+        "/tmp",  # NOSONAR(S5443) # nosec B108
         "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it.",
     ),
     (
