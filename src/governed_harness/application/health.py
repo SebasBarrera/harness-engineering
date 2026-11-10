@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from governed_harness import __version__
+from governed_harness.domain.actors import NON_HUMAN_ACTOR_PREFIXES
 from governed_harness.domain.enums import ActorType, DecisionKind, ResultStatus
 from governed_harness.domain.errors import ConfigurationError, PolicyViolationError
 from governed_harness.domain.ids import new_id
@@ -32,7 +33,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.gates.exceptions import exception_ids
-from governed_harness.orchestration.engine import NON_HUMAN_ACTOR_PREFIXES, EngineServices
+from governed_harness.orchestration.engine import EngineServices
 
 OUTCOME_KINDS: tuple[OutcomeKind, ...] = ("INCIDENT", "REVERT", "HOTFIX", "REGRESSION", "OTHER")
 
