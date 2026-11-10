@@ -1704,8 +1704,9 @@ def memory_invalidate(
 
 
 @gate_app.command("decide")
-def gate_decide(  # NOSONAR(S107) each parameter is an option of the gate decide command
-    run: str = RUN_OPTION,
+# Each parameter is an option of `harness gate decide` (Sonar S107 is suppressed on purpose).
+def gate_decide(
+    run: str = RUN_OPTION,  # NOSONAR(S107)
     decision: DecisionKind | None = typer.Option(
         None,
         "--decision",
@@ -1917,7 +1918,8 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         answer = typer.prompt(question, default="", show_default=False)
         return str(answer).strip() or None
 
-    answered: ExceptionOptions = replace(
+    # dataclasses.replace returns the type it receives; Sonar types it as DataclassInstance.
+    answered: ExceptionOptions = replace(  # NOSONAR(S5890)
         exception,
         expires_in=exception.expires_in
         if exception.expires_in or exception.expires_at
@@ -1926,7 +1928,7 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         or ask("Alternative evidence (optional)"),
         follow_up=exception.follow_up or ask("Follow-up issue or task (optional)"),
     )
-    return answered
+    return answered  # NOSONAR(S5886)
 
 
 DIGEST_CONFIRM_CHARS = 12
