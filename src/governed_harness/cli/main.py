@@ -27,6 +27,15 @@ from governed_harness.domain.enums import (
 from governed_harness.domain.errors import ConfigurationError, HarnessError
 from governed_harness.orchestration.acceptance_dispute import DisputeDecision
 
+# Help texts and option names that several commands share.
+_CURRENT_DIRECTORY = "current directory"
+_PROJECT_HELP = "Project directory"
+_TASK_HELP = "Task identifier (taskId)"
+_RATIONALE_HELP = "Justification recorded"
+_CONTINUE_OPTION = "--continue/--no-continue"
+_CONTINUE_HELP = "Resume the run after recording the decision"
+_OUTPUT_HELP = "Write to this file instead of standard output"
+
 app = typer.Typer(no_args_is_help=True, help="Governed Agent Harness CLI")
 config_app = typer.Typer(help="Configuration commands")
 task_app = typer.Typer(help="Task commands")
@@ -234,7 +243,7 @@ def _exit_for_execution(status: ResultStatus, phase: str) -> None:
 @app.command()
 def init(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     force: bool = typer.Option(False, "--force", help="Replace an existing project configuration"),
     gitignore: bool = typer.Option(
@@ -285,7 +294,7 @@ def init(
 @app.command()
 def inspect(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -322,7 +331,7 @@ def doctor(
 @config_app.command("validate")
 def config_validate(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -335,7 +344,7 @@ def config_validate(
 @config_app.command("lint")
 def config_lint(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -356,7 +365,7 @@ def task_create(
         ..., "--file", exists=True, dir_okay=False, help="Task file (YAML or JSON)"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -372,7 +381,7 @@ def task_create(
 @task_app.command("list")
 def task_list(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -382,9 +391,9 @@ def task_list(
 
 @task_app.command("show")
 def task_show(
-    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    task: str = typer.Option(..., "--task", help=_TASK_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show one persisted task."""
@@ -393,9 +402,9 @@ def task_show(
 
 @task_app.command("questions")
 def task_questions(
-    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    task: str = typer.Option(..., "--task", help=_TASK_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the clarification questions INTENT asked about a task: the open request (asked
@@ -405,7 +414,7 @@ def task_questions(
 
 @task_app.command("clarify")
 def task_clarify(
-    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    task: str = typer.Option(..., "--task", help=_TASK_HELP),
     file: Path = typer.Option(
         ...,
         "--file",
@@ -421,7 +430,7 @@ def task_clarify(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Answer the open clarification questions of a task and store the revised task. Run
@@ -435,7 +444,7 @@ def task_clarify(
 
 @task_app.command("confirm")
 def task_confirm(
-    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    task: str = typer.Option(..., "--task", help=_TASK_HELP),
     digest: str = typer.Option(
         ..., "--digest", help="Digest of the operational contract shown by task questions"
     ),
@@ -458,7 +467,7 @@ def task_confirm(
         "", "--rationale", help="Why you approve in advance (recorded with --pre-approve)"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Confirm the operational contract of a task's current revision, bound to its digest
@@ -512,7 +521,7 @@ def do(
         help="On a terminal, answer the questions and decide in the same command",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -633,7 +642,7 @@ def _open_questions(application: HarnessApplication, path: Path, run_id: str) ->
 
 @run_app.command("start")
 def run_start(
-    task: str = typer.Option(..., "--task", help="Task identifier (taskId)"),
+    task: str = typer.Option(..., "--task", help=_TASK_HELP),
     provider: str | None = typer.Option(
         None, "--provider", help="Agent provider id; defaults to the project agentProvider"
     ),
@@ -644,7 +653,7 @@ def run_start(
         "branch; none: in place (default: workspace.isolation.mode)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -661,7 +670,7 @@ def run_start(
 def run_continue(
     run: str = RUN_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -682,7 +691,7 @@ def run_cancel(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Cancel a run and terminate its active process group. The cancellation is recorded as an
@@ -695,7 +704,7 @@ def run_cancel(
 def run_cleanup(
     run: str = RUN_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Remove the worktree of a finished isolated run (`run start --isolate worktree`). Only a
@@ -708,7 +717,7 @@ def run_cleanup(
 def verification_show(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the verification plan of a run (the rung each criterion requires, the rungs this
@@ -725,13 +734,11 @@ def verification_decide(
         "--continue-uncertified",
         help="Continue without the rungs the preflight found unreachable (required)",
     ),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Decide on a run whose preflight is UNAVAILABLE: continue it uncertified for what this
@@ -766,7 +773,7 @@ def verification_decide(
 def plan_show(
     run: str = RUN_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the decomposition PLANNING proposed for a run (`planning.decomposition`), its
@@ -783,13 +790,11 @@ def plan_decide(
     digest: str = typer.Option(
         ..., "--digest", help="Digest of the proposed plan shown by plan show"
     ),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Approve or reject the proposed decomposition, bound to its digest. APPROVE runs the
@@ -819,7 +824,7 @@ def plan_decide(
 @routing_app.command("calibrate")
 def routing_calibrate(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Report the cost per approved task of every routing decision recorded in the project
@@ -859,7 +864,7 @@ def agent_contract_validate(
 def agent_contract_scripts(
     script: str | None = typer.Argument(None, help="A script id, such as harness.check"),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the scripts and commands agents may call as black boxes, or show the contract
@@ -873,7 +878,7 @@ def agent_contract_calls(
     kind: str | None = typer.Option(None, "--kind", help="Show one call kind"),
     iteration: int | None = typer.Option(None, "--iteration", help="Show one iteration"),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the agent calls of a run, the iterations each agent used against its cap and, with
@@ -886,7 +891,7 @@ def agent_contract_calls(
 def budget_show(
     run: str = RUN_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the usage of a run and of its task (reported tokens and cost, measured wall time of
@@ -900,10 +905,10 @@ def budget_raise(
     scope: str = typer.Option(..., "--scope", help="call, task or run"),
     metric: str = typer.Option(..., "--metric", help="costUsd, tokens or wallSeconds"),
     limit: float = typer.Option(..., "--to", help="The new limit; it must be above the current"),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Raise a budget limit of a run blocked with budget.exceeded; the raise is recorded on the
@@ -929,7 +934,7 @@ def budget_raise(
 def acceptance_show(
     run: str = RUN_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the acceptance tests proposed for a run (`verification.acceptanceTests`), their
@@ -944,13 +949,11 @@ def acceptance_decide(
         ..., "--decision", case_sensitive=False, help="APPROVE or REJECT"
     ),
     digest: str = typer.Option(..., "--digest", help="Digest shown by acceptance show"),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Approve or reject the proposed acceptance tests, bound to their digest. APPROVE writes
@@ -981,13 +984,11 @@ def acceptance_dispute(
         ..., "--decision", case_sensitive=False, help="UPHOLD or REVISE"
     ),
     digest: str = typer.Option(..., "--digest", help="Digest of the dispute (harness inbox)"),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Decide a dispute of the frozen acceptance tests
@@ -1025,7 +1026,7 @@ def check(
         "wrote a check state)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -1049,7 +1050,7 @@ def run_quarantine(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Keep the changes of a run that stopped without approval as a quarantined patch and
@@ -1062,7 +1063,7 @@ def run_quarantine(
 @run_app.command("list")
 def run_list(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the runs of the project, newest first."""
@@ -1073,7 +1074,7 @@ def run_list(
 def status(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -1088,11 +1089,9 @@ def trace(
     format: str = typer.Option(
         "markdown", "--format", help="markdown, json, jsonl, sarif or codequality"
     ),
-    output: Path | None = typer.Option(
-        None, "--output", help="Write to this file instead of standard output"
-    ),
+    output: Path | None = typer.Option(None, "--output", help=_OUTPUT_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Export the trace of a run as Markdown, JSON, JSONL, SARIF or a GitLab Code Quality
@@ -1120,7 +1119,7 @@ def verify(
         help="Verify a portable evidence bundle instead (no workspace needed)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Verify the record of a run (or of every run): the event chain, the head of the chain
@@ -1149,7 +1148,7 @@ def export(
     ),
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Export a run as a portable evidence bundle: its event chain, records, every artifact they
@@ -1175,7 +1174,7 @@ def verify_approval(
         help="Also look for the approval in the workspace's .harness/state.db",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Repository directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help="Repository directory"
     ),
 ) -> None:
     """Check in CI that the range --base..--head is a ChangeSet a person approved: recompute its
@@ -1218,7 +1217,7 @@ def pr_publish(
         "detected from the origin remote)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Post the decision brief of a run on a pull or merge request (one comment per run,
@@ -1268,7 +1267,7 @@ def pr_create(
         None, "--transport", help="cli (gh or glab) or api (HTTPS, token from the environment)"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Open a pull or merge request from the closure branch of a run (push the branch first),
@@ -1310,7 +1309,7 @@ def pr_status(
         None, "--transport", help="cli (gh or glab) or api (HTTPS, token from the environment)"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Set the commit status governed-harness from a run: success once it closed approved,
@@ -1333,7 +1332,7 @@ def pr_status(
 @pr_app.command("forge")
 def pr_forge(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the forge the workspace resolves to (delivery.forge or the origin remote), its API
@@ -1353,7 +1352,7 @@ def standards_show(
         "would get for it (repeatable)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -1370,7 +1369,7 @@ def standards_show(
 @architecture_app.command("show")
 def architecture_show(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -1384,7 +1383,7 @@ def architecture_show(
 def architecture_decide(
     run: str = RUN_OPTION,
     digest: str = typer.Option(..., "--digest", help="Digest shown by the blocked phase"),
-    rationale: str = typer.Option(..., "--rationale", help="Justification recorded"),
+    rationale: str = typer.Option(..., "--rationale", help=_RATIONALE_HELP),
     decision: DecisionKind | None = typer.Option(
         None,
         "--decision",
@@ -1400,11 +1399,9 @@ def architecture_decide(
         help="A style of the catalogue chosen for a new project (architecture.catalogue: experts)",
     ),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Decide the architecture, bound to the digest of the proposal: approve or reject the
@@ -1434,7 +1431,7 @@ def architecture_decide(
 @architecture_app.command("refresh")
 def architecture_refresh(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Mark the cached architecture survey stale: the next run surveys the project again (one
@@ -1445,7 +1442,7 @@ def architecture_refresh(
 @mcp_app.command("serve")
 def mcp_serve(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Serve the harness to an agent session over stdio (Model Context Protocol, JSON-RPC 2.0,
@@ -1462,7 +1459,7 @@ def mcp_serve(
 @project_app.command("show")
 def project_show(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     json_output: bool | None = JSON_OPTION,
 ) -> None:
@@ -1478,7 +1475,7 @@ def gc(
         False, "--apply", help="Delete what the report lists; without it nothing is deleted"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Apply the retention settings to runs that ended (closed, cancelled or rejected) longer
@@ -1493,7 +1490,7 @@ def gc(
 def evidence_list(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the evidence records of a run with their artifact references and digests."""
@@ -1527,7 +1524,7 @@ def evidence_attach(
     note: str | None = typer.Option(None, "--note", help="What the attachment shows"),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Attach evidence. With --run and --item D-CRITERION, close a deferred verification
@@ -1558,7 +1555,7 @@ def evidence_attach(
 def findings_list(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the structured findings of a run with severity, rule and location."""
@@ -1614,7 +1611,7 @@ def memory_add(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Record a memory entry with its provenance. NORMATIVE, PROJECT and RETROSPECTIVE entries
@@ -1643,7 +1640,7 @@ def memory_list(
     task: str | None = typer.Option(None, "--task", help="Evaluate the status for this task"),
     run: str | None = typer.Option(None, "--run", help="Evaluate the status for this run"),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the memory records of the project with their status: active, superseded, expired,
@@ -1655,7 +1652,7 @@ def memory_list(
 def memory_manifest(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show the context manifest recorded for a run: the records it applied, their digest and
@@ -1673,7 +1670,7 @@ def memory_approve(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Approve a proposed record. The approval is a new record that supersedes the proposal;
@@ -1692,7 +1689,7 @@ def memory_invalidate(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Invalidate a record without deleting it: it stops entering any context and the actor and
@@ -1732,9 +1729,7 @@ def gate_decide(  # NOSONAR(S107) each parameter is an option of the gate decide
         help=ACTOR_HELP,
         show_default=False,
     ),
-    continue_after: bool = typer.Option(
-        True, "--continue/--no-continue", help="Resume the run after recording the decision"
-    ),
+    continue_after: bool = typer.Option(True, _CONTINUE_OPTION, help=_CONTINUE_HELP),
     expires_in: str | None = typer.Option(
         None,
         "--expires-in",
@@ -1786,7 +1781,7 @@ def gate_decide(  # NOSONAR(S107) each parameter is an option of the gate decide
         "absent:REGEX or text (repeatable)",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Record a human decision bound to the current ChangeSet digest. A decision for a stale
@@ -2071,7 +2066,7 @@ def inbox(
     ),
     actor: str | None = typer.Option(None, "--actor", help=ACTOR_HELP, show_default=False),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the runs of the project that wait for a person, oldest first: a decision in
@@ -2267,7 +2262,7 @@ def metrics(
         help="Add a narrative summary: one call to metrics.narrative.command, on demand",
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Local metrics of the governed runs, with zero model calls: tokens (input, output, cache)
@@ -2338,7 +2333,7 @@ def rules_health(
     ),
     json_output: bool | None = JSON_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Show how each rule and validator behaved across the runs of the project: how often it
@@ -2371,7 +2366,7 @@ def outcome_record(
     ),
     json_output: bool | None = JSON_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Link something that happened after a run (an incident, a revert, a hotfix, a regression)
@@ -2398,7 +2393,7 @@ def outcome_list(
     run: str | None = typer.Option(None, "--run", help="Only the outcomes of this run"),
     json_output: bool | None = JSON_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the outcomes linked to the runs of the project, oldest first."""
@@ -2413,7 +2408,7 @@ def exceptions_list(
     ),
     json_output: bool | None = JSON_OPTION,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the exceptions of the project (review.exceptions): who granted each, on which run
@@ -2438,7 +2433,7 @@ review_app.add_typer(review_rules_app, name="rules")
 review_app.add_typer(review_hook_app, name="hook")
 
 PATH_OPTION: Any = typer.Option(
-    default_factory=Path.cwd, show_default="current directory", help="Project directory"
+    default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
 )
 
 
@@ -2614,7 +2609,7 @@ def artifact_show(
         False, "--describe", help="Print the descriptor (digest, size, media type, metadata)"
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Print an artifact's content after verifying its digest, or its descriptor with
@@ -2632,7 +2627,7 @@ def artifact_show(
 def retrospect(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Derive non-mutating observations and recommendations from a closed run. Nothing is
@@ -2644,7 +2639,7 @@ def retrospect(
 def recommendation_list(
     run: str = RUN_OPTION_LATEST,
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """List the retrospective recommendations of a run with the decision recorded for each."""
@@ -2673,7 +2668,7 @@ def recommendation_decide(
         show_default=False,
     ),
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
 ) -> None:
     """Accept, edit or reject a retrospective recommendation. The decision is kept as
@@ -2713,9 +2708,7 @@ def plugins_list() -> None:
 
 @benchmark_app.command("run")
 def benchmark_run(
-    output: Path | None = typer.Option(
-        None, "--output", help="Write to this file instead of standard output"
-    ),
+    output: Path | None = typer.Option(None, "--output", help=_OUTPUT_HELP),
     iterations: int = typer.Option(
         1000, "--iterations", min=10, max=100000, help="Iterations per in-process operation"
     ),
@@ -2736,9 +2729,7 @@ def benchmark_run(
 
 @benchmark_app.command("scenarios")
 def benchmark_scenarios(
-    output: Path | None = typer.Option(
-        None, "--output", help="Write to this file instead of standard output"
-    ),
+    output: Path | None = typer.Option(None, "--output", help=_OUTPUT_HELP),
     iterations: int = typer.Option(
         3, "--iterations", min=1, max=100, help="Repetitions per scenario"
     ),
@@ -2760,7 +2751,7 @@ def benchmark_scenarios(
 @api_app.command("serve")
 def api_serve(
     path: Path = typer.Option(
-        default_factory=Path.cwd, show_default="current directory", help="Project directory"
+        default_factory=Path.cwd, show_default=_CURRENT_DIRECTORY, help=_PROJECT_HELP
     ),
     host: str = typer.Option("127.0.0.1", "--host", help="Bind address; keep the loopback default"),
     port: int = typer.Option(8765, "--port", min=1, max=65535, help="TCP port"),
