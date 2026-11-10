@@ -93,8 +93,9 @@ def test_actor_namespaces_are_refused_without_governance_settings(
     """The namespace check is a defect fix: it applies to a 1.0.0 project.yaml as well."""
     _drop_governance(python_workspace)
     run, digest = _pending_run(python_workspace, tmp_path)
+    harness_application = HarnessApplication()
     with pytest.raises(NonHumanActorError):
-        HarnessApplication().decide_gate(
+        harness_application.decide_gate(
             python_workspace,
             execution_id=run,
             decision=DecisionKind.APPROVE_EXCEPTION,

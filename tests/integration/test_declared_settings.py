@@ -113,14 +113,16 @@ def test_schema_marks_declarative_fields() -> None:
 
 def test_invalid_profile_policy_is_a_configuration_error(python_workspace: Path) -> None:
     _update_config(python_workspace, {"policies.missingTestCommand": "PASSED"})
+    resolver_value = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver_value.resolve(python_workspace)
     _update_config(
         python_workspace,
         {"policies.missingTestCommand": "FAILED", "policies.coverage": {"minimumPercent": 140}},
     )
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def test_decision_expires(

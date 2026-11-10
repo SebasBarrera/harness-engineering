@@ -96,8 +96,9 @@ def test_block_refuses_new_runs_until_quarantined(python_workspace: Path, tmp_pa
     pricing = python_workspace / "src" / "sample" / "pricing.py"
     assert pricing.read_text() == WRONG
     assert events(application, python_workspace, run, "workspace.line-stopped")
+    task = patch_task(GOOD, "task_next")
     with pytest.raises(PolicyViolationError, match="quarantine"):
-        start(application, python_workspace, tmp_path, patch_task(GOOD, "task_next"))
+        start(application, python_workspace, tmp_path, task)
     with pytest.raises(PolicyViolationError):
         application.quarantine_run(python_workspace, run, "agent.claude")
     result = application.quarantine_run(python_workspace, run, "human.reviewer")

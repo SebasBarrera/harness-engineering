@@ -77,11 +77,13 @@ def test_invalid_webhooks_are_configuration_errors(
     python_workspace: Path, webhook: dict[str, Any]
 ) -> None:
     _edit(python_workspace, notifications={"webhooks": [webhook]})
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def test_exception_days_are_bounded(python_workspace: Path) -> None:
     _edit(python_workspace, review={"exceptions": True, "exceptionDays": 0})
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)

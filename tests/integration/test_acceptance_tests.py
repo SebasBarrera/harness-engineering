@@ -102,12 +102,13 @@ def test_approved_tests_are_frozen_and_must_pass(python_workspace: Path, tmp_pat
     assert status["currentPhase"] == PhaseId.SPECIFICATION
     assert status["status"] == ResultStatus.BLOCKED
     assert not (python_workspace / "tests" / "acceptance").exists()
+    digest = application.acceptance(python_workspace, run)["digest"]
     with pytest.raises(PolicyViolationError):
         application.decide_acceptance(
             python_workspace,
             execution_id=run,
             decision=DecisionKind.APPROVE,
-            digest=application.acceptance(python_workspace, run)["digest"],
+            digest=digest,
             rationale="x",
             actor_id="agent.fixture_agent",
         )

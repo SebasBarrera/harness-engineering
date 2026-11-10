@@ -81,12 +81,9 @@ def test_output_is_truncated(tmp_path: Path) -> None:
 
 def test_unauthorized_command_is_not_spawned(tmp_path: Path) -> None:
     actor, grants, runner = authorized(tmp_path)
+    command_spec = CommandSpec(argv=("git", "status"), cwd=tmp_path, timeout_seconds=5)
     with pytest.raises(CapabilityDenied):
-        runner.run(
-            CommandSpec(argv=("git", "status"), cwd=tmp_path, timeout_seconds=5),
-            actor=actor,
-            grants=grants,
-        )
+        runner.run(command_spec, actor=actor, grants=grants)
 
 
 def test_output_bound_is_applied_while_reading(tmp_path: Path) -> None:
@@ -148,14 +145,8 @@ def test_sandbox_prefix_wraps_the_authorized_command(tmp_path: Path) -> None:
 
 def test_sandbox_prefix_does_not_authorize_the_command(tmp_path: Path) -> None:
     actor, grants, runner = authorized(tmp_path)
+    command_spec = CommandSpec(
+        argv=("not-granted",), cwd=tmp_path, timeout_seconds=5, sandbox_prefix=(sys.executable,)
+    )
     with pytest.raises(CapabilityDenied):
-        runner.run(
-            CommandSpec(
-                argv=("not-granted",),
-                cwd=tmp_path,
-                timeout_seconds=5,
-                sandbox_prefix=(sys.executable,),
-            ),
-            actor=actor,
-            grants=grants,
-        )
+        runner.run(command_spec, actor=actor, grants=grants)

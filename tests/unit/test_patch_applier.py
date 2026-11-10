@@ -47,8 +47,9 @@ def test_delete_is_denied_without_explicit_condition(tmp_path: Path) -> None:
     (tmp_path / "src").mkdir()
     (tmp_path / "src" / "a.py").write_text("x")
     actor, grants, applier = context(tmp_path)
+    file_patch = FilePatch(path="src/a.py", operation="delete")
     with pytest.raises(CapabilityDenied):
-        applier.apply(FilePatch(path="src/a.py", operation="delete"), actor=actor, grants=grants)
+        applier.apply(file_patch, actor=actor, grants=grants)
 
 
 def test_symlink_write_is_denied(tmp_path: Path) -> None:
@@ -58,7 +59,6 @@ def test_symlink_write_is_denied(tmp_path: Path) -> None:
     root.mkdir()
     (root / "src").symlink_to(outside, target_is_directory=True)
     actor, grants, applier = context(root)
+    file_patch = FilePatch(path="src/a.py", operation="create", content="x")
     with pytest.raises(CapabilityDenied):
-        applier.apply(
-            FilePatch(path="src/a.py", operation="create", content="x"), actor=actor, grants=grants
-        )
+        applier.apply(file_patch, actor=actor, grants=grants)

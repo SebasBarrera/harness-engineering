@@ -131,8 +131,9 @@ def test_linux_plan_binds_root_read_only_and_existing_paths_writable(tmp_path: P
 def test_no_mechanism_means_unavailable(
     tmp_path: Path, system: str, tools: dict[str, str], reason: str
 ) -> None:
+    host = _host(tmp_path, system=system, **tools)
     with pytest.raises(SandboxUnavailable, match=reason):
-        build_sandbox(tmp_path, [], _host(tmp_path, system=system, **tools))
+        build_sandbox(tmp_path, [], host)
 
 
 def test_detect_reports_the_mechanism_of_this_host() -> None:

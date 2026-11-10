@@ -370,5 +370,6 @@ def test_an_answer_extends_an_existing_hint() -> None:
 )
 def test_invalid_answers_are_rejected(clarification: ClarificationInput, message: str) -> None:
     original = vague_task()
+    assessment = assess_intent(original)
     with pytest.raises(ConfigurationError, match=message):
-        revise_task(original, assess_intent(original), clarification)
+        revise_task(original, assessment, clarification)

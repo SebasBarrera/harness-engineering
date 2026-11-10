@@ -228,15 +228,18 @@ def test_without_the_key_an_exception_is_a_plain_decision(
 
 def test_options_need_approve_exception(python_workspace: Path, tmp_path: Path) -> None:
     run_id = first_run(python_workspace, tmp_path)
+    harness_application = HarnessApplication()
+    change_set_digest = digest_of(python_workspace, run_id)
+    exception = ExceptionOptions(follow_up="X")
     with pytest.raises(ConfigurationError):
-        HarnessApplication().decide_gate(
+        harness_application.decide_gate(
             python_workspace,
             execution_id=run_id,
             decision=DecisionKind.REJECT,
-            change_set_digest=digest_of(python_workspace, run_id),
+            change_set_digest=change_set_digest,
             actor_id="reviewer",
             rationale="No",
-            exception=ExceptionOptions(follow_up="X"),
+            exception=exception,
         )
 
 

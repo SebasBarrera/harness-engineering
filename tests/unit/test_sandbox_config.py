@@ -84,5 +84,6 @@ def test_invalid_sandbox_write_paths_are_rejected(path: str) -> None:
 
 def test_unknown_sandbox_mode_is_a_configuration_error(python_workspace: Path) -> None:
     _set_runtime(python_workspace, agentSandbox="strict")
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
