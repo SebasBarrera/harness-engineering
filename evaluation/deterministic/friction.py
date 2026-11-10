@@ -77,10 +77,17 @@ results = {
     "plan": {"subtasks": []},
     "acceptance": {"tests": []},
     "locate": {"locations": [], "questions": []},
+    # The survey answer carries the reverse engineering fields that `harness init` asks for
+    # (architecture.documentation: project); without them DISCOVERY blocks as malformed.
     "architecture": (
         {"options": []}
         if request.get("mode") == "advise"
-        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
+        else {"summary": "No organization plan.", "structure": [], "practices": []}
+        if request.get("mode") == "organize"
+        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {},
+              "organization": "None.",
+              "components": [{"name": "app", "path": ".", "responsibility": "The project."}],
+              "conventions": [], "guidance": ["Follow the structure."]}
     ),
 }
 if kind == "review" and "outputContract" in request:

@@ -197,7 +197,20 @@ def read_only_answer(request: dict[str, Any], kind: str) -> dict[str, Any]:
     if kind == "architecture":
         if request.get("mode") == "advise":
             return {"options": []}
-        return {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
+        if request.get("mode") == "organize":
+            return {"summary": "No organization plan.", "structure": [], "practices": []}
+        # The survey answer carries the reverse engineering fields that `harness init` asks
+        # for (architecture.documentation: project); without them DISCOVERY blocks as malformed.
+        return {
+            "style": "custom",
+            "summary": "No layering.",
+            "layers": [],
+            "allow": {},
+            "organization": "None.",
+            "components": [{"name": "app", "path": ".", "responsibility": "The project."}],
+            "conventions": [],
+            "guidance": ["Follow the structure."],
+        }
     if kind == "review" and "outputContract" in request:
         return {"verdict": "PASS", "findings": [], "summary": "No finding."}
     return READ_ONLY_RESULTS.get(kind, {})
