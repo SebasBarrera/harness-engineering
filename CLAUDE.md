@@ -62,4 +62,7 @@ artifacts) → merge `main` back into `develop`.
 
 `docs/reference/cli.md` (`scripts/gen_cli_docs.py`), `docs/reference/task-file.md`
 (`scripts/gen_schema_docs.py`) and `schemas/v1/*` plus `src/governed_harness/resources/schemas/v1/*`
-(`scripts/generate_schemas.py`) are generated: edit the source and regenerate.
+(`scripts/generate_schemas.py`) are generated: edit the source and regenerate. So are the
+hash-pinned `requirements/*.txt` (`scripts/lock_requirements.py`, from `pyproject.toml`,
+`docs/requirements.txt` and `requirements/*.in`); every `pip install` of CI and the Dockerfile uses
+them with `--require-hashes`, and the package itself with `--no-deps`.
