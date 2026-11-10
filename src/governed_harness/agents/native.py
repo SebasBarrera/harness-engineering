@@ -337,7 +337,12 @@ class NativeAgentProvider(CommandAgentProvider):
             chosen = self.read_only_args()
         return chosen if chosen is not None else self.base_args()
 
-    def policy_args(self, policy: Any, *, read_only: bool = False) -> tuple[str, ...]:
+    def policy_args(
+        self,
+        policy: Any,
+        *,
+        read_only: bool = False,  # NOSONAR(S1172) hook: the CLI adapters override it
+    ) -> tuple[str, ...]:
         """The CLI options of the command policy (#5) and, for a read-only call, of the tools
         it is denied (#92); none for a CLI without them."""
         return ()
@@ -350,11 +355,11 @@ class NativeAgentProvider(CommandAgentProvider):
         effort = routing.get("effort")
         return (("--model", model) if model else ()) + (self.effort_args(effort) if effort else ())
 
-    def effort_args(self, effort: str) -> tuple[str, ...]:
+    def effort_args(self, effort: str) -> tuple[str, ...]:  # NOSONAR(S1172) hook to override
         """The CLI's reasoning-effort option; a CLI without one ignores the router's effort."""
         return ()
 
-    def prompt_args(self, prompt: str) -> tuple[str, ...]:
+    def prompt_args(self, prompt: str) -> tuple[str, ...]:  # NOSONAR(S1172) hook to override
         return ()
 
     def process_input(

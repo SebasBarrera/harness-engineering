@@ -43,7 +43,6 @@ from governed_harness.domain.models import (
     ChangeSet,
     Execution,
     Finding,
-    PhaseExecution,
     ValidationResult,
 )
 from governed_harness.evidence import sha256_json
@@ -95,7 +94,6 @@ class Differential:
     def reclassify(
         self,
         execution: Execution,
-        phase: PhaseExecution,
         change_set: ChangeSet,
         outputs: list[Any],
     ) -> list[Any]:

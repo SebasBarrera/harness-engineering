@@ -53,7 +53,6 @@ from governed_harness.domain.models import (
     ChangeSet,
     Execution,
     Finding,
-    PhaseExecution,
     Task,
 )
 from governed_harness.runtime import CancellationToken
@@ -123,9 +122,7 @@ class VerificationChecks:
         return {FindingSeverity(str(name)) for name in names}
 
     # ----- entry point ----------------------------------------------------------------------
-    def run(
-        self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
-    ) -> list[ValidatorOutput]:
+    def run(self, execution: Execution, change_set: ChangeSet) -> list[ValidatorOutput]:
         engine = self.results.engine
         raw = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         diff = parse_unified_diff(raw)
@@ -209,7 +206,7 @@ class VerificationChecks:
         if config.test_quality is not None and not self._quality_exempt(execution, change_set):
             outputs.append(self._test_quality(execution, change_set, task, diff, files))
         if config.invariants:
-            outputs.extend(self._invariants(execution, change_set, task))
+            outputs.extend(self._invariants(execution, change_set))
         if config.sarif:
             outputs.append(self._sarif(execution, change_set))
         if config.risk_factors is not None:
@@ -586,9 +583,7 @@ class VerificationChecks:
         )
 
     # ----- invariants (#52) ------------------------------------------------------------------
-    def _invariants(
-        self, execution: Execution, change_set: ChangeSet, task: Task
-    ) -> list[ValidatorOutput]:
+    def _invariants(self, execution: Execution, change_set: ChangeSet) -> list[ValidatorOutput]:
         outputs: list[ValidatorOutput] = []
         for invariant in self.config.invariants or ():
             validator_id = f"invariant.{invariant.invariant_id}"

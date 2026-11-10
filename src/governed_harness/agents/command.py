@@ -132,7 +132,7 @@ class CommandAgentProvider:
     def failure_summary(self, result: ProcessResult) -> str:
         return f"Agent CLI exited with {result.exit_code}"
 
-    def extract_result(self, result: ProcessResult) -> Any:
+    def extract_result(self, result: ProcessResult) -> Any:  # NOSONAR(S1172) hook to override
         """The ``result`` object of a read-only call when the answer did not carry it in the
         protocol field (built-in adapters read it from the agent's text)."""
         return None

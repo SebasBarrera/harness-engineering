@@ -1415,7 +1415,7 @@ class RunEngine:
         if self.results.active:
             task = self.results.implementation_task(execution, task)
             request_extra = self.results.implement_extras(
-                execution, phase, task, provider_id, actor, grants
+                execution, phase, task, provider_id, grants
             )
         if self.ladder.active:
             # Locations of the locate call and a person's intake attachments, only when there
@@ -2568,8 +2568,8 @@ class RunEngine:
         if self.results.active:
             # Deterministic checks of the agent-results settings, then the comparison of
             # failing validators with the baseline (verification.differential, #7).
-            outputs.extend(self.results.verification.run(execution, phase, change_set))
-            outputs = self.results.after_verification(execution, phase, change_set, outputs)
+            outputs.extend(self.results.verification.run(execution, change_set))
+            outputs = self.results.after_verification(execution, change_set, outputs)
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
             outputs.extend(self.ladder.verification(execution, change_set, outputs))
