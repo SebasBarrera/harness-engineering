@@ -66,7 +66,7 @@ def test_an_ungranted_provider_command_is_refused_under_phase_capabilities(
     python_workspace: Path, tmp_path: Path
 ) -> None:
     marker = tmp_path / "started"
-    configure(python_workspace, ["sh", "-c", f"touch {marker}"], phaseCapabilities=True)
+    configure(python_workspace, ["sh", "-c", f"touch {marker.as_posix()}"], phaseCapabilities=True)
     run = start(python_workspace, tmp_path)
     assert not marker.exists()
     assert run.status is ResultStatus.BLOCKED
@@ -109,7 +109,7 @@ def test_an_explicit_grant_lets_the_provider_command_start(
     python_workspace: Path, tmp_path: Path
 ) -> None:
     marker = tmp_path / "started"
-    configure(python_workspace, ["sh", "-c", f"touch {marker}"], phaseCapabilities=True)
+    configure(python_workspace, ["sh", "-c", f"touch {marker.as_posix()}"], phaseCapabilities=True)
     extend(python_workspace, SH)
     run = start(python_workspace, tmp_path)
     assert marker.exists()
@@ -120,7 +120,7 @@ def test_without_phase_capabilities_the_refusal_keeps_its_earlier_form(
     python_workspace: Path, tmp_path: Path
 ) -> None:
     marker = tmp_path / "started"
-    configure(python_workspace, ["sh", "-c", f"touch {marker}"])
+    configure(python_workspace, ["sh", "-c", f"touch {marker.as_posix()}"])
     run = start(python_workspace, tmp_path)
     assert not marker.exists()
     # 0.9.0 and 1.x: the refusal ends the run as ERROR, without a finding.
