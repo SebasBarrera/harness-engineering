@@ -47,12 +47,12 @@ sys.path.insert(0, str(HERE))
 import agentlib  # noqa: E402
 import conditions  # noqa: E402
 import harness_state  # noqa: E402
-from agentlib import build_prompt, load_calls, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
 from product_owner import ProductOwner  # noqa: E402
 
 __all__ = [
+    "MAX_CLARIFY_ROUNDS",
     "MAX_CORRECTIONS",
     "configure_provider",
     "git",
@@ -497,11 +497,11 @@ def main() -> int:
     owner = None
     if condition == "direct":
         log = run_dir / "agent-calls" / "call-1.json"
-        prompt = casual_prompt if casual_prompt is not None else build_prompt(task)
+        prompt = casual_prompt if casual_prompt is not None else agentlib.build_prompt(task)
         if args.agent == "codex":
-            run_codex(prompt, workspace, args.model, args.effort, log)
+            agentlib.run_codex(prompt, workspace, args.model, args.effort, log)
         else:
-            run_claude(prompt, workspace, args.model, log)
+            agentlib.run_claude(prompt, workspace, args.model, log)
         record["direct"] = {"delivered": True}
     else:
         record["harnessVersion"] = harness_version()
@@ -559,8 +559,8 @@ def main() -> int:
         record["quarantine"] = quarantine
         record["_run"] = run_id
     record["wallSeconds"] = round(time.monotonic() - started, 3)
-    calls = load_calls(run_dir / "agent-calls")
-    po_calls = load_calls(run_dir / "po-calls")
+    calls = agentlib.load_calls(run_dir / "agent-calls")
+    po_calls = agentlib.load_calls(run_dir / "po-calls")
     limited = sum(1 for c in calls + po_calls if agentlib.hit_limit(c))
     if limited:
         # The account's usage limit stopped a call: the run measures the limit, not the condition.

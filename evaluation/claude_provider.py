@@ -37,7 +37,6 @@ from typing import Any
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import agentlib  # noqa: E402
-from agentlib import build_prompt, run_claude  # noqa: E402
 
 READ_ONLY_KINDS = {"clarify", "review", "plan", "acceptance", "locate", "architecture"}
 
@@ -78,7 +77,7 @@ def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
     if not request.get("feedback"):
         feedback_file = run_dir / "feedback.md"
         feedback = feedback_file.read_text(encoding="utf-8") if feedback_file.exists() else None
-    prompt = build_prompt(request["task"], feedback)
+    prompt = agentlib.build_prompt(request["task"], feedback)
     extra = harness_sections(request)
     return prompt + ("\n".join(extra).strip("\n") + "\n" if extra else "")
 
@@ -138,7 +137,7 @@ def main() -> int:
     prompt = call_prompt(request) if read_only else implement_prompt(request, run_dir)
     (calls / f"{stem}.request.json").write_text(json.dumps(request, indent=1), encoding="utf-8")
     (calls / f"{stem}.prompt.txt").write_text(prompt, encoding="utf-8")
-    record = run_claude(
+    record = agentlib.run_claude(
         prompt,
         workspace,
         model,
