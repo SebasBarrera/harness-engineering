@@ -24,6 +24,7 @@ from governed_harness.domain.models import Execution
 from governed_harness.orchestration import engine as engine_module
 from governed_harness.orchestration.engine import EngineServices, RunEngine
 from governed_harness.orchestration.retention import RetentionCollector
+from governed_harness.runtime import resolve_executable
 from governed_harness.runtime.sandbox import (
     SandboxHost,
     SandboxPath,
@@ -191,9 +192,12 @@ def test_coverage_threshold(python_workspace: Path, tmp_path: Path) -> None:
     pending = _pending(python_workspace, tmp_path)
     validations = HarnessApplication().status(python_workspace, pending.execution_id)
     findings = HarnessApplication().list_findings(python_workspace, pending.execution_id)
+    # The interpreter the coverage validator runs: "python" as the harness resolves it.
     has_coverage = (
         subprocess.run(
-            ["python", "-c", "import coverage"], capture_output=True, check=False
+            [resolve_executable("python"), "-c", "import coverage"],
+            capture_output=True,
+            check=False,
         ).returncode
         == 0
     )
