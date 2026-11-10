@@ -1,5 +1,7 @@
 # Campaña de evaluación de la 2.0.0
 
+La evaluación de la tesis reporta solo la versión 2.0.0 (campaña en curso). Los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
+
 Scripts, catálogo y plan de la campaña que evalúa la versión 2.0.0 del harness. Todo lo de esta
 carpeta se versiona: la carpeta local `.local/` donde vivían los scripts de comparación se perdió
 con el equipo anterior, y no debe volver a pasar.
@@ -28,8 +30,8 @@ con el equipo anterior, y no debe volver a pasar.
 | Entorno | Qué corre | Limitaciones declaradas |
 |---|---|---|
 | GitHub Actions, `ubuntu-24.04` | Suites deterministas (sin modelo), con el sandbox de escritura real (`bwrap`). | Runners compartidos: los tiempos absolutos son ruidosos; se comparan condiciones dentro de la misma corrida. |
-| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI. | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no se comparan con los de macOS de la 0.9.0. |
-| **macOS (pendiente: cuando el autor compre una Mac)** | **La campaña completa en un solo equipo**, como la evaluación de la 0.9.0: suites deterministas y todos los bloques con modelo, con `sandbox-exec`, los lanzadores de `evaluation/launchers/` sin cambios y tiempos comparables con las mediciones anteriores en macOS. | — |
+| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI. | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
+| **macOS (pendiente: cuando el autor compre una Mac)** | **La campaña completa en un solo equipo**: suites deterministas y todos los bloques con modelo, con `sandbox-exec` y los lanzadores de `evaluation/launchers/` sin cambios. | — |
 
 ### Pendiente para la Mac
 
