@@ -224,32 +224,45 @@ class ScaledSnapshotter(WorkspaceSnapshotter):
             if not _excluded(relative, self.excludes):
                 yield relative
 
-    def snapshot(self, *, read_text: bool = False) -> WorkspaceSnapshot:
+    def _cache(self) -> SnapshotCache | None:
         # Windows reports the creation time as st_ctime, not the change time: a restored
         # modification time would hide an edit, so every file is hashed there.
-        cache = (
+        return (
             SnapshotCache(self.cache_path, self.seal)
             if self.settings.cache and self.cache_path and os.name != "nt"
             else None
         )
+
+    def _hashed(
+        self, relative: str, cache: SnapshotCache | None, read_text: bool
+    ) -> tuple[os.stat_result, str, str | None] | None:
+        """The stat, digest and text of a regular file; ``None`` when it cannot be read."""
+        path = self.root / relative
+        try:
+            stat = path.lstat()
+        except OSError:
+            return None
+        if not os.path.isfile(path) or path.is_symlink():
+            return None
+        try:
+            digest = cache.digest(relative, stat) if cache else None
+            if digest is None:
+                digest = sha256_file(path)
+            text = self._read_text(path, stat.st_size) if read_text else None
+        except OSError:
+            return None
+        return stat, digest, text
+
+    def snapshot(self, *, read_text: bool = False) -> WorkspaceSnapshot:
+        cache = self._cache()
         fresh: dict[str, list[Any]] = {}
         states: dict[str, FileState] = {}
         now_ns = time.time_ns()
         for relative in self._paths():
-            path = self.root / relative
-            try:
-                stat = path.lstat()
-            except OSError:
+            hashed = self._hashed(relative, cache, read_text)
+            if hashed is None:
                 continue
-            if not os.path.isfile(path) or path.is_symlink():
-                continue
-            try:
-                digest = cache.digest(relative, stat) if cache else None
-                if digest is None:
-                    digest = sha256_file(path)
-                text = self._read_text(path, stat.st_size) if read_text else None
-            except OSError:
-                continue
+            stat, digest, text = hashed
             if cache is not None and now_ns - stat.st_mtime_ns > RACY_SECONDS * 1e9:
                 fresh[relative] = [*SnapshotCache.key(stat), digest]
             states[relative] = FileState(relative, digest, stat.st_size, text, read_text)
@@ -310,19 +323,7 @@ class SnapshotStore:
                 "sizeBytes": state.size_bytes,
             }
             if head is None or dirty is None or path in dirty:
-                text = state.text
-                if not state.text_loaded:
-                    target = self.workspace / path
-                    try:
-                        data = target.read_bytes()
-                    except OSError:
-                        data = None
-                    text = (
-                        decode_text(data)
-                        if data is not None and sha256_bytes(data) == state.digest
-                        else None
-                    )
-                entry["text"] = text
+                entry["text"] = self._manifest_text(path, state)
             files[path] = entry
         document = {
             "format": MANIFEST_FORMAT,
@@ -331,6 +332,20 @@ class SnapshotStore:
             "files": files,
         }
         return self.artifacts.put_json(document, metadata=metadata)
+
+    def _manifest_text(self, path: str, state: FileState) -> str | None:
+        """The text a manifest keeps for a file: the snapshot's own, or the workspace bytes
+        while they still match the recorded digest."""
+        if state.text_loaded:
+            return state.text
+        target = self.workspace / path
+        try:
+            data = target.read_bytes()
+        except OSError:
+            data = None
+        return (
+            decode_text(data) if data is not None and sha256_bytes(data) == state.digest else None
+        )
 
     def load(self, uri: str) -> StoredSnapshot:
         value = json.loads(self.artifacts.get(uri))
@@ -415,16 +430,22 @@ def ignored_outside_excludes(root: Path) -> list[str]:
     found: list[str] = []
     for name in git_ignored(root):
         if name.endswith("/"):
-            directory = name.rstrip("/")
-            if _excluded(f"{directory}/x", set(DEFAULT_EXCLUDES)):
-                continue
-            base = root / directory
-            if base.is_symlink() or not base.is_dir():
-                continue
-            for current, dirnames, filenames in os.walk(base, followlinks=False):
-                dirnames[:] = [item for item in dirnames if item not in DEFAULT_EXCLUDES]
-                for filename in filenames:
-                    found.append((Path(current) / filename).relative_to(root).as_posix())
+            found.extend(_ignored_directory_files(root, name.rstrip("/")))
         elif not _excluded(name, set(DEFAULT_EXCLUDES)):
             found.append(name)
     return sorted(found)
+
+
+def _ignored_directory_files(root: Path, directory: str) -> list[str]:
+    """The files under an ignored directory, unless the ChangeSet excludes it anyway."""
+    found: list[str] = []
+    if _excluded(f"{directory}/x", set(DEFAULT_EXCLUDES)):
+        return found
+    base = root / directory
+    if base.is_symlink() or not base.is_dir():
+        return found
+    for current, dirnames, filenames in os.walk(base, followlinks=False):
+        dirnames[:] = [item for item in dirnames if item not in DEFAULT_EXCLUDES]
+        for filename in filenames:
+            found.append((Path(current) / filename).relative_to(root).as_posix())
+    return found
