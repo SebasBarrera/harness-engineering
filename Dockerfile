@@ -13,7 +13,7 @@ COPY src ./src
 COPY requirements/tools-build.txt /tmp/requirements/
 # Every pip install is hash-pinned (requirements/, scripts/lock_requirements.py).
 RUN python -m pip install --require-hashes -r /tmp/requirements/tools-build.txt \
-    && python -m build --wheel --outdir /dist
+    && python -m build --wheel --no-isolation --outdir /dist
 
 FROM ${PYTHON_IMAGE} AS runtime
 LABEL org.opencontainers.image.title="Governed Agent Harness" \
@@ -35,10 +35,12 @@ RUN apt-get update \
 COPY --from=build /dist/ /tmp/dist/
 COPY requirements/tools-pip.txt requirements/runtime-api.txt /tmp/requirements/
 # A current pip first (the base image's is older), then the locked runtime set and the wheel,
-# so nothing is resolved at build time.
+# so nothing is resolved at build time. pip is removed afterwards: the image only runs `harness`,
+# and pip vendors an old setuptools (its pkg_resources) that image scanners report.
 RUN python -m pip install --require-hashes -r /tmp/requirements/tools-pip.txt \
     && python -m pip install --require-hashes -r /tmp/requirements/runtime-api.txt \
-    && python -m pip install --no-deps "$(find /tmp/dist -name 'governed_agent_harness-*.whl')[api]" \
+    && python -m pip install --no-deps /tmp/dist/governed_agent_harness-*.whl \
+    && python -m pip uninstall -y pip \
     && rm -rf /tmp/dist /tmp/requirements
 USER 10001:10001
 WORKDIR /workspace

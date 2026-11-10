@@ -37,8 +37,11 @@ jobs:
           package-manager-cache: false
       - name: Install the package and pytest (the scenario benchmark runs the fixture's tests)
         run: |
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build"/bin/python -m pip install --require-hashes -r requirements/tools-build.txt
+          "$RUNNER_TEMP/build"/bin/python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/dist"
           python -m pip install --require-hashes -r requirements/bench.txt
-          python -m pip install --no-deps ".[api]"
+          python -m pip install --no-deps "$RUNNER_TEMP"/dist/*.whl
       - name: Run the microbenchmark five times and the scenario benchmark once
         run: |
           mkdir -p bench

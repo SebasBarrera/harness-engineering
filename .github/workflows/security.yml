@@ -107,7 +107,10 @@ jobs:
           # requirements/audit.txt pins the runtime set (package + api extra), pip-audit and a
           # current pip (the venv's bundled pip is tooling, not a dependency of the harness).
           /tmp/audit/bin/python -m pip install --require-hashes -r requirements/audit.txt
-          /tmp/audit/bin/python -m pip install --no-deps ".[api]"
+          python -m venv /tmp/build
+          /tmp/build/bin/python -m pip install --require-hashes -r requirements/tools-build.txt
+          /tmp/build/bin/python -m build --wheel --no-isolation --outdir /tmp/dist
+          /tmp/audit/bin/python -m pip install --no-deps /tmp/dist/*.whl
           /tmp/audit/bin/python -m pip_audit --skip-editable --desc on --progress-spinner off
 
   bandit:
