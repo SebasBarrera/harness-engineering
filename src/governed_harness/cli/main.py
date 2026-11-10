@@ -176,7 +176,7 @@ def _acting() -> HarnessApplication:
 def _flush_notices() -> None:
     # One application may serve several calls (gate decide resolves the run first), so its
     # notices are printed and cleared, and it stays registered while it is in use.
-    for application in list(_ACTING):
+    for application in _ACTING:
         for notice in application.notices:
             typer.echo(f"warning: {notice}", err=True)
         application.notices.clear()
