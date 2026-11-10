@@ -564,6 +564,28 @@ class AcceptanceTests:
         if not frozen:
             return None
         results = self.results
+        findings = self._frozen_findings(execution, frozen)
+        output = self._run_frozen(execution, change_set, frozen)
+        failed = bool(findings) or output.result.status is not ResultStatus.PASSED
+        result = results.record_validation(
+            execution,
+            validator_id=ACCEPTANCE_ID,
+            digest=change_set.digest,
+            status=output.result.status if not findings else ResultStatus.FAILED,
+            kind=ValidationKind.VALIDATION_FAILURE if failed else ValidationKind.SUCCESS,
+            mandatory=True,
+            summary=(
+                f"frozen acceptance tests: {output.result.summary}"
+                + (f"; {len(findings)} frozen file(s) changed" if findings else "")
+            ),
+            findings=(*findings, *output.findings),
+            evidence_refs=output.result.evidence_refs,
+        )
+        return ValidatorOutput(result, ())
+
+    def _frozen_findings(self, execution: Execution, frozen: dict[str, str]) -> list[Finding]:
+        """A HIGH finding for every frozen acceptance test deleted or modified."""
+        results = self.results
         workspace = results.s.paths.workspace
         findings: list[Finding] = []
         for path, digest in sorted(frozen.items()):
@@ -586,6 +608,14 @@ class AcceptanceTests:
                         introduced=True,
                     )
                 )
+        return findings
+
+    def _run_frozen(
+        self, execution: Execution, change_set: ChangeSet, frozen: dict[str, str]
+    ) -> ValidatorOutput:
+        """Run the frozen acceptance tests and record their tool invocations and findings."""
+        results = self.results
+        workspace = results.s.paths.workspace
         engine = results.engine
         actor = Actor(actor_type=ActorType.TOOL, actor_id=f"validator.{ACCEPTANCE_ID}", version="1")
         from governed_harness.configuration.models import ValidatorDefinition
@@ -631,22 +661,7 @@ class AcceptanceTests:
                 finding.model_dump(mode="json"),
                 actor=finding.provenance.actor,
             )
-        failed = bool(findings) or output.result.status is not ResultStatus.PASSED
-        result = results.record_validation(
-            execution,
-            validator_id=ACCEPTANCE_ID,
-            digest=change_set.digest,
-            status=output.result.status if not findings else ResultStatus.FAILED,
-            kind=ValidationKind.VALIDATION_FAILURE if failed else ValidationKind.SUCCESS,
-            mandatory=True,
-            summary=(
-                f"frozen acceptance tests: {output.result.summary}"
-                + (f"; {len(findings)} frozen file(s) changed" if findings else "")
-            ),
-            findings=(*findings, *output.findings),
-            evidence_refs=output.result.evidence_refs,
-        )
-        return ValidatorOutput(result, ())
+        return output
 
 
 def _carried(state: dict[str, Any] | None) -> dict[str, Any]:

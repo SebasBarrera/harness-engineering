@@ -170,34 +170,8 @@ class RunVerifier:
 
     def _check_records(self, report: RunVerification, events: list[StoredEvent]) -> None:
         execution_id = report.execution_id
-        from_events: dict[tuple[str, str], dict[str, Any]] = {}
-        for event in events:
-            projected = PROJECTED_EVENTS.get(event.event_type)
-            if projected is None:
-                continue
-            record_type, model, id_field = projected
-            try:
-                item = model.model_validate(event.payload)
-            except ValidationError as error:
-                report.record_problems.append(
-                    self._problem(record_type, None, "unreadable-event", str(error)[:300])
-                )
-                continue
-            key = (record_type, str(getattr(item, id_field)))
-            from_events[key] = item.model_dump(mode="json")
-        stored: dict[tuple[str, str], dict[str, Any]] = {}
-        for record_type, model, id_field in {
-            (value[0], value[1], value[2]) for value in PROJECTED_EVENTS.values()
-        }:
-            for raw in self.s.state.list_dicts(record_type, execution_id=execution_id):
-                try:
-                    item = model.model_validate(raw)
-                except ValidationError as error:
-                    report.record_problems.append(
-                        self._problem(record_type, None, "unreadable-record", str(error)[:300])
-                    )
-                    continue
-                stored[(record_type, str(getattr(item, id_field)))] = item.model_dump(mode="json")
+        from_events = self._projected(report, events)
+        stored = self._stored(report, execution_id)
         report.records_checked = len(set(from_events) | set(stored))
         for key in sorted(set(from_events) | set(stored)):
             record_type, record_id = key
@@ -218,6 +192,48 @@ class RunVerifier:
                 )
         self._check_execution(report, events, from_events)
         self._check_phases(report, events)
+
+    def _projected(
+        self, report: RunVerification, events: list[StoredEvent]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """The records the events project, by (record type, id); an unreadable event is a
+        problem of the report."""
+        from_events: dict[tuple[str, str], dict[str, Any]] = {}
+        for event in events:
+            projected = PROJECTED_EVENTS.get(event.event_type)
+            if projected is None:
+                continue
+            record_type, model, id_field = projected
+            try:
+                item = model.model_validate(event.payload)
+            except ValidationError as error:
+                report.record_problems.append(
+                    self._problem(record_type, None, "unreadable-event", str(error)[:300])
+                )
+                continue
+            key = (record_type, str(getattr(item, id_field)))
+            from_events[key] = item.model_dump(mode="json")
+        return from_events
+
+    def _stored(
+        self, report: RunVerification, execution_id: str
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """The stored records of the run, by (record type, id); an unreadable record is a
+        problem of the report."""
+        stored: dict[tuple[str, str], dict[str, Any]] = {}
+        for record_type, model, id_field in {
+            (value[0], value[1], value[2]) for value in PROJECTED_EVENTS.values()
+        }:
+            for raw in self.s.state.list_dicts(record_type, execution_id=execution_id):
+                try:
+                    item = model.model_validate(raw)
+                except ValidationError as error:
+                    report.record_problems.append(
+                        self._problem(record_type, None, "unreadable-record", str(error)[:300])
+                    )
+                    continue
+                stored[(record_type, str(getattr(item, id_field)))] = item.model_dump(mode="json")
+        return stored
 
     def _check_execution(
         self,
