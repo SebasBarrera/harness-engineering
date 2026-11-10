@@ -72,6 +72,13 @@ def test_pytest_failure_takes_the_line_from_the_traceback(tmp_path: Path) -> Non
     assert issue.message == "tests/test_x.py::test_bad failed: assert 2 == 3"
 
 
+@pytest.mark.skipif(sys.platform != "win32", reason="pytest prints native separators on Windows")
+def test_pytest_failure_takes_the_line_from_a_windows_traceback(tmp_path: Path) -> None:
+    text = PYTEST.replace("tests/test_x.py:9:", "tests\\test_x.py:9:")
+    [issue] = parse_output(text, "", tmp_path)
+    assert (issue.rule, issue.path, issue.line) == ("test-failed", "tests/test_x.py", 9)
+
+
 def test_tsc_both_formats(tmp_path: Path) -> None:
     issues = parse_output(TSC, "", tmp_path)
     assert [(item.rule, item.path, item.line) for item in issues] == [

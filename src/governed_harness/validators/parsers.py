@@ -415,6 +415,16 @@ def parse_tsc_text(lines: list[str]) -> list[ParsedIssue]:
     return issues
 
 
+def _frame_path(path: str) -> str:
+    """The pattern of a node id's path in a traceback frame: pytest prints node ids with ``/``
+    but, on Windows, the frames with the native ``\\``."""
+    pattern = re.escape(path)
+    if sys.platform == "win32" and "/" in path:
+        native = re.escape(path.replace("/", "\\"))
+        pattern = f"(?:{pattern}|{native})"
+    return pattern
+
+
 def parse_pytest_text(lines: list[str]) -> list[ParsedIssue]:
     sections: dict[str, list[str]] = {}
     current: list[str] | None = None
@@ -439,7 +449,7 @@ def parse_pytest_text(lines: list[str]) -> list[ParsedIssue]:
         frames = [
             int(found.group(1))
             for text in section
-            if (found := re.match(rf"^{re.escape(path)}:(\d+): ", text))
+            if (found := re.match(rf"^{_frame_path(path)}:(\d+): ", text))
         ]
         kind = "test-failed" if match["kind"] == "FAILED" else "test-error"
         issues.append(
