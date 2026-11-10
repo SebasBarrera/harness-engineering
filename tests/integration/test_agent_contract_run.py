@@ -326,3 +326,18 @@ def test_an_implement_call_carries_the_contract_and_is_recorded(
     assert contract["resources"]["writePaths"][0] == "src/sample/pricing.py"
     shown = application.agent_calls(python_workspace, run, "implement", 1)
     assert shown["call"]["parentReceived"]["finalStatus"] == "PASSED"
+
+
+def test_an_implement_call_records_the_bytes_it_sent(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: the bytes of the implement request, measured as for the other kinds (JSON with
+    # sorted keys, UTF-8), are the size of exactly what the provider received.
+    log = configure(python_workspace, tmp_path, contract={"mode": "enforce"}, acceptance=False)
+    application, run = start(python_workspace, tmp_path)
+    [request] = requests_of(log, "implement")
+    sent = len(json.dumps(request, sort_keys=True).encode("utf-8"))
+    [call] = application.agent_calls(python_workspace, run, "implement")["calls"]
+    assert call["sentBytes"] == sent
+    shown = application.agent_calls(python_workspace, run, "implement", 1)
+    assert shown["call"]["record"]["sent"]["bytes"] == sent

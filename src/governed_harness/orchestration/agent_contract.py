@@ -570,7 +570,7 @@ class AgentContractFlow:
             sent=SentInfo(validated.task.fields, (), iteration),
             limits=limits,
             digest=answer.invocation.prompt_digest,
-            size=None,
+            size=answer.request_bytes,
             request_ref=None,
             keys=list(validated.allowed_context),
             answer=answer,

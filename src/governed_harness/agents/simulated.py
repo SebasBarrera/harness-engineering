@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -125,13 +126,12 @@ class SimulatedAgentProvider:
     def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
         actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.simulated", version="1")
         started = datetime.now(UTC)
-        prompt_digest = sha256_json(
-            {
-                "task": task.model_dump(mode="json"),
-                "plan": plan.model_dump(mode="json"),
-                "provider": self.provider_id,
-            }
-        )
+        prompt = {
+            "task": task.model_dump(mode="json"),
+            "plan": plan.model_dump(mode="json"),
+            "provider": self.provider_id,
+        }
+        prompt_digest = sha256_json(prompt)
         tool_invocations: list[ToolInvocation] = []
         status = ResultStatus.PASSED
         summary = "No implementation action was requested"
@@ -236,7 +236,12 @@ class SimulatedAgentProvider:
             error=error_record,
         )
         return AgentExecutionResult(
-            status, summary, invocation, tuple(tool_invocations), output_ref.uri
+            status,
+            summary,
+            invocation,
+            tuple(tool_invocations),
+            output_ref.uri,
+            request_bytes=len(json.dumps(prompt, sort_keys=True).encode("utf-8")),
         )
 
     def call(

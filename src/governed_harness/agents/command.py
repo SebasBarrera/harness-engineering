@@ -265,7 +265,14 @@ class CommandAgentProvider:
         )
         return (
             AgentExecutionResult(
-                status, summary, invocation, (tool,), stdout_ref.uri, usage, self_report
+                status,
+                summary,
+                invocation,
+                (tool,),
+                stdout_ref.uri,
+                usage,
+                self_report,
+                request_bytes=len(json.dumps(request, sort_keys=True).encode("utf-8")),
             ),
             structured,
         )

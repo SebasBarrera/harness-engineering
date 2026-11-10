@@ -31,6 +31,9 @@ class AgentExecutionResult:
     usage: ResourceUsage | None = None
     self_report: Any = None
     """The raw self-report the agent gave (``provenance.selfReport``), read by the engine."""
+    request_bytes: int | None = None
+    """Size of the request the invocation's prompt digest covers (JSON with sorted keys, UTF-8
+    bytes): what the agent contract records as the bytes sent. ``None``: not reported."""
 
 
 class AgentContext(Protocol):
