@@ -267,13 +267,15 @@ def test_gc_applies_retention(python_workspace: Path, tmp_path: Path) -> None:
     )
     assert closed.status is ResultStatus.PASSED
     report = HarnessApplication().gc(python_workspace)
-    assert report["applied"] is False and report["artifactsRemoved"] == 0
+    assert report["applied"] is False
+    assert report["artifactsRemoved"] == 0
     resolved = ConfigurationResolver().resolve(python_workspace)
     services = EngineServices.open(resolved)
     try:
         collector = RetentionCollector(services)
         plan = collector.plan(now=datetime.now(UTC) + timedelta(days=31))
-        assert plan.pruned_runs and not plan.removed_runs
+        assert plan.pruned_runs
+        assert not plan.removed_runs
         blobs = len(list(services.artifacts.list()))
         collector.apply(plan)
         assert len(list(services.artifacts.list())) == blobs - len(plan.artifacts)

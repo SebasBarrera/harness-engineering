@@ -69,7 +69,8 @@ def test_seatbelt_profile_denies_writes_and_reopens_only_the_allowed_paths() -> 
     assert '(regex #"^/home/u/\\.claude\\.json")' in profile
     assert '(literal "/dev/null")' in profile
     assert '(regex #"^/dev/tty")' in profile
-    assert "network" not in profile and "process" not in profile
+    assert "network" not in profile
+    assert "process" not in profile
 
 
 def test_macos_plan_wraps_with_sandbox_exec_and_digests_the_profile(tmp_path: Path) -> None:
@@ -79,7 +80,8 @@ def test_macos_plan_wraps_with_sandbox_exec_and_digests_the_profile(tmp_path: Pa
     assert plan.prefix == ("/usr/bin/sandbox-exec", "-p", plan.profile)
     assert plan.profile_digest == sha256_bytes(plan.profile.encode())
     record = plan.evidence()
-    assert record["mechanism"] == "sandbox-exec" and record["platform"] == "Darwin"
+    assert record["mechanism"] == "sandbox-exec"
+    assert record["platform"] == "Darwin"
     assert record["profileDigest"] == plan.profile_digest
     assert [item["source"] for item in record["allowedPaths"]] == [  # type: ignore[union-attr]
         "workspace",

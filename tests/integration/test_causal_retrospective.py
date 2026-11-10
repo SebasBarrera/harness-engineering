@@ -74,7 +74,8 @@ def test_closed_run_with_an_exception(python_workspace: Path, tmp_path: Path) ->
     codes = {item.reason_code for item in retro.causes}
     assert {"BLOCKING_FINDING", "EXCEPTION_APPROVED", "EXCEPTION_GRANTED"} <= codes
     [rule] = [item for item in retro.recommendations if item.category.startswith("rule:")]
-    assert "precise" in rule.statement and rule.risk == "MEDIUM"
+    assert "precise" in rule.statement
+    assert rule.risk == "MEDIUM"
 
 
 def test_without_the_key_the_retrospective_keeps_its_1_0_form(
@@ -94,7 +95,8 @@ def test_without_the_key_the_retrospective_keeps_its_1_0_form(
     )
     retro = application.retrospect(python_workspace, run_id)
     dumped = retro.model_dump(mode="json", by_alias=True)
-    assert "causes" not in dumped and "trigger" not in dumped
+    assert "causes" not in dumped
+    assert "trigger" not in dumped
     cancelled = failing_run(python_workspace, tmp_path, "task_cancelled")
     application.cancel_run(python_workspace, cancelled, "reviewer")
     with pytest.raises(Exception, match="no retrospective yet"):
@@ -126,21 +128,26 @@ def test_outcomes_and_rule_health(python_workspace: Path, tmp_path: Path) -> Non
         observed_at="2026-10-01T10:00:00+00:00",
         actor_id="oncall",
     )
-    assert outcome.execution_id == excepted and outcome.kind == "INCIDENT"
+    assert outcome.execution_id == excepted
+    assert outcome.kind == "INCIDENT"
     assert [item.outcome_id for item in application.list_outcomes(python_workspace)] == [
         outcome.outcome_id
     ]
     health = application.rule_health(python_workspace)
-    assert health["runs"] == 1 and health["outcomes"]["INCIDENT"] == 1
+    assert health["runs"] == 1
+    assert health["outcomes"]["INCIDENT"] == 1
     [secret] = [item for item in health["rules"] if item["ruleId"] == "review.possible-secret"]
-    assert secret["fired"] >= 1 and secret["blockedGates"] >= 1
-    assert secret["excepted"] == 1 and secret["runsWithLaterOutcomes"] == 1
+    assert secret["fired"] >= 1
+    assert secret["blockedGates"] >= 1
+    assert secret["excepted"] == 1
+    assert secret["runsWithLaterOutcomes"] == 1
     assert secret["signal"] == "often excepted when it blocks: check its precision"
     assert any(item["validatorId"] == "python.pytest" for item in health["validators"])
     runner = CliRunner()
     path = ["--path", str(python_workspace)]
     text = runner.invoke(app, ["--no-json", "rules", "health", *path])
-    assert "review.possible-secret" in text.stdout and "RULE" in text.stdout
+    assert "review.possible-secret" in text.stdout
+    assert "RULE" in text.stdout
     listed = runner.invoke(app, ["outcome", "list", "--run", excepted, *path])
     assert json.loads(listed.stdout)[0]["reference"] == "INC-42"
     recorded = runner.invoke(

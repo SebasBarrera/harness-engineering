@@ -115,7 +115,8 @@ def test_approved_tests_are_frozen_and_must_pass(python_workspace: Path, tmp_pat
     assert result["acceptanceTests"]["failBefore"]["status"] == "FAILED"
     assert result["execution"]["currentPhase"] == PhaseId.DECISION
     calls = json.loads(log.read_text())
-    assert calls[0]["kind"] == "acceptance" and calls[0]["routing"]["model"] == "author-model"
+    assert calls[0]["kind"] == "acceptance"
+    assert calls[0]["routing"]["model"] == "author-model"
     assert calls[1]["acceptanceTests"]["paths"] == ["tests/acceptance/test_ac_1.py"]
     assert not [
         item

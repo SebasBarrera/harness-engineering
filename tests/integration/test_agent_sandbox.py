@@ -148,7 +148,8 @@ def test_writes_inside_the_workspace_and_declared_paths_succeed_and_outside_fail
     configure(python_workspace, agent, sandbox="enforce", write_paths=[str(declared)])
     app, run = start(python_workspace, tmp_path)
 
-    assert run.status is ResultStatus.BLOCKED and run.current_phase is PhaseId.DECISION
+    assert run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.DECISION
     assert json.loads((declared / "report.json").read_text()) == {
         "declared": "written",
         "outside": "PermissionError",
@@ -200,12 +201,14 @@ def test_a_provider_failing_on_a_denied_write_gets_a_finding(
     configure(python_workspace, agent, sandbox="enforce", write_paths=[])
     app, run = start(python_workspace, tmp_path)
 
-    assert run.status is ResultStatus.FAILED and run.current_phase is PhaseId.IMPLEMENTATION
+    assert run.status is ResultStatus.FAILED
+    assert run.current_phase is PhaseId.IMPLEMENTATION
     assert not target.exists()
     [finding] = sandbox_findings(app, python_workspace, run.execution_id)
     assert finding.rule_id == "sandbox.write-denied"
     assert finding.severity is FindingSeverity.MEDIUM
-    assert finding.location is not None and finding.location.path == str(target)
+    assert finding.location is not None
+    assert finding.location.path == str(target)
     assert finding.evidence_refs
 
 
@@ -221,7 +224,8 @@ def test_enforce_without_a_mechanism_blocks_before_the_agent_runs(
     )
     app, run = start(python_workspace, tmp_path)
 
-    assert run.status is ResultStatus.BLOCKED and run.current_phase is PhaseId.IMPLEMENTATION
+    assert run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.IMPLEMENTATION
     assert not (python_workspace / "agent-ran.txt").exists()
     [finding] = sandbox_findings(app, python_workspace, run.execution_id)
     assert finding.rule_id == "sandbox.unavailable"
@@ -242,7 +246,8 @@ def test_off_and_absent_run_the_agent_unconfined(
     configure(python_workspace, APPLY_PATCHES + PASSED, sandbox=sandbox)
     app, run = start(python_workspace, tmp_path)
 
-    assert run.status is ResultStatus.BLOCKED and run.current_phase is PhaseId.DECISION
+    assert run.status is ResultStatus.BLOCKED
+    assert run.current_phase is PhaseId.DECISION
     assert not any(
         item["eventType"] == "agent.sandbox.applied"
         for item in events(app, python_workspace, run.execution_id)
@@ -265,7 +270,8 @@ def test_every_implementation_attempt_runs_confined(
     )
     configure(python_workspace, APPLY_PATCHES + PASSED, sandbox="enforce")
     app, run = start(python_workspace, tmp_path)
-    assert run.current_phase is PhaseId.DECISION and run.change_set_digest
+    assert run.current_phase is PhaseId.DECISION
+    assert run.change_set_digest
     app.decide_gate(
         python_workspace,
         execution_id=run.execution_id,
@@ -282,4 +288,5 @@ def test_every_implementation_attempt_runs_confined(
         for item in events(app, python_workspace, run.execution_id)
         if item["eventType"] == "agent.sandbox.applied"
     ]
-    assert len(applied) == 2 and applied[0] == applied[1]
+    assert len(applied) == 2
+    assert applied[0] == applied[1]

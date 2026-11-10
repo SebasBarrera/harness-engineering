@@ -92,7 +92,8 @@ def test_project_validator_with_parser_severity_and_pass_env(
     )
     resolved = resolve(python_workspace)
     ids = [item.validator_id for item in resolved.effective_validators]
-    assert ids[-1] == "project.scanner" and "python.pytest" in ids
+    assert ids[-1] == "project.scanner"
+    assert "python.pytest" in ids
     assert any(
         rule.capability == "process.execute" and "python tools/scan.py" in rule.scope
         for rule in resolved.effective_capabilities

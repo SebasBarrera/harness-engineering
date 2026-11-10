@@ -134,7 +134,8 @@ def test_agent_questions_block_intent_until_a_person_answers(
     assert status["execution"]["currentPhase"] == PhaseId.INTENT
     assert status["execution"]["status"] == ResultStatus.BLOCKED
     [request] = calls(log, "clarify")
-    assert request["readOnly"] is True and request["schemaVersion"] == "1.1"
+    assert request["readOnly"] is True
+    assert request["schemaVersion"] == "1.1"
     assert "explicitly out of scope" in request["instructions"]
     assert request["task"]["task_id"] == "task_clarify"
     assert (request["routing"]["model"], request["routing"]["effort"]) == ("cheap-model", "low")
@@ -149,7 +150,8 @@ def test_agent_questions_block_intent_until_a_person_answers(
             if item.call_kind == "clarify"
         ]
         assert invocation.phase_id is PhaseId.INTENT
-        assert invocation.model == "cheap-model" and invocation.effort == "low"
+        assert invocation.model == "cheap-model"
+        assert invocation.effort == "low"
         usage = services.state.list("resource_usage", ResourceUsage, execution_id=run)
         assert [item.cost_usd for item in usage] == [0.01]
 
@@ -177,7 +179,8 @@ def test_agent_questions_block_intent_until_a_person_answers(
     assert continued.current_phase is PhaseId.DECISION
     second = calls(log, "clarify")
     # A new revision gets a new review, with the answers to check for consistency.
-    assert len(second) == 2 and second[1]["clarifications"]
+    assert len(second) == 2
+    assert second[1]["clarifications"]
 
 
 def test_no_questions_is_evidence_and_the_review_runs_once_per_revision(
@@ -202,7 +205,8 @@ def test_no_questions_is_evidence_and_the_review_runs_once_per_revision(
         reused = [
             item for item in services.events.list(again) if item.event_type.endswith("reused")
         ]
-    assert reused and reused[0].payload["questions"] == 0
+    assert reused
+    assert reused[0].payload["questions"] == 0
 
 
 def test_malformed_answer_is_a_finding_and_blocks(python_workspace: Path, tmp_path: Path) -> None:
@@ -215,7 +219,8 @@ def test_malformed_answer_is_a_finding_and_blocks(python_workspace: Path, tmp_pa
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "intake.agent-review-malformed"
     ]
-    assert findings and findings[0].severity is FindingSeverity.HIGH
+    assert findings
+    assert findings[0].severity is FindingSeverity.HIGH
 
 
 def test_provider_failure_blocks_intent(python_workspace: Path, tmp_path: Path) -> None:
@@ -235,7 +240,8 @@ def test_a_read_only_call_that_writes_is_undone(python_workspace: Path, tmp_path
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "agent.read-only-violation"
     ]
-    assert findings and findings[0].severity is FindingSeverity.HIGH
+    assert findings
+    assert findings[0].severity is FindingSeverity.HIGH
     assert application.status(python_workspace, run)["execution"]["status"] == (
         ResultStatus.BLOCKED
     )

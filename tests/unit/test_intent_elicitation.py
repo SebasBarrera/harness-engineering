@@ -58,12 +58,18 @@ def test_c0_asks_seven_separate_questions_in_a_fixed_order() -> None:
     results, interface, limits, errors, scope, out_of_scope, non_functional = texts
     assert "observable results" in results
     assert "input or action -> exact expected result" in results
-    assert "inputs and outputs" in interface and "formats" in interface
-    assert "limits and boundaries" in limits and "numbers, sizes, times" in limits
-    assert "errors or rejections" in errors and "invalid input" in errors
-    assert "behaviours are in scope" in scope and "per line" in scope
-    assert "out of scope" in out_of_scope and "per line" in out_of_scope
-    assert "performance, security" in non_functional and "persistence" in non_functional
+    assert "inputs and outputs" in interface
+    assert "formats" in interface
+    assert "limits and boundaries" in limits
+    assert "numbers, sizes, times" in limits
+    assert "errors or rejections" in errors
+    assert "invalid input" in errors
+    assert "behaviours are in scope" in scope
+    assert "per line" in scope
+    assert "out of scope" in out_of_scope
+    assert "per line" in out_of_scope
+    assert "performance, security" in non_functional
+    assert "persistence" in non_functional
     assert "measure" in non_functional
 
 

@@ -51,7 +51,8 @@ def test_present_keys_are_resolved(python_workspace: Path) -> None:
         notifications={"webhooks": [{"urlEnv": "HARNESS_HOOK", "events": ["run.finished"]}]},
     )
     project = ConfigurationResolver().resolve(python_workspace).project
-    assert project.exceptions_enabled and project.exception_days == 14
+    assert project.exceptions_enabled
+    assert project.exception_days == 14
     assert project.output_parsers_enabled
     assert project.causal_retrospective
     assert project.webhooks[0].url_env == "HARNESS_HOOK"
