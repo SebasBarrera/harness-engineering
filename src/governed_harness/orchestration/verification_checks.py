@@ -742,7 +742,7 @@ def _read(workspace: Path, relative: str) -> str | None:
     try:
         target.relative_to(workspace.resolve())
         return target.read_text(encoding="utf-8")
-    except (ValueError, OSError, UnicodeDecodeError):
+    except (ValueError, OSError):  # UnicodeDecodeError is a ValueError
         return None
 
 

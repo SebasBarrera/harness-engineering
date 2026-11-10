@@ -99,7 +99,7 @@ class RestTransport:
                 text = response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as error:
             raise PublishError(f"{method} {path} returned HTTP {error.code}") from error
-        except (urllib.error.URLError, OSError) as error:
+        except OSError as error:  # urllib.error.URLError is an OSError
             raise PublishError(f"{method} {path} failed: {error}") from error
         return json.loads(text) if text.strip() else None
 

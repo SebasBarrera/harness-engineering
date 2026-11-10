@@ -319,7 +319,7 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
                 for line in contents.data.get(EVENTS, b"").decode("utf-8").splitlines()
                 if line.strip()
             ]
-        except (ValueError, UnicodeDecodeError) as error:
+        except ValueError as error:  # UnicodeDecodeError is a ValueError
             problems.append(f"events.jsonl cannot be read: {error}")
         problems.extend(_check_chain(events, manifest.execution_id))
         if len(events) != manifest.event_count:
