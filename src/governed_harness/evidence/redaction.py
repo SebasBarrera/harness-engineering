@@ -117,19 +117,21 @@ class SecretRedactor:
 MIN_LITERAL_BYTES = 8
 """Environment values shorter than this are not redacted as literals."""
 
+_API_KEY_MARK = b"<REDACTED_API_KEY>"
+
 EXTENDED_RULES: tuple[tuple[str, re.Pattern[bytes], bytes], ...] = (
     # runtime.extendedRedaction (since 1.1)
     (
         "anthropic_api_key",
         re.compile(rb"\bsk-ant-[A-Za-z0-9_-]{16,}"),
-        b"<REDACTED_API_KEY>",
+        _API_KEY_MARK,
     ),
     (
         "openai_api_key",
         re.compile(rb"\bsk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}"),
-        b"<REDACTED_API_KEY>",
+        _API_KEY_MARK,
     ),
-    ("google_api_key", re.compile(rb"\bAIza[0-9A-Za-z_-]{35}\b"), b"<REDACTED_API_KEY>"),
+    ("google_api_key", re.compile(rb"\bAIza[0-9A-Za-z_-]{35}\b"), _API_KEY_MARK),
     ("slack_token", re.compile(rb"\bxox[abposr]-[A-Za-z0-9-]{10,}"), b"<REDACTED_SLACK_TOKEN>"),
     (
         "json_web_token",

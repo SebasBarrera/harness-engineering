@@ -17,6 +17,7 @@ from governed_harness.domain.enums import FindingSeverity
 from .model import DiffFile, Issue, is_test_path
 
 CATEGORY = "security"
+_CREDENTIAL_RULE = "secrets.credential"
 
 # ----- values --------------------------------------------------------------------------------
 _DUMMY_WORDS = frozenset(
@@ -300,7 +301,7 @@ def _graded(
             _TEST_RECOMMENDATION,
         )
     else:
-        test_rule = "secrets.test-credential" if rule == "secrets.credential" else rule
+        test_rule = "secrets.test-credential" if rule == _CREDENTIAL_RULE else rule
         collector.add(test_rule, FindingSeverity.MEDIUM, message, path, line, _TEST_RECOMMENDATION)
 
 
@@ -342,7 +343,7 @@ def scan_secrets(diff: Sequence[DiffFile], *, task_text: str = "") -> list[Issue
                 named = True
                 _graded(
                     collector,
-                    "secrets.credential",
+                    _CREDENTIAL_RULE,
                     f"{name!r} is assigned",
                     value,
                     prefix,
@@ -354,7 +355,7 @@ def scan_secrets(diff: Sequence[DiffFile], *, task_text: str = "") -> list[Issue
                 named = True
                 _graded(
                     collector,
-                    "secrets.credential",
+                    _CREDENTIAL_RULE,
                     f"{function}() receives a positional string",
                     value,
                     prefix,

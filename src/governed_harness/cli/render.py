@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 _CAMEL = re.compile(r"(?<=[a-z0-9])([A-Z])")
+_NEXT_HEADING = "Next:"
 
 
 def wants_json(flag: bool | None, stream: Any = None) -> bool:
@@ -204,7 +205,7 @@ def _execution(value: Mapping[str, Any]) -> list[str]:
             lines.append(f"{label(key)}: {_scalar(value.get(key))}")
     steps = next_steps(value)
     if steps:
-        lines.extend(["", "Next:", *(f"  {step}" for step in steps)])
+        lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in steps)])
     return lines
 
 
@@ -293,7 +294,7 @@ def _init(value: Mapping[str, Any]) -> list[str]:
         lines.append(f".gitignore: .harness/ {value['gitignore']}")
     if value.get("exampleTask"):
         lines.append(f"Example task: {value['exampleTask']}")
-    lines.extend(["", "Next:", *(f"  {step}" for step in value.get("next", []))])
+    lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in value.get("next", []))])
     return lines
 
 
@@ -431,7 +432,7 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
         lines.extend(f"  problem: {item}" for item in report["problems"])
     lines.extend(_ladder_sections(brief))
     if brief.get("next"):
-        lines.extend(["", "Next:", *(f"  {step}" for step in brief["next"])])
+        lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in brief["next"])])
     if changed.get("diff"):
         lines.extend(["", "Diff", changed["diff"]])
     return lines

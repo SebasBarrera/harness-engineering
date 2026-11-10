@@ -24,13 +24,15 @@ from .model import DiffFile, DiffLine, Issue, is_test_path
 CATEGORY = "weakened-controls"
 _QUOTE_CHARS = 160
 _DOC_SUFFIXES = (".md", ".rst", ".adoc")
+_TEST_DELETED = "weakened.test-deleted"
+_THRESHOLD_CHANGED = "weakened.threshold-changed"
 
 _RECOMMENDATIONS = {
-    "weakened.test-deleted": "Restore the test or justify its removal in the ChangeSet rationale.",
+    _TEST_DELETED: "Restore the test or justify its removal in the ChangeSet rationale.",
     "weakened.assert-removed": "Keep the assertions; a test without them cannot fail.",
     "weakened.skip-added": "Fix the failing case instead of skipping it, or record an approved exception.",
     "weakened.suppression-added": "Fix the reported problem instead of suppressing the tool.",
-    "weakened.threshold-changed": "Keep the quality threshold or strictness; lowering it needs a human decision.",
+    _THRESHOLD_CHANGED: "Keep the quality threshold or strictness; lowering it needs a human decision.",
     "weakened.broad-except": "Catch the specific exception and handle or re-raise it.",
     "weakened.error-to-success": "Let the failure propagate; do not convert an error into success.",
 }
@@ -148,7 +150,7 @@ def _deleted_tests(file: DiffFile) -> list[Issue]:
     if file.is_deleted:
         return [
             _issue(
-                "weakened.test-deleted",
+                _TEST_DELETED,
                 FindingSeverity.HIGH,
                 f"Test file {path} was deleted.",
                 path,
@@ -158,7 +160,7 @@ def _deleted_tests(file: DiffFile) -> list[Issue]:
     added = {name for name, _ in _test_names(file.added)}
     return [
         _issue(
-            "weakened.test-deleted",
+            _TEST_DELETED,
             FindingSeverity.HIGH,
             f"Test {name!r} was removed and not re-added: {_quote(line.text)!r}",
             path,
@@ -243,7 +245,7 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
             continue
         issues.append(
             _issue(
-                "weakened.threshold-changed",
+                _THRESHOLD_CHANGED,
                 FindingSeverity.HIGH,
                 f"{reason}: {_quote(line.text)!r}",
                 path,
@@ -260,7 +262,7 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
         if match and match.group(0).lower().replace(" ", "") not in added_strict:
             issues.append(
                 _issue(
-                    "weakened.threshold-changed",
+                    _THRESHOLD_CHANGED,
                     FindingSeverity.HIGH,
                     f"strict mode removed: {_quote(line.text)!r}",
                     path,
@@ -279,7 +281,7 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
             if missing:
                 issues.append(
                     _issue(
-                        "weakened.threshold-changed",
+                        _THRESHOLD_CHANGED,
                         FindingSeverity.HIGH,
                         f"workflow no longer runs {', '.join(missing)}: {_quote(line.text)!r}",
                         path,

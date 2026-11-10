@@ -47,6 +47,8 @@ if TYPE_CHECKING:
 MANIFEST = "manifest.json"
 EVENTS = "events.jsonl"
 RECORDS = "records.json"
+_ARTIFACTS_DIR = "artifacts/"
+_JSON_SUFFIX = ".json"
 ARTIFACT_PREFIX = "artifact://sha256/"
 DECISION_EVENT = "human.decision.recorded"
 PRUNED_EVENT = "retention.artifacts.pruned"
@@ -188,7 +190,7 @@ def export_bundle(services: EngineServices, execution_id: str, output: Path) -> 
         "artifacts": sum(
             1
             for item in entries
-            if item.path.startswith("artifacts/") and not item.path.endswith(".json")
+            if item.path.startswith(_ARTIFACTS_DIR) and not item.path.endswith(_JSON_SUFFIX)
         ),
         "missingArtifacts": missing,
         "sizeBytes": output.stat().st_size,
@@ -309,7 +311,7 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
             if name != MANIFEST and name not in listed:
                 problems.append(f"entry {name} is not listed in the manifest")
         for name, (digest, _size) in contents.files.items():
-            is_artifact = name.startswith("artifacts/") and not name.endswith(".json")
+            is_artifact = name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
             if is_artifact and digest != f"sha256:{name.removeprefix('artifacts/')}":
                 problems.append(f"artifact {name} does not match its name")
         events: list[dict[str, Any]] = []
@@ -349,9 +351,9 @@ def verify_bundle(path: Path, now: datetime | None = None) -> dict[str, Any]:
             ):
                 problems.append(f"decision record {record.decision_id} has no matching event")
         present = {
-            name.removeprefix("artifacts/")
+            name.removeprefix(_ARTIFACTS_DIR)
             for name in contents.files
-            if name.startswith("artifacts/") and not name.endswith(".json")
+            if name.startswith(_ARTIFACTS_DIR) and not name.endswith(_JSON_SUFFIX)
         }
         referenced = artifact_refs(events) | artifact_refs(records)
         # Artifacts that harness gc pruned under retention.artifactDays are recorded as such.

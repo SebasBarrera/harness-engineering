@@ -166,6 +166,9 @@ from governed_harness.validators.base import ValidatorOutput
 from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
 
 CANCELLATION_REQUESTED = "Cancellation requested"
+_CORRECTION_AUTHORIZED = "correction.authorized"
+_FINDING_RECORDED = "finding.recorded"
+_FILESYSTEM_READ = "filesystem.read"
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -619,7 +622,7 @@ class RunEngine:
             )
             self.s.events.append(
                 execution_id,
-                "correction.authorized",
+                _CORRECTION_AUTHORIZED,
                 {
                     "decisionId": record.decision_id,
                     "invalidatedPhases": [phase.value for phase in transition.invalidated],
@@ -1178,7 +1181,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -1305,13 +1308,13 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description=f"Apply implementation instruction using mode {task.implementation.mode}",
-                capabilities=("filesystem.read", "filesystem.write", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "filesystem.write", "process.execute"),
                 expected_evidence=("agent invocation", "ChangeSet"),
             ),
             PlanStep(
                 step_id=new_id("step"),
                 description="Execute technology-profile validators",
-                capabilities=("filesystem.read", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "process.execute"),
                 expected_evidence=tuple(
                     item.validator_id for item in self.s.resolved.effective_validators
                 ),
@@ -1319,7 +1322,7 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description="Perform independent review and evaluate policy",
-                capabilities=("filesystem.read", "approval.request"),
+                capabilities=(_FILESYSTEM_READ, "approval.request"),
                 expected_evidence=("findings", "gate evaluation", "human decision"),
             ),
         )
@@ -2367,7 +2370,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -2535,7 +2538,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -3087,7 +3090,7 @@ class RunEngine:
         used = sum(
             1
             for event in events
-            if event.event_type == "correction.authorized"
+            if event.event_type == _CORRECTION_AUTHORIZED
             and event.payload.get("trigger") == "VERIFICATION_FAILED"
         )
         limit = runtime.correction_limit
@@ -3131,7 +3134,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "correction.authorized",
+            _CORRECTION_AUTHORIZED,
             {
                 "trigger": "VERIFICATION_FAILED",
                 "cycle": used + 1,
@@ -3247,7 +3250,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -3687,7 +3690,7 @@ class RunEngine:
             )
             self.s.events.append(
                 execution.execution_id,
-                "finding.recorded",
+                _FINDING_RECORDED,
                 finding.model_dump(mode="json"),
                 actor=finding.provenance.actor,
             )
