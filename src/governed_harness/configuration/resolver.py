@@ -323,10 +323,8 @@ class ConfigurationResolver:
         return resolved
 
 
-def load_project_profiles(
-    workspace_root: Path, paths: tuple[str, ...], reserved: frozenset[str] = frozenset()
-) -> tuple[dict[str, TechnologyProfileDefinition], tuple[str, ...]]:
-    """The profiles of ``toolchain.profilePaths`` by id, and the files they came from."""
+def _profile_files(workspace_root: Path, paths: tuple[str, ...]) -> list[Path]:
+    """The profile files ``paths`` name: a directory gives its ``*.yaml`` files, sorted."""
     files: list[Path] = []
     for item in paths:
         target = (workspace_root / item).resolve()
@@ -340,14 +338,27 @@ def load_project_profiles(
             files.append(target)
         else:
             raise ConfigurationError(f"profile path not found: {item}")
+    return files
+
+
+def _load_profile(path: Path) -> TechnologyProfileDefinition:
+    """One project profile; any error but a ``ConfigurationError`` is wrapped in one."""
+    try:
+        return TechnologyProfileDefinition.model_validate(load_yaml(path))
+    except ConfigurationError:
+        raise
+    except Exception as error:
+        raise ConfigurationError(f"invalid project profile {path}: {error}") from error
+
+
+def load_project_profiles(
+    workspace_root: Path, paths: tuple[str, ...], reserved: frozenset[str] = frozenset()
+) -> tuple[dict[str, TechnologyProfileDefinition], tuple[str, ...]]:
+    """The profiles of ``toolchain.profilePaths`` by id, and the files they came from."""
+    files = _profile_files(workspace_root, paths)
     profiles: dict[str, TechnologyProfileDefinition] = {}
     for path in files:
-        try:
-            profile = TechnologyProfileDefinition.model_validate(load_yaml(path))
-        except ConfigurationError:
-            raise
-        except Exception as error:
-            raise ConfigurationError(f"invalid project profile {path}: {error}") from error
+        profile = _load_profile(path)
         if profile.profile_id in BUILTIN_PROFILE_IDS | reserved:
             raise ConfigurationError(
                 f"project profile {path} uses the built-in profile id {profile.profile_id!r}"
