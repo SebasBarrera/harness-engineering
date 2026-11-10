@@ -11,6 +11,11 @@ Linux and macOS (the suites and the agent sandbox are POSIX). Usage::
 
     python evaluation/campaign/run_deterministic.py --wheel dist/governed_agent_harness-2.0.0-py3-none-any.whl \
         --work /tmp/campaign --out evaluation/results-2.0.0/deterministic [--only fault-probes,ladder]
+
+The suites of the pre-registered tests (``h01``, ``h03``, ``h05``, ``h38``, ``PREREGISTRO.md``)
+follow the earlier ones, and ``defect-corpus`` (H11) runs last: it aggregates the records of
+``h01``, ``h03``, ``h05``, ``ladder`` and ``review`` found under ``--out`` (from this run or an
+earlier one) and fails when one of them is absent.
 """
 
 from __future__ import annotations
@@ -41,7 +46,22 @@ SUITES = (
     "intent-equivalence",
     "block0",
     "metrics-validity",
+    "h01",
+    "h03",
+    "h05",
+    "h38",
+    "defect-corpus",
 )
+# The suites of the pre-registered interception tests (PREREGISTRO.md): one script each, the same
+# arguments as the ladder.
+INTERCEPTION = {
+    "h01": "h01_weakened_tests.py",
+    "h03": "h03_secrets.py",
+    "h05": "h05_dependencies.py",
+    "h38": "h38_false_fast_lane.py",
+}
+# H11 reads the per-case records of these suites' output directories (defect_corpus.py).
+DEFECT_CORPUS_INPUTS = ("h01", "h03", "h05", "ladder", "review")
 
 
 def sha256(path: Path) -> str:
@@ -82,6 +102,19 @@ def suite_commands(
 ) -> dict[str, list[str]]:
     d = EVAL_DIR / "deterministic"
     ruff = bin_dir(venv) / "ruff"
+    interception = {
+        name: [
+            str(py),
+            str(d / script),
+            "--out",
+            str(out / name),
+            "--work",
+            str(work / name),
+            "--project-venv",
+            str(venv),
+        ]
+        for name, script in INTERCEPTION.items()
+    }
     return {
         "fault-probes": [
             str(py),
@@ -162,6 +195,16 @@ def suite_commands(
             str(work / "block0" / "demo"),
             "--demo-state",
             str(work / "block0" / "demo-state"),
+        ],
+        **interception,
+        # Runs last: it reads the results of the suites above and re-runs nothing.
+        "defect-corpus": [
+            str(py),
+            str(d / "defect_corpus.py"),
+            "--out",
+            str(out / "defect-corpus"),
+            "--inputs",
+            *(str(out / name) for name in DEFECT_CORPUS_INPUTS),
         ],
     }
 
