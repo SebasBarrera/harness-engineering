@@ -106,7 +106,8 @@ def test_sarif_reports_and_invariants(python_workspace: Path, tmp_path: Path) ->
     )
     found = rules(application, python_workspace, run)
     sarif = found["sarif.semgrep.python.lang.security.audit"]
-    assert sarif.severity is FindingSeverity.HIGH and "semgrep 1.2.3" in sarif.message
+    assert sarif.severity is FindingSeverity.HIGH
+    assert "semgrep 1.2.3" in sarif.message
     assert found["sarif.missing-report"].severity is FindingSeverity.HIGH
     validations = latest(application, python_workspace, run)
     assert validations["invariant.always-red"].status is ResultStatus.FAILED

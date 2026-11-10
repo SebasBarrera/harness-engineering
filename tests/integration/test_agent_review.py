@@ -135,7 +135,8 @@ def test_blocking_findings_return_to_the_agent_and_pass_after_correction(
         if item.rule_id == "review.agent.wrong-formula"
     ]
     assert findings[0].severity is FindingSeverity.HIGH
-    assert findings[0].location is not None and findings[0].location.start_line == 2
+    assert findings[0].location is not None
+    assert findings[0].location.start_line == 2
 
 
 def test_the_review_runs_once_per_changeset(python_workspace: Path, tmp_path: Path) -> None:
@@ -186,4 +187,5 @@ def test_a_failing_reviewer_blocks_the_gate_under_enforce(
     assert status["execution"]["currentPhase"] == PhaseId.DECISION
     assert status["gate"]["status"] == ResultStatus.BLOCKED
     [validation] = review_validations(application, python_workspace, run)
-    assert validation.status is ResultStatus.BLOCKED and validation.mandatory
+    assert validation.status is ResultStatus.BLOCKED
+    assert validation.mandatory

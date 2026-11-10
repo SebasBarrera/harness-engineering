@@ -96,8 +96,9 @@ def test_block_refuses_new_runs_until_quarantined(python_workspace: Path, tmp_pa
     pricing = python_workspace / "src" / "sample" / "pricing.py"
     assert pricing.read_text() == WRONG
     assert events(application, python_workspace, run, "workspace.line-stopped")
+    task = patch_task(GOOD, "task_next")
     with pytest.raises(PolicyViolationError, match="quarantine"):
-        start(application, python_workspace, tmp_path, patch_task(GOOD, "task_next"))
+        start(application, python_workspace, tmp_path, task)
     with pytest.raises(PolicyViolationError):
         application.quarantine_run(python_workspace, run, "agent.claude")
     result = application.quarantine_run(python_workspace, run, "human.reviewer")
@@ -177,7 +178,8 @@ def test_the_request_carries_the_gate_contract_and_permissions(
     application.create_task(python_workspace, source)
     run = application.start_run(python_workspace, "task_contract").execution_id
     request = json.loads(log.read_text())
-    assert request["kind"] == "implement" and request["schemaVersion"] == "1.1"
+    assert request["kind"] == "implement"
+    assert request["schemaVersion"] == "1.1"
     assert "harness check" in request["instructions"] or "check command" in request["instructions"]
     gate = request["gate"]
     assert {item["id"] for item in gate["validators"]} >= {"python.pytest"}
@@ -189,7 +191,8 @@ def test_the_request_carries_the_gate_contract_and_permissions(
     assert gate["workspace"] == str(python_workspace.resolve())
     assert "review.possible-secret" in {item["ruleId"] for item in gate["reviewRules"]}
     permissions = request["permissions"]
-    assert permissions["callKind"] == "implement" and permissions["readOnly"] is False
+    assert permissions["callKind"] == "implement"
+    assert permissions["readOnly"] is False
     assert "src/**" in permissions["filesystem"]["write"]
     # The write outside ownedPaths is a HIGH finding of a mandatory validation.
     findings = [
@@ -197,8 +200,10 @@ def test_the_request_carries_the_gate_contract_and_permissions(
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "workspace.outside-owned-paths"
     ]
-    assert findings and findings[0].severity is FindingSeverity.HIGH
-    assert findings[0].location is not None and findings[0].location.path == "notes.md"
+    assert findings
+    assert findings[0].severity is FindingSeverity.HIGH
+    assert findings[0].location is not None
+    assert findings[0].location.path == "notes.md"
 
 
 TRACED_TASK = TASK.replace(
@@ -273,6 +278,7 @@ def test_harness_check_runs_the_gate_without_recording(
         "import pickle\n\n\ndef load(data: bytes) -> object:\n    return pickle.loads(data)\n"
     )
     failed = application.check(python_workspace)
-    assert failed["status"] == "FAILED" and failed["blockingIssues"] == 1
+    assert failed["status"] == "FAILED"
+    assert failed["blockingIssues"] == 1
     with application._services(python_workspace) as services:
         assert len(services.events.list(run)) == before

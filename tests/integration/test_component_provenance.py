@@ -94,4 +94,5 @@ def test_without_the_key_nothing_is_recorded(python_workspace: Path) -> None:
     with application._services(python_workspace) as services:
         assert services.state.get_flag(f"agentsnapshots:{run}") is None
     brief = application.review(python_workspace, run)
-    assert "provenance" not in brief and "selfReports" not in brief
+    assert "provenance" not in brief
+    assert "selfReports" not in brief

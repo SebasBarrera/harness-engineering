@@ -169,7 +169,8 @@ def test_failed_verification_is_corrected_with_feedback(
     assert validator["validatorId"] == "python.pytest"
     assert validator["status"] == "FAILED"
     assert validator["exitCode"] == 1
-    assert "assert" in validator["stdout"] and len(validator["stdout"]) <= FEEDBACK_STREAM_CHARS
+    assert "assert" in validator["stdout"]
+    assert len(validator["stdout"]) <= FEEDBACK_STREAM_CHARS
     rules = {
         (item["ruleId"], item["severity"], item["validatorId"]) for item in feedback["findings"]
     }
@@ -226,7 +227,8 @@ def test_exhausted_corrections_stop_at_verification(python_workspace: Path, tmp_
     cycles = events(application, python_workspace, run, "correction.authorized")
     assert [item.payload["cycle"] for item in cycles] == [1, 2]
     [exhausted] = events(application, python_workspace, run, "correction.exhausted")
-    assert exhausted.payload["cycles"] == 2 and exhausted.payload["maxCycles"] == 2
+    assert exhausted.payload["cycles"] == 2
+    assert exhausted.payload["maxCycles"] == 2
     assert metric(application, python_workspace, run, "correction.cycles") == 2
     assert metric(application, python_workspace, run, "implementation.attempts") == 3
     assert metric(application, python_workspace, run, "agent.unsupported_claims") == 3
@@ -394,10 +396,12 @@ def test_transient_provider_failure_is_retried(
     application, run = start(python_workspace, tmp_path)
     assert application.status(python_workspace, run)["execution"]["currentPhase"] == "DECISION"
     sent = requests(log)
-    assert len(sent) == 2 and sent[0] == sent[1]
+    assert len(sent) == 2
+    assert sent[0] == sent[1]
     [retried] = events(application, python_workspace, run, "agent.invocation.retried")
     assert retried.payload["matchedPattern"] == pattern
-    assert retried.payload["retry"] == 1 and retried.payload["maxRetries"] == 3
+    assert retried.payload["retry"] == 1
+    assert retried.payload["maxRetries"] == 3
     assert metric(application, python_workspace, run, "agent.transient_retries") == 1
     assert metric(application, python_workspace, run, "agent.invocations") == 2
     assert metric(application, python_workspace, run, "correction.cycles") == 0

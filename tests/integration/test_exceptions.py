@@ -144,7 +144,8 @@ def test_exception_is_recorded_with_expiry_scope_and_provenance(
     assert decision.expires_at is not None
     assert timedelta(days=6) < decision.expires_at - decision.decided_at <= timedelta(days=7)
     [entry] = HarnessApplication().list_exceptions(python_workspace)
-    assert entry["status"] == "ACTIVE" and entry["decisionId"] == decision.decision_id
+    assert entry["status"] == "ACTIVE"
+    assert entry["decisionId"] == decision.decision_id
     assert entry["followUp"] == "ISSUE-17"
     assert entry["alternativeEvidence"] == "Secret scanner allow-list entry"
     [scope] = entry["scope"]
@@ -218,7 +219,8 @@ def test_without_the_key_an_exception_is_a_plain_decision(
     with pytest.raises(ConfigurationError, match="review.exceptions"):
         grant(python_workspace, run_id, expires_in="7d")
     decision, status = grant(python_workspace, run_id)
-    assert status == "PASSED" and decision.expires_at is None
+    assert status == "PASSED"
+    assert decision.expires_at is None
     assert HarnessApplication().list_exceptions(python_workspace) == []
     later = second_run(python_workspace, tmp_path)
     assert HarnessApplication().review(python_workspace, later)["gate"]["status"] == "FAILED"
@@ -226,15 +228,18 @@ def test_without_the_key_an_exception_is_a_plain_decision(
 
 def test_options_need_approve_exception(python_workspace: Path, tmp_path: Path) -> None:
     run_id = first_run(python_workspace, tmp_path)
+    harness_application = HarnessApplication()
+    change_set_digest = digest_of(python_workspace, run_id)
+    exception = ExceptionOptions(follow_up="X")
     with pytest.raises(ConfigurationError):
-        HarnessApplication().decide_gate(
+        harness_application.decide_gate(
             python_workspace,
             execution_id=run_id,
             decision=DecisionKind.REJECT,
-            change_set_digest=digest_of(python_workspace, run_id),
+            change_set_digest=change_set_digest,
             actor_id="reviewer",
             rationale="No",
-            exception=ExceptionOptions(follow_up="X"),
+            exception=exception,
         )
 
 
@@ -281,7 +286,8 @@ def test_cli_exception_options_and_listing(python_workspace: Path, tmp_path: Pat
     within = runner.invoke(app, ["exceptions", "list", "--expiring-within", "2", *path])
     assert len(json.loads(within.stdout)) == 1
     text = runner.invoke(app, ["--no-json", "exceptions", "list", *path])
-    assert "ACTIVE" in text.stdout and "ISSUE-9" in text.stdout
+    assert "ACTIVE" in text.stdout
+    assert "ISSUE-9" in text.stdout
 
 
 def test_interactive_exception(python_workspace: Path, tmp_path: Path) -> None:
@@ -297,7 +303,8 @@ def test_interactive_exception(python_workspace: Path, tmp_path: Path) -> None:
     )
     assert result.exit_code == 0, result.output
     [entry] = HarnessApplication().list_exceptions(python_workspace)
-    assert entry["followUp"] == "ISSUE-4" and entry["alternativeEvidence"] == "Scanner allow-list"
+    assert entry["followUp"] == "ISSUE-4"
+    assert entry["alternativeEvidence"] == "Scanner allow-list"
     assert entry["daysLeft"] == 2
 
 

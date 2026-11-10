@@ -112,7 +112,8 @@ def test_the_manifest_ranks_what_the_task_references(
             for item in services.events.list(run_id)
             if item.event_type == "context.manifest.built"
         ]
-    assert built and built[0].payload["digest"] == manifest["digest"]
+    assert built
+    assert built[0].payload["digest"] == manifest["digest"]
 
 
 def test_without_the_settings_the_request_keeps_the_1_0_form(
@@ -124,7 +125,8 @@ def test_without_the_settings_the_request_keeps_the_1_0_form(
     [request] = requests(log)
     # selfReport belongs to provenance.selfReport (wave 4), not to the agent-results settings.
     assert set(request) <= {"schemaVersion", "task", "plan", "context", "feedback", "selfReport"}
-    assert "kind" not in request and "instructions" not in request
+    assert "kind" not in request
+    assert "instructions" not in request
     assert request["schemaVersion"] == "1.0"
 
 

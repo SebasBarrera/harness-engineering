@@ -54,8 +54,10 @@ def test_failing_validators_get_located_findings(python_workspace: Path, tmp_pat
     by_rule = {item.rule_id: item for item in findings}
     summary = by_rule["python.pytest.failed"]
     test = by_rule["python.pytest.test-failed"]
-    assert test.location is not None and test.location.path == "tests/test_pricing.py"
-    assert test.location.start_line is not None and test.location.start_line > 1
+    assert test.location is not None
+    assert test.location.path == "tests/test_pricing.py"
+    assert test.location.start_line is not None
+    assert test.location.start_line > 1
     assert test.severity == summary.severity
     assert "test_req_discount_at_threshold" in test.message
     lint = next(
@@ -69,7 +71,8 @@ def test_failing_validators_get_located_findings(python_workspace: Path, tmp_pat
         None,
     )
     if "python.ruff.failed" in by_rule:  # ruff is optional where the tests run
-        assert lint is not None and lint.location is not None
+        assert lint is not None
+        assert lint.location is not None
         assert lint.location.start_line == 1
         assert lint.severity.value == "MEDIUM"
     risks = HarnessApplication().review(python_workspace, run_id)["risks"]

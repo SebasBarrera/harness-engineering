@@ -111,9 +111,11 @@ def test_an_approved_plan_runs_each_subtask_with_its_own_gate(
     log = configure(python_workspace, tmp_path, "good")
     application, run = start(python_workspace, tmp_path)
     status = application.status(python_workspace, run)["execution"]
-    assert status["currentPhase"] == PhaseId.PLANNING and status["status"] == ResultStatus.BLOCKED
+    assert status["currentPhase"] == PhaseId.PLANNING
+    assert status["status"] == ResultStatus.BLOCKED
     plan = application.plan(python_workspace, run)
-    assert plan["status"] == "PROPOSED" and len(plan["subtasks"]) == 2
+    assert plan["status"] == "PROPOSED"
+    assert len(plan["subtasks"]) == 2
     with pytest.raises(PolicyViolationError, match="digest"):
         application.decide_plan(
             python_workspace,

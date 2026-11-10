@@ -358,7 +358,8 @@ def test_security_card_data_stored() -> None:
     names = [issue.message.split(" ", 1)[0] for issue in issues]
     assert names == ["cardNumber", "cvv", "security_code", "pan"]
     assert issues[0].line == 5
-    assert issues[0].recommendation is not None and "last four" in issues[0].recommendation
+    assert issues[0].recommendation is not None
+    assert "last four" in issues[0].recommendation
 
 
 def test_security_card_data_negative() -> None:

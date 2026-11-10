@@ -96,7 +96,8 @@ def test_decision_pending_and_run_finished_are_sent_once(
     run_id = start(python_workspace, tmp_path)
     assert [item["event"] for item in receiver.bodies] == ["decision.pending"]
     body = receiver.bodies[0]
-    assert body["executionId"] == run_id and body["gateStatus"] == "PASSED"
+    assert body["executionId"] == run_id
+    assert body["gateStatus"] == "PASSED"
     assert body["changeSetDigest"].startswith("sha256:")
     application = HarnessApplication()
     application.continue_run(python_workspace, run_id)
@@ -123,7 +124,8 @@ def test_retries_then_delivers(python_workspace: Path, tmp_path: Path) -> None:
         configure(python_workspace, url=receiver.url, retries=2)
         start(python_workspace, tmp_path)
         [outcome] = records(python_workspace)
-        assert outcome["status"] == "DELIVERED" and outcome["attempts"] == 3
+        assert outcome["status"] == "DELIVERED"
+        assert outcome["attempts"] == 3
     finally:
         receiver.close()
 
@@ -137,7 +139,8 @@ def test_a_failed_delivery_is_recorded_and_does_not_change_the_run(
     status = HarnessApplication().status(python_workspace, run_id)
     assert status["execution"]["currentPhase"] == "DECISION"
     [outcome] = records(python_workspace)
-    assert outcome["status"] == "FAILED" and "HARNESS_TEST_HOOK" in outcome["error"]
+    assert outcome["status"] == "FAILED"
+    assert "HARNESS_TEST_HOOK" in outcome["error"]
     assert outcome["target"] == "env:HARNESS_TEST_HOOK"
 
 
@@ -165,7 +168,8 @@ def test_exception_granted_event(
         rationale="Accepted",
     )
     [body] = receiver.bodies
-    assert body["event"] == "exception.granted" and body["exceptionId"].startswith("exception_")
+    assert body["event"] == "exception.granted"
+    assert body["exceptionId"].startswith("exception_")
 
 
 def test_without_webhooks_nothing_is_sent_or_recorded(
@@ -189,11 +193,13 @@ def test_inbox_lists_decisions_and_clarifications(python_workspace: Path, tmp_pa
     items = application.inbox(python_workspace)
     kinds = {item["executionId"]: item for item in items}
     assert kinds[run_id]["kind"] == "decision"
-    assert kinds[run_id]["gateStatus"] == "PASSED" and kinds[run_id]["blockingFindings"] == 0
+    assert kinds[run_id]["gateStatus"] == "PASSED"
+    assert kinds[run_id]["blockingFindings"] == 0
     assert kinds[blocked.execution_id]["kind"] == "clarification"
     assert kinds[blocked.execution_id]["questions"] >= 1
     text = CliRunner().invoke(app, ["--no-json", "inbox", "--path", str(python_workspace)])
-    assert "decision" in text.stdout and "clarification" in text.stdout
+    assert "decision" in text.stdout
+    assert "clarification" in text.stdout
     # harness init writes governance.trustedHosts: loopback names only.
     client = TestClient(create_app(python_workspace), base_url="http://127.0.0.1")
     assert len(client.get("/api/inbox").json()) == 2

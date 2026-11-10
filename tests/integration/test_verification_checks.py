@@ -120,7 +120,8 @@ def test_interface_mismatch_fails_verification_under_enforce(
     )
     finding = rules(application, python_workspace, run)["interface.signature"]
     assert finding.severity is FindingSeverity.HIGH
-    assert finding.location is not None and finding.location.path == "src/sample/pricing.py"
+    assert finding.location is not None
+    assert finding.location.path == "src/sample/pricing.py"
 
 
 def test_interface_under_warn_records_low_findings(python_workspace: Path, tmp_path: Path) -> None:
@@ -305,7 +306,8 @@ def test_preexisting_failure_does_not_block(python_workspace: Path, tmp_path: Pa
     assert pytest_result.kind is ValidationKind.PREEXISTING_ERROR
     assert pytest_result.status is ResultStatus.PASSED
     note = rules(application, python_workspace, run)["differential.preexisting"]
-    assert note.introduced is False and "test_legacy" in note.message
+    assert note.introduced is False
+    assert "test_legacy" in note.message
     assert status["gate"]["status"] == ResultStatus.PASSED
 
 
@@ -330,7 +332,8 @@ def test_introduced_failure_blocks_with_its_own_finding(
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "differential.introduced"
     ]
-    assert found and all(item.introduced for item in found)
+    assert found
+    assert all(item.introduced for item in found)
     assert any("test_at_threshold" in item.message for item in found)
     assert not any("test_legacy" in item.message for item in found)
 

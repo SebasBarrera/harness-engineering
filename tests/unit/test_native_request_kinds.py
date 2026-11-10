@@ -38,7 +38,8 @@ def test_a_read_only_request_becomes_a_prompt_with_the_request_as_json() -> None
     prompt = render_call_prompt(REQUEST)
     assert prompt.startswith("Review the task below")
     payload = json.loads(prompt.split("```json\n", 1)[1].split("\n```", 1)[0])
-    assert payload["task"]["task_id"] == "t" and "instructions" not in payload
+    assert payload["task"]["task_id"] == "t"
+    assert "instructions" not in payload
 
 
 def test_the_router_choice_reaches_the_cli_options() -> None:
@@ -46,7 +47,8 @@ def test_the_router_choice_reaches_the_cli_options() -> None:
     argv, stdin, _ = claude.process_input(REQUEST, cast(Any, None))
     assert argv[argv.index("--model") + 1] == "claude-sonnet-5-5"
     assert argv[argv.index("--effort") + 1] == "high"
-    assert stdin is not None and b"Review the task below" in stdin
+    assert stdin is not None
+    assert b"Review the task below" in stdin
     codex = provider("codex")
     argv, _, _ = codex.process_input(REQUEST, cast(Any, None))
     assert 'model_reasoning_effort="high"' in argv
