@@ -556,7 +556,7 @@ def main_v2(argv: list[str]) -> int:
         "blocks": summarize_v2(records),
     }
     summary.parent.mkdir(parents=True, exist_ok=True)
-    summary.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    summary.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     print(f"{len(records)} records -> {summary}")
     return 0
 

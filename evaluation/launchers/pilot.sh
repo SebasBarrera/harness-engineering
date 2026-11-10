@@ -19,7 +19,7 @@ SLOT=$(make_slot p1)
 for RUN in ${EVAL_PILOT_RUNS:-full:direct full:harness-core full:harness full:harness-anchored casual:harness}; do
   PROMPT="${RUN%%:*}"
   CONDITION="${RUN##*:}"
-  if [ -f "$EVAL_OUT/pilot.jsonl" ] && "$SLOT/bin/python" - "$EVAL_OUT/pilot.jsonl" "$PROMPT" "$CONDITION" << 'PY'; then
+  if [ -f "$EVAL_OUT/pilot.jsonl" ] && "$SLOT/$VENV_BIN/python" - "$EVAL_OUT/pilot.jsonl" "$PROMPT" "$CONDITION" << 'PY'; then
 import json, sys
 rows = [json.loads(line) for line in open(sys.argv[1]) if line.strip()]
 sys.exit(0 if any(r.get("prompt") == sys.argv[2] and r["condition"] == sys.argv[3] for r in rows) else 1)
@@ -29,7 +29,7 @@ PY
   fi
   for ATTEMPT in $(seq 1 "${EVAL_LIMIT_MAX_WAITS:-48}"); do
     log "start $RUN $MODEL $SC (attempt $ATTEMPT)"
-    PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$CODE/run_eval.py" --scenario "$SC" --condition "$CONDITION" \
+    PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$SC" --condition "$CONDITION" \
       --prompt "$PROMPT" --model "$MODEL" --rep 1 --work "$EVAL_WORK/runs/pilot" --cache "$EVAL_CACHE" \
       --out "$EVAL_OUT/pilot.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"} ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} \
       >> "$EVAL_OUT/log-runs.txt" 2>&1
@@ -44,5 +44,5 @@ PY
     break
   done
 done
-"$SLOT/bin/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+"$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
 log "PILOT-DONE"
