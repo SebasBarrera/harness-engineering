@@ -11,6 +11,7 @@ set -euo pipefail
 HARNESS_SPEC="${1:?usage: reproduce.sh <harness wheel path or requirement> [workdir]}"
 WORKDIR="${2:-$(mktemp -d)}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+REQ="$HERE/../../requirements"   # hash-pinned installs (scripts/lock_requirements.py)
 PYTHON="${PYTHON:-python3}"
 "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 12))' || { echo "Python >= 3.12 required (set PYTHON)"; exit 2; }
 ARCHIVE_URL="https://github.com/pallets/itsdangerous/archive/refs/tags/2.2.0.tar.gz"
@@ -29,9 +30,14 @@ echo "$ARCHIVE_SHA256  itsdangerous-2.2.0.tar.gz" | shasum -a 256 -c -
 tar -xzf itsdangerous-2.2.0.tar.gz
 
 "$PYTHON" -m venv venv
-venv/bin/python -m pip install -q "$HARNESS_SPEC" "pytest==8.1.1"
-venv/bin/python -m pip install -q -e ./itsdangerous-2.2.0 --no-deps   # the project under test
-export PATH="$WORKDIR/venv/bin:$PATH"
+BIN=venv/bin; [ -d venv/Scripts ] && BIN=venv/Scripts   # POSIX or Windows (Git Bash)
+# The harness's dependencies and pytest 8.1.1 come from hash-pinned files; the harness itself and
+# the project under test are installed without resolving anything.
+"$BIN/python" -m pip install -q --require-hashes -r "$REQ/runtime.txt"
+"$BIN/python" -m pip install -q --require-hashes -r "$REQ/example-pytest.txt"
+"$BIN/python" -m pip install -q --no-deps "$HARNESS_SPEC"
+"$BIN/python" -m pip install -q -e ./itsdangerous-2.2.0 --no-deps   # the project under test
+export PATH="$WORKDIR/$BIN:$PATH"
 
 cd itsdangerous-2.2.0
 git init -q && git add . && git -c user.name=demo -c user.email=demo@example.invalid -c commit.gpgsign=false \
@@ -46,7 +52,7 @@ echo "run start exit $rc (expected 6: freezegun, declared in requirements/tests.
 RUN=$(python -c "import json;print(json.load(open('../run.json'))['executionId'])")
 expect 0 harness findings list --path . --run "$RUN"
 
-python -m pip install -q "freezegun==1.4.0"   # fix the environment, not the ChangeSet
+python -m pip install -q --require-hashes -r "$REQ/example-freezegun.txt"   # fix the environment, not the ChangeSet
 expect 4 harness run continue --path . --run "$RUN"
 DIGEST=$(harness status --path . --run "$RUN" | python -c "import json,sys;print(json.load(sys.stdin)['execution']['changeSetDigest'])")
 expect 0 harness gate decide --path . --run "$RUN" --decision APPROVE --change-set-digest "$DIGEST" \
