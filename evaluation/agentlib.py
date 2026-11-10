@@ -467,7 +467,7 @@ def _invoke(
         payload = json.loads(stdout)
         result = payload[-1] if isinstance(payload, list) else payload
     except (json.JSONDecodeError, IndexError):
-        pass
+        pass  # the output is not JSON (or an empty list): the call has no result or usage
     usage = result.get("usage") or {}
     record = {
         "model": model,
