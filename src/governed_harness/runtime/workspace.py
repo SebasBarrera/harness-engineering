@@ -146,33 +146,13 @@ class WorkspaceSnapshotter:
             new = after.files.get(path)
             if old and new and old.digest == new.digest:
                 continue
-            if old is None:
-                status = "ADDED"
-            elif new is None:
-                status = "DELETED"
-            else:
-                status = "MODIFIED"
-            additions = deletions = 0
-            # A missing side diffs as empty text; a present binary side (text None) is not diffed.
-            old_text = "" if old is None else self._text("before", old, resolve_text)
-            new_text = "" if new is None else self._text("after", new, resolve_text)
-            if old_text is not None and new_text is not None:
-                chunk = unified_file_diff(
-                    path, old_text, new_text, added=old is None, deleted=new is None
-                )
-                for line in chunk:
-                    if line.startswith("+") and not line.startswith("+++"):
-                        additions += 1
-                    elif line.startswith("-") and not line.startswith("---"):
-                        deletions += 1
-                if chunk:
-                    diff_chunks.append("".join(chunk))
-            else:
-                diff_chunks.append(f"Binary files differ: {path}\n")
+            text, additions, deletions = self._file_diff(path, old, new, resolve_text)
+            if text is not None:
+                diff_chunks.append(text)
             changes.append(
                 WorkspaceChange(
                     path=path,
-                    status=status,
+                    status=_change_status(old, new),
                     before_digest=old.digest if old else None,
                     after_digest=new.digest if new else None,
                     additions=additions,
@@ -187,6 +167,24 @@ class WorkspaceSnapshotter:
             }
         )
         return WorkspaceDiff(tuple(changes), unified, digest)
+
+    def _file_diff(
+        self,
+        path: str,
+        old: FileState | None,
+        new: FileState | None,
+        resolve_text: TextResolver | None,
+    ) -> tuple[str | None, int, int]:
+        """The diff text of one changed file (``None`` for an empty diff) with its added and
+        deleted line counts."""
+        # A missing side diffs as empty text; a present binary side (text None) is not diffed.
+        old_text = "" if old is None else self._text("before", old, resolve_text)
+        new_text = "" if new is None else self._text("after", new, resolve_text)
+        if old_text is None or new_text is None:
+            return f"Binary files differ: {path}\n", 0, 0
+        chunk = unified_file_diff(path, old_text, new_text, added=old is None, deleted=new is None)
+        additions, deletions = _line_counts(chunk)
+        return ("".join(chunk) if chunk else None), additions, deletions
 
     def _text(self, side: str, state: FileState, resolve: TextResolver | None) -> str | None:
         if state.text_loaded:
@@ -212,6 +210,25 @@ class WorkspaceSnapshotter:
         if size > self.max_text_bytes:
             return None
         return decode_text(path.read_bytes(), self.max_text_bytes)
+
+
+def _change_status(old: FileState | None, new: FileState | None) -> str:
+    if old is None:
+        return "ADDED"
+    if new is None:
+        return "DELETED"
+    return "MODIFIED"
+
+
+def _line_counts(chunk: list[str]) -> tuple[int, int]:
+    """The added and deleted lines of a unified diff, without its file headers."""
+    additions = deletions = 0
+    for line in chunk:
+        if line.startswith("+") and not line.startswith("+++"):
+            additions += 1
+        elif line.startswith("-") and not line.startswith("---"):
+            deletions += 1
+    return additions, deletions
 
 
 def decode_text(data: bytes, max_text_bytes: int = 2_000_000) -> str | None:

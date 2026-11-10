@@ -178,12 +178,10 @@ def changed_line_coverage(
     uncovered: list[tuple[str, list[int]]] = []
     issues: list[Issue] = []
     for file in diff:
-        path = (file.new_path or "").replace("\\", "/").removeprefix("./")
-        if file.is_deleted or not path.endswith(".py") or is_test_path(path):
+        found = _changed_code_lines(file)
+        if found is None:
             continue
-        changed = {line.number for line in file.added if _code(line.text)}
-        if not changed:
-            continue
+        path, changed = found
         entry = _coverage_entry(path, measured)
         if entry is None:
             issues.append(
@@ -208,22 +206,42 @@ def changed_line_coverage(
     percent = executed_total / total * 100 if total else None
     if percent is not None and percent < minimum_percent:
         for path, lines in uncovered:
-            listed = ", ".join(str(number) for number in lines[:_MAX_LISTED_LINES])
-            more = ", …" if len(lines) > _MAX_LISTED_LINES else ""
-            issues.append(
-                Issue(
-                    rule_id="tests.changed-lines-uncovered",
-                    severity=severity,
-                    message=f"{len(lines)} changed line(s) of {path} are not executed by the "
-                    f"tests (lines {listed}{more}); changed-line coverage {percent:.1f}% is "
-                    f"below {minimum_percent:g}%.",
-                    path=path,
-                    line=lines[0],
-                    category=CATEGORY,
-                    recommendation="Add tests that reach the listed changed lines.",
-                )
-            )
+            issues.append(_uncovered_issue(path, lines, percent, minimum_percent, severity))
     return percent, issues
+
+
+def _changed_code_lines(file: DiffFile) -> tuple[str, set[int]] | None:
+    """The path and added code line numbers of a changed non-test ``.py`` file; ``None`` for
+    any other file or a change without code lines."""
+    path = (file.new_path or "").replace("\\", "/").removeprefix("./")
+    if file.is_deleted or not path.endswith(".py") or is_test_path(path):
+        return None
+    changed = {line.number for line in file.added if _code(line.text)}
+    if not changed:
+        return None
+    return path, changed
+
+
+def _uncovered_issue(
+    path: str,
+    lines: list[int],
+    percent: float,
+    minimum_percent: float,
+    severity: FindingSeverity,
+) -> Issue:
+    listed = ", ".join(str(number) for number in lines[:_MAX_LISTED_LINES])
+    more = ", …" if len(lines) > _MAX_LISTED_LINES else ""
+    return Issue(
+        rule_id="tests.changed-lines-uncovered",
+        severity=severity,
+        message=f"{len(lines)} changed line(s) of {path} are not executed by the "
+        f"tests (lines {listed}{more}); changed-line coverage {percent:.1f}% is "
+        f"below {minimum_percent:g}%.",
+        path=path,
+        line=lines[0],
+        category=CATEGORY,
+        recommendation="Add tests that reach the listed changed lines.",
+    )
 
 
 # ----- pytest node ids -----------------------------------------------------------------------

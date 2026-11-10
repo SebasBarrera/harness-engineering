@@ -228,6 +228,15 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
     path = file.path
     if not _is_config(path):
         return []
+    issues = _lowered_thresholds(file, path)
+    issues.extend(_strict_removed(file, path))
+    if _is_workflow(path):
+        issues.extend(_workflow_checks_removed(file, path))
+    return issues
+
+
+def _lowered_thresholds(file: DiffFile, path: str) -> list[Issue]:
+    """Removed thresholds that no added threshold of the same key replaces at least as high."""
     issues: list[Issue] = []
     added_by_key: dict[str, list[float]] = {}
     for key, number, _ in _thresholds(file.added):
@@ -252,6 +261,12 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
                 line.number,
             )
         )
+    return issues
+
+
+def _strict_removed(file: DiffFile, path: str) -> list[Issue]:
+    """Removed strict-mode settings that the added lines do not restore."""
+    issues: list[Issue] = []
     added_strict = {
         match.group(0).lower().replace(" ", "")
         for line in file.added
@@ -269,25 +284,28 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
                     line.number,
                 )
             )
-    if _is_workflow(path):
-        added_tools = {
-            _tool(match) for line in file.added for match in _CHECK_TOOL.finditer(line.text)
-        }
-        for line in file.removed:
-            if any(pattern.search(line.text) for pattern in _NOT_A_RUN):
-                continue
-            tools = {_tool(match) for match in _CHECK_TOOL.finditer(line.text)}
-            missing = sorted(tools - added_tools)
-            if missing:
-                issues.append(
-                    _issue(
-                        _THRESHOLD_CHANGED,
-                        FindingSeverity.HIGH,
-                        f"workflow no longer runs {', '.join(missing)}: {_quote(line.text)!r}",
-                        path,
-                        line.number,
-                    )
+    return issues
+
+
+def _workflow_checks_removed(file: DiffFile, path: str) -> list[Issue]:
+    """Removed workflow lines whose check tools no added line runs any more."""
+    issues: list[Issue] = []
+    added_tools = {_tool(match) for line in file.added for match in _CHECK_TOOL.finditer(line.text)}
+    for line in file.removed:
+        if any(pattern.search(line.text) for pattern in _NOT_A_RUN):
+            continue
+        tools = {_tool(match) for match in _CHECK_TOOL.finditer(line.text)}
+        missing = sorted(tools - added_tools)
+        if missing:
+            issues.append(
+                _issue(
+                    _THRESHOLD_CHANGED,
+                    FindingSeverity.HIGH,
+                    f"workflow no longer runs {', '.join(missing)}: {_quote(line.text)!r}",
+                    path,
+                    line.number,
                 )
+            )
     return issues
 
 

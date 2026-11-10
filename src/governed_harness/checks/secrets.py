@@ -315,83 +315,111 @@ def scan_secrets(diff: Sequence[DiffFile], *, task_text: str = "") -> list[Issue
         path = file.path
         in_tests = is_test_path(path)
         for diff_line in file.added:
-            text, number = diff_line.text, diff_line.number
-            for value in sorted(declared):
-                if value in text:
-                    collector.add(
-                        "secrets.declared-value",
-                        FindingSeverity.CRITICAL,
-                        f"A value the task discloses as a secret is written into the code "
-                        f"{_mask(value)}",
-                        path,
-                        number,
-                        "Never copy a secret from the task; read it from the environment.",
-                    )
-                    break
-            credential_format = _CREDENTIAL_FORMAT.search(text)
-            if credential_format:
-                collector.add(
-                    "secrets.credential-format",
-                    FindingSeverity.CRITICAL,
-                    f"A known credential format appears {_mask(credential_format.group(0))}",
-                    path,
-                    number,
-                    "Revoke the credential and remove it from the change.",
-                )
-            named = False
-            for name, prefix, value in _credential_literals(text):
-                named = True
-                _graded(
-                    collector,
-                    _CREDENTIAL_RULE,
-                    f"{name!r} is assigned",
-                    value,
-                    prefix,
-                    path,
-                    number,
-                    in_tests=in_tests,
-                )
-            for function, prefix, value in _auth_call_literals(text):
-                named = True
-                _graded(
-                    collector,
-                    _CREDENTIAL_RULE,
-                    f"{function}() receives a positional string",
-                    value,
-                    prefix,
-                    path,
-                    number,
-                    in_tests=in_tests,
-                )
-            for key, prefix, value in _environment_literals(text):
-                if _ENVIRONMENT_KEY.search(key.upper()):
-                    named = True
-                    _graded(
-                        collector,
-                        "secrets.environment-assignment",
-                        f"environment variable {key!r} is set",
-                        value,
-                        prefix,
-                        path,
-                        number,
-                        in_tests=in_tests,
-                    )
-            constant = None if named else _CONSTANT.match(text)
-            if (
-                constant
-                and _constant_name(constant.group("name"))
-                and constant.group("value").strip()
-                and not is_dummy_value(constant.group("value"))
-                and not _is_template(constant.group("value"), constant.group("prefix"))
-                and not _not_a_value(constant.group("value"))
-            ):
-                collector.add(
-                    "secrets.constant",
-                    FindingSeverity.MEDIUM if in_tests else FindingSeverity.CRITICAL,
-                    f"constant {constant.group('name')!r} holds a literal "
-                    f"{_mask(constant.group('value'))}",
-                    path,
-                    number,
-                    _TEST_RECOMMENDATION if in_tests else _MOVE_TO_SECRET_STORE,
-                )
+            _scan_line(collector, declared, diff_line.text, path, diff_line.number, in_tests)
     return list(collector.issues.values())
+
+
+def _scan_line(
+    collector: _Collector,
+    declared: set[str],
+    text: str,
+    path: str,
+    number: int,
+    in_tests: bool,
+) -> None:
+    """Record the secret issues of one added line, in the order the rules run."""
+    _declared_value(collector, declared, text, path, number)
+    credential_format = _CREDENTIAL_FORMAT.search(text)
+    if credential_format:
+        collector.add(
+            "secrets.credential-format",
+            FindingSeverity.CRITICAL,
+            f"A known credential format appears {_mask(credential_format.group(0))}",
+            path,
+            number,
+            "Revoke the credential and remove it from the change.",
+        )
+    named = _named_credentials(collector, text, path, number, in_tests)
+    constant = None if named else _CONSTANT.match(text)
+    if constant and _secret_constant(constant):
+        collector.add(
+            "secrets.constant",
+            FindingSeverity.MEDIUM if in_tests else FindingSeverity.CRITICAL,
+            f"constant {constant.group('name')!r} holds a literal {_mask(constant.group('value'))}",
+            path,
+            number,
+            _TEST_RECOMMENDATION if in_tests else _MOVE_TO_SECRET_STORE,
+        )
+
+
+def _declared_value(
+    collector: _Collector, declared: set[str], text: str, path: str, number: int
+) -> None:
+    """Record the first value the task discloses as a secret that the line contains."""
+    for value in sorted(declared):
+        if value in text:
+            collector.add(
+                "secrets.declared-value",
+                FindingSeverity.CRITICAL,
+                f"A value the task discloses as a secret is written into the code {_mask(value)}",
+                path,
+                number,
+                "Never copy a secret from the task; read it from the environment.",
+            )
+            return
+
+
+def _named_credentials(
+    collector: _Collector, text: str, path: str, number: int, in_tests: bool
+) -> bool:
+    """Grade the credentials the line assigns to a name; whether any name was found."""
+    named = False
+    for name, prefix, value in _credential_literals(text):
+        named = True
+        _graded(
+            collector,
+            _CREDENTIAL_RULE,
+            f"{name!r} is assigned",
+            value,
+            prefix,
+            path,
+            number,
+            in_tests=in_tests,
+        )
+    for function, prefix, value in _auth_call_literals(text):
+        named = True
+        _graded(
+            collector,
+            _CREDENTIAL_RULE,
+            f"{function}() receives a positional string",
+            value,
+            prefix,
+            path,
+            number,
+            in_tests=in_tests,
+        )
+    for key, prefix, value in _environment_literals(text):
+        if _ENVIRONMENT_KEY.search(key.upper()):
+            named = True
+            _graded(
+                collector,
+                "secrets.environment-assignment",
+                f"environment variable {key!r} is set",
+                value,
+                prefix,
+                path,
+                number,
+                in_tests=in_tests,
+            )
+    return named
+
+
+def _secret_constant(constant: re.Match[str]) -> bool:
+    """Whether a constant assignment holds a literal that looks like a real secret."""
+    return bool(
+        _constant_name(constant.group("name"))
+        and constant.group("value").strip()
+        and not is_dummy_value(constant.group("value"))
+        and not _is_template(constant.group("value"), constant.group("prefix"))
+        and not _not_a_value(constant.group("value"))
+    )
