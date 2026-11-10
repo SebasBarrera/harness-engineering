@@ -104,9 +104,11 @@ class ProcessObserver(Protocol):
     """Told about every process the runner starts and finishes (``governance.workspaceLease``
     records the process groups so that a recovery can terminate what a killed harness left)."""
 
-    def started(self, pid: int, argv: tuple[str, ...]) -> None: ...
+    def started(self, pid: int, argv: tuple[str, ...]) -> None:
+        """Record that process ``pid`` started with ``argv``."""
 
-    def finished(self, pid: int) -> None: ...
+    def finished(self, pid: int) -> None:
+        """Record that process ``pid`` finished."""
 
 
 class SafeProcessRunner:

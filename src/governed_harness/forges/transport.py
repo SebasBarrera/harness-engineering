@@ -40,7 +40,8 @@ CLI_EXECUTABLES: dict[str, str] = {"github": "gh", "gitlab": "glab"}
 
 
 class Transport(Protocol):
-    def request(self, method: str, path: str, body: Any = None) -> Any: ...
+    def request(self, method: str, path: str, body: Any = None) -> Any:
+        """Send a REST request to ``path`` and return the decoded response."""
 
 
 @dataclass

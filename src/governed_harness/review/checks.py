@@ -89,7 +89,8 @@ def _code_lines(item: FileChange) -> list[DiffLine]:
 
 
 class _Searcher(Protocol):
-    def search(self, text: str, /) -> object: ...
+    def search(self, text: str, /) -> object:
+        """Search ``text`` and return the match, or a falsy value when there is none."""
 
 
 def _first_match(text: str, patterns: Iterable[tuple[_Searcher, str]]) -> str | None:
