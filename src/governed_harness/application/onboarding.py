@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.validators.command import _MODULE_MISSING_EXIT_CODE, _MODULE_PROBE
 
@@ -180,7 +181,7 @@ def _run(
     argv: list[str], cwd: Path | None, timeout: float = 20.0
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 - argv lists built here (git, a validator's interpreter), no shell
-        argv,
+        [resolve_executable(argv[0]), *argv[1:]],
         cwd=cwd,
         stdin=subprocess.DEVNULL,
         capture_output=True,

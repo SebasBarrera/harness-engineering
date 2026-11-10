@@ -21,6 +21,7 @@ from governed_harness.metrics import (
     load_prices,
     render,
 )
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.storage.sqlite import SQLiteStateStore
 
 NARRATIVE_PROMPT = (
@@ -148,7 +149,7 @@ def run_narrative(
     started = datetime.now(UTC)
     try:
         result = subprocess.run(  # nosec B603 - argv from project.yaml, no shell
-            list(narrative.command),
+            [resolve_executable(narrative.command[0]), *narrative.command[1:]],
             input=payload.encode("utf-8"),
             capture_output=True,
             cwd=workspace,

@@ -10,6 +10,7 @@ from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import Actor, FilePatch
 from governed_harness.runtime import PatchApplier
+from tests.conftest import make_symlink
 
 
 def context(tmp_path: Path, *, scope: tuple[str, ...] = ("src/**",), conditions=None):
@@ -57,7 +58,7 @@ def test_symlink_write_is_denied(tmp_path: Path) -> None:
     outside.mkdir()
     root = tmp_path / "root"
     root.mkdir()
-    (root / "src").symlink_to(outside, target_is_directory=True)
+    make_symlink(root / "src", outside, target_is_directory=True)
     actor, grants, applier = context(root)
     file_patch = FilePatch(path="src/a.py", operation="create", content="x")
     with pytest.raises(CapabilityDenied):

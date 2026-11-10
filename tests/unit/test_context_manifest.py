@@ -11,6 +11,7 @@ from governed_harness.agents.context_manifest import (
 )
 from governed_harness.domain.models import AcceptanceCriterion, Requirement, Task
 from governed_harness.evidence.hashing import sha256_file
+from tests.conftest import make_symlink
 
 
 def _task(**overrides: Any) -> Task:
@@ -94,7 +95,7 @@ def test_referenced_paths_inside_workspace_only(tmp_path: Path) -> None:
 def test_referenced_paths_ignore_symlink_escape(tmp_path: Path) -> None:
     root = _workspace(tmp_path / "ws")
     outside = _write(tmp_path, "outside.py", "x = 1\n")
-    (root / "link.py").symlink_to(outside)
+    make_symlink(root / "link.py", outside)
     task = _task(intent="Look at link.py and src/fares.py.")
     assert referenced_paths(task, root) == ("src/fares.py",)
 
@@ -191,8 +192,8 @@ def test_binary_large_and_excluded_files_are_skipped(tmp_path: Path) -> None:
     _write(tmp_path, ".git/fares", "REQ-1\n")
     _write(tmp_path, "custom/fares.txt", "REQ-1\n")
     outside = _write(tmp_path.parent / f"{tmp_path.name}-outside", "fares.py", "REQ-1\n")
-    (tmp_path / "linked").symlink_to(outside.parent, target_is_directory=True)
-    (tmp_path / "linked_fares.py").symlink_to(outside)
+    make_symlink(tmp_path / "linked", outside.parent, target_is_directory=True)
+    make_symlink(tmp_path / "linked_fares.py", outside)
     manifest = build_manifest(
         tmp_path, _task(intent="Nothing referenced."), excludes={"node_modules", ".git", "custom"}
     )

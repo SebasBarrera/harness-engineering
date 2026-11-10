@@ -82,6 +82,7 @@ from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
 from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.telemetry import MetricsProjector
 
 from .agent_contract import agent_calls
@@ -198,7 +199,7 @@ def _hooks_install_check(command: tuple[str, ...], workspace: Path) -> dict[str,
     import subprocess  # nosec B404 - runs the project's declared hook installer
 
     completed = subprocess.run(  # nosec B603 - the project's own declared command
-        list(command),
+        [resolve_executable(command[0]), *command[1:]],
         cwd=workspace,
         capture_output=True,
         check=False,
