@@ -98,25 +98,34 @@ class ExcludedPathGuard:
         for directory, dirnames, filenames in os.walk(self.root, followlinks=False):
             current = Path(directory)
             inside = self._inside_guarded(current)
-            for name in list(dirnames):
-                path = current / name
-                if path.is_symlink():
-                    self._add(prints, path)
-                    dirnames.remove(name)
-                elif path.relative_to(self.root).as_posix() in PRUNED_DIRECTORIES:
-                    dirnames.remove(name)
+            self._prune(prints, current, dirnames)
             for name in filenames:
                 path = current / name
                 if inside or path.is_symlink():
                     self._add(prints, path)
         if self.include_ignored:
-            from governed_harness.runtime.snapshots import ignored_outside_excludes
-
-            for relative in ignored_outside_excludes(self.root):
-                path = self.root / relative
-                if relative not in prints and not self._inside_guarded(path.parent):
-                    self._add(prints, path)
+            self._add_ignored(prints)
         return dict(sorted(prints.items()))
+
+    def _prune(self, prints: dict[str, str], current: Path, dirnames: list[str]) -> None:
+        """Fingerprint the symbolic links among ``dirnames`` and leave them, and the pruned
+        directories, out of the walk."""
+        for name in list(dirnames):
+            path = current / name
+            if path.is_symlink():
+                self._add(prints, path)
+                dirnames.remove(name)
+            elif path.relative_to(self.root).as_posix() in PRUNED_DIRECTORIES:
+                dirnames.remove(name)
+
+    def _add_ignored(self, prints: dict[str, str]) -> None:
+        """Fingerprint the ignored files the walk of the guarded directories left out."""
+        from governed_harness.runtime.snapshots import ignored_outside_excludes
+
+        for relative in ignored_outside_excludes(self.root):
+            path = self.root / relative
+            if relative not in prints and not self._inside_guarded(path.parent):
+                self._add(prints, path)
 
     @staticmethod
     def compare(before: dict[str, str], after: dict[str, str]) -> tuple[GuardChange, ...]:
