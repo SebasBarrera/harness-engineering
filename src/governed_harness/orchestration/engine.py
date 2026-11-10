@@ -111,7 +111,7 @@ from governed_harness.intake import (
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
 from governed_harness.orchestration.corrections import EMPTY_RULE as EMPTY_CORRECTION_RULE
-from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths
+from governed_harness.orchestration.engine_types import EnginePaths as EnginePaths  # re-exported
 from governed_harness.orchestration.engine_types import EngineServices as EngineServices
 from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
 from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
