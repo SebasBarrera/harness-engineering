@@ -47,3 +47,32 @@ Cuando haya una Mac disponible:
 4. Implementar y correr en la Mac las pruebas nuevas del catálogo que dependen de `sandbox-exec`.
 
 Se sigue en el issue #113.
+
+## Bloque rides (`evaluation/launchers/block-rides.sh`)
+
+El escenario de transporte y domicilios (`evaluation/rides/`, 95 requisitos en `SPEC.md`): las diez
+celdas válidas de `run_rides.py` (`direct` × `one_line`, `paragraph`, `requirements`, `super`;
+`stepwise` × `super`; `harness` × `one_line`, `paragraph`, `requirements`, `super`; `clarify` ×
+`paragraph`) × `EVAL_MODELS` × `EVAL_REPS`, una corrida a la vez. Con los valores por defecto
+(3 modelos, 3 repeticiones) son 30 corridas por modelo y 90 en total.
+
+```bash
+EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... evaluation/launchers/block-rides.sh
+EVAL_RIDES_CELLS="direct:requirements harness:requirements" ...   # solo esas celdas
+EVAL_RIDES_PLAN=1 ...                                              # lista las corridas, no corre nada
+```
+
+- Reanudable: una corrida ya registrada en `results-2.0.0/rides/rides.jsonl` se salta; una corrida
+  interrumpida se retoma al volver a lanzar el bloque (`run_rides.py` reutiliza su directorio). El
+  código de salida 75 (límite de uso) espera `EVAL_LIMIT_WAIT` segundos y repite, como `pilot.sh`.
+- Las corridas no ven la suite oculta (`copy_code` la quita): al final `rides/rescore.py` puntúa los
+  espacios de trabajo guardados y escribe `rides.scored.jsonl` y `summary-rescore.txt`.
+- `run_rides.py` no tiene corrida en seco: con `EVAL_DRY=1` el bloque se niega a correr.
+- **Tiempo y costo: son límites, no mediciones.** Cada llamada al agente tiene un tope de 4 h
+  (`AGENT_TIMEOUT`) y de USD 200 (`AGENT_BUDGET`); cada llamada del product owner simulado de
+  `clarify`, 30 min y USD 20 (`product_owner.py`). Una corrida `direct` hace una llamada (≤ 4 h,
+  ≤ USD 200); `stepwise` hace 16 (≤ 64 h, ≤ USD 3 200); en `harness` cada tarea gobernada admite
+  hasta 2 correcciones (`MAX_CORRECTIONS`), y `super` son 16 tareas, una por paso; `harness` ×
+  `one_line` se rechaza al crear la tarea, sin llamar al modelo. El número de llamadas por tarea
+  gobernada no está medido. Los tiempos y costos reales se sabrán con el piloto; las esperas por el
+  límite de uso no cuentan en estos topes.
