@@ -547,6 +547,80 @@ class RunEngine:
         execution = self.get_execution(execution_id)
         if execution.current_phase is not PhaseId.DECISION:
             raise PolicyViolationError("human decisions are accepted only in DECISION")
+        execution, gate = self._decision_gate(
+            execution_id, execution, decision, change_set_digest, rationale
+        )
+        if acknowledged_risks or change_requests or self.results.active:
+            # Risk factors to acknowledge and structured change requests (#52).
+            self.results.check_decision(
+                execution, decision, change_set_digest, acknowledged_risks, change_requests
+            )
+        if checked_items or self.ladder.active:
+            # The manual checklist (review.manualChecklist, #55).
+            self.ladder.check_decision(execution, decision, checked_items)
+        record, actor = self._decision_record(
+            execution,
+            gate,
+            execution_id=execution_id,
+            decision=decision,
+            change_set_digest=change_set_digest,
+            actor_id=actor_id,
+            rationale=rationale,
+            actor_display_name=actor_display_name,
+            identity_source=identity_source,
+            expires_at=expires_at,
+            acknowledged_risks=acknowledged_risks,
+            change_requests=change_requests,
+            checked_items=checked_items,
+        )
+        self.s.state.put(
+            "decision",
+            record.decision_id,
+            record,
+            execution_id=execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append(
+            execution_id,
+            "human.decision.recorded",
+            record.model_dump(mode="json"),
+            actor=actor,
+        )
+        if self.ladder.active and decision in {
+            DecisionKind.APPROVE,
+            DecisionKind.APPROVE_EXCEPTION,
+        }:
+            self.ladder.after_decision(execution, record)
+        updated = execution.model_copy(
+            update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
+        )
+        updated = self._decided_execution(
+            execution,
+            updated,
+            record,
+            gate,
+            actor,
+            execution_id,
+            decision,
+            change_set_digest,
+            change_requests,
+        )
+        self._save_execution(updated)
+        if decision is DecisionKind.REJECT and self.results.active:
+            self.results.stop_line.stop(updated, "rejected")
+        self.anchor_chain(execution_id)
+        return record
+
+    def _decision_gate(
+        self,
+        execution_id: str,
+        execution: Execution,
+        decision: DecisionKind,
+        change_set_digest: str,
+        rationale: str,
+    ) -> tuple[Execution, GateEvaluation]:
+        """The run and its gate evaluation for a decision bound to ``change_set_digest``;
+        refuses a stale digest, a missing or different gate and an invalid approval."""
         # #95: comparing must not move the run's digest; a refused decision would otherwise
         # hide the change from verification.reverifyOnChange on the next run continue.
         current_change_set = self._refresh_changeset(execution, record_on_run=False)
@@ -570,14 +644,26 @@ class RunEngine:
             )
         if decision is DecisionKind.APPROVE_EXCEPTION and not rationale.strip():
             raise PolicyViolationError("exception approval requires a rationale")
-        if acknowledged_risks or change_requests or self.results.active:
-            # Risk factors to acknowledge and structured change requests (#52).
-            self.results.check_decision(
-                execution, decision, change_set_digest, acknowledged_risks, change_requests
-            )
-        if checked_items or self.ladder.active:
-            # The manual checklist (review.manualChecklist, #55).
-            self.ladder.check_decision(execution, decision, checked_items)
+        return execution, gate
+
+    def _decision_record(
+        self,
+        execution: Execution,
+        gate: GateEvaluation,
+        *,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        actor_id: str,
+        rationale: str,
+        actor_display_name: str | None,
+        identity_source: IdentitySource | None,
+        expires_at: datetime | None,
+        acknowledged_risks: tuple[str, ...],
+        change_requests: tuple[ChangeRequestItem, ...],
+        checked_items: tuple[str, ...],
+    ) -> tuple[HumanDecision, Actor]:
+        """The human decision to record, bound to the run's digests, and its actor."""
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
@@ -607,96 +693,109 @@ class RunEngine:
             change_requests=change_requests,
             checked_items=tuple(dict.fromkeys(checked_items)),
         )
-        self.s.state.put(
-            "decision",
-            record.decision_id,
-            record,
-            execution_id=execution_id,
-            project_id=execution.project_id,
-        )
-        self.s.events.append(
-            execution_id,
-            "human.decision.recorded",
-            record.model_dump(mode="json"),
-            actor=actor,
-        )
-        if self.ladder.active and decision in {
-            DecisionKind.APPROVE,
-            DecisionKind.APPROVE_EXCEPTION,
-        }:
-            self.ladder.after_decision(execution, record)
-        updated = execution.model_copy(
-            update={"human_decision_id": record.decision_id, "updated_at": utc_now()}
-        )
+        return record, actor
+
+    def _decided_execution(
+        self,
+        execution: Execution,
+        updated: Execution,
+        record: HumanDecision,
+        gate: GateEvaluation,
+        actor: Actor,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        change_requests: tuple[ChangeRequestItem, ...],
+    ) -> Execution:
+        """The run after the decision: back to a correction, rejected, or pending delivery."""
         if decision is DecisionKind.REQUEST_CHANGES:
-            if change_requests:
-                self.results.open_change_requests(execution, record)
-            transition = self.state_machine.authorize_correction(PhaseId.DECISION)
-            updated = updated.model_copy(
-                update={
-                    "status": ResultStatus.PENDING,
-                    "current_phase": transition.target,
-                    "gate_evaluation_id": None,
-                    "human_decision_id": None,
-                    "updated_at": utc_now(),
-                }
-            )
-            self.s.events.append(
+            return self._request_changes(
+                execution,
+                updated,
+                record,
+                gate,
+                actor,
                 execution_id,
-                "correction.authorized",
-                {
-                    "decisionId": record.decision_id,
-                    "invalidatedPhases": [phase.value for phase in transition.invalidated],
-                    "approvedChangeSetDigest": change_set_digest,
-                },
-                actor=actor,
+                decision,
+                change_set_digest,
+                change_requests,
             )
-            if self._feedback_applies(execution_id):
-                validations, findings = self._gate_inputs(gate)
-                self._record_feedback(
-                    updated,
-                    PhaseId.DECISION,
-                    trigger="CHANGES_REQUESTED",
-                    change_set_digest=change_set_digest,
-                    gate=FeedbackGate(
-                        gate_id="delivery_candidate",
-                        gate_evaluation_id=gate.gate_evaluation_id,
-                        status=gate.status,
-                        reason_codes=gate.reason_codes,
-                    ),
-                    validations=validations,
-                    findings=findings,
-                    decision=FeedbackDecision(
-                        decision=decision,
-                        rationale=head(
-                            record.rationale
-                            + "".join(
-                                f"\n{item.item_id} (blocking, verified by {item.condition}): "
-                                f"{item.description}"
-                                for item in change_requests
-                            ),
-                            FEEDBACK_RATIONALE_CHARS,
-                        ),
-                        actor_id=actor.actor_id,
-                    ),
-                )
-        elif decision is DecisionKind.REJECT:
-            updated = updated.model_copy(
+        if decision is DecisionKind.REJECT:
+            return updated.model_copy(
                 update={
                     "status": ResultStatus.FAILED,
                     "terminal_reason": REJECTED_REASON,
                     "updated_at": utc_now(),
                 }
             )
-        else:
-            updated = updated.model_copy(
-                update={"status": ResultStatus.PENDING, "updated_at": utc_now()}
+        return updated.model_copy(update={"status": ResultStatus.PENDING, "updated_at": utc_now()})
+
+    def _request_changes(
+        self,
+        execution: Execution,
+        updated: Execution,
+        record: HumanDecision,
+        gate: GateEvaluation,
+        actor: Actor,
+        execution_id: str,
+        decision: DecisionKind,
+        change_set_digest: str,
+        change_requests: tuple[ChangeRequestItem, ...],
+    ) -> Execution:
+        """A REQUEST_CHANGES decision: the change requests open, the correction is authorized
+        and, when it applies, the person's feedback is recorded for the next attempt."""
+        if change_requests:
+            self.results.open_change_requests(execution, record)
+        transition = self.state_machine.authorize_correction(PhaseId.DECISION)
+        updated = updated.model_copy(
+            update={
+                "status": ResultStatus.PENDING,
+                "current_phase": transition.target,
+                "gate_evaluation_id": None,
+                "human_decision_id": None,
+                "updated_at": utc_now(),
+            }
+        )
+        self.s.events.append(
+            execution_id,
+            "correction.authorized",
+            {
+                "decisionId": record.decision_id,
+                "invalidatedPhases": [phase.value for phase in transition.invalidated],
+                "approvedChangeSetDigest": change_set_digest,
+            },
+            actor=actor,
+        )
+        if self._feedback_applies(execution_id):
+            validations, findings = self._gate_inputs(gate)
+            self._record_feedback(
+                updated,
+                PhaseId.DECISION,
+                trigger="CHANGES_REQUESTED",
+                change_set_digest=change_set_digest,
+                gate=FeedbackGate(
+                    gate_id="delivery_candidate",
+                    gate_evaluation_id=gate.gate_evaluation_id,
+                    status=gate.status,
+                    reason_codes=gate.reason_codes,
+                ),
+                validations=validations,
+                findings=findings,
+                decision=FeedbackDecision(
+                    decision=decision,
+                    rationale=head(
+                        record.rationale
+                        + "".join(
+                            f"\n{item.item_id} (blocking, verified by {item.condition}): "
+                            f"{item.description}"
+                            for item in change_requests
+                        ),
+                        FEEDBACK_RATIONALE_CHARS,
+                    ),
+                    actor_id=actor.actor_id,
+                ),
             )
-        self._save_execution(updated)
-        if decision is DecisionKind.REJECT and self.results.active:
-            self.results.stop_line.stop(updated, "rejected")
-        self.anchor_chain(execution_id)
-        return record
+        return updated
 
     def clarify(
         self, *, task_id: str, clarification: ClarificationInput, actor: Actor
