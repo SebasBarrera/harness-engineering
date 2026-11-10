@@ -48,7 +48,7 @@ PROMPT_INSTRUCTIONS = (
     "report. The harness records it as your report; it does not replace verification."
 )
 
-_FENCED_JSON = re.compile(r"```(?:json)?\s*\n(?P<body>\{.*?\})\s*\n```", re.DOTALL)
+_FENCED_JSON = re.compile(r"```(?:json)?\s*\n(?P<body>\{(?:(?!\}\s*\n```).)*\})\s*\n```", re.DOTALL)
 
 
 @dataclass(frozen=True)
