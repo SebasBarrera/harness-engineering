@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 import xml.etree.ElementTree as ElementTree  # nosec B405 - DTDs and entities are refused below
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -44,12 +45,20 @@ class ParsedIssue:
     tool: str = ""
 
 
+_DRIVE_URI_PATH = re.compile(r"/[A-Za-z]:[/\\]")
+"""What ``file:///C:/x`` leaves after its scheme: a Windows drive path behind a slash."""
+
+
 def _relative(path: str | None, workspace: Path) -> str | None:
     if not path:
         return None
     path = path.removeprefix("file://")
+    if sys.platform == "win32" and _DRIVE_URI_PATH.match(path):
+        path = path[1:]
     candidate = Path(path)
-    if candidate.is_absolute():
+    # A rooted path such as "/ws/x.py" is absolute on POSIX; on Windows it lacks a drive, so
+    # ``is_absolute`` is false, yet it names a place on the current drive, not one in the workspace.
+    if candidate.is_absolute() or candidate.root:
         try:
             return candidate.resolve().relative_to(workspace.resolve()).as_posix()
         except (ValueError, OSError):

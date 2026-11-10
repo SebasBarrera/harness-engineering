@@ -4,7 +4,10 @@ mypy and pytest 9 on a two-file fixture; the JSON and XML samples follow each to
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
+
+import pytest
 
 from governed_harness.validators.parsers import parse_output, report_files
 
@@ -137,6 +140,30 @@ def test_sarif(tmp_path: Path) -> None:
         13,
         "bandit",
     )
+
+
+def _sarif_at(uri: str) -> str:
+    location = {"physicalLocation": {"artifactLocation": {"uri": uri}}}
+    result = {"ruleId": "R1", "message": {"text": "m"}, "locations": [location]}
+    return json.dumps({"version": "2.1.0", "runs": [{"tool": {"driver": {}}, "results": [result]}]})
+
+
+def test_sarif_rooted_uri_is_made_relative_to_the_workspace() -> None:
+    # "/ws" has no drive on Windows, so is_absolute() is false there; it is still rooted.
+    [issue] = parse_output(_sarif_at("file:///ws/src/app/db.py"), "", Path("/ws"))
+    assert issue.path == "src/app/db.py"
+
+
+def test_sarif_rooted_uri_outside_the_workspace_is_kept() -> None:
+    [issue] = parse_output(_sarif_at("file:///elsewhere/db.py"), "", Path("/ws"))
+    assert issue.path == "/elsewhere/db.py"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="a drive letter in a file URI is Windows-only")
+def test_sarif_windows_drive_uri_is_made_relative_to_the_workspace(tmp_path: Path) -> None:
+    uri = "file:///" + (tmp_path / "src" / "run.py").as_posix()
+    [issue] = parse_output(_sarif_at(uri), "", tmp_path)
+    assert issue.path == "src/run.py"
 
 
 def test_junit_xml_from_a_report_file(tmp_path: Path) -> None:
