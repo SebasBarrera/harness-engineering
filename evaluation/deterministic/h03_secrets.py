@@ -67,7 +67,7 @@ PEM = (
     + "PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Qu\n-----END RSA "
     + "PRIVATE KEY-----\n"
 )
-JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhbGVydHMifQ.c2lnbmF0dXJlLXZhbHVlLTIwMjY"
+JWT = "ey" + "JhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhbGVydHMifQ.c2lnbmF0dXJlLXZhbHVlLTIwMjY"
 
 BASE_SOURCE = '''\
 """Alerts client: builds the request for the internal alerts service (SPEC.md)."""
