@@ -18,6 +18,7 @@ from governed_harness.cli.main import app
 from governed_harness.domain.enums import DecisionKind
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.metrics import Filters, render
+from governed_harness.metrics.summary import period_status
 
 GOOD = (
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
@@ -235,3 +236,91 @@ def test_metrics_tab_of_the_dashboard(python_workspace: Path, tmp_path: Path) ->
     headers = {"Authorization": f"Bearer {token}"}
     assert secured.get("/api/metrics", headers=headers).json()["totals"]["runs"] == 1
     assert secured.get("/api/metrics/report", headers=headers).status_code == 200
+
+
+def page_of_a_closed_run(workspace: Path, tmp_path: Path) -> tuple[dict[str, Any], str]:
+    closed_run(workspace, tmp_path)
+    report, _settings = HarnessApplication().metrics(workspace, filters=Filters())
+    return report, render(report, "html")
+
+
+def test_html_has_the_overview_sections_and_working_anchors(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    _report, page = page_of_a_closed_run(python_workspace, tmp_path)
+    ids = set(re.findall(r'\sid="([^"]+)"', page))
+    targets = re.findall(r'href="#([^"]+)"', page)
+    assert targets
+    assert set(targets) <= ids
+    for section in (
+        "s-overview",
+        "s-summary",
+        "s-cost",
+        "s-time",
+        "s-friction",
+        "s-quality",
+        "s-delivery",
+        "s-trends",
+        "s-notes",
+    ):
+        assert section in ids
+    assert "<nav " in page
+    assert "not a quality certification" in page
+    assert "Origin of each number" in page
+
+
+def test_period_status_of_a_clean_run_is_clear(python_workspace: Path, tmp_path: Path) -> None:
+    report, page = page_of_a_closed_run(python_workspace, tmp_path)
+    assert report["summary"]["status"] == "CLEAR"
+    assert all(item["met"] for item in report["summary"]["conditions"])
+    assert "status-ok" in page
+    assert report["totals"]["costPerFeatureUsd"] == 0
+    assert report["quality"]["openBlockingFindings"] == 0
+    severities = set(report["quality"]["findingsBySeverity"])
+    assert severities == {"INFO", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
+
+
+def test_period_status_rule_is_deterministic() -> None:
+    clean = {
+        "blockedRuns": 0,
+        "rejectedRuns": 0,
+        "openBlockingFindings": 0,
+        "openFailedGates": 0,
+        "waitingDecision": 2,
+    }
+    assert period_status(clean, 0)["status"] == "NO_DATA"
+    assert period_status(clean, 3)["status"] == "CLEAR"
+    for key in ("blockedRuns", "rejectedRuns", "openBlockingFindings", "openFailedGates"):
+        verdict = period_status({**clean, key: 1}, 3)
+        assert verdict["status"] == "ATTENTION"
+        assert [item["id"] for item in verdict["conditions"] if not item["met"]] == [key]
+    assert period_status(clean, 3) == period_status(dict(clean), 3)
+
+
+def test_attention_status_is_rendered_with_text_and_no_script(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    report, _page = page_of_a_closed_run(python_workspace, tmp_path)
+    report["summary"] = period_status(
+        {
+            "blockedRuns": 1,
+            "rejectedRuns": 0,
+            "openBlockingFindings": 2,
+            "openFailedGates": 0,
+            "waitingDecision": 0,
+        },
+        1,
+    )
+    report["quality"]["blockedRunsDetail"] = [
+        {"runId": "run_x", "taskId": "t", "phase": "VERIFICATION", "reason": "a <b> reason"}
+    ]
+    page = render(report, "html")
+    assert "Needs attention" in page
+    assert "status-attn" in page
+    assert "not met" in page
+    assert "a &lt;b&gt; reason" in page
+    assert "<script" not in page
+    assert not re.search(r"""(src|href)\s*=\s*["']?https?:""", page)
+    markdown = render(report, "md")
+    assert "## Status of the period" in markdown
+    assert "ATTENTION" in markdown

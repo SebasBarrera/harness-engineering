@@ -14,10 +14,10 @@ _SECTION_END = "</section>"
 _CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --panel: #ffffff; --ink: #0b0b0b;
   --ink-2: #52514e; --grid: #d9d8d3; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
-  --over: #b42318; }
+  --over: #b42318; --ok: #1a7f4b; }
 @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --surface: #1a1a19;
   --panel: #232322; --ink: #ffffff; --ink-2: #c3c2b7; --grid: #3d3c39; --s1: #3987e5;
-  --s2: #d95926; --s3: #199e70; --over: #ff8a80; } }
+  --s2: #d95926; --s3: #199e70; --over: #ff8a80; --ok: #4cc38a; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--surface); color: var(--ink);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -43,6 +43,17 @@ svg .value { fill: var(--ink); }
   vertical-align: -1px; }
 details { margin-top: 8px; } summary { cursor: pointer; color: var(--ink-2); }
 a { color: var(--s1); }
+.status { font-size: 22px; margin: 4px 0; padding: 6px 12px; border-radius: 8px; display: inline-block;
+  border: 2px solid var(--grid); }
+.status-ok { border-color: var(--ok); color: var(--ok); }
+.status-attn { border-color: var(--over); color: var(--over); }
+nav ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 0; margin: 12px 0 0; }
+nav a { text-decoration: none; border-bottom: 1px solid var(--grid); }
+.dimension { margin-top: 12px; } .dim-title { font-size: 15px; margin: 8px 0; }
+.dim-title a { color: var(--ink); text-decoration: none; }
+.card .hint { color: var(--ink-2); font-size: 12px; }
+.sub { margin-top: 16px; } h3 { font-size: 16px; margin: 12px 0 6px; }
+@media (max-width: 600px) { header, main { padding: 12px; } .card .value { font-size: 20px; } }
 @media (forced-colors: active) { .swatch { forced-color-adjust: none; border: 1px solid CanvasText; } }
 """
 
@@ -179,180 +190,280 @@ def _link(text: str, url: str | None) -> str:
     return f'<a href="{_e(url)}" rel="noopener noreferrer">{_e(text)}</a>'
 
 
-def render_html(report: dict[str, Any]) -> str:
-    totals = report["totals"]
-    tokens = report["tokens"]
-    cards = [
-        ("Runs", totals["runs"]),
-        ("Tasks", totals["tasks"]),
-        ("Agent calls", totals["agentCalls"]),
-        ("Tokens (input + output)", totals["tokens"]["total"]),
-        ("Reported cost (USD)", totals["cost"]["reportedUsd"]),
-        ("Estimated cost (USD, estimated)", totals["cost"]["estimatedUsd"]),
-        ("Human interactions", totals["humanInteractions"]),
-        ("Human wait (minutes)", round(totals["humanWaitMs"] / 60000, 2)),
-        ("Lines added", totals["linesAdded"]),
-        ("Features delivered", totals["featuresDelivered"]),
+def _sub(section_id: str, title: str, body: str) -> str:
+    """A subsection of a group: a heading with an anchor and its content."""
+    return f'<div class="sub"><h3 id="{section_id}">{_e(title)}</h3>{body}</div>'
+
+
+def _group(section_id: str, title: str, intro: str, body: list[str]) -> str:
+    return (
+        f'<section aria-labelledby="{section_id}"><h2 id="{section_id}">{_e(title)}</h2>'
+        f'<p class="muted">{_e(intro)}</p>' + "".join(body) + _SECTION_END
+    )
+
+
+def _card(label: str, value: Any, hint: str = "") -> str:
+    small = f'<div class="hint">{_e(hint)}</div>' if hint else ""
+    return (
+        f'<div class="card"><div class="value">{_num(value)}</div>'
+        f'<div class="label">{_e(label)}</div>{small}</div>'
+    )
+
+
+_STATUS_TEXT = {
+    "CLEAR": ("Clear", "ok", "✔"),
+    "ATTENTION": ("Needs attention", "attn", "▲"),
+    "NO_DATA": ("No data", "none", "–"),
+}
+
+
+def _overview(report: dict[str, Any]) -> str:
+    """Status of the period (derived from the report's own numbers) and its conditions."""
+    summary = report["summary"]
+    label, kind, mark = _STATUS_TEXT[summary["status"]]
+    rows = [
+        [
+            _e(item["label"]),
+            item["count"],
+            "met" if item["met"] else '<span class="over">not met</span>',
+        ]
+        for item in summary["conditions"]
     ]
-    sections: list[str] = []
-    token_series = [("input", "--s1"), ("output", "--s2")]
-    for chart_id, title, key in (
-        ("model", "Tokens by model", "byModel"),
-        ("agent", "Tokens by agent", "byAgent"),
-        ("phase", "Tokens by phase", "byPhase"),
-        ("task", "Tokens by task", "byTask"),
-    ):
-        rows = tokens[key]
-        chart = _bars(
-            f"chart-{chart_id}",
-            title,
-            f"Input and output tokens of the agent calls, by {chart_id}; the table below has "
-            "the same numbers with cache tokens and costs.",
-            [(row["key"], [row["input"], row["output"]]) for row in rows],
-            token_series,
-            "tokens",
-        )
-        table = _table(
-            title,
+    waiting = summary["waitingDecision"]
+    return (
+        '<section aria-labelledby="s-overview"><h2 id="s-overview">Status of the period</h2>'
+        f'<p class="status status-{kind}"><span aria-hidden="true">{mark}</span> '
+        f"<strong>{_e(label)}</strong></p>"
+        f'<p class="muted">{_e(summary["rule"])} {waiting} run(s) waiting for a person are '
+        "not counted as a problem.</p>"
+        + _table("Conditions of the status", ["Condition", "Count", "Result"], rows, {1})
+        + _SECTION_END
+    )
+
+
+def _dimension_cards(report: dict[str, Any]) -> str:
+    """Summary cards per dimension, like the measures of a project overview."""
+    totals, quality = report["totals"], report["quality"]
+    time, friction = report["time"], report["friction"]
+    over = sum(1 for row in friction["perTask"] if row["overTarget"])
+    rate = quality["approvedFirstTimeRate"]
+    groups = [
+        (
+            "Cost and tokens",
+            "#s-cost",
             [
-                chart_id.capitalize(),
-                "Calls",
-                "Input",
-                "Output",
-                "Cache",
-                "Reported USD",
-                "Estimated USD",
-                "Unpriced calls",
+                _card("Agent calls", totals["agentCalls"]),
+                _card("Tokens (input + output)", totals["tokens"]["total"]),
+                _card("Reported cost (USD)", totals["cost"]["reportedUsd"]),
+                _card("Estimated cost (USD, estimated)", totals["cost"]["estimatedUsd"]),
+                _card("Cost per delivered feature (USD)", totals["costPerFeatureUsd"]),
             ],
+        ),
+        (
+            "Time",
+            "#s-time",
             [
-                [
-                    _e(row["key"]),
-                    row["calls"],
-                    row["input"],
-                    row["output"],
-                    row["cache"],
-                    row["reportedCostUsd"],
-                    row["estimatedCostUsd"],
-                    row["unpricedCalls"],
-                ]
-                for row in rows
+                _card("Human wait (minutes)", round(totals["humanWaitMs"] / 60000, 2)),
+                _card("Agent call, median (ms)", time["agentCalls"]["p50Ms"]),
+                _card("Agent call, 90th percentile (ms)", time["agentCalls"]["p90Ms"]),
             ],
-            {1, 2, 3, 4, 5, 6, 7},
+        ),
+        (
+            "Friction",
+            "#s-friction",
+            [
+                _card("Runs", totals["runs"]),
+                _card("Tasks", totals["tasks"]),
+                _card("Human interactions", totals["humanInteractions"]),
+                _card("Tasks over their target", over),
+                _card("Corrections", quality["corrections"]),
+            ],
+        ),
+        (
+            "Quality",
+            "#s-quality",
+            [
+                _card("Approved the first time (rate)", rate),
+                _card("Blocked runs", quality["blockedRuns"]),
+                _card("Rejected runs", quality["rejectedRuns"]),
+                _card("Open HIGH or CRITICAL findings", quality["openBlockingFindings"]),
+                _card("Limits reached", sum(quality["limitsReached"].values())),
+            ],
+        ),
+        (
+            "Delivery",
+            "#s-delivery",
+            [
+                _card("Features delivered", totals["featuresDelivered"]),
+                _card("Issues resolved", totals["issuesResolved"]),
+                _card("Lines added", totals["linesAdded"]),
+                _card("Lines removed", totals["linesRemoved"]),
+            ],
+        ),
+    ]
+    body = "".join(
+        f'<div class="dimension"><h3 class="dim-title"><a href="{target}">{_e(title)}</a></h3>'
+        f'<div class="cards">{"".join(cards)}</div></div>'
+        for title, target, cards in groups
+    )
+    return (
+        '<section aria-labelledby="s-summary"><h2 id="s-summary">Summary by dimension</h2>'
+        + body
+        + _SECTION_END
+    )
+
+
+_NAV = (
+    ("#s-overview", "Status"),
+    ("#s-summary", "Summary"),
+    ("#s-cost", "Cost and tokens"),
+    ("#s-time", "Time"),
+    ("#s-friction", "Friction"),
+    ("#s-quality", "Quality"),
+    ("#s-delivery", "Delivery"),
+    ("#s-trends", "Trends"),
+    ("#s-notes", "Data quality"),
+)
+
+
+def _nav(narrative: bool) -> str:
+    items = list(_NAV)
+    if narrative:
+        items.insert(-1, ("#s-narrative", "Narrative"))
+    links = "".join(f'<li><a href="{target}">{_e(text)}</a></li>' for target, text in items)
+    return f'<nav aria-label="Sections of the report"><ul>{links}</ul></nav>'
+
+
+def _token_block(report: dict[str, Any], chart_id: str, title: str, key: str) -> str:
+    rows = report["tokens"][key]
+    chart = _bars(
+        f"chart-{chart_id}",
+        title,
+        f"Input and output tokens of the agent calls, by {chart_id}; the table below has "
+        "the same numbers with cache tokens and costs.",
+        [(row["key"], [row["input"], row["output"]]) for row in rows],
+        [("input", "--s1"), ("output", "--s2")],
+        "tokens",
+    )
+    table = _table(
+        title,
+        [
+            chart_id.capitalize(),
+            "Calls",
+            "Input",
+            "Output",
+            "Cache",
+            "Reported USD",
+            "Estimated USD",
+            "Unpriced calls",
+        ],
+        [
+            [
+                _e(row["key"]),
+                row["calls"],
+                row["input"],
+                row["output"],
+                row["cache"],
+                row["reportedCostUsd"],
+                row["estimatedCostUsd"],
+                row["unpricedCalls"],
+            ]
+            for row in rows
+        ],
+        {1, 2, 3, 4, 5, 6, 7},
+    )
+    return _sub(
+        f"h-{chart_id}", title, f"{chart}<details><summary>Table</summary>{table}</details>"
+    )
+
+
+def _cost_group(report: dict[str, Any]) -> str:
+    tokens = report["tokens"]
+    blocks = [
+        _token_block(report, chart_id, title, key)
+        for chart_id, title, key in (
+            ("model", "Tokens by model", "byModel"),
+            ("agent", "Tokens by agent", "byAgent"),
+            ("task", "Tokens by task", "byTask"),
+            ("phase", "Tokens by phase", "byPhase"),
         )
-        sections.append(
-            f'<section aria-labelledby="h-{chart_id}"><h2 id="h-{chart_id}">{_e(title)}</h2>'
-            f"{chart}<details><summary>Table</summary>{table}</details></section>"
-        )
+    ]
     cost_rows = [
         (row["key"], [row["reportedCostUsd"], row["estimatedCostUsd"]])
         for row in tokens["byAgent"]
         if row["reportedCostUsd"] or row["estimatedCostUsd"]
     ]
-    sections.append(
-        '<section aria-labelledby="h-cost"><h2 id="h-cost">Cost by agent</h2>'
-        '<p class="muted">Estimated costs come from the price table for calls that reported '
-        "tokens without a cost; they are estimates, not charges.</p>"
-        + _bars(
-            "chart-cost",
-            "Cost by agent in US dollars",
-            "Reported and estimated cost per agent provider.",
-            cost_rows,
-            [("reported", "--s1"), ("estimated", "--s2")],
-            "USD",
+    blocks.append(
+        _sub(
+            "h-cost",
+            "Cost by agent",
+            '<p class="muted">Estimated costs come from the price table for calls that '
+            "reported tokens without a cost; they are estimates, not charges.</p>"
+            + _bars(
+                "chart-cost",
+                "Cost by agent in US dollars",
+                "Reported and estimated cost per agent provider.",
+                cost_rows,
+                [("reported", "--s1"), ("estimated", "--s2")],
+                "USD",
+            ),
         )
-        + _SECTION_END
     )
-    models = report["models"]
-    sections.append(
-        '<section aria-labelledby="h-models"><h2 id="h-models">Models used</h2>'
-        + _table(
+    blocks.append(
+        _sub(
+            "h-models",
             "Models used",
-            ["Provider", "Model", "Calls", "Cost source"],
-            [[_e(m["provider"]), _e(m["model"]), m["calls"], _e(m["cost"])] for m in models],
-            {2},
+            _table(
+                "Models used",
+                ["Provider", "Model", "Calls", "Cost source"],
+                [
+                    [_e(m["provider"]), _e(m["model"]), m["calls"], _e(m["cost"])]
+                    for m in report["models"]
+                ],
+                {2},
+            ),
         )
-        + _SECTION_END
     )
-    lines = report["lines"]
-    sections.append(
-        '<section aria-labelledby="h-lines"><h2 id="h-lines">Lines changed</h2>'
-        + _bars(
-            "chart-lines",
-            "Lines added and removed by author kind",
-            "Lines of the latest ChangeSet of each run, attributed by provenance to an agent "
-            "invocation or to a person (out of band).",
-            [
-                ("Agent invocation", [lines["agent"]["added"], lines["agent"]["removed"]]),
-                ("Person (out of band)", [lines["person"]["added"], lines["person"]["removed"]]),
-                (
-                    "Not attributed",
-                    [lines["unattributed"]["added"], lines["unattributed"]["removed"]],
-                ),
-            ],
-            [("added", "--s3"), ("removed", "--s2")],
-            "lines",
-        )
-        + _SECTION_END
+    return _group(
+        "s-cost",
+        "Cost and tokens",
+        "What the agent calls consumed, by model, agent, task and phase.",
+        blocks,
     )
-    daily = report["trends"]["daily"]
-    weekly = report["trends"]["weekly"]
-    trend_table = _table(
-        "Daily trend",
-        ["Day", "Runs", "Tokens", "Cost USD", "Interactions", "Approved", "Closed"],
+
+
+def _time_group(report: dict[str, Any]) -> str:
+    time = report["time"]
+    calls = time["agentCalls"]
+    body = _table(
+        "Time per phase",
+        ["Phase", "Attempts", "Total ms", "Mean ms"],
         [
-            [
-                _e(row["period"]),
-                row["runs"],
-                row["tokens"],
-                row["costUsd"],
-                row["interactions"],
-                row["approved"],
-                row["closed"],
-            ]
-            for row in daily
+            [_e(row["phase"]), row["attempts"], row["totalMs"], row["meanMs"]]
+            for row in time["perPhase"]
         ],
-        {1, 2, 3, 4, 5, 6},
+        {1, 2, 3},
+    ) + _table(
+        "Agent calls",
+        ["Calls", "Total ms", "Mean ms", "Median ms", "90th percentile ms"],
+        [[calls["count"], calls["totalMs"], calls["meanMs"], calls["p50Ms"], calls["p90Ms"]]],
+        {0, 1, 2, 3, 4},
     )
-    weekly_table = _table(
-        "Weekly trend",
-        ["Week", "Runs", "Tokens", "Cost USD", "Interactions", "Approved", "Closed"],
-        [
-            [
-                _e(row["period"]),
-                row["runs"],
-                row["tokens"],
-                row["costUsd"],
-                row["interactions"],
-                row["approved"],
-                row["closed"],
-            ]
-            for row in weekly
-        ],
-        {1, 2, 3, 4, 5, 6},
+    return _group(
+        "s-time",
+        "Time",
+        "Where the elapsed time went: phases and agent calls.",
+        [_sub("h-time", "Time", body)],
     )
-    sections.append(
-        '<section aria-labelledby="h-trend"><h2 id="h-trend">Trends</h2>'
-        + _columns(
-            "chart-runs",
-            "Runs per day",
-            "Number of runs created each day.",
-            [(row["period"], float(row["runs"])) for row in daily],
-        )
-        + _columns(
-            "chart-tokens",
-            "Tokens per day",
-            "Input and output tokens of the agent calls of the runs created each day.",
-            [(row["period"], float(row["tokens"])) for row in daily],
-        )
-        + f"<details><summary>Daily table</summary>{trend_table}</details>"
-        + f"<details><summary>Weekly table</summary>{weekly_table}</details></section>"
-    )
+
+
+def _friction_group(report: dict[str, Any]) -> str:
     friction = report["friction"]
-    friction_rows = []
+    rows = []
     for row in friction["perTask"]:
         over = set(row["overTarget"])
         target = row["target"] or {}
-        friction_rows.append(
+        rows.append(
             [
                 f"<code>{_e(row['taskId'])}</code> {_e(row['title'])}",
                 _e(row["size"]),
@@ -362,14 +473,14 @@ def render_html(report: dict[str, Any]) -> str:
                 if "interactions" in over
                 else row["interactions"],
                 row["approvals"],
+                row["corrections"],
                 f'<span class="over">{row["wallMinutes"]} (over {target.get("minutes")})</span>'
                 if "minutes" in over
                 else row["wallMinutes"],
                 row["humanWaitMinutes"],
             ]
         )
-    sections.append(
-        '<section aria-labelledby="h-friction"><h2 id="h-friction">Friction per task</h2>'
+    note = (
         f'<p class="muted">Targets ({_e(friction["targetsSource"])}): '
         + "; ".join(
             f"{_e(size)}: {_e(values.get('interactions'))} interaction(s), "
@@ -377,80 +488,149 @@ def render_html(report: dict[str, Any]) -> str:
             for size, values in friction["targets"].items()
         )
         + ". A value over its target is marked “over”.</p>"
-        + _table(
-            "Friction per task",
-            [
-                "Task",
-                "Size",
-                "Lane",
-                "Runs",
-                "Interactions",
-                "Approvals",
-                "Minutes",
-                "Wait minutes",
-            ],
-            friction_rows,
-            {3, 5, 7},
-        )
-        + _SECTION_END
     )
-    time = report["time"]
-    calls = time["agentCalls"]
-    sections.append(
-        '<section aria-labelledby="h-time"><h2 id="h-time">Time</h2>'
-        + _table(
-            "Time per phase",
-            ["Phase", "Attempts", "Total ms", "Mean ms"],
-            [
-                [_e(row["phase"]), row["attempts"], row["totalMs"], row["meanMs"]]
-                for row in time["perPhase"]
-            ],
-            {1, 2, 3},
-        )
-        + _table(
-            "Agent calls",
-            ["Calls", "Total ms", "Mean ms", "Median ms", "90th percentile ms"],
-            [[calls["count"], calls["totalMs"], calls["meanMs"], calls["p50Ms"], calls["p90Ms"]]],
-            {0, 1, 2, 3, 4},
-        )
-        + _SECTION_END
+    table = _table(
+        "Friction per task",
+        [
+            "Task",
+            "Size",
+            "Lane",
+            "Runs",
+            "Interactions",
+            "Approvals",
+            "Corrections",
+            "Minutes",
+            "Wait minutes",
+        ],
+        rows,
+        {3, 5, 6, 8},
     )
+    return _group(
+        "s-friction",
+        "Friction",
+        "How much the people had to intervene, task by task, against the target of each size.",
+        [_sub("h-friction", "Friction per task", note + table)],
+    )
+
+
+def _findings_blocks(quality: dict[str, Any]) -> list[str]:
+    severity = quality["findingsBySeverity"]
+    chart = _bars(
+        "chart-severity",
+        "Findings by severity",
+        "Number of findings recorded by the validators, by severity.",
+        [(name, [float(count)]) for name, count in severity.items()],
+        [("findings", "--s2")],
+        "findings",
+    )
+    by_rule = _table(
+        "Findings by rule",
+        ["Rule", "Count", "By severity"],
+        [
+            [
+                f"<code>{_e(row['ruleId'])}</code>",
+                row["count"],
+                _e(", ".join(f"{k} {v}" for k, v in sorted(row["bySeverity"].items()))),
+            ]
+            for row in quality["findingsByRule"][:40]
+        ],
+        {1},
+    )
+    by_file = _table(
+        "Findings by file (the 20 with most findings)",
+        ["File", "Count", "By severity"],
+        [
+            [
+                f"<code>{_e(row['path'])}</code>",
+                row["count"],
+                _e(", ".join(f"{k} {v}" for k, v in sorted(row["bySeverity"].items()))),
+            ]
+            for row in quality["findingsByFile"]
+        ],
+        {1},
+    )
+    return [
+        _sub("h-severity", "Findings by severity", chart),
+        _sub("h-rules", "Findings by rule", by_rule),
+        _sub("h-files", "Findings by file", by_file),
+    ]
+
+
+def _stops_blocks(quality: dict[str, Any]) -> list[str]:
+    limits = quality["limitsReached"]
+    gates = quality["gateResults"]
+    limit_table = _table(
+        "Limits reached",
+        ["Limit", "Times"],
+        [
+            ["Budget exceeded", limits["budget"]],
+            ["Phase attempts exhausted", limits["phaseAttempts"]],
+            ["Correction cycles exhausted", limits["corrections"]],
+        ],
+        {1},
+    )
+    gate_table = _table(
+        "Latest gate result of each run",
+        ["Result", "Runs"],
+        [[_e(name), count] for name, count in gates["latestByRun"].items()],
+        {1},
+    )
+    blocked = _table(
+        "Runs stopped before a decision",
+        ["Run", "Task", "Phase", "Reason"],
+        [
+            [
+                f"<code>{_e(row['runId'])}</code>",
+                f"<code>{_e(row['taskId'])}</code>",
+                _e(row["phase"]),
+                _e(row["reason"]),
+            ]
+            for row in quality["blockedRunsDetail"]
+        ],
+        set(),
+    )
+    return [
+        _sub("h-limits", "Limits reached", limit_table),
+        _sub("h-gates", "Gate results", gate_table),
+        _sub("h-blocked", "Blocked runs and their reason", blocked),
+    ]
+
+
+def _quality_group(report: dict[str, Any]) -> str:
     quality = report["quality"]
-    sections.append(
-        '<section aria-labelledby="h-quality"><h2 id="h-quality">Quality</h2>'
-        + _table(
-            "Quality of the runs",
-            ["Measure", "Value"],
-            [
-                ["Runs decided", quality["decided"]],
-                ["Approved the first time", quality["approvedFirstTime"]],
-                ["Approved the first time (rate)", quality["approvedFirstTimeRate"]],
-                ["Corrections", quality["corrections"]],
-                ["Requested changes", quality["requestedChanges"]],
-                ["Blocked runs", quality["blockedRuns"]],
-                ["Waiting for a decision", quality["waitingDecision"]],
-                ["Rejected runs", quality["rejectedRuns"]],
-                ["Closed runs", quality["closedRuns"]],
-                ["Pre-authorised approvals applied", quality["preAuthorizedApprovals"]],
-            ],
-            {1},
-        )
-        + _table(
-            "Findings by rule",
-            ["Rule", "Count", "By severity"],
-            [
-                [
-                    f"<code>{_e(row['ruleId'])}</code>",
-                    row["count"],
-                    _e(", ".join(f"{k} {v}" for k, v in sorted(row["bySeverity"].items()))),
-                ]
-                for row in quality["findingsByRule"][:40]
-            ],
-            {1},
-        )
-        + _SECTION_END
+    measures = _table(
+        "Quality of the runs",
+        ["Measure", "Value"],
+        [
+            ["Runs decided", quality["decided"]],
+            ["Approved the first time", quality["approvedFirstTime"]],
+            ["Approved the first time (rate)", quality["approvedFirstTimeRate"]],
+            ["Corrections", quality["corrections"]],
+            ["Requested changes", quality["requestedChanges"]],
+            ["Blocked runs", quality["blockedRuns"]],
+            ["Waiting for a decision", quality["waitingDecision"]],
+            ["Rejected runs", quality["rejectedRuns"]],
+            ["Closed runs", quality["closedRuns"]],
+            ["Pre-authorised approvals applied", quality["preAuthorizedApprovals"]],
+            ["Open HIGH or CRITICAL findings", quality["openBlockingFindings"]],
+        ],
+        {1},
     )
-    delivery = report["delivery"]
+    return _group(
+        "s-quality",
+        "Quality",
+        "What the validators found and how the runs ended. Findings are listed by severity, "
+        "rule and file.",
+        [
+            _sub("h-quality", "Quality of the runs", measures),
+            *_findings_blocks(quality),
+            *_stops_blocks(quality),
+        ],
+    )
+
+
+def _delivery_group(report: dict[str, Any]) -> str:
+    delivery, lines = report["delivery"], report["lines"]
     features = [
         [
             f"<code>{_e(item['taskId'])}</code> {_e(item['title'])}",
@@ -462,32 +642,149 @@ def render_html(report: dict[str, Any]) -> str:
         ]
         for item in delivery["featuresDelivered"]
     ]
-    sections.append(
-        '<section aria-labelledby="h-delivery"><h2 id="h-delivery">Delivered</h2>'
-        + _table(
-            f"{len(delivery['featuresDelivered'])} feature(s) delivered, "
-            f"{len(delivery['issuesResolved'])} issue(s) resolved",
-            ["Task", "Closed", "Issues", "Pull request"],
-            features,
-            set(),
-        )
-        + _SECTION_END
+    delivered = _table(
+        f"{len(delivery['featuresDelivered'])} feature(s) delivered, "
+        f"{len(delivery['issuesResolved'])} issue(s) resolved",
+        ["Task", "Closed", "Issues", "Pull request"],
+        features,
+        set(),
     )
-    narrative = report.get("narrative")
-    if narrative:
-        sections.append(
-            '<section aria-labelledby="h-narrative"><h2 id="h-narrative">Narrative summary</h2>'
-            f'<p class="muted">Generated on demand by <code>{_e(narrative["command"])}</code>; not '
-            f"verified by the harness.</p><p>{_e(narrative['text']).replace(chr(10), '<br>')}</p>"
-            "</section>"
+    chart = _bars(
+        "chart-lines",
+        "Lines added and removed by author kind",
+        "Lines of the latest ChangeSet of each run, attributed by provenance to an agent "
+        "invocation or to a person (out of band).",
+        [
+            ("Agent invocation", [lines["agent"]["added"], lines["agent"]["removed"]]),
+            ("Person (out of band)", [lines["person"]["added"], lines["person"]["removed"]]),
+            ("Not attributed", [lines["unattributed"]["added"], lines["unattributed"]["removed"]]),
+        ],
+        [("added", "--s3"), ("removed", "--s2")],
+        "lines",
+    )
+    return _group(
+        "s-delivery",
+        "Delivery",
+        "What the closed runs delivered and how many lines changed.",
+        [_sub("h-delivery", "Delivered", delivered), _sub("h-lines", "Lines changed", chart)],
+    )
+
+
+def _trend_table(caption: str, first: str, rows: list[dict[str, Any]]) -> str:
+    return _table(
+        caption,
+        [first, "Runs", "Tokens", "Cost USD", "Interactions", "Approved", "Closed"],
+        [
+            [
+                _e(row["period"]),
+                row["runs"],
+                row["tokens"],
+                row["costUsd"],
+                row["interactions"],
+                row["approved"],
+                row["closed"],
+            ]
+            for row in rows
+        ],
+        {1, 2, 3, 4, 5, 6},
+    )
+
+
+def _trends_group(report: dict[str, Any]) -> str:
+    daily, weekly = report["trends"]["daily"], report["trends"]["weekly"]
+    body = (
+        _columns(
+            "chart-runs",
+            "Runs per day",
+            "Number of runs created each day.",
+            [(row["period"], float(row["runs"])) for row in daily],
         )
+        + _columns(
+            "chart-tokens",
+            "Tokens per day",
+            "Input and output tokens of the agent calls of the runs created each day.",
+            [(row["period"], float(row["tokens"])) for row in daily],
+        )
+        + f"<details><summary>Daily table</summary>{_trend_table('Daily trend', 'Day', daily)}"
+        "</details>"
+        f"<details><summary>Weekly table</summary>{_trend_table('Weekly trend', 'Week', weekly)}"
+        "</details>"
+    )
+    return _group(
+        "s-trends",
+        "Trends",
+        "Activity per day and per week.",
+        [_sub("h-trend", "Trends", body)],
+    )
+
+
+_DATA_QUALITY = (
+    ("Tokens", "reported", "Counts the provider returned for each call; none is guessed."),
+    ("Reported cost", "reported", "The cost the provider returned with the call."),
+    (
+        "Estimated cost",
+        "estimated",
+        "Computed from the price table you configured for calls that reported tokens without "
+        "a cost; never charged and never counted against a budget.",
+    ),
+    ("Time, interactions, waits", "observed", "Taken from the timestamps of the event chain."),
+    ("Findings, gates, limits", "observed", "Records the harness wrote while the run happened."),
+    (
+        "Lines by author",
+        "observed",
+        "From the ChangeSet and, when enabled, provenance; otherwise not attributed.",
+    ),
+)
+
+
+def _notes_group(report: dict[str, Any]) -> str:
     notes = "".join(f"<li>{_e(note)}</li>" for note in report["notes"])
-    projects = ", ".join(_e(item["projectId"]) for item in report["projects"]) or "none"
-    card_html = "".join(
-        f'<div class="card"><div class="value">{_num(value)}</div>'
-        f'<div class="label">{_e(label)}</div></div>'
-        for label, value in cards
+    quality = _table(
+        "Origin of each number",
+        ["Number", "Kind", "Meaning"],
+        [[_e(a), _e(b), _e(c)] for a, b, c in _DATA_QUALITY],
+        set(),
     )
+    return _group(
+        "s-notes",
+        "Data quality",
+        "How each family of numbers was obtained: observed, reported by a provider or estimated.",
+        [
+            _sub("h-quality-kinds", "Origin of each number", quality),
+            _sub("h-notes", "Notes", f"<ul>{notes}</ul>"),
+        ],
+    )
+
+
+def _narrative(narrative: dict[str, Any]) -> str:
+    return _group(
+        "s-narrative",
+        "Narrative summary",
+        "Generated on demand; not verified by the harness.",
+        [
+            f'<p class="muted">Generated by <code>{_e(narrative["command"])}</code>.</p>'
+            f"<p>{_e(narrative['text']).replace(chr(10), '<br>')}</p>"
+        ],
+    )
+
+
+def render_html(report: dict[str, Any]) -> str:
+    totals = report["totals"]
+    narrative = report.get("narrative")
+    projects = ", ".join(_e(item["projectId"]) for item in report["projects"]) or "none"
+    sections = [
+        _overview(report),
+        _dimension_cards(report),
+        _cost_group(report),
+        _time_group(report),
+        _friction_group(report),
+        _quality_group(report),
+        _delivery_group(report),
+        _trends_group(report),
+    ]
+    if narrative:
+        sections.append(_narrative(narrative))
+    sections.append(_notes_group(report))
     return (
         '<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
         '<meta name="viewport" content="width=device-width,initial-scale=1">\n'
@@ -496,10 +793,9 @@ def render_html(report: dict[str, Any]) -> str:
         f'<p class="lead">{totals["runs"]} run(s) of {projects}. Generated '
         f"{_e(report['generatedAt'])} by harness {_e(report['harnessVersion'])}; computed from "
         "the records only, no model was called. This file loads nothing from the network.</p>\n"
-        f'</header>\n<main>\n<div class="cards">{card_html}</div>\n'
+        f"{_nav(bool(narrative))}\n</header>\n<main>\n"
         + "\n".join(sections)
-        + f'\n<section aria-labelledby="h-notes"><h2 id="h-notes">Notes</h2><ul>{notes}</ul></section>'
-        "\n</main>\n</body>\n</html>\n"
+        + "\n</main>\n</body>\n</html>\n"
     )
 
 
