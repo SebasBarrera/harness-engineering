@@ -1,6 +1,6 @@
 # Seguimiento de una ejecución
 
-Cómo saber en qué punto está una ejecución, qué la detuvo y dónde mirar los resultados. Todos los comandos son de solo lectura (no cambian la ejecución), salvo los que se indican, y ninguno llama a un modelo. Se probaron con el harness 1.0.0.
+Cómo saber en qué punto está una ejecución, qué la detuvo y dónde mirar los resultados. Todos los comandos son de solo lectura (no cambian la ejecución), salvo los que se indican, y ninguno llama a un modelo. Se probaron con el harness 1.0.0 (el código de la ola 11, cuyo paquete aún declaraba la versión 1.0.0 antes de la release 2.0.0).
 
 Sobre la salida: en una terminal el harness imprime texto legible; en un pipe o en CI imprime JSON. `harness --no-json <comando>` fuerza texto y `--json` fuerza JSON. En esta página los ejemplos están en texto.
 

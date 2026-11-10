@@ -1,6 +1,6 @@
 # Trabajo simultáneo sobre una misma funcionalidad
 
-Pregunta: ¿pueden dos personas trabajar a la vez en la misma funcionalidad usando el harness? Esta página responde con lo que el código hace y con experimentos que se ejecutaron con el harness 1.0.0 y el proveedor `simulated`. Lo que no se probó se marca.
+Pregunta: ¿pueden dos personas trabajar a la vez en la misma funcionalidad usando el harness? Esta página responde con lo que el código hace y con experimentos que se ejecutaron con el harness 1.0.0 (el código de la ola 11, cuyo paquete aún declaraba la versión 1.0.0 antes de la release 2.0.0) y el proveedor `simulated`. Lo que no se probó se marca.
 
 ## Respuesta corta
 
