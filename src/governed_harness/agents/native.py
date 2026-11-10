@@ -614,9 +614,12 @@ class GeminiCliProvider(NativeAgentProvider):
             for name in totals:
                 totals[name] += _int(tokens.get(name)) or 0
         response = str(value.get("response") or "")
-        message = (
-            error.get("message") if isinstance(error, dict) else (str(error) if error else None)
-        )
+        if isinstance(error, dict):
+            message = error.get("message")
+        elif error:
+            message = str(error)
+        else:
+            message = None
         return ProviderAnswer(
             status=ResultStatus.FAILED if error else ResultStatus.PASSED,
             summary=_summary(message or response) or "gemini-cli finished",

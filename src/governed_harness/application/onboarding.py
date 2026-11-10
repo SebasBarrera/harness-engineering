@@ -265,10 +265,16 @@ def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
     others: list[dict[str, Any]] = []
     for provider_id, provider in project.agent_providers.items():
         found = _executable(provider.effective_command[0], resolved.workspace_root)
+        if found:
+            status = "PASSED"
+        elif provider_id == default:
+            status = "FAILED"
+        else:
+            status = "WARNING"
         entry: dict[str, Any] = {
             "provider": provider_id,
             "command": provider.effective_command[0],
-            "status": "PASSED" if found else "FAILED" if provider_id == default else "WARNING",
+            "status": status,
         }
         if found:
             entry["path"] = found

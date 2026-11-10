@@ -556,6 +556,12 @@ class RunEngine:
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
+        # One expiry, HumanDecision.expires_at: the exception's when one is recorded
+        # (review.exceptions, which the exception ledger reuses), otherwise the decision's
+        # validity (governance.decisionExpiryHours).
+        decision_expires_at = expires_at
+        if decision_expires_at is None and expiry:
+            decision_expires_at = decided_at + timedelta(hours=expiry)
         actor = Actor(
             actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
         )
@@ -572,12 +578,7 @@ class RunEngine:
             acceptance_contract_digest=contract_digest,
             identity_source=identity_source,
             decided_at=decided_at,
-            # One expiry, HumanDecision.expires_at: the exception's when one is recorded
-            # (review.exceptions, which the exception ledger reuses), otherwise the decision's
-            # validity (governance.decisionExpiryHours).
-            expires_at=expires_at
-            if expires_at is not None
-            else (decided_at + timedelta(hours=expiry) if expiry else None),
+            expires_at=decision_expires_at,
             acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
             change_requests=change_requests,
             checked_items=tuple(dict.fromkeys(checked_items)),
@@ -3018,12 +3019,11 @@ class RunEngine:
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )
-        summary = (
-            f"Closure commit {commit.commit[:12]} ({commit.status.lower()})"
-            + (f" on branch {commit.branch}" if commit.branch else " on the current branch")
-            if commit.commit
-            else f"Closure commit skipped: {commit.reason}"
-        )
+        if commit.commit:
+            where = f" on branch {commit.branch}" if commit.branch else " on the current branch"
+            summary = f"Closure commit {commit.commit[:12]} ({commit.status.lower()})" + where
+        else:
+            summary = f"Closure commit skipped: {commit.reason}"
         self._record_evidence(
             execution,
             phase.phase_id,

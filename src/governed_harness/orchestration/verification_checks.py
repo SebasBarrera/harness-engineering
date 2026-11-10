@@ -99,7 +99,12 @@ def declared_interfaces(task: Task) -> list[tuple[str, str]]:
     """``(stub, module)`` pairs a task declares in ``metadata.interface``: an object with
     ``stub`` and ``module`` paths, or a list of them."""
     raw = task.metadata.get("interface")
-    entries = raw if isinstance(raw, list) else [raw] if raw else []
+    if isinstance(raw, list):
+        entries = raw
+    elif raw:
+        entries = [raw]
+    else:
+        entries = []
     pairs: list[tuple[str, str]] = []
     for entry in entries:
         if isinstance(entry, dict) and entry.get("stub") and entry.get("module"):
@@ -727,7 +732,9 @@ def _subject(message: str) -> str:
     """What a limit message is about: the module or function (and, for a forbidden import,
     the module it imports), without the measured value."""
     words = message.split()
-    return " ".join(words[:3]) if " imports " in message else (words[0] if words else "")
+    if " imports " in message:
+        return " ".join(words[:3])
+    return words[0] if words else ""
 
 
 def _read(workspace: Path, relative: str) -> str | None:
