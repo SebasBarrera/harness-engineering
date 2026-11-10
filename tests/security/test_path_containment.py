@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from governed_harness.capabilities.authorizer import CapabilityDenied, contained_path
+from tests.conftest import make_symlink
 
 
 def test_path_inside_workspace(tmp_path: Path) -> None:
@@ -21,7 +22,7 @@ def test_absolute_path_under_a_symlinked_ancestor_is_contained(tmp_path: Path) -
     real = tmp_path / "real"
     (real / "workspace").mkdir(parents=True)
     alias = tmp_path / "alias"
-    alias.symlink_to(real, target_is_directory=True)
+    make_symlink(alias, real, target_is_directory=True)
     workspace = alias / "workspace"
     inside = workspace / "src" / "module.py"
     assert contained_path(workspace, inside) == (real / "workspace" / "src" / "module.py").resolve()
@@ -32,9 +33,9 @@ def test_symlink_inside_the_workspace_is_still_rejected_through_an_alias(tmp_pat
     real = tmp_path / "real"
     (real / "workspace" / "target").mkdir(parents=True)
     alias = tmp_path / "alias"
-    alias.symlink_to(real, target_is_directory=True)
-    (real / "workspace" / "link").symlink_to(
-        real / "workspace" / "target", target_is_directory=True
+    make_symlink(alias, real, target_is_directory=True)
+    make_symlink(
+        real / "workspace" / "link", real / "workspace" / "target", target_is_directory=True
     )
     with pytest.raises(CapabilityDenied):
         contained_path(alias / "workspace", alias / "workspace" / "link" / "file.txt")

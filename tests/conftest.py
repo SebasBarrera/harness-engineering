@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,24 @@ def without_agent_results(root: Path) -> None:
     ):
         config.pop(section, None)
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
+
+
+WINDOWS_SYMLINK_PRIVILEGE = 1314
+"""ERROR_PRIVILEGE_NOT_HELD: Windows creates symbolic links only with the
+SeCreateSymbolicLinkPrivilege (an administrator or Developer Mode)."""
+
+
+def make_symlink(link: Path, target: Path | str, *, target_is_directory: bool = False) -> None:
+    """Create ``link`` pointing to ``target``; on Windows without the privilege to create
+    symbolic links the calling test is skipped, since the capability does not exist there."""
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as error:
+        if sys.platform == "win32" and getattr(error, "winerror", None) == (
+            WINDOWS_SYMLINK_PRIVILEGE
+        ):
+            pytest.skip("creating symbolic links needs a privilege this Windows user lacks")
+        raise
 
 
 def git_init(path: Path) -> None:
