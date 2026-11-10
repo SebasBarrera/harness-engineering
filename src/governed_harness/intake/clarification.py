@@ -299,7 +299,10 @@ _FILE_EXTENSIONS = (
 
 _WORD = re.compile(r"[a-z0-9][a-z0-9'_-]*")
 _DIGIT = re.compile(r"\d")
-_QUOTED = re.compile(r"`[^`]+`|\"[^\"]+\"|“[^”]+”|‘[^’]+’|(?<![A-Za-z])'[^']+'(?![A-Za-z])")
+_QUOTED = (
+    re.compile(r"`[^`]+`|\"[^\"]+\"|“[^”]+”"),
+    re.compile(r"‘[^’]+’|(?<![A-Za-z])'[^']+'(?![A-Za-z])"),
+)
 _CALL = re.compile(r"[A-Za-z_][\w.]*\(")
 _SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
 _PATH = re.compile(r"(?:^|[\s(])\.{0,2}/?[\w.-]+/[\w./-]+")
@@ -316,7 +319,7 @@ def _words(text: str) -> list[str]:
 def _has_anchor(text: str) -> bool:
     if (
         _DIGIT.search(text)
-        or _QUOTED.search(text)
+        or any(pattern.search(text) for pattern in _QUOTED)
         or _CALL.search(text)
         or _SNAKE.search(text)
         or _PATH.search(text)

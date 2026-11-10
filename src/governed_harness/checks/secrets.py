@@ -43,8 +43,9 @@ _DUMMY_WORDS = frozenset(
     }
 )
 _DUMMY_PREFIX = re.compile(r"(?:test|dummy|fake|example|sample|mock)[\w.-]*")
-_PLACEHOLDER = re.compile(
-    r"\$\{[^}]*\}|\{\{[^}]*\}\}|\{[A-Za-z_][\w.]*(?:![rsa])?(?::[^{}]*)?\}|\{\}|%(?:\([^)]*\))?[sdr]"
+_PLACEHOLDER = (
+    re.compile(r"\$\{[^}]*\}|\{\{[^}]*\}\}|\{\}|%(?:\([^)]*\))?[sdr]"),
+    re.compile(r"\{[A-Za-z_][\w.]*(?:![rsa])?(?::[^{}]*)?\}"),
 )
 _MIN_SECRET_LENGTH = 6
 
@@ -74,7 +75,7 @@ def is_dummy_value(value: str) -> bool:
         or re.fullmatch(r"x+", lowered) is not None
         or re.fullmatch(r"\*+", stripped) is not None
         or re.fullmatch(r"<[^<>]*>", stripped) is not None
-        or _PLACEHOLDER.search(stripped) is not None
+        or any(pattern.search(stripped) for pattern in _PLACEHOLDER)
         or len(stripped) < _MIN_SECRET_LENGTH
     )
 
@@ -84,7 +85,7 @@ def _is_template(value: str, prefix: str) -> bool:
     stripped = value.strip()
     return (
         ("f" in prefix.lower() and "{" in stripped)
-        or _PLACEHOLDER.search(stripped) is not None
+        or any(pattern.search(stripped) for pattern in _PLACEHOLDER)
         or re.fullmatch(r"<[^<>]*>", stripped) is not None
     )
 

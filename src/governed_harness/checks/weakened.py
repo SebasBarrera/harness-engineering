@@ -72,8 +72,9 @@ _THRESHOLD = re.compile(
 )
 _STRICT = re.compile(r"[\"']?\bstrict[\"']?\s*[:=]\s*true\b|--strict(?:-[a-z]+)*\b", re.IGNORECASE)
 _CHECK_TOOL = re.compile(r"\b(pytest|ruff|mypy|eslint|tsc|bandit)\b|\bnpm\s+(?:run\s+)?test\b")
-_NOT_A_RUN = re.compile(
-    r"^\s*(?:-\s*)?(?:name|uses)\s*:|^\s*#|^\s*(?:echo|cat|printf)\b|\binstall\b|\bnpm\s+ci\b"
+_NOT_A_RUN = (
+    re.compile(r"^\s*(?:(?:-\s*)?(?:name|uses)\s*:|#|(?:echo|cat|printf)\b)"),
+    re.compile(r"\binstall\b|\bnpm\s+ci\b"),
 )
 
 # ----- error handling ------------------------------------------------------------------------
@@ -271,7 +272,7 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
             _tool(match) for line in file.added for match in _CHECK_TOOL.finditer(line.text)
         }
         for line in file.removed:
-            if _NOT_A_RUN.search(line.text):
+            if any(pattern.search(line.text) for pattern in _NOT_A_RUN):
                 continue
             tools = {_tool(match) for match in _CHECK_TOOL.finditer(line.text)}
             missing = sorted(tools - added_tools)

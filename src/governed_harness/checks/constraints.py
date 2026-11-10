@@ -30,7 +30,7 @@ _CATEGORY = "constraints"
 
 _NEGATION = re.compile(r"\b(?:never|no|not|without|deterministic\w*)\b|n't\b")
 _MONEY_SENTENCE = re.compile(
-    r"\b(?:money|prices?|amounts?|fares?|costs?|balances?|fees?|totals?|currency|currencies)\b"
+    r"\b(?:money|(?:price|amount|fare|cost|balance|fee|total)s?|currency|currencies)\b"
 )
 _STUB_SENTENCE = re.compile(r"notimplementederror|\bstub|placeholder")
 _MONEY_TOKEN = re.compile(
