@@ -47,20 +47,11 @@ documentation site.
 
 ## Thesis reference point
 
-The thesis reported, for the `v0.8.0` cut, 1,000 iterations per operation without warm-up and 20
-samples for process launches (`docs/benchmarks/thesis-reference.json`):
-
-| Operation | Median (ms) |
-|---|---:|
-| State transition | 0.00096 |
-| Gate evaluation | 0.00153 |
-| Canonical digest | 0.0228 |
-| Event append | 0.281 |
-| Deduplicated artifact put | 0.0549 |
-| Governed process launch overhead | 1.21 ms (10.09 %; 11.23 % in a second run) |
-
-Environments differ (the thesis machine versus GitHub-hosted runners), so compare orders of
-magnitude, not exact values.
+The report draws a reference point from `docs/benchmarks/thesis-reference.json`, the microbenchmark
+of the `v0.8.0` cut. The evaluation reports only version 2.0.0 (campaign in progress,
+`evaluation/campaign/`); results of earlier versions are in the git history and the `v0.8.0` tag
+and are not part of this analysis, so this page lists none of those figures. Environments differ
+(the thesis machine versus GitHub-hosted runners): never compare exact values.
 
 ## Run locally
 

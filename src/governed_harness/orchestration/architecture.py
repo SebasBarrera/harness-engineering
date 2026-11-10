@@ -59,7 +59,7 @@ from governed_harness.orchestration.architecture_catalogue import (
     render_recommendation,
     style_entry,
 )
-from governed_harness.orchestration.engine_types import PhaseOutcome
+from governed_harness.orchestration.engine_types import AgentCallOutcome, PhaseOutcome
 from governed_harness.runtime.workspace import DEFAULT_EXCLUDES
 
 if TYPE_CHECKING:
@@ -234,32 +234,35 @@ def validate_options(result: dict[str, Any]) -> list[dict[str, Any]]:
     raw = result.get("options")
     if not isinstance(raw, list):
         raise ValueError("the advice needs an 'options' list")
-    options: list[dict[str, Any]] = []
-    for index, item in enumerate(raw[:6], start=1):
-        if not isinstance(item, dict):
-            raise ValueError(f"option {index} is not an object")
-        style = str(item.get("style") or "").strip().lower()
-        if style not in ARCHITECTURE_STYLES:
-            raise ValueError(f"option {index} has an unknown style {item.get('style')!r}")
-        layers, allow = _layers(item)
-        option = {
-            "id": str(item.get("id") or f"option-{index}")[:40],
-            "style": style,
-            "title": str(item.get("title") or style)[:200],
-            "benefits": [str(text)[:400] for text in item.get("benefits") or []][:10],
-            "costs": [str(text)[:400] for text in item.get("costs") or []][:10],
-            "fit": str(item.get("fit") or "")[:1000],
-            "recommended": bool(item.get("recommended")),
-            "layers": layers,
-            "allow": allow,
-        }
-        if "supports" in item:  # the catalogue (#97); absent keeps the earlier options and digest
-            option["supports"] = [str(text)[:400] for text in item.get("supports") or []][:10]
-        options.append(option)
+    options = [_option(index, item) for index, item in enumerate(raw[:6], start=1)]
     ids = [item["id"] for item in options]
     if len(ids) != len(set(ids)):
         raise ValueError("option ids must be unique")
     return options
+
+
+def _option(index: int, item: Any) -> dict[str, Any]:
+    """One validated option of the advice (the ``index`` counts from 1)."""
+    if not isinstance(item, dict):
+        raise ValueError(f"option {index} is not an object")
+    style = str(item.get("style") or "").strip().lower()
+    if style not in ARCHITECTURE_STYLES:
+        raise ValueError(f"option {index} has an unknown style {item.get('style')!r}")
+    layers, allow = _layers(item)
+    option = {
+        "id": str(item.get("id") or f"option-{index}")[:40],
+        "style": style,
+        "title": str(item.get("title") or style)[:200],
+        "benefits": [str(text)[:400] for text in item.get("benefits") or []][:10],
+        "costs": [str(text)[:400] for text in item.get("costs") or []][:10],
+        "fit": str(item.get("fit") or "")[:1000],
+        "recommended": bool(item.get("recommended")),
+        "layers": layers,
+        "allow": allow,
+    }
+    if "supports" in item:  # the catalogue (#97); absent keeps the earlier options and digest
+        option["supports"] = [str(text)[:400] for text in item.get("supports") or []][:10]
+    return option
 
 
 def validate_catalogue_options(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -650,6 +653,19 @@ class ArchitectureFlow:
             survey = validate(outcome.result)
         except ValueError as error:
             return self._malformed(execution, error, outcome.evidence_refs)
+        return self._record_survey(execution, phase, config, outcome, survey, layout)
+
+    def _record_survey(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        config: ArchitectureSettings,
+        outcome: AgentCallOutcome,
+        survey: dict[str, Any],
+        layout: list[str],
+    ) -> PhaseOutcome | None:
+        """Record a validated survey: the proposal, its documents and the event; a person
+        approves the inferred rules unless there are none."""
         rules = {"layers": survey["layers"], "allow": survey["allow"]}
         checked = self._checked(config, rules)
         digest = sha256_json({"style": survey["style"], **rules, **checked})

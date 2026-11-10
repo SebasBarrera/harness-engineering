@@ -131,19 +131,34 @@ def evaluate(
     for scope in SCOPES:
         current = usage.get(scope)
         for metric in METRICS:
-            limit = effective_limit(config, scope, metric, raised)
-            if limit is None:
-                continue
-            used = current.value(metric) if current is not None else None
-            if scope != "call":
-                remaining.setdefault(scope, {})[metric] = max(0.0, limit - (used or 0.0))
-            else:
-                remaining.setdefault(scope, {})[metric] = limit
-            if used is None:
-                continue
-            crossing = Crossing(scope, metric, round(used, 6), limit)
-            if used >= limit:
-                exceeded.append(crossing)
-            elif used >= limit * config.warning_ratio:
-                warnings.append(crossing)
+            _check_metric(config, scope, metric, current, raised, exceeded, warnings, remaining)
     return BudgetCheck(tuple(exceeded), tuple(warnings), remaining)
+
+
+def _check_metric(
+    config: BudgetConfig,
+    scope: Scope,
+    metric: Metric,
+    current: Usage | None,
+    raised: dict[str, dict[str, float]],
+    exceeded: list[Crossing],
+    warnings: list[Crossing],
+    remaining: dict[str, dict[str, float]],
+) -> None:
+    """Compare one metric of one scope with its limit: what remains, and a crossing of the
+    limit or of its warning ratio."""
+    limit = effective_limit(config, scope, metric, raised)
+    if limit is None:
+        return
+    used = current.value(metric) if current is not None else None
+    if scope != "call":
+        remaining.setdefault(scope, {})[metric] = max(0.0, limit - (used or 0.0))
+    else:
+        remaining.setdefault(scope, {})[metric] = limit
+    if used is None:
+        return
+    crossing = Crossing(scope, metric, round(used, 6), limit)
+    if used >= limit:
+        exceeded.append(crossing)
+    elif used >= limit * config.warning_ratio:
+        warnings.append(crossing)

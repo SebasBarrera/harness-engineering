@@ -22,3 +22,7 @@ condition = "AND"
 paths = ['''^evaluation/results-2\.0\.0/deterministic/fault-probes/''']
 regexTarget = "line"
 regexes = ['''"leaseHeld": true''']
+
+[[allowlists]]
+description = "Fictitious JWT of the H03 secrets corpus of the 2.0.0 evaluation (evaluation/deterministic/h03_secrets.py, first committed in f92582d): a seeded value the harness must detect, not a credential; the file now builds it from two parts."
+regexes = ['''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiJhbGVydHMifQ\.c2lnbmF0dXJlLXZhbHVlLTIwMjY''']
