@@ -54,9 +54,9 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/build"
           "$RUNNER_TEMP/build"/bin/python -m pip install --require-hashes -r requirements/tools-build.txt
-          "$RUNNER_TEMP/build"/bin/python -m build --wheel --no-isolation --outdir "$RUNNER_TEMP/dist"
+          "$RUNNER_TEMP/build"/bin/python -m build --wheel --no-isolation --outdir dist
           python -m pip install --require-hashes -r requirements/bench.txt
-          python -m pip install --no-deps "$RUNNER_TEMP"/dist/*.whl
+          python -m pip install --no-deps dist/*.whl
       - name: Run the quickstart and the demonstration flows
         run: |
           python scripts/demo_flows.py all --transcript transcript.json
