@@ -10,6 +10,7 @@ Usage: python make_hidden_cases.py  (from evaluation/rides, with the reference o
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -20,10 +21,13 @@ NAME = re.compile(r"^test_([a-z]\d+)_", re.IGNORECASE)
 
 
 def main() -> int:
-    env_path = str(HERE / "reference")
+    env = {"PYTHONPATH": str(HERE / "reference"), "PATH": "/usr/bin:/bin"}
+    if sys.platform == "win32":
+        # Python on Windows needs SYSTEMROOT to start, and there is no /usr/bin: keep the caller's PATH.
+        env |= {"PATH": os.environ.get("PATH", ""), "SYSTEMROOT": os.environ.get("SYSTEMROOT", r"C:\Windows")}
     proc = subprocess.run([sys.executable, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
                            "-o", "addopts=", str(HERE / "hidden")], cwd=HERE, capture_output=True, text=True,
-                          env={"PYTHONPATH": env_path, "PATH": "/usr/bin:/bin"})
+                          env=env)
     cases: dict[str, str] = {}
     for line in proc.stdout.splitlines():
         if "::" not in line:
@@ -41,7 +45,8 @@ def main() -> int:
     if proc.returncode != 0 or not cases:
         print(proc.stdout[-3000:], proc.stderr[-3000:], file=sys.stderr)
         return 1
-    (HERE / "hidden_cases.json").write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    (HERE / "hidden_cases.json").write_text(json.dumps(cases, indent=1, sort_keys=True) + "\n", encoding="utf-8",
+                                         newline="\n")
     print(f"hidden_cases.json: {len(cases)} cases, {len(set(cases.values()))} requirements")
     return 0
 
