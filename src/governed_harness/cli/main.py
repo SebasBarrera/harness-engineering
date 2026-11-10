@@ -1707,7 +1707,7 @@ def memory_invalidate(
 
 
 @gate_app.command("decide")
-def gate_decide(
+def gate_decide(  # NOSONAR(S107) each parameter is an option of the gate decide command
     run: str = RUN_OPTION,
     decision: DecisionKind | None = typer.Option(
         None,
