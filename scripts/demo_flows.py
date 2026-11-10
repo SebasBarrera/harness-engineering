@@ -1712,7 +1712,7 @@ results = {
     "clarify": {"questions": []},
     "review": {"findings": []},
     "acceptance": {"tests": [{"path": "features/discount.feature", "content": feature}]},
-    "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}},
+    "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}, "organization": "None.", "components": [{"name": "app", "path": ".", "responsibility": "The project."}], "conventions": [], "guidance": ["Follow the structure."]},
 }
 if kind == "review" and "outputContract" in request:
     # A reviewer of the review panel (review.panel, #57) answers with its output contract.
@@ -2006,7 +2006,7 @@ request = json.load(sys.stdin)
 kind = request.get("kind", "implement")
 results = {"clarify": {"questions": []}, "review": {"findings": []}, "plan": {"subtasks": []},
            "acceptance": {"tests": []}, "locate": {"locations": []},
-           "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}}}
+           "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}, "organization": "None.", "components": [{"name": "app", "path": ".", "responsibility": "The project."}], "conventions": [], "guidance": ["Follow the structure."]}}
 if kind == "implement":
     text = request["task"]["intent"]
     with Path("README.md").open("a", encoding="utf-8") as handle:

@@ -41,6 +41,8 @@ _STYLE_WORDS = {
     "micro-services": "microservices",
     "domain-driven": "ddd",
     "ports and adapters": "hexagonal",
+    "event driven": "event-driven",
+    "command query": "cqrs",
 }
 
 

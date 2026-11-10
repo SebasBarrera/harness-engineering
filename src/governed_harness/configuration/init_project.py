@@ -5,6 +5,7 @@ from pathlib import Path
 
 import yaml
 
+from governed_harness.configuration.agent_contract import DEFAULT_MAX_ITERATIONS
 from governed_harness.configuration.agent_results import (
     DEFAULT_AMBIGUITY_QUESTIONS,
     DEFAULT_AMBIGUITY_ROUNDS,
@@ -155,7 +156,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             },
             "secrets": "context",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
-            "acceptanceTests": {"mode": "agent"},
+            # #94: the frozen files are write-protected and a disputed test waits for a
+            # person.
+            "acceptanceTests": {"mode": "agent", "protect": True, "disputes": "person"},
             "reverifyOnChange": True,
             "ladder": {
                 "mode": "enforce",
@@ -225,6 +228,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "warnAt": 0.8,
         },
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
+        # Wave 11 (#97): the versioned request and response contract of agent calls, one cap of
+        # iterations per agent and the token budget and time limit by task size.
+        "agentContract": {"mode": "enforce", "maxIterations": DEFAULT_MAX_ITERATIONS},
         # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
             "mode": "anchored",
@@ -277,7 +283,19 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "tools": "detect",
         },
         "testing": {"strategy": "auto", "featuresDirectory": DEFAULT_FEATURES_DIRECTORY},
-        "architecture": {"mode": "agent", "refresh": "manual", "enforce": "enforce"},
+        # #93: only the layers a change adds are judged, and the dependencies the baseline
+        # already has are listed and allowed when a survey's rules are proposed.
+        "architecture": {
+            "mode": "agent",
+            "refresh": "manual",
+            "enforce": "enforce",
+            "layerCheck": "differential",
+            "baselineConflicts": "allow",
+            # #97: the ten-style catalogue with its experts for a new project and persistent
+            # reverse engineering documents for an existing one.
+            "catalogue": "experts",
+            "documentation": "project",
+        },
         # Wave 8 (#58): a fast lane for small, risk-free tasks, approval in advance under a
         # condition, documentation-only and configuration-only changes, friction targets.
         "friction": {

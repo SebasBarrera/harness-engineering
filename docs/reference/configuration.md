@@ -113,6 +113,8 @@ verification:
     deletedWithoutTests: inform
   acceptanceTests:
     mode: agent
+    protect: true
+    disputes: person
   reverifyOnChange: true
   ladder:
     mode: enforce
@@ -201,6 +203,9 @@ agentRouting:
     - 2000
     - 10000
   maxEscalations: 2
+agentContract:
+  mode: enforce
+  maxIterations: 5
 governance:
   deciderIdentity: git
   confirmDecisionDigest: true
@@ -267,6 +272,8 @@ architecture:
   mode: agent
   refresh: manual
   enforce: enforce
+  layerCheck: differential
+  baselineConflicts: allow
 friction:
   fastLane:
     mode: auto
@@ -357,7 +364,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
 | `review.panel` | off when absent (the single reviewer of `review.agentReview`); `init` writes the section | The review panel (#57): reviewers by domain over diff slices, the layered rule catalog, the output contract, the recomputed verdict, cache, budget, scoped auto-fix; also `harness review-code`. Keys: `mode`, `reviewers`, `maxFindings`, `parallel`, `budget`, `cache`, `provider`, `fallbackProvider`, `consistencyChecks`, `runTools`, `autoFix`, `secondOpinion`, `evidenceRefs`, `comment`, `baseBranches`, `mcpServers`. See the [review panel guide](../guides/review-panel.md). |
 | `runtime.gateContract`, `runtime.reproduceFirst` | off when absent; `init` writes `true` | The gate contract and permissions in the implement request; reproduce-first and empty corrections. |
-| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
+| `runtime.contractRetry` | off when absent; `init` writes `{mode: once}` | Since #80 a read-only call whose answer breaks its contract (since #92 also a call that changed the workspace, after the harness undid the change) is sent once more (to `fallbackProvider`, an `agentProviders` entry or `simulated`, when set) before its phase blocks; both attempts are recorded. See [a second attempt for a broken answer](../guides/agent-results.md#a-second-attempt-for-a-broken-answer-80). |
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
@@ -376,6 +383,12 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `verification.principles` | off when absent; `init` writes `mode: enforce` with every proxy on and `severity: MEDIUM` | Engineering principles as deterministic proxies and a checklist in the review call. See [engineering principles](../guides/engineering.md#engineering-principles). |
 | `testing.*` | off when absent; `init` writes `strategy: auto` | The testing strategy: detected, asked, `tdd` (red, green, refactor evidence) or `bdd` (Gherkin scenarios). See [testing strategy](../guides/engineering.md#testing-strategy). |
 | `architecture.*` | off when absent; `init` writes `mode: agent`, `refresh: manual`, `enforce: enforce` | The architecture: configured layers, a cached survey of an existing project or options for a new one, enforced as forbidden dependencies. See [architecture](../guides/engineering.md#architecture). |
+| `verification.acceptanceTests.protect` | `false` when absent; `init` writes `true` | The frozen acceptance files are write-protected for the implementing agent: denied by the agent sandbox and put back, with a HIGH `acceptance.write-undone` finding, when an agent invocation changed them. See [write protection and disputes](../guides/agent-results.md#write-protection-and-disputes-94). |
+| `verification.acceptanceTests.disputes` | `off` when absent; `init` writes `person` | A VERIFICATION that fails only on frozen acceptance tests the agent disputes in its self-report (`disputedAcceptanceTests`) waits for a person, who upholds the tests or sends the run back to SPECIFICATION for new ones (`harness acceptance dispute`). See [write protection and disputes](../guides/agent-results.md#write-protection-and-disputes-94). |
+| `architecture.layerCheck` | `full` when absent; `init` writes `differential` | `differential`: the layer check judges only the layers a changed file did not import on the baseline (a new file is judged whole). See [architecture](../guides/engineering.md#architecture). |
+| `architecture.baselineConflicts` | `enforce` when absent; `init` writes `allow` | `allow`: the dependencies the code already has and a survey's inferred rules forbid are listed in the proposal (and in the inbox) and stay allowed in the rules a person approves. See [architecture](../guides/engineering.md#architecture). |
+| `architecture.catalogue` | `off` when absent; `init` writes `experts` | `experts`: a new project is offered the ten styles of the catalogue; the advise call recommends one with its reasons and the project characteristics that support it (report in `.harness/architecture-options.md`), a person accepts it or picks any style (`harness architecture decide --style`), and an expert for the chosen style plans the organization and rides with every later request. See [architectures (Spanish)](../es/arquitecturas.md). |
+| `architecture.documentation` | `off` when absent; `init` writes `project` | `project`: the survey of an existing project also writes persistent reverse engineering documents in `.harness/reverse-engineering` that later requests point to; the survey is reused while they hold. See [reverse engineering (Spanish)](../es/ingenieria-inversa.md). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
@@ -471,7 +484,7 @@ happened after a run to it (schema
 a person: a decision in `DECISION` (gate status, digest, blocking findings and the risk factors
 an `APPROVE` must acknowledge, `acknowledgeRisks`) or answers to clarification questions in
 `INTENT`, and every other wait before `DECISION` (`plan`, `decomposition`, `acceptance`,
-`architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
+`acceptance-dispute`, `architecture`, `contract`, `deferred`, `preflight`), each with the `digest` the answer binds to
 and the command that answers it, oldest first. It needs no configuration. The dashboard
 refreshes the inbox, the runs and the selected run every 5 seconds.
 
@@ -803,6 +816,13 @@ provenance of the edit when `provenance.agentSnapshots` is on), and the event
 the independent review runs again and DECISION asks for a decision bound to the new digest. A
 decision recorded for the earlier digest stays stale. A failed re-verification follows the usual
 correction rules. The key never applies to a run that is not in DECISION.
+
+A `gate decide` refused because its digest is stale (exit 5) only compares: it leaves the run's
+recorded digest as the gate saw it, so the `run continue` that follows still finds the change and
+re-verifies it (#95). Before, the refusal recorded the new digest on the run and the change went
+unnoticed: the gate stayed `INCONCLUSIVE`. Without the key the outcome is the `INCONCLUSIVE`
+gate described above, now with its `approval.invalidated` event as when no decision was
+attempted.
 
 ## Governance
 
@@ -1296,6 +1316,27 @@ confirmContract: true
 | `delivery.pullRequest` | none | `create: false`, `draft: true` | `create` the pull or merge request after the push, and `draft` (over `delivery.forge.draft`). The forge, the repository, the base (`delivery.forge.baseBranch`, else the remote's default branch), the labels and the template (followed by the decision brief) are the forge layer's: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea, detected from `origin` unless `delivery.forge` names it (see [forges](../guides/forges.md)). Created once per run; the contract's `createPullRequest` overrides `create`. |
 | `delivery.comment` | `never` | `notClean` | Comment the brief on that pull request through the same forge (one comment per run, updated on a retry) when the run is not clean (an exception, a gate that did not pass, a certification that is not `CERTIFIED`), `always` or `never`; the contract's `comment` overrides it. |
 | `instructions` | the default files, `harness` first | the default files and precedence | `harness config lint` reads `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `.github/copilot-instructions.md` and reports conflicting tool versions (also against `.python-version`, `requires-python`, `.nvmrc`, `engines.node` and `go.mod`), conflicting coverage thresholds (also against `diffCoverage`), instructions to skip the tests and instructions to bypass a control (`--no-verify`, a forced push, `git add -A`, `\|\| true`, `--exit-zero`, `continue-on-error`, `HUSKY=0`, `SKIP=`), each with the source that wins by `precedence`. Exit 6 when there is an issue. |
+
+## Agent contract
+
+`agentContract` (since wave 11, #97) turns on the versioned request and response contract of every
+agent call. `harness init` writes `mode: enforce` and `maxIterations: 5`; a `project.yaml` without
+the section behaves, and digests, as before. The guide in Spanish is
+[Contrato entre agentes](../es/contrato-de-agentes.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
+| `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
+| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. |
+| `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
+| `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
+| `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |
+
+`harness agent-contract schema request|response|script` prints the schemas,
+`harness agent-contract validate` checks a document, `harness agent-contract scripts` lists the
+script contracts and `harness agent-contract calls --run RUN` shows what each call received and
+returned.
 
 ## Friction
 

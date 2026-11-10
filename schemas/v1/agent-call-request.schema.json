@@ -1,0 +1,337 @@
+{
+  "$defs": {
+    "AuthorizedResources": {
+      "additionalProperties": false,
+      "description": "What the call may read, write and run. Context files remain guidance: reads are not\nblocked, writes are confined as the agent sandbox does.",
+      "properties": {
+        "commands": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Commands",
+          "type": "array"
+        },
+        "denyPaths": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Denypaths",
+          "type": "array"
+        },
+        "guidancePaths": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Guidancepaths",
+          "type": "array"
+        },
+        "readPaths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Readpaths",
+          "type": "array"
+        },
+        "scripts": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Scripts",
+          "type": "array"
+        },
+        "writePaths": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Writepaths",
+          "type": "array"
+        }
+      },
+      "required": [
+        "readPaths",
+        "writePaths"
+      ],
+      "title": "AuthorizedResources",
+      "type": "object"
+    },
+    "ExecutionConstraints": {
+      "additionalProperties": false,
+      "properties": {
+        "contextFilesAreGuidance": {
+          "default": true,
+          "title": "Contextfilesareguidance",
+          "type": "boolean"
+        },
+        "readOnly": {
+          "title": "Readonly",
+          "type": "boolean"
+        },
+        "scriptsAreBlackBoxes": {
+          "default": true,
+          "title": "Scriptsareblackboxes",
+          "type": "boolean"
+        },
+        "workspace": {
+          "title": "Workspace",
+          "type": "string"
+        }
+      },
+      "required": [
+        "readOnly",
+        "workspace"
+      ],
+      "title": "ExecutionConstraints",
+      "type": "object"
+    },
+    "ExpectedResponse": {
+      "additionalProperties": false,
+      "description": "The answer the call must give: the 1.0 protocol object, the keys of its ``result`` and\nthe caps per field.",
+      "properties": {
+        "fileContentsAllowed": {
+          "title": "Filecontentsallowed",
+          "type": "boolean"
+        },
+        "limits": {
+          "$ref": "#/$defs/ExpectedResponseLimits"
+        },
+        "protocol": {
+          "const": "1.0",
+          "default": "1.0",
+          "title": "Protocol",
+          "type": "string"
+        },
+        "resultKeys": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Resultkeys",
+          "type": "array"
+        }
+      },
+      "required": [
+        "resultKeys",
+        "limits",
+        "fileContentsAllowed"
+      ],
+      "title": "ExpectedResponse",
+      "type": "object"
+    },
+    "ExpectedResponseLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "fieldChars": {
+          "minimum": 1,
+          "title": "Fieldchars",
+          "type": "integer"
+        },
+        "resultBytes": {
+          "minimum": 1,
+          "title": "Resultbytes",
+          "type": "integer"
+        },
+        "summaryChars": {
+          "minimum": 1,
+          "title": "Summarychars",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "summaryChars",
+        "resultBytes",
+        "fieldChars"
+      ],
+      "title": "ExpectedResponseLimits",
+      "type": "object"
+    },
+    "Iteration": {
+      "additionalProperties": false,
+      "description": "The call's place in the cap of iterations of the agent in this run.",
+      "properties": {
+        "max": {
+          "maximum": 6,
+          "minimum": 1,
+          "title": "Max",
+          "type": "integer"
+        },
+        "number": {
+          "minimum": 1,
+          "title": "Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "max"
+      ],
+      "title": "Iteration",
+      "type": "object"
+    },
+    "ReturnToParent": {
+      "additionalProperties": false,
+      "description": "The minimal result that reaches the parent and what never does.",
+      "properties": {
+        "fields": {
+          "default": [
+            "finalStatus",
+            "summary",
+            "result",
+            "limitReached"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "never": {
+          "default": [
+            "the request or its context",
+            "the content of files when a conclusion is required",
+            "reasoning or internal notes",
+            "information the parent does not need for its next decision"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "title": "Never",
+          "type": "array"
+        }
+      },
+      "title": "ReturnToParent",
+      "type": "object"
+    },
+    "TaskAssignment": {
+      "additionalProperties": false,
+      "description": "The task the call assigns: its id, the kind of call, a short objective and the task\nfields the request carries (the others were left out).",
+      "properties": {
+        "callKind": {
+          "enum": [
+            "implement",
+            "clarify",
+            "review",
+            "plan",
+            "acceptance",
+            "architecture",
+            "locate"
+          ],
+          "title": "Callkind",
+          "type": "string"
+        },
+        "fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "array"
+        },
+        "objective": {
+          "maxLength": 500,
+          "title": "Objective",
+          "type": "string"
+        },
+        "taskId": {
+          "minLength": 1,
+          "title": "Taskid",
+          "type": "string"
+        }
+      },
+      "required": [
+        "taskId",
+        "callKind",
+        "objective",
+        "fields"
+      ],
+      "title": "TaskAssignment",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/agent-call-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The request contract (schema ``agent-call-request.schema.json``).",
+  "properties": {
+    "allowedContext": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Allowedcontext",
+      "type": "array"
+    },
+    "callKind": {
+      "enum": [
+        "implement",
+        "clarify",
+        "review",
+        "plan",
+        "acceptance",
+        "architecture",
+        "locate"
+      ],
+      "title": "Callkind",
+      "type": "string"
+    },
+    "constraints": {
+      "$ref": "#/$defs/ExecutionConstraints"
+    },
+    "contractVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Contractversion",
+      "type": "string"
+    },
+    "expectedResponse": {
+      "$ref": "#/$defs/ExpectedResponse"
+    },
+    "iteration": {
+      "$ref": "#/$defs/Iteration"
+    },
+    "resources": {
+      "$ref": "#/$defs/AuthorizedResources"
+    },
+    "returnToParent": {
+      "$ref": "#/$defs/ReturnToParent"
+    },
+    "sizeClass": {
+      "enum": [
+        "S",
+        "M",
+        "L"
+      ],
+      "title": "Sizeclass",
+      "type": "string"
+    },
+    "task": {
+      "$ref": "#/$defs/TaskAssignment"
+    },
+    "timeLimitSeconds": {
+      "minimum": 1,
+      "title": "Timelimitseconds",
+      "type": "integer"
+    },
+    "tokenBudget": {
+      "minimum": 1,
+      "title": "Tokenbudget",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "callKind",
+    "task",
+    "allowedContext",
+    "resources",
+    "constraints",
+    "tokenBudget",
+    "timeLimitSeconds",
+    "sizeClass",
+    "iteration",
+    "expectedResponse",
+    "returnToParent"
+  ],
+  "title": "AgentCallRequestContract",
+  "type": "object"
+}

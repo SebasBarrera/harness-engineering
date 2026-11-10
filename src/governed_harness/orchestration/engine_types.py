@@ -113,6 +113,9 @@ class AgentCallOutcome:
     evidence_refs: tuple[str, ...]
     protocol_error: str | None = None
     """Since #80: why the answer broke the provider protocol (no JSON, no ``result``)."""
+    workspace_violation: str | None = None
+    """Since #92: the call changed the workspace (undone, ``agent.read-only-violation``) and its
+    answer was discarded; under ``runtime.contractRetry`` the call is sent once more."""
 
 
 @dataclass(frozen=True)

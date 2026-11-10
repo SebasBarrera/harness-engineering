@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from governed_harness.agents.command import CommandAgentConfiguration
 from governed_harness.agents.native import (
+    CLAUDE_WRITE_TOOLS,
     extract_call_result,
     implement_extras_lines,
     native_provider,
@@ -93,7 +94,75 @@ def test_a_reviewer_runs_isolated_on_the_built_in_adapters() -> None:
     argv, _, _ = codex.process_input(request, cast(Any, None))
     assert argv[argv.index("--sandbox") + 1] == "read-only"
     assert "--full-auto" not in argv
-    # Without isolation the base arguments are unchanged.
-    argv, _, _ = claude.process_input(REQUEST, cast(Any, None))
-    assert "acceptEdits" in argv
-    assert "--allowedTools" not in argv
+
+
+IMPLEMENT: dict[str, Any] = {
+    "schemaVersion": "1.1",
+    "kind": "implement",
+    "task": {"task_id": "t", "title": "Discount", "intent": "Add a discount"},
+}
+PANEL: dict[str, Any] = {
+    **REQUEST,
+    "kind": "review",
+    "isolation": {"readOnly": True, "tools": ["Read", "Write", "Bash(rm:*)", "Grep"]},
+}
+
+
+def argv_of(kind: str, request: dict[str, Any]) -> tuple[str, ...]:
+    argv, _, _ = provider(kind).process_input(request, cast(Any, None))
+    return cast(tuple[str, ...], argv)
+
+
+def denied_tools(argv: tuple[str, ...]) -> set[str]:
+    start = argv.index("--disallowedTools") + 1
+    return set(argv[start : start + len(CLAUDE_WRITE_TOOLS)])
+
+
+def test_claude_code_gets_read_only_tools_for_a_read_only_call() -> None:
+    # #92: the pilot's clarify call ran with --permission-mode acceptEdits and wrote a file.
+    argv = argv_of("claude-code", REQUEST)
+    assert "acceptEdits" not in argv
+    assert argv[argv.index("--permission-mode") + 1] == "default"
+    assert argv[argv.index("--allowedTools") + 1] == "Read,Grep,Glob"
+    assert denied_tools(argv) == {"Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"}
+
+
+def test_claude_code_drops_the_write_tools_of_a_reviewer() -> None:
+    argv = argv_of("claude-code", PANEL)
+    assert argv[argv.index("--allowedTools") + 1] == "Read,Grep"
+    assert denied_tools(argv) == set(CLAUDE_WRITE_TOOLS)
+
+
+def test_claude_code_names_the_denied_tools_once_with_the_command_policy() -> None:
+    argv = argv_of("claude-code", {**REQUEST, "commandPolicy": {"destructive": "deny"}})
+    assert argv.count("--disallowedTools") == 1
+    assert "Bash" in argv
+
+
+def test_codex_runs_a_read_only_call_in_its_read_only_sandbox() -> None:
+    argv = argv_of("codex", REQUEST)
+    assert argv[argv.index("--sandbox") + 1] == "read-only"
+    assert "--full-auto" not in argv
+
+
+def test_gemini_cli_does_not_approve_edits_in_a_read_only_call() -> None:
+    argv = argv_of("gemini-cli", REQUEST)
+    assert argv[argv.index("--approval-mode") + 1] == "default"
+    panel = argv_of("gemini-cli", PANEL)
+    assert panel[panel.index("--approval-mode") + 1] == "default"
+
+
+def test_aider_answers_a_read_only_call_without_writing() -> None:
+    argv = argv_of("aider", REQUEST)
+    assert argv[argv.index("--chat-mode") + 1] == "ask"
+    assert "--dry-run" in argv
+    assert "--no-suggest-shell-commands" in argv
+    assert "--dry-run" in argv_of("aider", PANEL)
+
+
+def test_an_implement_call_keeps_the_write_arguments() -> None:
+    assert "acceptEdits" in argv_of("claude-code", IMPLEMENT)
+    assert "--full-auto" in argv_of("codex", IMPLEMENT)
+    gemini = argv_of("gemini-cli", IMPLEMENT)
+    assert gemini[gemini.index("--approval-mode") + 1] == "auto_edit"
+    assert "--dry-run" not in argv_of("aider", IMPLEMENT)

@@ -1,0 +1,17 @@
+{
+  "demoWorkdir": "<work>/work/block0-w9/demo",
+  "evaluationCodeDigest": "2fa38d882a04aaa4",
+  "git": "git version 2.56.0",
+  "harnessExecutable": "<repo>/.venv/bin/harness",
+  "harnessVersion": "harness 1.0.0",
+  "machine": "arm64",
+  "modelCalls": 0,
+  "platform": "macOS-15.8.1-arm64-arm-64bit",
+  "python": "3.12.11",
+  "recordedAt": "2026-10-06T14:45:10Z",
+  "repositoryHead": "6158cc60cec2e1eb1a7dd262da84d107cae856d7",
+  "runDirs": 24,
+  "suite": "N04 metrics validity",
+  "wheel": null,
+  "wheelSha256": null
+}

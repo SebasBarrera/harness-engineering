@@ -2,6 +2,137 @@
 
 ## 2.0.0 - 2026-10-06
 
+- A catalogue of ten architecture styles with an expert for each, and persistent reverse
+  engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
+  `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests
+  and configuration digest.
+  - `architecture.catalogue: experts`: a new project is offered layered, hexagonal, clean, ddd,
+    modular-monolith, microservices, mvvm, mvi, event-driven and cqrs (the last two are new
+    values of `architecture.style`). Each style ships as a file in `resources/architecture`
+    (purpose, when it fits, structure, best practices, dependency rules, a layer template and the
+    expert prompt) and is in the wheel. The advise call must recommend exactly one style with
+    its reason and the project characteristics that support it, otherwise the result is
+    malformed and INTENT blocks; the harness writes the report to
+    `.harness/architecture-options.md`. A person accepts the recommendation, picks another
+    proposed option or any style of the catalogue (`harness architecture decide --style`). After
+    the decision a read-only call by the style's expert plans the organization
+    (`.harness/architecture-organization.md`, event `architecture.organization.proposed`), and
+    the expert prompt, the plan and the style document ride in the `architecture` block of every
+    later request.
+  - `architecture.documentation: project`: the survey of an existing project also describes the
+    components, the organization of files and folders, the conventions and how to act, and
+    writes them to `.harness/reverse-engineering` (index, structure, components, conventions,
+    working agreement). Requests point to them. The survey is reused while the layout holds and
+    the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
+    the documents. `harness architecture refresh` redoes it. Guides in Spanish:
+    `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+- A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
+  `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
+  `project.yaml` without it behaves, and digests, as before.
+  - Contract: JSON Schemas `agent-call-request`, `agent-call-response` and `script-contract`
+    (41 schemas) generated from the typed models; the request states the task, allowed context,
+    authorized resources, constraints, token budget, time limit, iteration, expected response and
+    what returns to the parent; `harness agent-contract schema|validate|scripts|calls`.
+  - Minimal request: a read-only call sends only the task fields its kind needs; every call is
+    recorded (`agent-call-record`, `agent.call.recorded`) and `harness agent-contract calls`
+    shows what was sent, what the parent received and whether the stored request matches its
+    digest and the context the contract allowed. Context files stay guidance.
+  - Minimal response: a summary cap and `result` caps (keys of the kind, bytes, text fields, no
+    file contents where a conclusion is due); an answer outside them fails closed as
+    `agent.contract.violation` and is retried under `runtime.contractRetry`.
+  - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
+    corrections, contract retries, escalations and calls cut by a limit count; at the cap the
+    phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+  - Token budget and time limit per call from the router's S/M/L size (starting values, to be
+    calibrated): the time limit stops the process, the token budget is checked on the usage the
+    provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
+  - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
+    commands and the embedded MCP tools; the implement instructions tell the agent to use only
+    that contract.
+  - Documentation in Spanish under `docs/es/`.
+- Read-only calls get read-only tools, and a call that wrote is retried (#92). In the wave 9
+  pilot a `clarify` call answered correctly and also wrote a test file: the harness undid the
+  write, recorded `agent.read-only-violation` and discarded the answer, so INTENT blocked. Two
+  changes:
+  - The built-in adapters enforce `readOnly: true` (`clarify`, `plan`, `acceptance`, `locate`,
+    `architecture`, `review`, the reviewers of the panel) instead of running those calls with
+    the arguments of an implement call: `claude-code` runs with `--permission-mode default
+    --allowedTools Read,Grep,Glob --disallowedTools Write Edit MultiEdit NotebookEdit Bash`
+    (a reviewer keeps its own allowlist without those), `codex` with `--sandbox read-only`,
+    `gemini-cli` with `--approval-mode default` and `aider` with `--chat-mode ask --dry-run
+    --no-suggest-shell-commands` (the last two are documented limitations: no tool allowlist,
+    no sandbox). The arguments follow each CLI's documentation and are tested against fake
+    CLIs, not the live agents. A fix of adapters that did not honour the request; it applies
+    always, with no new key, and the recorded command line of a read-only call changes.
+  - Under `runtime.contractRetry` a read-only call that changed the workspace is sent once more
+    after the harness undoes the change, to `fallbackProvider` when set: both attempts and the
+    `HIGH` finding of the first stay recorded, and the phase blocks only if the second attempt
+    writes again or breaks its contract. Without the key the first write blocks, as before.
+- A refused stale approval no longer hides the change from re-verification (#95). Under
+  `verification.reverifyOnChange`, a `gate decide` refused because its digest no longer matched
+  the ChangeSet (exit 5) recorded the new digest on the run, so the `run continue` that followed
+  saw no change and left an `INCONCLUSIVE` gate instead of re-verifying (found by the fault probes
+  of the 2.0.0 evaluation, `later-change`). A decision now only compares the current ChangeSet
+  with its digest and leaves the run's digest as its gate saw it. A bug fix that restores the
+  documented re-verification; it applies always, with no new key. Without
+  `reverifyOnChange` the outcome is unchanged (exit 5, then an `INCONCLUSIVE` gate), and the
+  `run continue` now also records `approval.invalidated`, as it does when no decision was
+  attempted.
+- The local metrics HTML report is organised like a project overview (wave 11, item 1). It opens
+  with a status of the period (`CLEAR`, `ATTENTION` or `NO_DATA`, derived only from four counts
+  the report already holds: blocked runs, rejected runs, HIGH or CRITICAL findings in runs that
+  did not close, and open runs whose latest gate failed; not a quality certification), summary
+  cards per dimension, anchor navigation and detail groups for cost and tokens, time, friction,
+  quality, delivery, trends and data quality. New fields, all from existing records: `summary`,
+  `quality.findingsBySeverity`, `findingsByFile`, `openBlockingFindings`, `gateResults`,
+  `limitsReached`, `blockedRunsDetail`, `totals.costPerFeatureUsd` and
+  `friction.perTask[].corrections`; every earlier field is kept. The report stays in
+  `.harness/metrics/` (ignored by Git) and one self-contained file with no script. Spanish guide:
+  `docs/es/reporte-de-metricas.md`; the Spanish README no longer says tokens and cost are never
+  available.
+- Spanish user guides and a PyPI channel (#97, items 7, 8 and 10). `docs/es/` has task-oriented
+  pages for a first governed run, a new and an existing project, every file and folder the
+  harness generates (what it is for and whether to commit it), following a run (status, inbox,
+  findings, evidence, trace, budget, verify, dashboard, exit codes, reports), installation (basic
+  and advanced) and publishing, and `docs/es/trabajo-simultaneo.md`, which states what two people
+  can and cannot do at once, with the experiments behind it: parallel runs with
+  `--isolate worktree` on one machine are supported; two runs in one directory without
+  isolation, or two clones, are not coordinated. `release.yml` gains a `publish-pypi` job
+  (`pypa/gh-action-pypi-publish` pinned to the commit of `v1.14.2`, environment `pypi`,
+  `id-token: write` only there) that uploads the distributions the `release` job built and
+  attested, after it and only on tags; it runs only when the repository variable `PYPI_PUBLISH`
+  is `true`, so the release does not depend on the Trusted Publisher until the maintainer sets it
+  up (`docs/maintainer-setup.md`). No behaviour of a run changes.
+- Frozen acceptance tests the agent cannot rewrite and may dispute (#94). In the wave 9 pilot
+  one implementing agent rewrote the frozen acceptance files, and in another run a correct
+  change failed against approved tests that were wrong. Two keys under
+  `verification.acceptanceTests`, which `harness init` writes: `protect: true` adds the frozen
+  files to the paths the agent sandbox denies writes to and, after every agent invocation, puts
+  back any frozen file that is no longer as approved (HIGH `acceptance.write-undone`);
+  `disputes: person` lets the agent list a test it believes is wrong in its self-report (new
+  optional field `disputedAcceptanceTests`, `[{test, reason}]`), and a VERIFICATION that fails
+  only on the frozen tests then waits for a person (`BLOCKED`, an `acceptance-dispute` entry in
+  `harness inbox`) instead of failing. The new command `harness acceptance dispute --decision
+  UPHOLD|REVISE`, bound to the digest of the dispute, either keeps the tests (the run goes on to
+  its corrections or fails, as before) or removes them and returns the run to SPECIFICATION,
+  where new tests are proposed, approved and frozen with their digests (the earlier ones stay
+  recorded) before the same change is verified again. Without the keys nothing changes: the
+  behaviour and the configuration digest of an existing `project.yaml` stay as they were. The
+  self-report record gains the `disputedAcceptanceTests` list (empty unless the agent gives it).
+- Layer rules no longer blame a change for what the baseline has (#93). In the wave 9 pilot a
+  casual task got a HIGH `architecture.layer-violation` for `from .exc import BadData`, an import
+  the baseline already had, under a rule the survey inferred and the code itself broke. Two keys
+  under `architecture`, which `harness init` writes: `layerCheck: differential` makes the layer
+  check judge only the layers a changed file did not import on the baseline (a new file is
+  judged whole), for configured layers, an approved survey and an ADR; `baselineConflicts: allow`
+  checks the rules a survey infers against the source files before they are proposed, lists each
+  dependency the code already has and the rules forbid in the proposal (`baselineConflicts`, with
+  examples), in the message of the blocked run and in the `architecture` entry of
+  `harness inbox`, and records the rules in force (`enforced`: the inferred rules with those
+  dependencies allowed) under the digest a person approves. A `project.yaml` without the keys
+  keeps the earlier behaviour (every import of a changed file is judged, rules as inferred) and
+  its configuration digest; `harness config validate` shows both keys under
+  `engineering.architecture`.
 - The gate contract names what requirement traceability checks and suggests only a command the
   agent may run (#84). Under `requirementTraceability: enforce` the contract said so but gave
   neither the requirement identifiers nor the naming rule the check applies, and it suggested

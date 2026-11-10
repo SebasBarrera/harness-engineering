@@ -4,6 +4,11 @@
 Usage: python report.py <results-dir> <out.json> [<figures-dir>]
 Reads <results-dir>/longitudinal-*.jsonl. Descriptive values only: medians, ranges and counts.
 A session is valid when its final oracle ran the 25 hidden checks.
+
+2.0.0 sessions (block D) add the conditions ``structured`` and the governed ``harness``,
+``harness-core`` and ``harness-anchored``; each cell reports the dispersion (min, median, max) of its
+sessions, the governance calls apart from the implementation calls, the increments the harness did not
+deliver and every session's outcome per increment, so no aggregate hides a stopped increment.
 """
 
 from __future__ import annotations
@@ -11,13 +16,21 @@ from __future__ import annotations
 import json
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
 MODELS = ["claude-haiku-4-5-20251001", "claude-sonnet-5-5", "claude-opus-5-5"]
-LABELS = {"claude-haiku-4-5-20251001": "Haiku 4.5", "claude-sonnet-5-5": "Sonnet 5.5", "claude-opus-5-5": "Opus 5.5"}
-CONDITIONS = [("baseline", "Prompts casuales, sin harness", "#9a9a9a"), ("harness", "Tareas estructuradas, con harness", "#2f4f6f")]
+LABELS = {
+    "claude-haiku-4-5-20251001": "Haiku 4.5",
+    "claude-sonnet-5-5": "Sonnet 5.5",
+    "claude-opus-5-5": "Opus 5.5",
+}
+CONDITIONS = [
+    ("baseline", "Prompts casuales, sin harness", "#9a9a9a"),
+    ("harness", "Tareas estructuradas, con harness", "#2f4f6f"),
+]
+GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "harness-legacy")
 HIDDEN_TOTAL = 25
 
 
@@ -32,8 +45,11 @@ def valid(r: dict[str, Any]) -> bool:
     return r["final"]["hiddenTotal"] == HIDDEN_TOTAL
 
 
-def spread(values: list[float]) -> dict[str, float]:
-    return {"median": statistics.median(values), "min": min(values), "max": max(values)}
+def spread(values: list[float | None]) -> dict[str, float | None]:
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return {"median": None, "min": None, "max": None}
+    return {"median": statistics.median(clean), "min": min(clean), "max": max(clean)}
 
 
 def first_pass(r: dict[str, Any]) -> int:
@@ -61,9 +77,30 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "lineCoverage": spread([r["final"]["lineCoverage"] for r in rows]),
         "ruffFindings": spread([r["final"]["ruffFindings"] for r in rows]),
         "banditFindings": sum(sum(r["final"]["bandit"].values()) for r in rows),
-        "harnessIncrementsApprovedFirstGate": sum(h["gateHistory"][:1] == ["PASSED"] for h in harness),
-        "harnessIncrementsTraceComplete": sum(h["trace"]["present"] == h["trace"]["requiredCount"] for h in harness),
+        "harnessIncrementsApprovedFirstGate": sum(
+            h["gateHistory"][:1] == ["PASSED"] for h in harness
+        ),
+        "harnessIncrementsTraceComplete": sum(
+            h["trace"]["present"] == h["trace"]["requiredCount"] for h in harness
+        ),
         "harnessIncrementsNotDelivered": sum(not h["delivered"] for h in harness),
+        "governanceCalls": spread([r["usage"].get("governanceCalls", 0) for r in rows]),
+        "governanceCostUsd": spread([r["usage"].get("governanceCostUsd", 0) for r in rows]),
+        "calls": spread([r["usage"]["calls"] for r in rows]),
+        "harnessOutcomes": dict(Counter(h.get("outcome") for h in harness)),
+        "sessionsDetail": [
+            {
+                "rep": r["rep"],
+                "hidden": f"{r['final']['hiddenPassed']}/{r['final']['hiddenTotal']}",
+                "fixRequests": r["fixRequests"],
+                "increments": [
+                    f"{s['increment']}:{(s.get('harness') or {}).get('outcome', 'direct')}"
+                    for s in r["steps"]
+                    if s["kind"] == "main"
+                ],
+            }
+            for r in sorted(rows, key=lambda x: x["rep"])
+        ],
     }
 
 
@@ -79,7 +116,11 @@ def main() -> int:
     data = {
         "sessionsRecorded": len(records),
         "sessionsValid": len(good),
-        "invalid": [{"model": r["model"], "condition": r["condition"], "rep": r["rep"]} for r in records if not valid(r)],
+        "invalid": [
+            {"model": r["model"], "condition": r["condition"], "rep": r["rep"]}
+            for r in records
+            if not valid(r)
+        ],
         "conditions": {c: summarize(rows) for c, rows in sorted(by_condition.items())},
         "cells": {f"{m}|{c}": summarize(rows) for (m, c), rows in sorted(cells.items())},
     }
@@ -96,26 +137,50 @@ def figure(rows: list[dict[str, Any]], target: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    plt.rcParams.update({"font.family": "serif", "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
-                         "font.size": 9, "axes.spines.top": False, "axes.spines.right": False, "pdf.fonttype": 42})
-    panels = [("Pedidos al agente por sesión", lambda r: r["prompts"]),
-              ("Costo por sesión (USD)", lambda r: r["usage"]["costUsd"])]
+    plt.rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["Times New Roman", "Times", "DejaVu Serif"],
+            "font.size": 9,
+            "axes.spines.top": False,
+            "axes.spines.right": False,
+            "pdf.fonttype": 42,
+        }
+    )
+    panels = [
+        ("Pedidos al agente por sesión", lambda r: r["prompts"]),
+        ("Costo por sesión (USD)", lambda r: r["usage"]["costUsd"]),
+    ]
     fig, axes = plt.subplots(1, 2, figsize=(6.3, 2.7))
     for ax, (title, value) in zip(axes, panels, strict=True):
         for offset, (condition, label, color) in zip((-0.17, 0.17), CONDITIONS, strict=True):
             labelled = False
             for i, model in enumerate(MODELS):
-                values = sorted(value(r) for r in rows if r["model"] == model and r["condition"] == condition)
+                values = sorted(
+                    value(r) for r in rows if r["model"] == model and r["condition"] == condition
+                )
                 if not values:
                     continue
-                spreadx = [i + offset + 0.07 * (k - (len(values) - 1) / 2) for k in range(len(values))]
-                ax.scatter(spreadx, values, s=22, color=color, label=None if labelled else label, zorder=3)
+                spreadx = [
+                    i + offset + 0.07 * (k - (len(values) - 1) / 2) for k in range(len(values))
+                ]
+                ax.scatter(
+                    spreadx, values, s=22, color=color, label=None if labelled else label, zorder=3
+                )
                 labelled = True
-                ax.hlines(statistics.median(values), i + offset - 0.13, i + offset + 0.13, color=color, linewidth=1.2)
+                ax.hlines(
+                    statistics.median(values),
+                    i + offset - 0.13,
+                    i + offset + 0.13,
+                    color=color,
+                    linewidth=1.2,
+                )
         ax.set_xticks(range(len(MODELS)), [LABELS[m] for m in MODELS])
         ax.set_ylabel(title)
         ax.set_ylim(bottom=0)
-        ax.yaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}".replace(".", ",")))
+        ax.yaxis.set_major_formatter(
+            matplotlib.ticker.FuncFormatter(lambda v, _: f"{v:g}".replace(".", ","))
+        )
     axes[0].legend(frameon=False, loc="lower left", fontsize=7)
     fig.tight_layout()
     target.mkdir(parents=True, exist_ok=True)

@@ -1208,6 +1208,13 @@ class SelfReportItem(StrictModel):
     description: str = Field(min_length=1, max_length=1000)
 
 
+class DisputedAcceptanceTest(StrictModel):
+    """A frozen acceptance test the agent believes is wrong, and why (#94)."""
+
+    test: str = Field(min_length=1, max_length=1000)
+    reason: str = Field(min_length=1, max_length=1000)
+
+
 class SelfReportContrast(StrictModel):
     """The self-report compared with the ChangeSet recorded after the same invocation."""
 
@@ -1233,6 +1240,8 @@ class AgentSelfReport(StrictModel):
     alternatives_discarded: tuple[str, ...] = ()
     low_confidence_areas: tuple[SelfReportItem, ...] = ()
     unrequested_changes: tuple[SelfReportItem, ...] = ()
+    disputed_acceptance_tests: tuple[DisputedAcceptanceTest, ...] = ()
+    """Frozen acceptance tests the agent believes are wrong (#94); a person decides."""
     problems: tuple[str, ...] = ()
     """What could not be read from the agent's answer (the rest is kept)."""
     contrast: SelfReportContrast | None = None

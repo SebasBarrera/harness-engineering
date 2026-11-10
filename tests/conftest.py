@@ -72,6 +72,7 @@ AGENT_RESULTS_SECTIONS = (
     "budget",
     "memory",
     "agentRouting",
+    "agentContract",
     "standards",
     "testing",
     "architecture",

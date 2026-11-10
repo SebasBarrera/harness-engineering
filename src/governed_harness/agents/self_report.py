@@ -13,7 +13,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from governed_harness.domain.models import SelfReportItem
+from governed_harness.domain.models import DisputedAcceptanceTest, SelfReportItem
 
 SELF_REPORT_FIELDS = (
     "assumptions",
@@ -21,6 +21,9 @@ SELF_REPORT_FIELDS = (
     "lowConfidenceAreas",
     "unrequestedChanges",
 )
+DISPUTED_FIELD = "disputedAcceptanceTests"
+"""Optional fifth field (#94): ``[{test, reason}]``, asked for only when the frozen
+acceptance tests can be disputed (``verification.acceptanceTests.disputes``)."""
 MAX_ITEMS = 50
 MAX_TEXT = 1000
 
@@ -55,6 +58,7 @@ class ParsedSelfReport:
     low_confidence_areas: tuple[SelfReportItem, ...]
     unrequested_changes: tuple[SelfReportItem, ...]
     problems: tuple[str, ...]
+    disputed_acceptance_tests: tuple[DisputedAcceptanceTest, ...] = ()
 
     def paths(self) -> tuple[str, ...]:
         return tuple(
@@ -119,6 +123,26 @@ def _items(raw: Any, name: str, problems: list[str]) -> tuple[SelfReportItem, ..
     return tuple(items)
 
 
+def _disputed(raw: Any, problems: list[str]) -> tuple[DisputedAcceptanceTest, ...]:
+    """``[{test, reason}]`` (``path`` and ``description`` are read too); an entry without a
+    test or without a reason is a problem, not a dispute."""
+    if raw is None:
+        return ()
+    if not isinstance(raw, list):
+        problems.append(f"{DISPUTED_FIELD} is not a list")
+        return ()
+    found = []
+    for entry in raw[:MAX_ITEMS]:
+        item = entry if isinstance(entry, dict) else {}
+        test = _text(item.get("test")) or _text(item.get("path"))
+        reason = _text(item.get("reason")) or _text(item.get("description"))
+        if test is None or reason is None:
+            problems.append(f"{DISPUTED_FIELD} has an entry without a test or a reason")
+            continue
+        found.append(DisputedAcceptanceTest(test=test, reason=reason))
+    return tuple(found)
+
+
 def parse_self_report(raw: Any) -> ParsedSelfReport | None:
     """The report in ``raw`` (an object with the four fields), ``None`` when there is none."""
     if raw is None:
@@ -126,7 +150,7 @@ def parse_self_report(raw: Any) -> ParsedSelfReport | None:
     problems: list[str] = []
     if not isinstance(raw, dict):
         return ParsedSelfReport((), (), (), (), ("the self-report is not an object",))
-    unknown = sorted(set(raw) - set(SELF_REPORT_FIELDS))
+    unknown = sorted(set(raw) - set(SELF_REPORT_FIELDS) - {DISPUTED_FIELD})
     if unknown:
         problems.append(f"unknown field(s) ignored: {', '.join(unknown)}")
     return ParsedSelfReport(
@@ -136,6 +160,7 @@ def parse_self_report(raw: Any) -> ParsedSelfReport | None:
         ),
         low_confidence_areas=_items(raw.get("lowConfidenceAreas"), "lowConfidenceAreas", problems),
         unrequested_changes=_items(raw.get("unrequestedChanges"), "unrequestedChanges", problems),
+        disputed_acceptance_tests=_disputed(raw.get(DISPUTED_FIELD), problems),
         problems=tuple(problems),
     )
 

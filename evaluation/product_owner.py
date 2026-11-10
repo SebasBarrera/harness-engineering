@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from agentlib import run_claude
+from agentlib import allocate_call, run_claude
 
 PRODUCT_OWNER_ACTOR = "human.product-owner-simulated"
 PO_TIMEOUT_SECONDS = 1800
@@ -68,14 +68,17 @@ def parse_answers(text: str, question_ids: list[str]) -> dict[str, Any]:
     raw = yaml.safe_load(match.group(1) if match else text)
     if not isinstance(raw, dict) or not isinstance(raw.get("answers"), dict):
         raise ValueError("the product owner did not return an answers map")
-    answers = {str(k): str(v).strip() for k, v in raw["answers"].items() if str(k) in question_ids and v}
+    answers = {
+        str(k): str(v).strip() for k, v in raw["answers"].items() if str(k) in question_ids and v
+    }
     if not answers:
         raise ValueError("the product owner answered none of the questions")
     result: dict[str, Any] = {"answers": answers}
     for key in ("replaceCriteria", "addCriteria", "addRequirements"):
         if raw.get(key):
             result[key] = [
-                {k: (v.strip() if isinstance(v, str) else v) for k, v in item.items()} if isinstance(item, dict)
+                {k: (v.strip() if isinstance(v, str) else v) for k, v in item.items()}
+                if isinstance(item, dict)
                 else str(item).strip()
                 for item in raw[key]
             ]
@@ -104,28 +107,63 @@ class ProductOwner:
             knowledge=self.knowledge,
         )
         ids = [q["questionId"] for q in questions]
-        number = len(list(self.calls.glob("call-*.json"))) + 1
-        record = run_claude(prompt, self.scratch, self.model, self.calls / f"call-{number}.json",
-                            timeout_seconds=PO_TIMEOUT_SECONDS, max_budget_usd=PO_BUDGET_USD, resumable=True)
+        record = run_claude(
+            prompt,
+            self.scratch,
+            self.model,
+            allocate_call(self.calls),
+            timeout_seconds=PO_TIMEOUT_SECONDS,
+            max_budget_usd=PO_BUDGET_USD,
+            resumable=True,
+        )
         try:
             answers = parse_answers(record.get("resultText", ""), ids)
         except (ValueError, yaml.YAMLError) as error:
             # One retry with the parse error, as a person would be asked to fix a malformed file.
-            retry = (prompt + "\n\nYour previous reply could not be read as the answers file (" + str(error)[:300]
-                     + "). Reply again with one valid ```yaml block, every text as a | block scalar.")
-            record = run_claude(retry, self.scratch, self.model, self.calls / f"call-{number + 1}.json",
-                                timeout_seconds=PO_TIMEOUT_SECONDS, max_budget_usd=PO_BUDGET_USD, resumable=True)
+            retry = (
+                prompt
+                + "\n\nYour previous reply could not be read as the answers file ("
+                + str(error)[:300]
+                + "). Reply again with one valid ```yaml block, every text as a | block scalar."
+            )
+            record = run_claude(
+                retry,
+                self.scratch,
+                self.model,
+                allocate_call(self.calls),
+                timeout_seconds=PO_TIMEOUT_SECONDS,
+                max_budget_usd=PO_BUDGET_USD,
+                resumable=True,
+            )
             answers = parse_answers(record.get("resultText", ""), ids)
         # A rewrite of a criterion the task does not have becomes a new criterion instead of an error.
         known = {c.get("criterionId") for c in task.get("acceptanceCriteria", [])}
-        replace = [c for c in answers.get("replaceCriteria", []) if isinstance(c, dict) and c.get("criterionId") in known]
-        moved = [c.get("text") for c in answers.get("replaceCriteria", []) if c not in replace and isinstance(c, dict)]
+        replace = [
+            c
+            for c in answers.get("replaceCriteria", [])
+            if isinstance(c, dict) and c.get("criterionId") in known
+        ]
+        moved = [
+            c.get("text")
+            for c in answers.get("replaceCriteria", [])
+            if c not in replace and isinstance(c, dict)
+        ]
         if "replaceCriteria" in answers:
             answers.pop("replaceCriteria")
             if replace:
                 answers["replaceCriteria"] = replace
             if [t for t in moved if t]:
-                answers["addCriteria"] = list(answers.get("addCriteria", [])) + [t for t in moved if t]
-        self.rounds.append({"questions": questions, "answers": answers, "usage": {
-            k: record.get(k) for k in ("costUsd", "inputTokens", "outputTokens", "numTurns", "wallSeconds")}})
+                answers["addCriteria"] = list(answers.get("addCriteria", [])) + [
+                    t for t in moved if t
+                ]
+        self.rounds.append(
+            {
+                "questions": questions,
+                "answers": answers,
+                "usage": {
+                    k: record.get(k)
+                    for k in ("costUsd", "inputTokens", "outputTokens", "numTurns", "wallSeconds")
+                },
+            }
+        )
         return answers

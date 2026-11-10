@@ -299,6 +299,7 @@ class ProvenanceRecorder:
             alternatives_discarded=parsed.alternatives_discarded if parsed else (),
             low_confidence_areas=parsed.low_confidence_areas if parsed else (),
             unrequested_changes=parsed.unrequested_changes if parsed else (),
+            disputed_acceptance_tests=parsed.disputed_acceptance_tests if parsed else (),
             problems=problems,
             contrast=contrast,
         )

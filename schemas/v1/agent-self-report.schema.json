@@ -1,5 +1,29 @@
 {
   "$defs": {
+    "DisputedAcceptanceTest": {
+      "additionalProperties": false,
+      "description": "A frozen acceptance test the agent believes is wrong, and why (#94).",
+      "properties": {
+        "reason": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "test": {
+          "maxLength": 1000,
+          "minLength": 1,
+          "title": "Test",
+          "type": "string"
+        }
+      },
+      "required": [
+        "test",
+        "reason"
+      ],
+      "title": "DisputedAcceptanceTest",
+      "type": "object"
+    },
     "MetricQuality": {
       "enum": [
         "OBSERVED",
@@ -113,6 +137,14 @@
       "format": "date-time",
       "title": "Createdat",
       "type": "string"
+    },
+    "disputedAcceptanceTests": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/DisputedAcceptanceTest"
+      },
+      "title": "Disputedacceptancetests",
+      "type": "array"
     },
     "executionId": {
       "title": "Executionid",

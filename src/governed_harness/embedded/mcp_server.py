@@ -47,6 +47,7 @@ SERVER_NAME = "governed-harness"
 HUMAN_ONLY = (
     "harness gate decide",
     "harness acceptance decide",
+    "harness acceptance dispute",
     "harness plan decide",
     "harness architecture decide",
     "harness budget raise",

@@ -115,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"{TARGET.relative_to(ROOT)} is up to date")
         return 0
-    TARGET.write_text(content, encoding="utf-8")
+    TARGET.write_text(content, encoding="utf-8", newline="\n")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 

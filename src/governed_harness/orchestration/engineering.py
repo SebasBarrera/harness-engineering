@@ -52,6 +52,29 @@ TDD_ID = "harness.tdd"
 SETUP_FLAG = "projectsetup"
 
 
+def _architecture_notes(architecture: dict[str, Any]) -> list[str]:
+    """The sentences the instructions gain for each part of the architecture block."""
+    notes: list[str] = []
+    if "layers" in architecture:
+        notes.append(
+            "Respect the architecture block: a file of one layer may import only the "
+            "layers listed as allowed for it."
+        )
+    if "expert" in architecture:
+        notes.append(
+            "Act as the expert of the chosen architecture style: follow the expert prompt of the "
+            "architecture block, the organization it carries and the style document it points "
+            "to, and keep the implementation aligned with the style."
+        )
+    if "reverseEngineering" in architecture:
+        notes.append(
+            "The architecture block points to the reverse engineering documents of this "
+            "project: read them before searching the code and follow their working agreement; "
+            "do not analyse the whole project again."
+        )
+    return notes
+
+
 def detect_testing(workspace: Path, technologies: tuple[str, ...] = ()) -> Strategy:
     """``bdd`` when the repository has feature files or a BDD framework, ``conventional``
     when it has tests, else ``unknown`` (asked in INTENT under ``intake.projectSetup``)."""
@@ -244,10 +267,7 @@ class Engineering:
         architecture = self.results.architecture.request_extra()
         if architecture is not None:
             extra["architecture"] = architecture
-            notes.append(
-                "Respect the architecture block: a file of one layer may import only the "
-                "layers listed as allowed for it."
-            )
+            notes.extend(_architecture_notes(architecture))
         return extra, " ".join(notes)
 
     def _cards(

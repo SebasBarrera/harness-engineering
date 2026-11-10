@@ -138,6 +138,25 @@ class NormativeStateMachine:
             ),
         )
 
+    def authorize_acceptance_revision(self, phase: PhaseId) -> TransitionDecision:
+        """Since 2.0 (``verification.acceptanceTests.disputes``, #94): a person who agrees
+        that a frozen acceptance test is wrong sends a failed VERIFICATION back to
+        SPECIFICATION, where new tests are proposed, approved and frozen. The plan and the
+        implementation stand: VERIFICATION runs again on the same change."""
+        if phase is not PhaseId.VERIFICATION:
+            raise InvalidTransition("an acceptance revision may only start from VERIFICATION")
+        return TransitionDecision(
+            source=PhaseId.VERIFICATION,
+            target=PhaseId.SPECIFICATION,
+            invalidated=(
+                PhaseId.SPECIFICATION,
+                PhaseId.VERIFICATION,
+                PhaseId.INDEPENDENT_REVIEW,
+                PhaseId.DECISION,
+                PhaseId.CLOSURE,
+            ),
+        )
+
     @staticmethod
     def approval_is_current(approved_digest: str, current_digest: str) -> bool:
         return approved_digest == current_digest

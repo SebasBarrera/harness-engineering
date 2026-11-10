@@ -80,6 +80,7 @@ governed_harness = [
   "resources/standards/*/*.yaml",
   "resources/review/*.yaml",
   "resources/review/agents/*.md",
+  "resources/architecture/*.md",
 ]
 
 [tool.pytest.ini_options]

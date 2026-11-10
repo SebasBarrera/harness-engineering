@@ -1,0 +1,493 @@
+{
+  "catalog": {
+    "active": 34,
+    "byLayer": {
+      "A": 25,
+      "B": 9,
+      "C": 0
+    },
+    "byTool": 14,
+    "digest": "sha256:e9c83b9239420f55920c0a8ea83f88ce675eabd4bf202cd31e69f4aae1916763",
+    "inactive": []
+  },
+  "drift": [],
+  "packs": [
+    "python"
+  ],
+  "reviewers": [
+    {
+      "activation": "signal:structure",
+      "diffSlice": "sources",
+      "domain": "architecture",
+      "id": "architecture",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 3,
+      "source": "builtin"
+    },
+    {
+      "activation": "signal:concurrency",
+      "diffSlice": "sources",
+      "domain": "concurrency",
+      "id": "concurrency",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 2,
+      "source": "builtin"
+    },
+    {
+      "activation": "changed",
+      "diffSlice": "pipeline",
+      "domain": "pipeline-security",
+      "id": "pipeline-security",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 4,
+      "source": "builtin"
+    },
+    {
+      "activation": "changed",
+      "diffSlice": "sources",
+      "domain": "quality",
+      "id": "quality",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 3,
+      "source": "builtin"
+    },
+    {
+      "activation": "signal:external-calls",
+      "diffSlice": "sources",
+      "domain": "resilience",
+      "id": "resilience",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 2,
+      "source": "builtin"
+    },
+    {
+      "activation": "changed",
+      "diffSlice": "tests",
+      "domain": "tests",
+      "id": "tests",
+      "modes": [
+        "run",
+        "hook",
+        "manual",
+        "staged"
+      ],
+      "rules": 6,
+      "source": "builtin"
+    }
+  ],
+  "rules": [
+    {
+      "domain": "architecture",
+      "id": "architecture.dependency-direction",
+      "layer": "A",
+      "priority": 10,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "architecture",
+      "id": "architecture.leaky-abstraction",
+      "layer": "A",
+      "priority": 40,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "architecture",
+      "id": "architecture.public-contract",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "concurrency",
+      "id": "concurrency.mutation-after-publication",
+      "layer": "A",
+      "priority": 15,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "concurrency",
+      "id": "concurrency.shared-mutable-state",
+      "layer": "A",
+      "priority": 10,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.cache-integrity",
+      "layer": "A",
+      "priority": 30,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.command-injection",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.dangerous-paths",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:dangerous-paths"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.embedded-instructions",
+      "layer": "A",
+      "priority": 3,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:embedded-instructions"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.exposed-credentials",
+      "layer": "A",
+      "priority": 1,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:secrets"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.portability",
+      "layer": "A",
+      "priority": 40,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.quoting",
+      "layer": "A",
+      "priority": 30,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.temporary-files",
+      "layer": "A",
+      "priority": 35,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:temporary-files"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "pipeline-security.weakened-gate",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:weakened-gates"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "python.naming",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:N802",
+        "tool:ruff:N803",
+        "tool:ruff:N806",
+        "tool:ruff:N801"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "python.no-mutable-defaults",
+      "layer": "B",
+      "priority": 50,
+      "severity": "blocking",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:B006"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "python.no-print-in-library",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:T201"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "python.public-annotations",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:ANN001",
+        "tool:ruff:ANN201",
+        "tool:mypy:no-untyped-def"
+      ]
+    },
+    {
+      "domain": "resilience",
+      "id": "python.resource-handling",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:SIM115"
+      ]
+    },
+    {
+      "domain": "pipeline-security",
+      "id": "python.safe-deserialization",
+      "layer": "B",
+      "priority": 50,
+      "severity": "blocking",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:S301",
+        "tool:ruff:S506"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "python.small-functions",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:C901",
+        "tool:ruff:PLR0912",
+        "tool:ruff:PLR0913"
+      ]
+    },
+    {
+      "domain": "resilience",
+      "id": "python.specific-exceptions",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "tool:ruff:E722",
+        "tool:ruff:BLE001",
+        "tool:ruff:S110"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "python.test-behaviour",
+      "layer": "B",
+      "priority": 50,
+      "severity": "warning",
+      "source": "pack:python",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "quality.dead-code",
+      "layer": "A",
+      "priority": 45,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "quality.misleading-name",
+      "layer": "A",
+      "priority": 40,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "quality",
+      "id": "quality.wrong-logic",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "resilience",
+      "id": "resilience.external-call-limits",
+      "layer": "A",
+      "priority": 10,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "resilience",
+      "id": "resilience.swallowed-exception",
+      "layer": "A",
+      "priority": 10,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.changed-branch-uncovered",
+      "layer": "A",
+      "priority": 15,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.mock-of-subject",
+      "layer": "A",
+      "priority": 10,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.tautological-assertion",
+      "layer": "A",
+      "priority": 5,
+      "severity": "blocking",
+      "source": "builtin",
+      "verifiedBy": [
+        "tool:harness:tautological-assertion"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.unused-mock",
+      "layer": "A",
+      "priority": 45,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.verify-without-value",
+      "layer": "A",
+      "priority": 40,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    },
+    {
+      "domain": "tests",
+      "id": "tests.weak-assertion-complex-setup",
+      "layer": "A",
+      "priority": 30,
+      "severity": "warning",
+      "source": "builtin",
+      "verifiedBy": [
+        "ai"
+      ]
+    }
+  ],
+  "tools": [
+    "mypy",
+    "ruff"
+  ]
+}

@@ -24,3 +24,7 @@ build/
 /site/
 coverage.xml
 junit*.xml
+
+# 2.0.0 evaluation: the raw run directories live in EVAL_WORK; logs stay local
+/evaluation/results-2.0.0/**/log*.txt
+/evaluation/results-2.0.0/**/runs/
