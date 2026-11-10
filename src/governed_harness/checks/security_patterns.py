@@ -40,7 +40,7 @@ _CARD_NAME = re.compile(
 )
 _CARD_SAFE = re.compile(r"last_?4|last_?four|masked|token|hash|fingerprint")
 _CREATE_TABLE = re.compile(r"create\s+table", re.IGNORECASE)
-_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_IDENTIFIER = re.compile(r"[A-Za-z_]\w*", re.ASCII)
 
 _HASH_FUNCTIONS = frozenset({"md5", "sha1", "sha224", "sha256", "sha384", "sha512", "new"})
 _PASSWORD_NAME = re.compile(r"password|passwd|passphrase|pwd|(?:^|_)pass(?:_|$|\d)")

@@ -37,7 +37,7 @@ class SecretRedactor:
         ),
         (
             "github_token",
-            re.compile(rb"\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,})\b"),
+            re.compile(rb"\b(?:gh[pousr]_\w{20,}|github_pat_\w{20,})\b"),
             b"<REDACTED_GITHUB_TOKEN>",
         ),
         (
