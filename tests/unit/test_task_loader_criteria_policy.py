@@ -55,9 +55,6 @@ def test_a_task_with_criteria_is_not_marked(tmp_path: Path, policy: CriteriaPoli
 
 
 def test_the_marker_cannot_be_written_in_a_task_file(tmp_path: Path) -> None:
+    task_file = write(tmp_path, ONE_SENTENCE + "criteriaPending: true\n")
     with pytest.raises(ConfigurationError, match="unknown task field"):
-        load_task_file(
-            write(tmp_path, ONE_SENTENCE + "criteriaPending: true\n"),
-            project_id="p",
-            criteria_policy="warn",
-        )
+        load_task_file(task_file, project_id="p", criteria_policy="warn")

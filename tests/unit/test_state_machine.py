@@ -14,8 +14,9 @@ def test_pass_advances_to_next_phase() -> None:
     [ResultStatus.BLOCKED, ResultStatus.ERROR, ResultStatus.SKIPPED, ResultStatus.INCONCLUSIVE],
 )
 def test_non_success_does_not_advance(status: ResultStatus) -> None:
+    normative_state_machine = NormativeStateMachine()
     with pytest.raises(InvalidTransition):
-        NormativeStateMachine().advance(PhaseId.VERIFICATION, status)
+        normative_state_machine.advance(PhaseId.VERIFICATION, status)
 
 
 def test_correction_invalidates_downstream() -> None:

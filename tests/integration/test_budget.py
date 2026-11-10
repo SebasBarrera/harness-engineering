@@ -117,7 +117,8 @@ def test_crossing_the_run_limit_blocks_the_next_call_until_raised(
         for item in rules(application, python_workspace, run)
         if item.rule_id == "budget.exceeded"
     ]
-    assert exceeded and exceeded[0].severity is FindingSeverity.HIGH
+    assert exceeded
+    assert exceeded[0].severity is FindingSeverity.HIGH
     with pytest.raises(PolicyViolationError):
         application.raise_budget(
             python_workspace,
@@ -171,7 +172,8 @@ def test_warning_is_recorded_once(python_workspace: Path, tmp_path: Path) -> Non
         for item in rules(application, python_workspace, run)
         if item.rule_id == "budget.warning"
     ]
-    assert len(warnings) == 1 and warnings[0].severity is FindingSeverity.LOW
+    assert len(warnings) == 1
+    assert warnings[0].severity is FindingSeverity.LOW
     assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
         PhaseId.DECISION
     )

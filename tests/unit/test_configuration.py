@@ -26,8 +26,9 @@ def test_locked_policy_cannot_be_disabled(python_workspace: Path) -> None:
     value = yaml.safe_load(path.read_text())
     value["policies"]["requireHumanDecision"] = False
     path.write_text(yaml.safe_dump(value, sort_keys=False))
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def test_retrospective_auto_apply_cannot_be_enabled(python_workspace: Path) -> None:
@@ -36,8 +37,9 @@ def test_retrospective_auto_apply_cannot_be_enabled(python_workspace: Path) -> N
     value = yaml.safe_load(path.read_text())
     value["policies"]["retrospectiveAutoApply"] = True
     path.write_text(yaml.safe_dump(value, sort_keys=False))
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError, match="retrospectiveAutoApply"):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def test_config_validate_reports_effective_controls(python_workspace: Path) -> None:
@@ -88,8 +90,9 @@ def test_criteria_policy_values(python_workspace: Path, policy: str) -> None:
 
 def test_unknown_criteria_policy_is_a_configuration_error(python_workspace: Path) -> None:
     _set_intake(python_workspace, {"criteriaPolicy": "strict"})
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def _set_verification(workspace: Path, verification: dict[str, str] | None) -> None:
@@ -146,5 +149,6 @@ def test_unknown_requirement_traceability_is_a_configuration_error(
     python_workspace: Path, verification: dict[str, str]
 ) -> None:
     _set_verification(python_workspace, verification)
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)

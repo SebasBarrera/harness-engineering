@@ -5,6 +5,7 @@ import os
 import shutil
 import signal
 import subprocess  # nosec B404 - the governed runner: resolved executable, no shell
+import sys
 import threading
 import time
 from collections.abc import Mapping
@@ -52,7 +53,7 @@ def resolve_executable(argv0: str) -> str:
     """On Windows, resolve a bare command name through PATH and PATHEXT (``npm`` is
     ``npm.cmd``), which CreateProcess does not do; elsewhere return it unchanged. Authorization
     always applies to the name as written in the command."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         return argv0
     return shutil.which(argv0) or argv0
 
@@ -173,7 +174,7 @@ class SafeProcessRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
-            start_new_session=os.name != "nt",
+            start_new_session=sys.platform != "win32",
         )
         if self.observer is not None:
             self.observer.started(process.pid, spec.argv)
@@ -182,7 +183,7 @@ class SafeProcessRunner:
         except BaseException:
             if self.terminate_on_exit:
                 self._terminate(process)
-                if os.name != "nt":
+                if sys.platform != "win32":
                     # The leader may be gone while its children still run in its group.
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         os.killpg(process.pid, signal.SIGKILL)
@@ -273,7 +274,7 @@ class SafeProcessRunner:
         if process.poll() is not None:
             return
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 process.terminate()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -281,7 +282,7 @@ class SafeProcessRunner:
         except (ProcessLookupError, subprocess.TimeoutExpired):
             # Still running after SIGTERM: kill it; a process group that is already gone is fine.
             with contextlib.suppress(ProcessLookupError):
-                if os.name == "nt":
+                if sys.platform == "win32":
                     process.kill()
                 else:
                     os.killpg(process.pid, signal.SIGKILL)

@@ -133,13 +133,15 @@ def test_a_valid_request_contract_passes() -> None:
 
 
 def test_a_cap_above_six_in_the_contract_is_invalid() -> None:
+    contract = request_contract(iteration={"number": 1, "max": 7})
     with pytest.raises(ValueError, match="iteration"):
-        validate_request_contract(request_contract(iteration={"number": 1, "max": 7}))
+        validate_request_contract(contract)
 
 
 def test_an_iteration_above_the_cap_is_invalid() -> None:
+    contract = request_contract(iteration={"number": 6, "max": 5})
     with pytest.raises(ValueError, match="above the cap"):
-        validate_request_contract(request_contract(iteration={"number": 6, "max": 5}))
+        validate_request_contract(contract)
 
 
 def test_a_missing_required_field_is_named() -> None:
@@ -150,15 +152,15 @@ def test_a_missing_required_field_is_named() -> None:
 
 
 def test_a_read_only_call_cannot_be_authorized_to_write() -> None:
+    contract = request_contract(resources={"readPaths": ["/w"], "writePaths": ["src"]})
     with pytest.raises(ValueError, match="read-only"):
-        validate_request_contract(
-            request_contract(resources={"readPaths": ["/w"], "writePaths": ["src"]})
-        )
+        validate_request_contract(contract)
 
 
 def test_an_unknown_field_is_invalid() -> None:
+    contract = request_contract(extra="x")
     with pytest.raises(ValueError, match="extra"):
-        validate_request_contract(request_contract(extra="x"))
+        validate_request_contract(contract)
 
 
 def test_the_task_and_the_contract_must_name_the_same_kind() -> None:
@@ -188,18 +190,21 @@ def test_a_valid_response_passes() -> None:
 
 
 def test_a_limit_status_needs_the_limit() -> None:
+    payload = response(finalStatus="LIMIT_REACHED", result=None)
     with pytest.raises(ValueError, match="limitReached"):
-        validate_response_contract(response(finalStatus="LIMIT_REACHED", result=None))
+        validate_response_contract(payload)
 
 
 def test_only_a_passed_call_returns_a_result() -> None:
+    payload = response(finalStatus="BLOCKED")
     with pytest.raises(ValueError, match="only a passed call"):
-        validate_response_contract(response(finalStatus="BLOCKED"))
+        validate_response_contract(payload)
 
 
 def test_a_violation_status_needs_the_violations() -> None:
+    payload = response(finalStatus="CONTRACT_VIOLATION", result=None)
     with pytest.raises(ValueError, match="violations"):
-        validate_response_contract(response(finalStatus="CONTRACT_VIOLATION", result=None))
+        validate_response_contract(payload)
 
 
 def test_a_limit_response_names_the_limit() -> None:

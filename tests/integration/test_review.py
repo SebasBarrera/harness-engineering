@@ -92,9 +92,11 @@ def test_run_references(python_workspace: Path, tmp_path: Path) -> None:
     assert application.resolve_run(python_workspace, first[4:12]) == first
     assert application.resolve_run(python_workspace, first[:12]) == first
     code, _, err = invoke(python_workspace, "status", "--run", "run_")
-    assert code == 2 and "matches 2 runs" in json.loads(err)["error"]
+    assert code == 2
+    assert "matches 2 runs" in json.loads(err)["error"]
     code, out, _ = invoke(python_workspace, "findings", "list")
-    assert code == 0 and isinstance(json.loads(out), list)
+    assert code == 0
+    assert isinstance(json.loads(out), list)
     code, out, _ = invoke(python_workspace, "status")
     assert json.loads(out)["execution"]["executionId"] == second
 
@@ -106,16 +108,20 @@ def test_review_cli_and_artifact_show(python_workspace: Path, tmp_path: Path) ->
     brief = json.loads(out)
     assert brief["changed"]["diff"].startswith("--- a/")
     text = CliRunner().invoke(app, ["--no-json", "review", "--path", str(python_workspace)])
-    assert "Decision brief - run" in text.stdout and "What changed (2 file(s)" in text.stdout
+    assert "Decision brief - run" in text.stdout
+    assert "What changed (2 file(s)" in text.stdout
     reference = brief["changed"]["diffRef"]
     code, out, _ = invoke(python_workspace, "artifact", "show", reference)
-    assert code == 0 and out == brief["changed"]["diff"]
+    assert code == 0
+    assert out == brief["changed"]["diff"]
     hex_digest = reference.removeprefix("artifact://sha256/")
     code, out, _ = invoke(python_workspace, "artifact", "show", hex_digest[:10], "--describe")
     described = json.loads(out)
-    assert described["verified"] is True and described["mediaType"] == "text/x-diff"
+    assert described["verified"] is True
+    assert described["mediaType"] == "text/x-diff"
     code, _, err = invoke(python_workspace, "artifact", "show", "0000000")
-    assert code == 3 and "hint" in json.loads(err)
+    assert code == 3
+    assert "hint" in json.loads(err)
     code, _, _ = invoke(python_workspace, "artifact", "show", "xyz")
     assert code == 2
 
@@ -134,7 +140,8 @@ def test_interactive_decision_confirms_the_digest(python_workspace: Path, tmp_pa
     code, out, _ = invoke(
         python_workspace, "gate", "decide", "--run", run_id, "--interactive", stdin=wrong
     )
-    assert code == 5 and "Decision brief" in out
+    assert code == 5
+    assert "Decision brief" in out
     assert HarnessApplication().status(python_workspace, run_id)["humanDecision"] is None
     right = f"APPROVE\nCriteria covered by tests\n{digest[7:19]}\n"
     code, out, _ = invoke(
@@ -164,7 +171,8 @@ def test_wrong_digest_hint_shows_the_current_digest(python_workspace: Path, tmp_
     )
     assert code == 5
     hint = json.loads(err)["hint"]
-    assert digest in hint and "No decision has been recorded" in hint
+    assert digest in hint
+    assert "No decision has been recorded" in hint
 
 
 def test_delta_since_a_requested_change(python_workspace: Path, tmp_path: Path) -> None:

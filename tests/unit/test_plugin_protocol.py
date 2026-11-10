@@ -40,7 +40,7 @@ def test_invalid_plugin_stdout_is_rejected(tmp_path: Path) -> None:
         (CapabilityRule(capability="process.execute", scope=(sys.executable,)),),
         lifetime=timedelta(minutes=1),
     )
+    external_plugin_client = ExternalPluginClient(tmp_path, (sys.executable, str(script)))
+    plugin_request = PluginRequest(requestId="request_001", operation="health")
     with pytest.raises(PluginProtocolError):
-        ExternalPluginClient(tmp_path, (sys.executable, str(script))).invoke(
-            PluginRequest(requestId="request_001", operation="health"), grants=grants
-        )
+        external_plugin_client.invoke(plugin_request, grants=grants)

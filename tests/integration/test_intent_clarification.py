@@ -282,11 +282,13 @@ def test_clarify_rejects_actor_ids_of_non_human_actors(
 
 def test_clarify_rejects_a_non_human_actor_type(python_workspace: Path, tmp_path: Path) -> None:
     task_id, _ = blocked_run(python_workspace, tmp_path)
+    harness_application = HarnessApplication()
+    answers_file = Path(write_answers(tmp_path))
     with pytest.raises(PolicyViolationError, match="human"):
-        HarnessApplication().clarify_task(
+        harness_application.clarify_task(
             python_workspace,
             task_id=task_id,
-            answers_file=Path(write_answers(tmp_path)),
+            answers_file=answers_file,
             actor_id="ci.pipeline",
             actor_type=ActorType.CI,
         )

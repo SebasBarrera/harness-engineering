@@ -1,0 +1,3 @@
+# Security jobs (security.yml): static analysis and the dependency audit.
+bandit[sarif]
+pip-audit

@@ -61,6 +61,20 @@ FAMILIES = ("unit", "contract", "integration", "security", "e2e", "performance")
 SECTIONS = ("tests", "security", "static", "demo", "benchmark", "large")
 
 
+# BSD time (macOS) reports the maximum resident set in bytes with -l; GNU time (Linux) in
+# kilobytes with -v.
+TIME_FLAG = "-l" if sys.platform == "darwin" else "-v"
+
+
+def max_resident_bytes(stderr: str) -> int | None:
+    """The maximum resident set of a ``/usr/bin/time`` report, in bytes, on macOS or Linux."""
+    bsd = re.search(r"(\d+)\s+maximum resident set size", stderr)
+    if bsd:
+        return int(bsd.group(1))
+    gnu = re.search(r"Maximum resident set size \(kbytes\):\s*(\d+)", stderr)
+    return int(gnu.group(1)) * 1024 if gnu else None
+
+
 def env_for(args: argparse.Namespace) -> dict[str, str]:
     harness_bin = str(Path(args.harness).resolve().parent)
     python_bin = str(Path(args.python).resolve().parent)
@@ -383,7 +397,7 @@ def section_large(args: argparse.Namespace) -> dict[str, Any]:
             )
             timed = [
                 "/usr/bin/time",
-                "-l",
+                TIME_FLAG,
                 args.harness,
                 "run",
                 "start",
@@ -395,7 +409,7 @@ def section_large(args: argparse.Namespace) -> dict[str, Any]:
             begin = time.monotonic()
             proc = subprocess.run(timed, cwd=root, env=h.env, capture_output=True, text=True)
             seconds = round(time.monotonic() - begin, 2)
-            match = re.search(r"(\d+)\s+maximum resident set size", proc.stderr)
+            rss = max_resident_bytes(proc.stderr)
             harness_bytes, harness_largest, harness_secret = tree_bytes(root / ".harness")
             state_bytes, state_largest, state_secret = tree_bytes(state / "state")
             try:
@@ -417,7 +431,7 @@ def section_large(args: argparse.Namespace) -> dict[str, Any]:
                     "runStatus": started_payload.get("status"),
                     "runPhase": started_payload.get("currentPhase"),
                     "runStartSeconds": seconds,
-                    "maxResidentSetBytes": int(match.group(1)) if match else None,
+                    "maxResidentSetBytes": rss,
                     "harnessDirBytes": harness_bytes,
                     "stateDirBytes": state_bytes,
                     "largestStoredFileBytes": max(harness_largest, state_largest),

@@ -24,6 +24,7 @@ from governed_harness.domain.models import Execution
 from governed_harness.orchestration import engine as engine_module
 from governed_harness.orchestration.engine import EngineServices, RunEngine
 from governed_harness.orchestration.retention import RetentionCollector
+from governed_harness.runtime import resolve_executable
 from governed_harness.runtime.sandbox import (
     SandboxHost,
     SandboxPath,
@@ -113,14 +114,16 @@ def test_schema_marks_declarative_fields() -> None:
 
 def test_invalid_profile_policy_is_a_configuration_error(python_workspace: Path) -> None:
     _update_config(python_workspace, {"policies.missingTestCommand": "PASSED"})
+    resolver_value = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver_value.resolve(python_workspace)
     _update_config(
         python_workspace,
         {"policies.missingTestCommand": "FAILED", "policies.coverage": {"minimumPercent": 140}},
     )
+    resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
-        ConfigurationResolver().resolve(python_workspace)
+        resolver.resolve(python_workspace)
 
 
 def test_decision_expires(
@@ -191,9 +194,12 @@ def test_coverage_threshold(python_workspace: Path, tmp_path: Path) -> None:
     pending = _pending(python_workspace, tmp_path)
     validations = HarnessApplication().status(python_workspace, pending.execution_id)
     findings = HarnessApplication().list_findings(python_workspace, pending.execution_id)
+    # The interpreter the coverage validator runs: "python" as the harness resolves it.
     has_coverage = (
         subprocess.run(
-            ["python", "-c", "import coverage"], capture_output=True, check=False
+            [resolve_executable("python"), "-c", "import coverage"],
+            capture_output=True,
+            check=False,
         ).returncode
         == 0
     )
@@ -267,13 +273,15 @@ def test_gc_applies_retention(python_workspace: Path, tmp_path: Path) -> None:
     )
     assert closed.status is ResultStatus.PASSED
     report = HarnessApplication().gc(python_workspace)
-    assert report["applied"] is False and report["artifactsRemoved"] == 0
+    assert report["applied"] is False
+    assert report["artifactsRemoved"] == 0
     resolved = ConfigurationResolver().resolve(python_workspace)
     services = EngineServices.open(resolved)
     try:
         collector = RetentionCollector(services)
         plan = collector.plan(now=datetime.now(UTC) + timedelta(days=31))
-        assert plan.pruned_runs and not plan.removed_runs
+        assert plan.pruned_runs
+        assert not plan.removed_runs
         blobs = len(list(services.artifacts.list()))
         collector.apply(plan)
         assert len(list(services.artifacts.list())) == blobs - len(plan.artifacts)

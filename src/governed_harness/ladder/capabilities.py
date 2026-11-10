@@ -21,6 +21,8 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from governed_harness.runtime.process_runner import resolve_executable
+
 if TYPE_CHECKING:
     from governed_harness.configuration.ladder import (
         CapabilityDetection,
@@ -109,7 +111,7 @@ def run_detection(argv: tuple[str, ...], cwd: Path, timeout: int) -> tuple[int |
         return None, f"{argv[0]} not found"
     try:
         result = subprocess.run(  # nosec B603 - argv from the trusted catalog or project profile
-            list(argv),
+            [resolve_executable(argv[0]), *argv[1:]],
             cwd=cwd,
             capture_output=True,
             check=False,

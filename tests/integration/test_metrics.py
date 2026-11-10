@@ -175,7 +175,7 @@ def test_metrics_command_formats_and_filters(python_workspace: Path, tmp_path: P
         app, [*base, "--format", "html", "--output", str(tmp_path / "report.html")]
     )
     assert html.exit_code == 0
-    assert (tmp_path / "report.html").read_text().startswith("<!doctype")
+    assert (tmp_path / "report.html").read_text(encoding="utf-8").startswith("<!doctype")
 
 
 def test_all_repositories_of_the_registry(python_workspace: Path, tmp_path: Path) -> None:

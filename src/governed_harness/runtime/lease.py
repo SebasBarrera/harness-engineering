@@ -19,6 +19,7 @@ import json
 import os
 import signal
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -80,7 +81,7 @@ class LeaseHolder:
 
 def process_alive(pid: int) -> bool | None:
     """Whether a process exists on this host; ``None`` where it cannot be checked safely."""
-    if os.name == "nt" or pid <= 0:
+    if sys.platform == "win32" or pid <= 0:
         return None
     try:
         os.kill(pid, 0)
@@ -230,7 +231,7 @@ def interruptible() -> Iterator[None]:
 def terminate_process_group(pgid: int, *, grace_seconds: float = 1.0) -> bool:
     """Terminate a process group a killed harness left behind (``SIGTERM``, then ``SIGKILL``).
     Returns whether a group existed. POSIX only."""
-    if os.name == "nt" or pgid <= 1 or pgid == os.getpgid(0):
+    if sys.platform == "win32" or pgid <= 1 or pgid == os.getpgid(0):
         return False
     try:
         os.killpg(pgid, signal.SIGTERM)
