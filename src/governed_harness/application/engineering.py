@@ -240,6 +240,40 @@ def _testing_strategy(testing: Any, workspace: Path, technologies: tuple[str, ..
     return detect_testing(workspace, technologies).strategy
 
 
+def _standards_summary(
+    standards: Any, workspace: Path, technologies: tuple[str, ...]
+) -> dict[str, Any]:
+    """The ``standards`` block of :func:`engineering_summary`."""
+    return {
+        "cards": standards.cards if standards else "off",
+        "tools": standards.tools if standards else "off",
+        "packs": _effective_packs(standards, workspace, technologies),
+    }
+
+
+def _architecture_summary(architecture: Any) -> dict[str, Any]:
+    """The ``architecture`` block of :func:`engineering_summary`."""
+    if not architecture:
+        return {
+            "mode": "off",
+            "style": None,
+            "layers": 0,
+            "layerCheck": "full",
+            "baselineConflicts": "enforce",
+            "catalogue": "off",
+            "documentation": "off",
+        }
+    return {
+        "mode": architecture.mode,
+        "style": architecture.style,
+        "layers": len(architecture.layers or ()),
+        "layerCheck": architecture.layer_check or "full",
+        "baselineConflicts": architecture.baseline_conflicts or "enforce",
+        "catalogue": architecture.catalogue or "off",
+        "documentation": architecture.documentation or "off",
+    }
+
+
 def engineering_summary(resolved: Any) -> dict[str, Any]:
     """Effective wave 6 settings for ``harness config validate`` (absent: 1.0.0 behaviour)."""
     project = resolved.project
@@ -251,23 +285,10 @@ def engineering_summary(resolved: Any) -> dict[str, Any]:
     forge = project.delivery_settings.forge
     return {
         "projectKind": detect_project_kind(workspace).kind,
-        "standards": {
-            "cards": standards.cards if standards else "off",
-            "tools": standards.tools if standards else "off",
-            "packs": _effective_packs(standards, workspace, technologies),
-        },
+        "standards": _standards_summary(standards, workspace, technologies),
         "principles": principles.mode if principles else "off",
         "testing": {"strategy": _testing_strategy(project.testing, workspace, technologies)},
-        "architecture": {
-            "mode": architecture.mode if architecture else "off",
-            "style": architecture.style if architecture else None,
-            "layers": len(architecture.layers or ()) if architecture else 0,
-            "layerCheck": (architecture.layer_check if architecture else None) or "full",
-            "baselineConflicts": (architecture.baseline_conflicts if architecture else None)
-            or "enforce",
-            "catalogue": (architecture.catalogue if architecture else None) or "off",
-            "documentation": (architecture.documentation if architecture else None) or "off",
-        },
+        "architecture": _architecture_summary(architecture),
         "projectSetup": project.intake.project_setup if project.intake else None,
         "forge": forge.kind if forge and forge.kind else "auto",
     }
