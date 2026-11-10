@@ -65,9 +65,21 @@ from run_session import calls_since, final_measures, usage  # noqa: E402
 PROMPTS = yaml.safe_load((HERE / "prompts.yaml").read_text(encoding="utf-8"))
 SPEC_TEXT = (HERE / "SPEC.md").read_text(encoding="utf-8")
 HIDDEN = HERE / "hidden"
-# Ruff and Mypy for quality.py: the repository's tool venv, found from the repository or from a copy in .local.
-TOOLS_PYTHON = str(next(p for p in HERE.parents if (p / ".local" / "venv-repo").is_dir()) / ".local" / "venv-repo"
-                   / "bin" / "python")
+
+
+def _tools_python() -> str:
+    """The interpreter that runs Ruff and Mypy for quality.py: $HARNESS_EVAL_TOOLS_PYTHON, else the
+    repository's tool venv in .local/venv-repo (the original campaign machine), else this one."""
+    if os.environ.get("HARNESS_EVAL_TOOLS_PYTHON"):
+        return os.environ["HARNESS_EVAL_TOOLS_PYTHON"]
+    for parent in HERE.parents:
+        venv = parent / ".local" / "venv-repo"
+        if venv.is_dir():
+            return str(venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python"))
+    return sys.executable
+
+
+TOOLS_PYTHON = _tools_python()
 AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
