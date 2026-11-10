@@ -7,13 +7,11 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
-from typing import Any, Self, TypeVar
+from typing import Any, Self
 
 from pydantic import BaseModel
 
 from governed_harness.domain.errors import NotFoundError
-
-T = TypeVar("T", bound=BaseModel)
 
 
 class SQLiteStateStore:
@@ -98,7 +96,7 @@ class SQLiteStateStore:
         payload: dict[str, Any] = json.loads(row["payload_json"])
         return payload
 
-    def get(self, record_type: str, record_id: str, model: type[T]) -> T:
+    def get[T: BaseModel](self, record_type: str, record_id: str, model: type[T]) -> T:
         return model.model_validate(self.get_dict(record_type, record_id))
 
     def list_dicts(
@@ -127,7 +125,7 @@ class SQLiteStateStore:
             ).fetchall()
         return [json.loads(row["payload_json"]) for row in rows]
 
-    def list(
+    def list[T: BaseModel](
         self,
         record_type: str,
         model: type[T],

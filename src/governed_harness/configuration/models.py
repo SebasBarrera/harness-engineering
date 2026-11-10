@@ -397,7 +397,7 @@ NATIVE_DEFAULT_COMMANDS: dict[str, tuple[str, ...]] = {
 }
 """The executable a built-in adapter runs when the provider sets no ``command``."""
 
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 
 
 class ProviderEnvReference(ConfigModel):
@@ -711,7 +711,7 @@ class ReviewConfig(ConfigModel):
 
 NotificationEvent = Literal["decision.pending", "run.finished", "exception.granted"]
 
-_WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 
 
 class WebhookConfig(ConfigModel):
