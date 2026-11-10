@@ -112,6 +112,8 @@ def suite_commands(
             str(work / name),
             "--project-venv",
             str(venv),
+            # H11 (PREREGISTRO.md) aggregates three repetitions of the defect suites.
+            *(["--reps", "3"] if name in DEFECT_CORPUS_INPUTS else []),
         ]
         for name, script in INTERCEPTION.items()
     }
