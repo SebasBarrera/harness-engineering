@@ -47,7 +47,7 @@ jobs:
       - name: Build sdist and wheel (PEP 517)
         run: |
           python -m pip install --require-hashes -r requirements/tools-build.txt
-          python -m build
+          python -m build --no-isolation
           python -m twine check --strict dist/*
       - name: Check wheel contents
         shell: bash

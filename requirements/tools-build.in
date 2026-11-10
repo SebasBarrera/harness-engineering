@@ -1,3 +1,7 @@
 # Building and checking the distributions (build.yml, release.yml, Dockerfile build stage).
 build>=1.2,<2
 twine
+# The PEP 517 backend of pyproject.toml: builds run with --no-isolation, so the backend is
+# installed from this lock instead of fetched unpinned by an isolated build environment.
+setuptools>=75
+wheel>=0.44
