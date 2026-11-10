@@ -414,9 +414,11 @@ reports them.
 This software is the artifact of the master's thesis *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis evaluates
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis documents the cut
 [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), which reproduces
-the evaluated cut byte for byte ([provenance](docs/provenance.md)).
+it byte for byte ([provenance](docs/provenance.md)), and its evaluation reports only version 2.0.0
+(campaign in progress, [`evaluation/campaign/`](evaluation/campaign/)); results of earlier versions are
+in the git history and the `v0.8.0` tag and are not part of that analysis.
 
 Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state):
 
@@ -426,7 +428,6 @@ Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state
 | JSON Schema contracts · CLI commands · API routes | 25 · 21 · 9 |
 | Tests | 86 (core 79, E2E Python 4, E2E Node.js 1, performance 2) |
 | Core coverage | lines 80.60 %, branches 59.29 % (77.48 % combined) |
-| Governed-process overhead | 10.09 % and 11.23 % (about 1.2 ms) |
 | Brownfield case | itsdangerous 2.2.0, 298 tests, invariant ChangeSet digest |
 
 More in [docs/thesis.md](docs/thesis.md). To cite the software, use [CITATION.cff](CITATION.cff)
