@@ -52,7 +52,8 @@ jobs:
       - name: Run the test suite with coverage
         if: steps.token.outputs.present == 'true'
         run: |
-          python -m pip install -e ".[dev,api]"
+          python -m pip install --require-hashes -r requirements/dev.txt
+          python -m pip install --no-deps -e .
           mkdir -p reports/ci
           python -m pytest -W error::ResourceWarning --cov=governed_harness --cov-branch \
             --cov-report=xml:coverage.xml --junitxml=reports/ci/junit-all.xml

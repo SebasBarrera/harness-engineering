@@ -104,10 +104,10 @@ jobs:
       - name: Audit the runtime dependency set (package + api extra)
         run: |
           python -m venv /tmp/audit
-          # The venv's bundled pip is tooling, not a dependency of the harness; upgrade it so the
-          # audit reflects the runtime dependency set rather than a stale installer.
-          /tmp/audit/bin/python -m pip install --upgrade pip
-          /tmp/audit/bin/python -m pip install ".[api]" pip-audit
+          # requirements/audit.txt pins the runtime set (package + api extra), pip-audit and a
+          # current pip (the venv's bundled pip is tooling, not a dependency of the harness).
+          /tmp/audit/bin/python -m pip install --require-hashes -r requirements/audit.txt
+          /tmp/audit/bin/python -m pip install --no-deps ".[api]"
           /tmp/audit/bin/python -m pip_audit --skip-editable --desc on --progress-spinner off
 
   bandit:
@@ -125,7 +125,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install Bandit
-        run: python -m pip install "bandit[sarif]"
+        run: python -m pip install --require-hashes -r requirements/tools-security.txt
       # --exit-zero only here: this step produces the complete report for code scanning.
       # The blocking decision is the next step, which fails on medium+ findings.
       - name: Full report as SARIF (all severities, uploaded to code scanning)
