@@ -338,6 +338,35 @@ def _off_or_value(value: Any) -> Any:
     return value if value is not None else "off"
 
 
+def _dump_or(section: Any, default: Any) -> Any:
+    """A configuration section as JSON, or ``default`` when it is absent."""
+    return section.model_dump(mode="json", by_alias=True) if section else default
+
+
+def _check_value(value: Any) -> Any:
+    """One verification check as ``config validate`` shows it."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", by_alias=True)
+    if isinstance(value, tuple):
+        return [item.model_dump(mode="json", by_alias=True) for item in value]
+    return value
+
+
+def _checks_summary(verification: Any) -> dict[str, Any]:
+    """The configured verification checks by alias; empty without a verification section."""
+    if verification is None:
+        return {}
+    return {
+        name: _check_value(value)
+        for name, value in (
+            (field.alias or key, getattr(verification, key))
+            for key, field in type(verification).model_fields.items()
+            if key not in {"requirement_traceability", "output_parsers"}
+        )
+        if value is not None
+    }
+
+
 def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
     """Effective agent-results settings for ``config validate``; ``off`` (or false) where a
     key is absent, which is the 1.0.0 behaviour."""
@@ -358,39 +387,13 @@ def agent_results_summary(project: ProjectConfiguration) -> dict[str, Any]:
         "reproduceFirst": bool(runtime.reproduce_first),
         "stopTheLine": off(governance.stop_the_line),
         "phasePermissions": bool(governance.phase_permissions),
-        "checks": {
-            name: (
-                value.model_dump(mode="json", by_alias=True)
-                if hasattr(value, "model_dump")
-                else [item.model_dump(mode="json", by_alias=True) for item in value]
-                if isinstance(value, tuple)
-                else value
-            )
-            for name, value in (
-                (field.alias or key, getattr(verification, key))
-                for key, field in type(verification).model_fields.items()
-                if key not in {"requirement_traceability", "output_parsers"}
-            )
-            if value is not None
-        }
-        if verification is not None
-        else {},
-        "planning": project.planning.model_dump(mode="json", by_alias=True)
-        if project.planning
-        else {"decomposition": "off"},
-        "context": project.context.model_dump(mode="json", by_alias=True)
-        if project.context
-        else {"manifest": "off"},
-        "budget": project.budget.model_dump(mode="json", by_alias=True) if project.budget else None,
-        "memory": project.memory.model_dump(mode="json", by_alias=True)
-        if project.memory
-        else {"learnFromFindings": "off"},
-        "agentRouting": project.agent_routing.model_dump(mode="json", by_alias=True)
-        if project.agent_routing
-        else {"mode": "fixed"},
-        "agentContract": project.agent_contract.model_dump(mode="json", by_alias=True)
-        if project.agent_contract
-        else {"mode": "off"},
+        "checks": _checks_summary(verification),
+        "planning": _dump_or(project.planning, {"decomposition": "off"}),
+        "context": _dump_or(project.context, {"manifest": "off"}),
+        "budget": _dump_or(project.budget, None),
+        "memory": _dump_or(project.memory, {"learnFromFindings": "off"}),
+        "agentRouting": _dump_or(project.agent_routing, {"mode": "fixed"}),
+        "agentContract": _dump_or(project.agent_contract, {"mode": "off"}),
     }
 
 

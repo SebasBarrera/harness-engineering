@@ -35,7 +35,12 @@ class SessionAgentProvider:
     def capabilities(self) -> tuple[str, ...]:
         return ("embedded", "session")
 
-    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
+    def implement(
+        self,
+        task: Task,
+        plan: Plan,  # NOSONAR(S1172) AgentProvider.implement signature
+        context: AgentContext,
+    ) -> AgentExecutionResult:
         actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.session", version="1")
         started = datetime.now(UTC)
         changed = self._changed_paths()

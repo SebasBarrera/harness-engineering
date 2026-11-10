@@ -49,7 +49,7 @@ MAX_AGENT_QUESTIONS = 40
 _TEXT_LIMIT = 1000
 _DOC_SUFFIXES = (".md", ".txt", ".rst", ".pdf", ".doc", ".docx", ".yaml", ".yml", ".json")
 _DOC_REFERENCE = re.compile(
-    r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
+    r"(?<![\w/.-])([\w-]+(?:/[\w-]+)*\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
 )
 _ID_REFERENCE = re.compile(
     r"\b(?:per|see|as in|according to|following|by|from|under|in)\s+"

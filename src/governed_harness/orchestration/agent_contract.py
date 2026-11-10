@@ -493,12 +493,10 @@ class AgentContractFlow:
             phase_execution_id=phase.phase_execution_id,
         )
         if response.final_status in {"LIMIT_REACHED", "CONTRACT_VIOLATION"}:
-            self._finding(execution, kind, response, ref)
+            self._finding(execution, response, ref)
         return ref
 
-    def _finding(
-        self, execution: Execution, kind: str, response: AgentCallResponse, ref: str
-    ) -> None:
+    def _finding(self, execution: Execution, response: AgentCallResponse, ref: str) -> None:
         rule = LIMIT_RULE if response.final_status == "LIMIT_REACHED" else VIOLATION_RULE
         self.results.record_finding(
             execution,

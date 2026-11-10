@@ -57,6 +57,7 @@ if TYPE_CHECKING:
 
 MALFORMED_RULE = "planning.plan-malformed"
 DEFAULT_MAX_SUBTASKS = 12
+_SUBTASK_STARTED = "subtask.started"
 
 
 @dataclass(frozen=True)
@@ -403,7 +404,7 @@ class Decomposition:
 
     def _started(self, execution: Execution, index: int) -> bool:
         return any(
-            event.event_type == "subtask.started" and event.payload.get("index") == index + 1
+            event.event_type == _SUBTASK_STARTED and event.payload.get("index") == index + 1
             for event in self.results.s.events.list(execution.execution_id)
         )
 
@@ -412,7 +413,7 @@ class Decomposition:
             return
         self.results.s.events.append(
             execution.execution_id,
-            "subtask.started",
+            _SUBTASK_STARTED,
             {"index": index + 1, "count": count, **item.as_dict()},
         )
 
@@ -420,7 +421,7 @@ class Decomposition:
         """Position after which a sub-task's corrections are counted (0 without decomposition)."""
         start = 0
         for position, event in enumerate(events):
-            if event.event_type == "subtask.started":
+            if event.event_type == _SUBTASK_STARTED:
                 start = position
         return start
 

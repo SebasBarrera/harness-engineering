@@ -24,13 +24,15 @@ from .model import DiffFile, DiffLine, Issue, is_test_path
 CATEGORY = "weakened-controls"
 _QUOTE_CHARS = 160
 _DOC_SUFFIXES = (".md", ".rst", ".adoc")
+_TEST_DELETED = "weakened.test-deleted"
+_THRESHOLD_CHANGED = "weakened.threshold-changed"
 
 _RECOMMENDATIONS = {
-    "weakened.test-deleted": "Restore the test or justify its removal in the ChangeSet rationale.",
+    _TEST_DELETED: "Restore the test or justify its removal in the ChangeSet rationale.",
     "weakened.assert-removed": "Keep the assertions; a test without them cannot fail.",
     "weakened.skip-added": "Fix the failing case instead of skipping it, or record an approved exception.",
     "weakened.suppression-added": "Fix the reported problem instead of suppressing the tool.",
-    "weakened.threshold-changed": "Keep the quality threshold or strictness; lowering it needs a human decision.",
+    _THRESHOLD_CHANGED: "Keep the quality threshold or strictness; lowering it needs a human decision.",
     "weakened.broad-except": "Catch the specific exception and handle or re-raise it.",
     "weakened.error-to-success": "Let the failure propagate; do not convert an error into success.",
 }
@@ -72,12 +74,15 @@ _THRESHOLD = re.compile(
 )
 _STRICT = re.compile(r"[\"']?\bstrict[\"']?\s*[:=]\s*true\b|--strict(?:-[a-z]+)*\b", re.IGNORECASE)
 _CHECK_TOOL = re.compile(r"\b(pytest|ruff|mypy|eslint|tsc|bandit)\b|\bnpm\s+(?:run\s+)?test\b")
-_NOT_A_RUN = re.compile(
-    r"^\s*(?:-\s*)?(?:name|uses)\s*:|^\s*#|^\s*(?:echo|cat|printf)\b|\binstall\b|\bnpm\s+ci\b"
+_NOT_A_RUN = (
+    re.compile(r"^\s*(?:(?:-\s*)?(?:name|uses)\s*:|#|(?:echo|cat|printf)\b)"),
+    re.compile(r"\binstall\b|\bnpm\s+ci\b"),
 )
 
 # ----- error handling ------------------------------------------------------------------------
-_EXCEPT = re.compile(r"^\s*except\s*(?::|\(?\s*(?:Exception|BaseException)\b[^:]*:)(?P<rest>.*)$")
+_EXCEPT = re.compile(
+    r"^\s*except\s*(?::|(?:\(\s*)?(?:Exception|BaseException)\b[^:]*:)(?P<rest>.*)$"
+)
 _SWALLOW = re.compile(r"^(?:pass|\.\.\.|continue|return|return\s+None)\s*(?:#.*)?$")
 _ERROR_TO_SUCCESS = re.compile(
     r"\|\|\s*true\b|\|\|\s*exit\s+0\b|continue-on-error:\s*true\b|--exit-zero\b"
@@ -145,7 +150,7 @@ def _deleted_tests(file: DiffFile) -> list[Issue]:
     if file.is_deleted:
         return [
             _issue(
-                "weakened.test-deleted",
+                _TEST_DELETED,
                 FindingSeverity.HIGH,
                 f"Test file {path} was deleted.",
                 path,
@@ -155,7 +160,7 @@ def _deleted_tests(file: DiffFile) -> list[Issue]:
     added = {name for name, _ in _test_names(file.added)}
     return [
         _issue(
-            "weakened.test-deleted",
+            _TEST_DELETED,
             FindingSeverity.HIGH,
             f"Test {name!r} was removed and not re-added: {_quote(line.text)!r}",
             path,
@@ -223,6 +228,15 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
     path = file.path
     if not _is_config(path):
         return []
+    issues = _lowered_thresholds(file, path)
+    issues.extend(_strict_removed(file, path))
+    if _is_workflow(path):
+        issues.extend(_workflow_checks_removed(file, path))
+    return issues
+
+
+def _lowered_thresholds(file: DiffFile, path: str) -> list[Issue]:
+    """Removed thresholds that no added threshold of the same key replaces at least as high."""
     issues: list[Issue] = []
     added_by_key: dict[str, list[float]] = {}
     for key, number, _ in _thresholds(file.added):
@@ -240,13 +254,19 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
             continue
         issues.append(
             _issue(
-                "weakened.threshold-changed",
+                _THRESHOLD_CHANGED,
                 FindingSeverity.HIGH,
                 f"{reason}: {_quote(line.text)!r}",
                 path,
                 line.number,
             )
         )
+    return issues
+
+
+def _strict_removed(file: DiffFile, path: str) -> list[Issue]:
+    """Removed strict-mode settings that the added lines do not restore."""
+    issues: list[Issue] = []
     added_strict = {
         match.group(0).lower().replace(" ", "")
         for line in file.added
@@ -257,32 +277,35 @@ def _threshold_changes(file: DiffFile) -> list[Issue]:
         if match and match.group(0).lower().replace(" ", "") not in added_strict:
             issues.append(
                 _issue(
-                    "weakened.threshold-changed",
+                    _THRESHOLD_CHANGED,
                     FindingSeverity.HIGH,
                     f"strict mode removed: {_quote(line.text)!r}",
                     path,
                     line.number,
                 )
             )
-    if _is_workflow(path):
-        added_tools = {
-            _tool(match) for line in file.added for match in _CHECK_TOOL.finditer(line.text)
-        }
-        for line in file.removed:
-            if _NOT_A_RUN.search(line.text):
-                continue
-            tools = {_tool(match) for match in _CHECK_TOOL.finditer(line.text)}
-            missing = sorted(tools - added_tools)
-            if missing:
-                issues.append(
-                    _issue(
-                        "weakened.threshold-changed",
-                        FindingSeverity.HIGH,
-                        f"workflow no longer runs {', '.join(missing)}: {_quote(line.text)!r}",
-                        path,
-                        line.number,
-                    )
+    return issues
+
+
+def _workflow_checks_removed(file: DiffFile, path: str) -> list[Issue]:
+    """Removed workflow lines whose check tools no added line runs any more."""
+    issues: list[Issue] = []
+    added_tools = {_tool(match) for line in file.added for match in _CHECK_TOOL.finditer(line.text)}
+    for line in file.removed:
+        if any(pattern.search(line.text) for pattern in _NOT_A_RUN):
+            continue
+        tools = {_tool(match) for match in _CHECK_TOOL.finditer(line.text)}
+        missing = sorted(tools - added_tools)
+        if missing:
+            issues.append(
+                _issue(
+                    _THRESHOLD_CHANGED,
+                    FindingSeverity.HIGH,
+                    f"workflow no longer runs {', '.join(missing)}: {_quote(line.text)!r}",
+                    path,
+                    line.number,
                 )
+            )
     return issues
 
 

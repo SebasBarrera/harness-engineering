@@ -25,7 +25,7 @@ checkable result verb (returns, raises, rejects, ...).
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from governed_harness.domain.errors import ConfigurationError
@@ -299,13 +299,17 @@ _FILE_EXTENSIONS = (
 
 _WORD = re.compile(r"[a-z0-9][a-z0-9'_-]*")
 _DIGIT = re.compile(r"\d")
-_QUOTED = re.compile(r"`[^`]+`|\"[^\"]+\"|“[^”]+”|‘[^’]+’|(?<![A-Za-z])'[^']+'(?![A-Za-z])")
+_QUOTED = (
+    re.compile(r"`[^`]+`|\"[^\"]+\"|“[^”]+”"),
+    re.compile(r"‘[^’]+’|(?<![A-Za-z])'[^']+'(?![A-Za-z])"),
+)
 _CALL = re.compile(r"[A-Za-z_][\w.]*\(")
-_SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
+# Explicit ASCII classes: \w would also match non-ASCII letters, and re.ASCII would change \b.
+_SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")  # NOSONAR(S6353)
 _PATH = re.compile(r"(?:^|[\s(])\.{0,2}/?[\w.-]+/[\w./-]+")
 _FILE = re.compile(rf"\b[\w-]+\.(?:{_FILE_EXTENSIONS})\b")
 _CAMEL = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b")
-_TRAILING = re.compile(r"[\s.!?;:,]+$")
+_TRAILING = re.compile(r"(?<![\s.!?;:,])[\s.!?;:,]+$")
 _SPACE = re.compile(r"\s+")
 
 
@@ -316,7 +320,7 @@ def _words(text: str) -> list[str]:
 def _has_anchor(text: str) -> bool:
     if (
         _DIGIT.search(text)
-        or _QUOTED.search(text)
+        or any(pattern.search(text) for pattern in _QUOTED)
         or _CALL.search(text)
         or _SNAKE.search(text)
         or _PATH.search(text)
@@ -476,6 +480,157 @@ class TaskRevision:
     added_requirements: tuple[str, ...]
 
 
+@dataclass
+class _Draft:
+    """The revision being built: criteria, requirements and constraints, with what changed."""
+
+    criteria: list[AcceptanceCriterion]
+    positions: dict[str, int]
+    requirements: list[Requirement]
+    constraints: list[str]
+    replaced: list[str] = field(default_factory=list)
+    added_criteria: list[str] = field(default_factory=list)
+    added_requirements: list[str] = field(default_factory=list)
+
+    def add_criterion(self, criterion: AcceptanceCriterion) -> None:
+        self.criteria.append(criterion)
+        self.added_criteria.append(criterion.criterion_id)
+
+    def add_requirement(self, requirement: Requirement) -> None:
+        self.requirements.append(requirement)
+        self.added_requirements.append(requirement.requirement_id)
+
+
+def _check_answers(
+    by_id: dict[str, ClarificationQuestion], clarification: ClarificationInput
+) -> None:
+    unknown = sorted(set(clarification.answers) - set(by_id))
+    if unknown:
+        raise ConfigurationError(f"unknown question id(s): {', '.join(unknown)}")
+    if not clarification.answers and not clarification.contract:
+        raise ConfigurationError("the answers file must answer at least one question")
+    blank = sorted(qid for qid, text in clarification.answers.items() if not text.strip())
+    if blank:
+        raise ConfigurationError(f"empty answer(s): {', '.join(blank)}")
+
+
+def _replace_criteria(draft: _Draft, clarification: ClarificationInput) -> None:
+    for replacement in clarification.replace_criteria:
+        index = draft.positions.get(replacement.criterion_id)
+        if index is None:
+            raise ConfigurationError(
+                f"cannot replace unknown criterion: {replacement.criterion_id}"
+            )
+        if replacement.criterion_id in draft.replaced:
+            raise ConfigurationError(f"criterion replaced twice: {replacement.criterion_id}")
+        draft.criteria[index] = replacement
+        draft.replaced.append(replacement.criterion_id)
+
+
+def _add_criteria(draft: _Draft, clarification: ClarificationInput) -> None:
+    for criterion in clarification.add_criteria:
+        known = criterion.criterion_id in draft.positions
+        if known or criterion.criterion_id in draft.added_criteria:
+            raise ConfigurationError(f"criterion id already exists: {criterion.criterion_id}")
+        draft.add_criterion(criterion)
+
+
+def _add_requirements(draft: _Draft, clarification: ClarificationInput) -> None:
+    existing_requirements = {item.requirement_id for item in draft.requirements}
+    for requirement in clarification.add_requirements:
+        if requirement.requirement_id in existing_requirements:
+            raise ConfigurationError(f"requirement id already exists: {requirement.requirement_id}")
+        draft.requirements.append(requirement)
+        existing_requirements.add(requirement.requirement_id)
+        draft.added_requirements.append(requirement.requirement_id)
+
+
+def _explicit_changes(task: Task, clarification: ClarificationInput) -> _Draft:
+    """The task with the replaced criteria, added criteria and added requirements applied."""
+    criteria = list(task.acceptance_criteria)
+    draft = _Draft(
+        criteria=criteria,
+        positions={criterion.criterion_id: index for index, criterion in enumerate(criteria)},
+        requirements=list(task.requirements),
+        constraints=list(task.constraints),
+    )
+    _replace_criteria(draft, clarification)
+    _add_criteria(draft, clarification)
+    _add_requirements(draft, clarification)
+    return draft
+
+
+def _apply_c0_answer(
+    draft: _Draft, question: ClarificationQuestion, answer: str, clarification: ClarificationInput
+) -> None:
+    """A ``C0`` answer lands by its target (see :func:`revise_task`)."""
+    if question.target == "task:results":
+        if not clarification.add_criteria:
+            for line in _answer_lines(answer):
+                draft.add_criterion(AcceptanceCriterion(criterion_id=new_id("ac"), text=line))
+    elif question.target == "task:out-of-scope":
+        draft.constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
+    elif question.target in C0_TARGETS and not clarification.add_requirements:
+        texts = _answer_lines(answer) if question.target == "task:scope" else [answer]
+        for text in texts:
+            draft.add_requirement(
+                Requirement(requirement_id=new_id("req"), text=text, source="clarification")
+            )
+
+
+def _extend_hint(draft: _Draft, question: ClarificationQuestion, answer: str) -> None:
+    """An answer about a criterion that was not replaced becomes (or extends) its hint."""
+    if question.target in draft.replaced:
+        return
+    index = draft.positions.get(question.target)
+    if index is None:
+        return
+    current = draft.criteria[index]
+    hint = (
+        f"{current.verification_hint.strip()}\n{answer}"
+        if current.verification_hint and current.verification_hint.strip()
+        else answer
+    )
+    draft.criteria[index] = current.model_copy(update={"verification_hint": hint})
+
+
+def _apply_answer(
+    draft: _Draft, question: ClarificationQuestion, answer: str, clarification: ClarificationInput
+) -> None:
+    """Land one answer in the task where it belongs (see :func:`revise_task`)."""
+    if question.rule_id == "C0":
+        _apply_c0_answer(draft, question, answer, clarification)
+        return
+    if question.rule_id == "P1":
+        # A project setup answer (#56) is a decision about the project; the task keeps it
+        # as a constraint so the agent sees it.
+        part = question.target.removeprefix("project:")
+        draft.constraints.append(f"Project setup ({part}): {' '.join(answer.split())}")
+        return
+    if question.rule_id == "A1" and question.category == "out-of-scope":
+        # An agent's out-of-scope question is answered with what the task leaves out.
+        draft.constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
+        return
+    if question.target == TASK_TARGET:
+        if clarification.add_requirements or clarification.add_criteria:
+            return
+        draft.add_requirement(
+            Requirement(requirement_id=new_id("req"), text=answer, source="clarification")
+        )
+        return
+    _extend_hint(draft, question, answer)
+
+
+def _revised_contract(task: Task, clarification: ClarificationInput) -> dict[str, Any]:
+    if not clarification.contract:
+        return {}
+    # The operational-contract section (since #55): answers update the task's contract.
+    return {
+        **(task.contract.model_dump(mode="json", by_alias=True) if task.contract else {}),
+        **{key: _contract_value(key, value) for key, value in clarification.contract.items()},
+    }
+
+
 def revise_task(
     task: Task, questions: tuple[ClarificationQuestion, ...], clarification: ClarificationInput
 ) -> TaskRevision:
@@ -500,113 +655,21 @@ def revise_task(
     the ``C0`` questions again; one that has criteria is no longer marked.
     """
     by_id = {question.question_id: question for question in questions}
-    unknown = sorted(set(clarification.answers) - set(by_id))
-    if unknown:
-        raise ConfigurationError(f"unknown question id(s): {', '.join(unknown)}")
-    if not clarification.answers and not clarification.contract:
-        raise ConfigurationError("the answers file must answer at least one question")
-    blank = sorted(qid for qid, text in clarification.answers.items() if not text.strip())
-    if blank:
-        raise ConfigurationError(f"empty answer(s): {', '.join(blank)}")
-
-    criteria = list(task.acceptance_criteria)
-    positions = {criterion.criterion_id: index for index, criterion in enumerate(criteria)}
-    replaced: list[str] = []
-    for replacement in clarification.replace_criteria:
-        index = positions.get(replacement.criterion_id)
-        if index is None:
-            raise ConfigurationError(
-                f"cannot replace unknown criterion: {replacement.criterion_id}"
-            )
-        if replacement.criterion_id in replaced:
-            raise ConfigurationError(f"criterion replaced twice: {replacement.criterion_id}")
-        criteria[index] = replacement
-        replaced.append(replacement.criterion_id)
-    added_criteria: list[str] = []
-    for criterion in clarification.add_criteria:
-        if criterion.criterion_id in positions or criterion.criterion_id in added_criteria:
-            raise ConfigurationError(f"criterion id already exists: {criterion.criterion_id}")
-        criteria.append(criterion)
-        added_criteria.append(criterion.criterion_id)
-    requirements = list(task.requirements)
-    existing_requirements = {item.requirement_id for item in requirements}
-    added_requirements: list[str] = []
-    for requirement in clarification.add_requirements:
-        if requirement.requirement_id in existing_requirements:
-            raise ConfigurationError(f"requirement id already exists: {requirement.requirement_id}")
-        requirements.append(requirement)
-        existing_requirements.add(requirement.requirement_id)
-        added_requirements.append(requirement.requirement_id)
-
-    constraints = list(task.constraints)
+    _check_answers(by_id, clarification)
+    draft = _explicit_changes(task, clarification)
     for question_id in sorted(clarification.answers, key=_question_order):
-        question = by_id[question_id]
         answer = clarification.answers[question_id].strip()
-        if question.rule_id == "C0":
-            if question.target == "task:results":
-                if not clarification.add_criteria:
-                    for line in _answer_lines(answer):
-                        criterion = AcceptanceCriterion(criterion_id=new_id("ac"), text=line)
-                        criteria.append(criterion)
-                        added_criteria.append(criterion.criterion_id)
-            elif question.target == "task:out-of-scope":
-                constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
-            elif question.target in C0_TARGETS and not clarification.add_requirements:
-                texts = _answer_lines(answer) if question.target == "task:scope" else [answer]
-                for text in texts:
-                    requirement = Requirement(
-                        requirement_id=new_id("req"), text=text, source="clarification"
-                    )
-                    requirements.append(requirement)
-                    added_requirements.append(requirement.requirement_id)
-            continue
-        if question.rule_id == "P1":
-            # A project setup answer (#56) is a decision about the project; the task keeps it
-            # as a constraint so the agent sees it.
-            part = question.target.removeprefix("project:")
-            constraints.append(f"Project setup ({part}): {' '.join(answer.split())}")
-            continue
-        if question.rule_id == "A1" and question.category == "out-of-scope":
-            # An agent's out-of-scope question is answered with what the task leaves out.
-            constraints.extend(OUT_OF_SCOPE_PREFIX + line for line in _answer_lines(answer))
-            continue
-        if question.target == TASK_TARGET:
-            if clarification.add_requirements or clarification.add_criteria:
-                continue
-            requirement = Requirement(
-                requirement_id=new_id("req"), text=answer, source="clarification"
-            )
-            requirements.append(requirement)
-            added_requirements.append(requirement.requirement_id)
-            continue
-        if question.target in replaced:
-            continue
-        index = positions.get(question.target)
-        if index is None:
-            continue
-        current = criteria[index]
-        hint = (
-            f"{current.verification_hint.strip()}\n{answer}"
-            if current.verification_hint and current.verification_hint.strip()
-            else answer
-        )
-        criteria[index] = current.model_copy(update={"verification_hint": hint})
+        _apply_answer(draft, by_id[question_id], answer, clarification)
 
-    contract: dict[str, Any] = {}
-    if clarification.contract:
-        # The operational-contract section (since #55): answers update the task's contract.
-        contract = {
-            **(task.contract.model_dump(mode="json", by_alias=True) if task.contract else {}),
-            **{key: _contract_value(key, value) for key, value in clarification.contract.items()},
-        }
+    contract = _revised_contract(task, clarification)
     try:
         revised = Task.model_validate(
             {
                 **task.model_dump(by_alias=True),
-                "constraints": constraints,
-                "requirements": [item.model_dump(by_alias=True) for item in requirements],
-                "criteriaPending": not criteria,
-                "acceptanceCriteria": [item.model_dump(by_alias=True) for item in criteria],
+                "constraints": draft.constraints,
+                "requirements": [item.model_dump(by_alias=True) for item in draft.requirements],
+                "criteriaPending": not draft.criteria,
+                "acceptanceCriteria": [item.model_dump(by_alias=True) for item in draft.criteria],
                 **({"contract": contract} if contract else {}),
             }
         )
@@ -614,9 +677,9 @@ def revise_task(
         raise ConfigurationError(f"invalid revised task: {error}") from error
     return TaskRevision(
         task=revised,
-        replaced_criteria=tuple(replaced),
-        added_criteria=tuple(added_criteria),
-        added_requirements=tuple(added_requirements),
+        replaced_criteria=tuple(draft.replaced),
+        added_criteria=tuple(draft.added_criteria),
+        added_requirements=tuple(draft.added_requirements),
     )
 
 

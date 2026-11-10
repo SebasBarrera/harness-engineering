@@ -48,7 +48,7 @@ PROMPT_INSTRUCTIONS = (
     "report. The harness records it as your report; it does not replace verification."
 )
 
-_FENCED_JSON = re.compile(r"```(?:json)?\s*\n(?P<body>\{.*?\})\s*\n```", re.DOTALL)
+_FENCED_JSON = re.compile(r"```(?:json)?\s*\n(?P<body>\{(?:(?!\}\s*\n```).)*\})\s*\n```", re.DOTALL)
 
 
 @dataclass(frozen=True)
@@ -103,24 +103,31 @@ def _items(raw: Any, name: str, problems: list[str]) -> tuple[SelfReportItem, ..
         return ()
     items = []
     for entry in raw[:MAX_ITEMS]:
-        if isinstance(entry, str):
-            text = _text(entry)
-            if text:
-                items.append(SelfReportItem(description=text))
-            continue
-        if isinstance(entry, dict):
-            description = _text(entry.get("description"))
-            path = entry.get("path")
-            path_text = path.strip()[:MAX_TEXT] if isinstance(path, str) and path.strip() else None
-            if description is None and path_text is not None:
-                description = "(no description)"
-            if description is not None:
-                items.append(SelfReportItem(path=path_text, description=description))
-                continue
-        problems.append(f"{name} has an entry without a description")
+        item, valid = _entry_item(entry)
+        if item is not None:
+            items.append(item)
+        elif not valid:
+            problems.append(f"{name} has an entry without a description")
     if len(raw) > MAX_ITEMS:
         problems.append(f"{name}: {len(raw) - MAX_ITEMS} entries beyond {MAX_ITEMS} were dropped")
     return tuple(items)
+
+
+def _entry_item(entry: Any) -> tuple[SelfReportItem | None, bool]:
+    """The item of one entry and whether the entry is valid: an empty text is valid but gives
+    no item; an entry without a description or a path is not valid."""
+    if isinstance(entry, str):
+        text = _text(entry)
+        return (SelfReportItem(description=text) if text else None), True
+    if isinstance(entry, dict):
+        description = _text(entry.get("description"))
+        path = entry.get("path")
+        path_text = path.strip()[:MAX_TEXT] if isinstance(path, str) and path.strip() else None
+        if description is None and path_text is not None:
+            description = "(no description)"
+        if description is not None:
+            return SelfReportItem(path=path_text, description=description), True
+    return None, False
 
 
 def _disputed(raw: Any, problems: list[str]) -> tuple[DisputedAcceptanceTest, ...]:

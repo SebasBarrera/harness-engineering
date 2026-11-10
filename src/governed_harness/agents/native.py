@@ -107,6 +107,21 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
         "",
         str(task["intent"]).strip(),
     ]
+    lines += _task_sections(task)
+    lines += _change_sections(task)
+    if plan.get("steps"):
+        lines += ["", "## Plan"]
+        lines += [
+            f"{index}. {step['description']}" for index, step in enumerate(plan["steps"], start=1)
+        ]
+    lines += _memory_section(request.get("context"))
+    lines += _closing_sections(request, self_report=self_report)
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _task_sections(task: dict[str, Any]) -> list[str]:
+    """The requirements, acceptance criteria and constraints of the task."""
+    lines: list[str] = []
     if task.get("requirements"):
         lines += ["", "## Requirements"]
         lines += [f"- {item['requirement_id']}: {item['text']}" for item in task["requirements"]]
@@ -122,6 +137,12 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     if task.get("constraints"):
         lines += ["", "## Constraints"]
         lines += [f"- {item}" for item in task["constraints"]]
+    return lines
+
+
+def _change_sections(task: dict[str, Any]) -> list[str]:
+    """The patches to apply (patch mode) and the files the agent may change."""
+    lines: list[str] = []
     owned = (task.get("metadata") or {}).get("ownedPaths")
     implementation = task.get("implementation") or {}
     if implementation.get("mode") == "patch":
@@ -134,18 +155,25 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
     if owned:
         lines += ["", "## Files you may change"]
         lines += [f"- {path}" for path in owned]
-    if plan.get("steps"):
-        lines += ["", "## Plan"]
-        lines += [
-            f"{index}. {step['description']}" for index, step in enumerate(plan["steps"], start=1)
-        ]
-    context = request.get("context")
-    if context and context.get("records"):
-        lines += ["", "## Project memory approved for this task"]
-        for record in context["records"]:
-            value = record.get("value")
-            text = value.get("text") if isinstance(value, dict) else None
-            lines.append(f"- {text or json.dumps(value, sort_keys=True)}")
+    return lines
+
+
+def _memory_section(context: Any) -> list[str]:
+    """The project memory records approved for the task; none without records."""
+    if not context or not context.get("records"):
+        return []
+    lines = ["", "## Project memory approved for this task"]
+    for record in context["records"]:
+        value = record.get("value")
+        text = value.get("text") if isinstance(value, dict) else None
+        lines.append(f"- {text or json.dumps(value, sort_keys=True)}")
+    return lines
+
+
+def _closing_sections(request: dict[str, Any], *, self_report: bool) -> list[str]:
+    """The feedback, the agent-results extras, the quoted untrusted content and the
+    self-report instructions, in that order."""
+    lines: list[str] = []
     feedback = request.get("feedback")
     if feedback:
         lines += ["", *_feedback_lines(feedback)]
@@ -159,7 +187,7 @@ def render_prompt(request: dict[str, Any], *, self_report: bool) -> str:
         lines += ["", *quoted_lines(untrusted)]
     if self_report:
         lines += ["", "## Self-report", PROMPT_INSTRUCTIONS]
-    return "\n".join(lines).rstrip() + "\n"
+    return lines
 
 
 def _feedback_lines(feedback: dict[str, Any]) -> list[str]:
@@ -172,29 +200,38 @@ def _feedback_lines(feedback: dict[str, Any]) -> list[str]:
         codes = ", ".join(gate.get("reasonCodes") or []) or "none"
         lines.append(f"Gate {gate.get('gateId')}: {gate.get('status')} ({codes})")
     for finding in feedback.get("findings") or []:
-        location = finding.get("location") or {}
-        where = location.get("path") or ""
-        if where and location.get("startLine"):
-            where = f"{where}:{location['startLine']}"
-        lines.append(
-            f"- {finding.get('severity')} {finding.get('ruleId')}"
-            f"{' at ' + where if where else ''}: {finding.get('message')}"
-        )
+        lines.append(_feedback_finding_line(finding))
     for validator in feedback.get("validators") or []:
-        lines.append(
-            f"Validator {validator.get('validatorId')} {validator.get('status')} "
-            f"(exit {validator.get('exitCode')})"
-        )
-        for stream in ("stdout", "stderr"):
-            text = (validator.get(stream) or "").strip()
-            if text:
-                lines += [f"{stream}:", "```", text, "```"]
+        lines += _feedback_validator_lines(validator)
     decision = feedback.get("decision")
     if decision:
         lines.append(
             f"The reviewer ({decision.get('actorId')}) asked for changes: "
             f"{decision.get('rationale')}"
         )
+    return lines
+
+
+def _feedback_finding_line(finding: dict[str, Any]) -> str:
+    location = finding.get("location") or {}
+    where = location.get("path") or ""
+    if where and location.get("startLine"):
+        where = f"{where}:{location['startLine']}"
+    return (
+        f"- {finding.get('severity')} {finding.get('ruleId')}"
+        f"{' at ' + where if where else ''}: {finding.get('message')}"
+    )
+
+
+def _feedback_validator_lines(validator: dict[str, Any]) -> list[str]:
+    lines = [
+        f"Validator {validator.get('validatorId')} {validator.get('status')} "
+        f"(exit {validator.get('exitCode')})"
+    ]
+    for stream in ("stdout", "stderr"):
+        text = (validator.get(stream) or "").strip()
+        if text:
+            lines += [f"{stream}:", "```", text, "```"]
     return lines
 
 
@@ -337,7 +374,12 @@ class NativeAgentProvider(CommandAgentProvider):
             chosen = self.read_only_args()
         return chosen if chosen is not None else self.base_args()
 
-    def policy_args(self, policy: Any, *, read_only: bool = False) -> tuple[str, ...]:
+    def policy_args(
+        self,
+        policy: Any,
+        *,
+        read_only: bool = False,  # NOSONAR(S1172) hook: the CLI adapters override it
+    ) -> tuple[str, ...]:
         """The CLI options of the command policy (#5) and, for a read-only call, of the tools
         it is denied (#92); none for a CLI without them."""
         return ()
@@ -350,11 +392,11 @@ class NativeAgentProvider(CommandAgentProvider):
         effort = routing.get("effort")
         return (("--model", model) if model else ()) + (self.effort_args(effort) if effort else ())
 
-    def effort_args(self, effort: str) -> tuple[str, ...]:
+    def effort_args(self, effort: str) -> tuple[str, ...]:  # NOSONAR(S1172) hook to override
         """The CLI's reasoning-effort option; a CLI without one ignores the router's effort."""
         return ()
 
-    def prompt_args(self, prompt: str) -> tuple[str, ...]:
+    def prompt_args(self, prompt: str) -> tuple[str, ...]:  # NOSONAR(S1172) hook to override
         return ()
 
     def process_input(
@@ -453,38 +495,13 @@ class ClaudeCodeProvider(NativeAgentProvider):
         return ()
 
     def read_answer(self, result: ProcessResult) -> ProviderAnswer:
-        value = json.loads(result.stdout)
-        if isinstance(value, list):  # --verbose prints every message; the last one is the result
-            results = [
-                item for item in value if isinstance(item, dict) and item.get("type") == "result"
-            ]
-            value = results[-1] if results else None
-        if not isinstance(value, dict) or ("result" not in value and "is_error" not in value):
-            raise ValueError("claude output is not a result object")
+        value = _claude_result(json.loads(result.stdout))
         failed = bool(value.get("is_error")) or value.get("subtype", "success") != "success"
-        raw_usage = value.get("usage")
-        usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
-        inputs = [
-            _int(usage.get(name))
-            for name in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
-        ]
-        cost = value.get("total_cost_usd")
         text = _summary(value.get("result"))
         return ProviderAnswer(
             status=ResultStatus.FAILED if failed else ResultStatus.PASSED,
             summary=text or f"claude-code {value.get('subtype', 'finished')}",
-            usage=_usage(
-                inputTokens=sum(item for item in inputs if item is not None)
-                if any(item is not None for item in inputs)
-                else None,
-                outputTokens=_int(usage.get("output_tokens")),
-                cacheTokens=sum(item for item in inputs[1:] if item is not None)
-                if any(item is not None for item in inputs[1:])
-                else None,
-                costUsd=cost
-                if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0
-                else None,
-            ),
+            usage=_claude_usage(value),
             usage_limitations=(
                 "Claude Code: inputTokens adds input, cache-creation and cache-read tokens "
                 "(cacheTokens is their cache part); costUsd is total_cost_usd.",
@@ -494,6 +511,41 @@ class ClaudeCodeProvider(NativeAgentProvider):
             else None,
             self_report=self._self_report_from(str(value.get("result") or "")),
         )
+
+
+def _claude_result(value: Any) -> dict[str, Any]:
+    """The result object of Claude Code's output; a protocol error without one."""
+    if isinstance(value, list):  # --verbose prints every message; the last one is the result
+        results = [
+            item for item in value if isinstance(item, dict) and item.get("type") == "result"
+        ]
+        value = results[-1] if results else None
+    if not isinstance(value, dict) or ("result" not in value and "is_error" not in value):
+        raise ValueError("claude output is not a result object")
+    return value
+
+
+def _claude_usage(value: dict[str, Any]) -> dict[str, int | float] | None:
+    """The usage of a Claude Code result: input adds the cache tokens, cost is the total."""
+    raw_usage = value.get("usage")
+    usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
+    inputs = [
+        _int(usage.get(name))
+        for name in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")
+    ]
+    cost = value.get("total_cost_usd")
+    return _usage(
+        inputTokens=sum(item for item in inputs if item is not None)
+        if any(item is not None for item in inputs)
+        else None,
+        outputTokens=_int(usage.get("output_tokens")),
+        cacheTokens=sum(item for item in inputs[1:] if item is not None)
+        if any(item is not None for item in inputs[1:])
+        else None,
+        costUsd=cost
+        if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0
+        else None,
+    )
 
 
 class CodexProvider(NativeAgentProvider):
@@ -519,49 +571,17 @@ class CodexProvider(NativeAgentProvider):
         return ("-",)
 
     def read_answer(self, result: ProcessResult) -> ProviderAnswer:
-        events = []
-        for line in result.stdout.decode("utf-8", "replace").splitlines():
-            line = line.strip()
-            if not line.startswith("{"):
-                continue
-            try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if isinstance(event, dict):
-                events.append(event)
+        events = _json_events(result.stdout)
         if not events:
             raise ValueError("codex printed no JSON events")
-        totals = {"input": 0, "output": 0, "reasoning": 0, "cache": 0}
-        seen = False
-        messages: list[str] = []
-        failure: str | None = None
-        session: str | None = None
+        run = _CodexRun()
         for event in events:
-            kind = event.get("type")
-            if kind == "thread.started" and isinstance(event.get("thread_id"), str):
-                session = event["thread_id"]
-            elif kind == "turn.completed" and isinstance(event.get("usage"), dict):
-                usage = event["usage"]
-                seen = True
-                totals["input"] += _int(usage.get("input_tokens")) or 0
-                totals["output"] += _int(usage.get("output_tokens")) or 0
-                totals["reasoning"] += _int(usage.get("reasoning_output_tokens")) or 0
-                totals["cache"] += _int(usage.get("cached_input_tokens")) or 0
-            elif kind == "item.completed" and isinstance(event.get("item"), dict):
-                item = event["item"]
-                if item.get("type") in {"agent_message", "assistant_message"} and isinstance(
-                    item.get("text"), str
-                ):
-                    messages.append(item["text"])
-            elif kind in {"turn.failed", "error"}:
-                error = event.get("error")
-                message = error.get("message") if isinstance(error, dict) else event.get("message")
-                failure = str(message or kind)
-        answer = messages[-1] if messages else ""
+            run.add(event)
+        totals, seen = run.totals, run.seen
+        answer = run.messages[-1] if run.messages else ""
         return ProviderAnswer(
-            status=ResultStatus.FAILED if failure else ResultStatus.PASSED,
-            summary=_summary(failure or answer) or "codex finished",
+            status=ResultStatus.FAILED if run.failure else ResultStatus.PASSED,
+            summary=_summary(run.failure or answer) or "codex finished",
             usage=_usage(
                 inputTokens=totals["input"] if seen else None,
                 outputTokens=totals["output"] if seen else None,
@@ -569,9 +589,62 @@ class CodexProvider(NativeAgentProvider):
                 cacheTokens=totals["cache"] if seen and totals["cache"] else None,
             ),
             usage_limitations=("Codex reports tokens per turn and no cost.",),
-            session_id=session,
+            session_id=run.session,
             self_report=self._self_report_from(answer),
         )
+
+
+def _json_events(stdout: bytes) -> list[dict[str, Any]]:
+    """The JSON objects printed one per line; other lines are skipped."""
+    events = []
+    for line in stdout.decode("utf-8", "replace").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    return events
+
+
+class _CodexRun:
+    """What the events of one ``codex exec --json`` run report, folded in order."""
+
+    def __init__(self) -> None:
+        self.totals = {"input": 0, "output": 0, "reasoning": 0, "cache": 0}
+        self.seen = False
+        self.messages: list[str] = []
+        self.failure: str | None = None
+        self.session: str | None = None
+
+    def add(self, event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind == "thread.started" and isinstance(event.get("thread_id"), str):
+            self.session = event["thread_id"]
+        elif kind == "turn.completed" and isinstance(event.get("usage"), dict):
+            self._add_usage(event["usage"])
+        elif kind == "item.completed" and isinstance(event.get("item"), dict):
+            self._add_item(event["item"])
+        elif kind in {"turn.failed", "error"}:
+            error = event.get("error")
+            message = error.get("message") if isinstance(error, dict) else event.get("message")
+            self.failure = str(message or kind)
+
+    def _add_usage(self, usage: dict[str, Any]) -> None:
+        self.seen = True
+        self.totals["input"] += _int(usage.get("input_tokens")) or 0
+        self.totals["output"] += _int(usage.get("output_tokens")) or 0
+        self.totals["reasoning"] += _int(usage.get("reasoning_output_tokens")) or 0
+        self.totals["cache"] += _int(usage.get("cached_input_tokens")) or 0
+
+    def _add_item(self, item: dict[str, Any]) -> None:
+        if item.get("type") in {"agent_message", "assistant_message"} and isinstance(
+            item.get("text"), str
+        ):
+            self.messages.append(item["text"])
 
 
 class GeminiCliProvider(NativeAgentProvider):
@@ -594,24 +667,14 @@ class GeminiCliProvider(NativeAgentProvider):
         if not isinstance(value, dict) or not ({"response", "error"} & set(value)):
             raise ValueError("gemini output is not a response object")
         error = value.get("error")
-        models = (
-            ((value.get("stats") or {}).get("models") or {})
-            if isinstance(value.get("stats"), dict)
-            else {}
-        )
-        totals = {"prompt": 0, "candidates": 0, "thoughts": 0}
-        seen = False
-        for stats in models.values() if isinstance(models, dict) else ():
-            tokens = stats.get("tokens") if isinstance(stats, dict) else None
-            if not isinstance(tokens, dict):
-                continue
-            seen = True
-            for name in totals:
-                totals[name] += _int(tokens.get(name)) or 0
+        totals, seen = _gemini_tokens(value)
         response = str(value.get("response") or "")
-        message = (
-            error.get("message") if isinstance(error, dict) else (str(error) if error else None)
-        )
+        if isinstance(error, dict):
+            message = error.get("message")
+        elif error:
+            message = str(error)
+        else:
+            message = None
         return ProviderAnswer(
             status=ResultStatus.FAILED if error else ResultStatus.PASSED,
             summary=_summary(message or response) or "gemini-cli finished",
@@ -623,6 +686,26 @@ class GeminiCliProvider(NativeAgentProvider):
             usage_limitations=("Gemini CLI reports tokens per model and no cost.",),
             self_report=self._self_report_from(response),
         )
+
+
+def _gemini_tokens(value: dict[str, Any]) -> tuple[dict[str, int], bool]:
+    """The ``prompt``, ``candidates`` and ``thoughts`` tokens summed over the models, and
+    whether any model reported tokens."""
+    models = (
+        ((value.get("stats") or {}).get("models") or {})
+        if isinstance(value.get("stats"), dict)
+        else {}
+    )
+    totals = {"prompt": 0, "candidates": 0, "thoughts": 0}
+    seen = False
+    for stats in models.values() if isinstance(models, dict) else ():
+        tokens = stats.get("tokens") if isinstance(stats, dict) else None
+        if not isinstance(tokens, dict):
+            continue
+        seen = True
+        for name in totals:
+            totals[name] += _int(tokens.get(name)) or 0
+    return totals, seen
 
 
 _AIDER_TOKENS = re.compile(

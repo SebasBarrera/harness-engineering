@@ -53,7 +53,6 @@ from governed_harness.domain.models import (
     ChangeSet,
     Execution,
     Finding,
-    PhaseExecution,
     Task,
 )
 from governed_harness.runtime import CancellationToken
@@ -100,7 +99,12 @@ def declared_interfaces(task: Task) -> list[tuple[str, str]]:
     """``(stub, module)`` pairs a task declares in ``metadata.interface``: an object with
     ``stub`` and ``module`` paths, or a list of them."""
     raw = task.metadata.get("interface")
-    entries = raw if isinstance(raw, list) else [raw] if raw else []
+    if isinstance(raw, list):
+        entries = raw
+    elif raw:
+        entries = [raw]
+    else:
+        entries = []
     pairs: list[tuple[str, str]] = []
     for entry in entries:
         if isinstance(entry, dict) and entry.get("stub") and entry.get("module"):
@@ -123,9 +127,7 @@ class VerificationChecks:
         return {FindingSeverity(str(name)) for name in names}
 
     # ----- entry point ----------------------------------------------------------------------
-    def run(
-        self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet
-    ) -> list[ValidatorOutput]:
+    def run(self, execution: Execution, change_set: ChangeSet) -> list[ValidatorOutput]:
         engine = self.results.engine
         raw = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         diff = parse_unified_diff(raw)
@@ -209,7 +211,7 @@ class VerificationChecks:
         if config.test_quality is not None and not self._quality_exempt(execution, change_set):
             outputs.append(self._test_quality(execution, change_set, task, diff, files))
         if config.invariants:
-            outputs.extend(self._invariants(execution, change_set, task))
+            outputs.extend(self._invariants(execution, change_set))
         if config.sarif:
             outputs.append(self._sarif(execution, change_set))
         if config.risk_factors is not None:
@@ -600,9 +602,7 @@ class VerificationChecks:
         ]
 
     # ----- invariants (#52) ------------------------------------------------------------------
-    def _invariants(
-        self, execution: Execution, change_set: ChangeSet, task: Task
-    ) -> list[ValidatorOutput]:
+    def _invariants(self, execution: Execution, change_set: ChangeSet) -> list[ValidatorOutput]:
         outputs: list[ValidatorOutput] = []
         for invariant in self.config.invariants or ():
             validator_id = f"invariant.{invariant.invariant_id}"
@@ -727,7 +727,9 @@ def _subject(message: str) -> str:
     """What a limit message is about: the module or function (and, for a forbidden import,
     the module it imports), without the measured value."""
     words = message.split()
-    return " ".join(words[:3]) if " imports " in message else (words[0] if words else "")
+    if " imports " in message:
+        return " ".join(words[:3])
+    return words[0] if words else ""
 
 
 def _read(workspace: Path, relative: str) -> str | None:
@@ -735,7 +737,7 @@ def _read(workspace: Path, relative: str) -> str | None:
     try:
         target.relative_to(workspace.resolve())
         return target.read_text(encoding="utf-8")
-    except (ValueError, OSError, UnicodeDecodeError):
+    except (ValueError, OSError):  # UnicodeDecodeError is a ValueError
         return None
 
 

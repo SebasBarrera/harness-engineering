@@ -191,6 +191,231 @@ def _next(execution: Execution, awaiting: bool) -> list[str]:
     ]
 
 
+def _changed_section(
+    services: EngineServices, digest: str | None, current: ChangeSet | None, include_diff: bool
+) -> dict[str, Any]:
+    """What changed: the files and totals of the current ChangeSet and, on request, its diff."""
+    changed: dict[str, Any] = {"changeSetDigest": digest, "files": [], "totals": None}
+    if current is None:
+        return changed
+    changed["files"] = [
+        {
+            "path": item.path,
+            "status": item.status,
+            "additions": item.additions,
+            "deletions": item.deletions,
+        }
+        for item in current.files
+    ]
+    changed["totals"] = {
+        "files": len(current.files),
+        "additions": sum(item.additions for item in current.files),
+        "deletions": sum(item.deletions for item in current.files),
+    }
+    changed["diffRef"] = current.diff_ref
+    if include_diff:
+        data = services.artifacts.get(current.diff_ref)
+        changed["diff"] = data[:_MAX_DIFF_BYTES].decode("utf-8", "replace")
+        changed["diffTruncated"] = len(data) > _MAX_DIFF_BYTES
+    return changed
+
+
+def _verified_section(
+    digest: str | None,
+    validations: list[ValidationResult],
+    current_validations: list[ValidationResult],
+    report: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """The validations of the current ChangeSet and the traced requirements."""
+    return {
+        "changeSetDigest": digest,
+        "validations": [
+            {
+                "validatorId": item.validator_id,
+                "mandatory": item.mandatory,
+                "status": item.status.value,
+                "summary": item.summary,
+                "attempts": sum(
+                    1
+                    for other in validations
+                    if other.validator_id == item.validator_id and other.change_set_digest == digest
+                ),
+            }
+            for item in current_validations
+        ],
+        "requirements": [
+            {
+                "requirementId": item["requirementId"],
+                "traced": item["traced"],
+                "tests": [test["nodeId"] for test in item.get("tests", [])],
+            }
+            for item in (report or {}).get("requirements", [])
+        ],
+    }
+
+
+def _not_run_notes(current_validations: list[ValidationResult]) -> list[str]:
+    """Validators that did not run, and optional validators that did not pass."""
+    notes: list[str] = []
+    for item in current_validations:
+        if item.status is ResultStatus.PASSED:
+            continue
+        if item.status in {ResultStatus.NOT_APPLICABLE, ResultStatus.SKIPPED}:
+            notes.append(f"{item.validator_id} did not run: {item.summary}")
+        elif not item.mandatory:
+            notes.append(
+                f"optional {item.validator_id} is {item.status.value} (no effect on the gate): "
+                f"{item.summary}"
+            )
+    return notes
+
+
+def _traceability_notes(report: dict[str, Any] | None, task: Task) -> list[str]:
+    """Requirements no test names, requirements not checked, or no traceability at all."""
+    notes: list[str] = []
+    for item in (report or {}).get("requirements", []):
+        if not item["traced"]:
+            notes.append(f"requirement {item['requirementId']} has no test that names it")
+    for requirement_id in (report or {}).get("skippedRequirementIds", []):
+        notes.append(f"requirement {requirement_id} was not checked for a test")
+    if report is None and task.requirements:
+        notes.append(
+            "requirement traceability did not run: no check that a test names each requirement"
+        )
+    return notes
+
+
+def _not_verified(
+    current_validations: list[ValidationResult], report: dict[str, Any] | None, task: Task
+) -> list[str]:
+    """What the evidence of the current ChangeSet does not show."""
+    not_verified = _not_run_notes(current_validations)
+    not_verified += _traceability_notes(report, task)
+    if task.acceptance_criteria:
+        not_verified.append(
+            "acceptance criteria are not executed one by one: the evidence is the validators "
+            "and findings above"
+        )
+    if any(item.validator_id == "review.independent" for item in current_validations):
+        not_verified.append(
+            "INDEPENDENT_REVIEW is a deterministic rule check, not a review by another person"
+        )
+    return not_verified
+
+
+def _passed_after_retry(
+    validations: list[ValidationResult],
+    current_validations: list[ValidationResult],
+    digest: str | None,
+) -> list[str]:
+    """Validators that pass on the current ChangeSet after not passing on it before."""
+    return sorted(
+        item.validator_id
+        for item in current_validations
+        if item.status is ResultStatus.PASSED
+        and any(
+            other.validator_id == item.validator_id
+            and other.change_set_digest == digest
+            and other.status is not ResultStatus.PASSED
+            for other in validations
+        )
+    )
+
+
+def _history_section(
+    phases: list[PhaseExecution],
+    corrections: list[Any],
+    events: list[Any],
+    passed_after_retry: list[str],
+    superseded: int,
+) -> dict[str, Any]:
+    phase_counts = Counter(item.phase_id for item in phases)
+    return {
+        "implementationAttempts": phase_counts.get(PhaseId.IMPLEMENTATION, 0),
+        "verificationAttempts": phase_counts.get(PhaseId.VERIFICATION, 0),
+        "automaticCorrections": sum(
+            1 for item in corrections if item.payload.get("trigger") == "VERIFICATION_FAILED"
+        ),
+        "requestedChanges": sum(
+            1
+            for item in corrections
+            if item.payload.get("trigger") not in {"VERIFICATION_FAILED", "REVIEW_FINDINGS"}
+        ),
+        "providerRetries": sum(
+            1 for item in events if item.event_type == "agent.invocation.retried"
+        ),
+        "passedAfterRetry": passed_after_retry,
+        "supersededFindings": superseded,
+    }
+
+
+def _gate_section(gate: GateEvaluation | None, by_id: dict[str, Finding]) -> dict[str, Any] | None:
+    if not gate:
+        return None
+    return {
+        "gateEvaluationId": gate.gate_evaluation_id,
+        "status": gate.status.value,
+        "changeSetDigest": gate.change_set_digest,
+        "reasons": [
+            {"code": code, "explanation": _reason(code, by_id)} for code in gate.reason_codes
+        ],
+    }
+
+
+def _decision_entry(item: HumanDecision) -> dict[str, Any]:
+    return {
+        "decision": item.decision.value,
+        "actorId": item.actor.actor_id,
+        "decidedAt": item.decided_at.isoformat(),
+        "changeSetDigest": item.change_set_digest,
+        "rationale": item.rationale,
+        "expiresAt": item.expires_at.isoformat() if item.expires_at else None,
+    }
+
+
+def _asked_section(task: Task) -> dict[str, Any]:
+    return {
+        "title": task.title,
+        "intent": task.intent,
+        "requirements": [
+            {"requirementId": item.requirement_id, "text": item.text} for item in task.requirements
+        ],
+        "acceptanceCriteria": [
+            {"criterionId": item.criterion_id, "text": item.text, "priority": item.priority}
+            for item in task.acceptance_criteria
+        ],
+        "constraints": list(task.constraints),
+        **_assumptions_section(task),
+    }
+
+
+def _run_section(execution: Execution, awaiting: bool) -> dict[str, Any]:
+    return {
+        "executionId": execution.execution_id,
+        "taskId": execution.task_id,
+        "status": execution.status.value,
+        "currentPhase": execution.current_phase.value,
+        "awaitingDecision": awaiting,
+        "changeSetDigest": execution.change_set_digest,
+        "baselineRevision": execution.baseline_revision,
+        "updatedAt": execution.updated_at.isoformat(),
+    }
+
+
+def _risk_entries(
+    current_findings: list[Finding], blocking: set[FindingSeverity]
+) -> list[dict[str, Any]]:
+    """The findings of the current ChangeSet: blocking first, then by severity and location."""
+    return sorted(
+        (_finding_entry(item, blocking) for item in current_findings),
+        key=lambda item: (
+            not item["blocking"],
+            -list(FindingSeverity).index(FindingSeverity(item["severity"])),
+            item["location"],
+        ),
+    )
+
+
 def build_brief(
     services: EngineServices,
     execution_id: str,
@@ -227,123 +452,21 @@ def build_brief(
         ResultStatus.PENDING,
     }
 
-    changed: dict[str, Any] = {"changeSetDigest": digest, "files": [], "totals": None}
-    if current is not None:
-        changed["files"] = [
-            {
-                "path": item.path,
-                "status": item.status,
-                "additions": item.additions,
-                "deletions": item.deletions,
-            }
-            for item in current.files
-        ]
-        changed["totals"] = {
-            "files": len(current.files),
-            "additions": sum(item.additions for item in current.files),
-            "deletions": sum(item.deletions for item in current.files),
-        }
-        changed["diffRef"] = current.diff_ref
-        if include_diff:
-            data = services.artifacts.get(current.diff_ref)
-            changed["diff"] = data[:_MAX_DIFF_BYTES].decode("utf-8", "replace")
-            changed["diffTruncated"] = len(data) > _MAX_DIFF_BYTES
-
+    changed = _changed_section(services, digest, current, include_diff)
     report = _traceability(services, current_validations)
-    verified = {
-        "changeSetDigest": digest,
-        "validations": [
-            {
-                "validatorId": item.validator_id,
-                "mandatory": item.mandatory,
-                "status": item.status.value,
-                "summary": item.summary,
-                "attempts": sum(
-                    1
-                    for other in validations
-                    if other.validator_id == item.validator_id and other.change_set_digest == digest
-                ),
-            }
-            for item in current_validations
-        ],
-        "requirements": [
-            {
-                "requirementId": item["requirementId"],
-                "traced": item["traced"],
-                "tests": [test["nodeId"] for test in item.get("tests", [])],
-            }
-            for item in (report or {}).get("requirements", [])
-        ],
-    }
-    not_verified: list[str] = []
-    for item in current_validations:
-        if item.status is ResultStatus.PASSED:
-            continue
-        if item.status in {ResultStatus.NOT_APPLICABLE, ResultStatus.SKIPPED}:
-            not_verified.append(f"{item.validator_id} did not run: {item.summary}")
-        elif not item.mandatory:
-            not_verified.append(
-                f"optional {item.validator_id} is {item.status.value} (no effect on the gate): "
-                f"{item.summary}"
-            )
-    for item in (report or {}).get("requirements", []):
-        if not item["traced"]:
-            not_verified.append(f"requirement {item['requirementId']} has no test that names it")
-    for requirement_id in (report or {}).get("skippedRequirementIds", []):
-        not_verified.append(f"requirement {requirement_id} was not checked for a test")
-    if report is None and task.requirements:
-        not_verified.append(
-            "requirement traceability did not run: no check that a test names each requirement"
-        )
-    if task.acceptance_criteria:
-        not_verified.append(
-            "acceptance criteria are not executed one by one: the evidence is the validators "
-            "and findings above"
-        )
-    if any(item.validator_id == "review.independent" for item in current_validations):
-        not_verified.append(
-            "INDEPENDENT_REVIEW is a deterministic rule check, not a review by another person"
-        )
+    verified = _verified_section(digest, validations, current_validations, report)
+    not_verified = _not_verified(current_validations, report, task)
 
-    phase_counts = Counter(item.phase_id for item in phases)
     corrections = [item for item in events if item.event_type == "correction.authorized"]
-    passed_after_retry = sorted(
-        item.validator_id
-        for item in current_validations
-        if item.status is ResultStatus.PASSED
-        and any(
-            other.validator_id == item.validator_id
-            and other.change_set_digest == digest
-            and other.status is not ResultStatus.PASSED
-            for other in validations
-        )
+    history = _history_section(
+        phases,
+        corrections,
+        events,
+        _passed_after_retry(validations, current_validations, digest),
+        len(findings) - len(current_findings),
     )
-    history = {
-        "implementationAttempts": phase_counts.get(PhaseId.IMPLEMENTATION, 0),
-        "verificationAttempts": phase_counts.get(PhaseId.VERIFICATION, 0),
-        "automaticCorrections": sum(
-            1 for item in corrections if item.payload.get("trigger") == "VERIFICATION_FAILED"
-        ),
-        "requestedChanges": sum(
-            1
-            for item in corrections
-            if item.payload.get("trigger") not in {"VERIFICATION_FAILED", "REVIEW_FINDINGS"}
-        ),
-        "providerRetries": sum(
-            1 for item in events if item.event_type == "agent.invocation.retried"
-        ),
-        "passedAfterRetry": passed_after_retry,
-        "supersededFindings": len(findings) - len(current_findings),
-    }
 
-    risks = sorted(
-        (_finding_entry(item, blocking) for item in current_findings),
-        key=lambda item: (
-            not item["blocking"],
-            -list(FindingSeverity).index(FindingSeverity(item["severity"])),
-            item["location"],
-        ),
-    )
+    risks = _risk_entries(current_findings, blocking)
     review_corrections = sum(
         1 for item in corrections if item.payload.get("trigger") == "REVIEW_FINDINGS"
     )
@@ -357,58 +480,17 @@ def build_brief(
     agent_results = _agent_results_section(services, execution, current_findings)
     brief: dict[str, Any] = {
         "schemaVersion": BRIEF_SCHEMA_VERSION,
-        "run": {
-            "executionId": execution.execution_id,
-            "taskId": execution.task_id,
-            "status": execution.status.value,
-            "currentPhase": execution.current_phase.value,
-            "awaitingDecision": awaiting,
-            "changeSetDigest": digest,
-            "baselineRevision": execution.baseline_revision,
-            "updatedAt": execution.updated_at.isoformat(),
-        },
-        "asked": {
-            "title": task.title,
-            "intent": task.intent,
-            "requirements": [
-                {"requirementId": item.requirement_id, "text": item.text}
-                for item in task.requirements
-            ],
-            "acceptanceCriteria": [
-                {"criterionId": item.criterion_id, "text": item.text, "priority": item.priority}
-                for item in task.acceptance_criteria
-            ],
-            "constraints": list(task.constraints),
-            **_assumptions_section(task),
-        },
+        "run": _run_section(execution, awaiting),
+        "asked": _asked_section(task),
         "changed": changed,
-        "gate": {
-            "gateEvaluationId": gate.gate_evaluation_id,
-            "status": gate.status.value,
-            "changeSetDigest": gate.change_set_digest,
-            "reasons": [
-                {"code": code, "explanation": _reason(code, by_id)} for code in gate.reason_codes
-            ],
-        }
-        if gate
-        else None,
+        "gate": _gate_section(gate, by_id),
         "risks": risks,
         "verified": verified,
         "notVerified": not_verified,
         "exceptions": exceptions or [],
         "history": history,
         "delta": _delta(services, decisions, current, current_findings, blocking),
-        "decisions": [
-            {
-                "decision": item.decision.value,
-                "actorId": item.actor.actor_id,
-                "decidedAt": item.decided_at.isoformat(),
-                "changeSetDigest": item.change_set_digest,
-                "rationale": item.rationale,
-                "expiresAt": item.expires_at.isoformat() if item.expires_at else None,
-            }
-            for item in decisions
-        ],
+        "decisions": [_decision_entry(item) for item in decisions],
         "next": _next(execution, awaiting),
         **_provenance_sections(services, execution_id, digest),
     }

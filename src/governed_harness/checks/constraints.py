@@ -30,7 +30,7 @@ _CATEGORY = "constraints"
 
 _NEGATION = re.compile(r"\b(?:never|no|not|without|deterministic\w*)\b|n't\b")
 _MONEY_SENTENCE = re.compile(
-    r"\b(?:money|prices?|amounts?|fares?|costs?|balances?|fees?|totals?|currency|currencies)\b"
+    r"\b(?:money|(?:price|amount|fare|cost|balance|fee|total)s?|currency|currencies)\b"
 )
 _STUB_SENTENCE = re.compile(r"notimplementederror|\bstub|placeholder")
 _MONEY_TOKEN = re.compile(
@@ -64,18 +64,24 @@ def constraints_from_task(
     are ignored) and the ones its constraint sentences ask for, in ``CONSTRAINT_CHECKS`` order."""
     selected = {name for name in declared if name in CONSTRAINT_CHECKS}
     for sentence in constraints:
-        text = sentence.lower()
-        if "standard library" in text or "stdlib" in text:
-            selected.add("stdlib-only")
-        if ("clock" in text or "random" in text) and _NEGATION.search(text):
-            selected.add("no-clock-random")
-        if ("type hint" in text or "annotat" in text or "typed" in text) and "public" in text:
-            selected.add("annotated-public-api")
-        if "float" in text and _MONEY_SENTENCE.search(text):
-            selected.add("no-float-money")
-        if _STUB_SENTENCE.search(text):
-            selected.add("no-stubs")
+        selected.update(_sentence_checks(sentence.lower()))
     return tuple(name for name in CONSTRAINT_CHECKS if name in selected)
+
+
+def _sentence_checks(text: str) -> list[str]:
+    """The constraint checks one lower-cased constraint sentence asks for."""
+    found: list[str] = []
+    if "standard library" in text or "stdlib" in text:
+        found.append("stdlib-only")
+    if ("clock" in text or "random" in text) and _NEGATION.search(text):
+        found.append("no-clock-random")
+    if ("type hint" in text or "annotat" in text or "typed" in text) and "public" in text:
+        found.append("annotated-public-api")
+    if "float" in text and _MONEY_SENTENCE.search(text):
+        found.append("no-float-money")
+    if _STUB_SENTENCE.search(text):
+        found.append("no-stubs")
+    return found
 
 
 def first_party_modules(paths: Sequence[str]) -> frozenset[str]:
@@ -132,28 +138,43 @@ def check_constraints(
         try:
             tree = ast.parse(source, filename=path)
         except SyntaxError as error:
-            issues.append(
-                Issue(
-                    rule_id="constraints.unparsable",
-                    severity=FindingSeverity.INFO,
-                    message=f"{path} could not be parsed ({error.msg}); "
-                    "its constraints were not checked.",
-                    path=path,
-                    line=error.lineno,
-                    category=_CATEGORY,
-                )
-            )
+            issues.append(_unparsable(path, error))
             continue
-        if "stdlib-only" in selected:
-            issues.extend(_non_stdlib_imports(path, tree, first_party, severity))
-        if "no-clock-random" in selected:
-            issues.extend(_clock_or_random(path, tree, source.splitlines(), severity))
-        if "annotated-public-api" in selected:
-            issues.extend(_unannotated_public_api(path, tree, severity))
-        if "no-float-money" in selected:
-            issues.extend(_float_money(path, tree, severity))
-        if "no-stubs" in selected:
-            issues.extend(_stubs(path, tree, severity))
+        issues.extend(_file_issues(selected, path, tree, source, first_party, severity))
+    return issues
+
+
+def _unparsable(path: str, error: SyntaxError) -> Issue:
+    return Issue(
+        rule_id="constraints.unparsable",
+        severity=FindingSeverity.INFO,
+        message=f"{path} could not be parsed ({error.msg}); its constraints were not checked.",
+        path=path,
+        line=error.lineno,
+        category=_CATEGORY,
+    )
+
+
+def _file_issues(
+    selected: set[str],
+    path: str,
+    tree: ast.Module,
+    source: str,
+    first_party: frozenset[str],
+    severity: FindingSeverity,
+) -> list[Issue]:
+    """The issues of the selected checks on one parsed file, in check order."""
+    issues: list[Issue] = []
+    if "stdlib-only" in selected:
+        issues.extend(_non_stdlib_imports(path, tree, first_party, severity))
+    if "no-clock-random" in selected:
+        issues.extend(_clock_or_random(path, tree, source.splitlines(), severity))
+    if "annotated-public-api" in selected:
+        issues.extend(_unannotated_public_api(path, tree, severity))
+    if "no-float-money" in selected:
+        issues.extend(_float_money(path, tree, severity))
+    if "no-stubs" in selected:
+        issues.extend(_stubs(path, tree, severity))
     return issues
 
 
@@ -199,16 +220,21 @@ def _import_aliases(tree: ast.Module) -> dict[str, str]:
     aliases: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname:
-                    aliases[alias.asname] = alias.name
-                else:
-                    top = alias.name.split(".", 1)[0]
-                    aliases[top] = top
+            _add_import_aliases(node, aliases)
         elif isinstance(node, ast.ImportFrom) and not node.level and node.module:
             for alias in node.names:
                 aliases[alias.asname or alias.name] = f"{node.module}.{alias.name}"
     return aliases
+
+
+def _add_import_aliases(node: ast.Import, aliases: dict[str, str]) -> None:
+    """The names an ``import`` statement binds: its alias, or the top-level package."""
+    for alias in node.names:
+        if alias.asname:
+            aliases[alias.asname] = alias.name
+        else:
+            top = alias.name.split(".", 1)[0]
+            aliases[top] = top
 
 
 def _dotted(node: ast.expr) -> str | None:
@@ -310,17 +336,24 @@ def _missing_annotations(function: ast.FunctionDef | ast.AsyncFunctionDef) -> li
     return missing
 
 
-def _unannotated_public_api(path: str, tree: ast.Module, severity: FindingSeverity) -> list[Issue]:
+def _public_functions(tree: ast.Module) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
+    """The public module functions and the public methods of public classes, qualified."""
     candidates: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
     for node in tree.body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and _is_public(node.name):
             candidates.append((node.name, node))
         elif isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
-            for member in node.body:
-                if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef) and _is_public(
-                    member.name
-                ):
-                    candidates.append((f"{node.name}.{member.name}", member))
+            candidates.extend(
+                (f"{node.name}.{member.name}", member)
+                for member in node.body
+                if isinstance(member, ast.FunctionDef | ast.AsyncFunctionDef)
+                and _is_public(member.name)
+            )
+    return candidates
+
+
+def _unannotated_public_api(path: str, tree: ast.Module, severity: FindingSeverity) -> list[Issue]:
+    candidates = _public_functions(tree)
     issues: list[Issue] = []
     for qualified, function in candidates:
         missing = _missing_annotations(function)
@@ -380,25 +413,7 @@ def _target_name(target: ast.expr) -> str | None:
 def _float_money_sites(tree: ast.Module) -> Iterator[tuple[str, int]]:
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
-            args = node.args
-            positional = [*args.posonlyargs, *args.args]
-            defaults: list[ast.expr | None] = [None] * (len(positional) - len(args.defaults))
-            defaults.extend(args.defaults)
-            pairs = [
-                *zip(positional, defaults, strict=True),
-                *zip(args.kwonlyargs, args.kw_defaults, strict=True),
-            ]
-            for arg, default in pairs:
-                if _is_money_name(arg.arg) and (
-                    _mentions_float(arg.annotation) or _is_float_value(default)
-                ):
-                    yield arg.arg, arg.lineno
-            if (
-                isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
-                and _is_money_name(node.name)
-                and _mentions_float(node.returns)
-            ):
-                yield node.name, node.lineno
+            yield from _function_money_sites(node)
         elif isinstance(node, ast.AnnAssign):
             name = _target_name(node.target)
             if (
@@ -408,10 +423,40 @@ def _float_money_sites(tree: ast.Module) -> Iterator[tuple[str, int]]:
             ):
                 yield name, node.lineno
         elif isinstance(node, ast.Assign) and _is_float_value(node.value):
-            for target in node.targets:
-                name = _target_name(target)
-                if name is not None and _is_money_name(name):
-                    yield name, node.lineno
+            yield from _assign_money_sites(node)
+
+
+def _function_money_sites(
+    node: ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda,
+) -> Iterator[tuple[str, int]]:
+    """Money parameters typed or defaulted as a float, then a money function returning one."""
+    args = node.args
+    positional = [*args.posonlyargs, *args.args]
+    defaults: list[ast.expr | None] = [None] * (len(positional) - len(args.defaults))
+    defaults.extend(args.defaults)
+    pairs = [
+        *zip(positional, defaults, strict=True),
+        *zip(args.kwonlyargs, args.kw_defaults, strict=True),
+    ]
+    for arg, default in pairs:
+        if _is_money_name(arg.arg) and (
+            _mentions_float(arg.annotation) or _is_float_value(default)
+        ):
+            yield arg.arg, arg.lineno
+    if (
+        isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+        and _is_money_name(node.name)
+        and _mentions_float(node.returns)
+    ):
+        yield node.name, node.lineno
+
+
+def _assign_money_sites(node: ast.Assign) -> Iterator[tuple[str, int]]:
+    """The money targets of an assignment whose value is a float."""
+    for target in node.targets:
+        name = _target_name(target)
+        if name is not None and _is_money_name(name):
+            yield name, node.lineno
 
 
 def _float_money(path: str, tree: ast.Module, severity: FindingSeverity) -> list[Issue]:

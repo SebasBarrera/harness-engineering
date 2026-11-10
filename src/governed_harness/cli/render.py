@@ -14,6 +14,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 _CAMEL = re.compile(r"(?<=[a-z0-9])([A-Z])")
+_NEXT_HEADING = "Next:"
 
 
 def wants_json(flag: bool | None, stream: Any = None) -> bool:
@@ -49,6 +50,28 @@ def _is_scalar(value: object) -> bool:
     return value is None or isinstance(value, str | int | float | bool)
 
 
+def _generic_entry(name: str, item: object, indent: int) -> list[str]:
+    """One ``key: value`` entry of a mapping; a nested value goes below its key."""
+    pad = "  " * indent
+    if _is_scalar(item):
+        return [f"{pad}{name}: {_scalar(item)}"]
+    if isinstance(item, Sequence) and not item:
+        return [f"{pad}{name}: -"]
+    if isinstance(item, Sequence) and all(_is_scalar(entry) for entry in item):
+        return [f"{pad}{name}: " + ", ".join(_scalar(entry) for entry in item)]
+    if isinstance(item, Mapping) and not item:
+        return [f"{pad}{name}: -"]
+    return [f"{pad}{name}:", *generic(item, indent + 1)]
+
+
+def _generic_item(index: int, item: object, indent: int) -> list[str]:
+    """One item of a sequence: ``- value``, or ``[index]`` with the item below it."""
+    pad = "  " * indent
+    if _is_scalar(item):
+        return [f"{pad}- {_scalar(item)}"]
+    return [f"{pad}[{index}]", *generic(item, indent + 1)]
+
+
 def generic(value: object, indent: int = 0) -> list[str]:
     pad = "  " * indent
     if _is_scalar(value):
@@ -56,27 +79,12 @@ def generic(value: object, indent: int = 0) -> list[str]:
     if isinstance(value, Mapping):
         lines: list[str] = []
         for key, item in value.items():
-            name = label(str(key))
-            if _is_scalar(item):
-                lines.append(f"{pad}{name}: {_scalar(item)}")
-            elif isinstance(item, Sequence) and not item:
-                lines.append(f"{pad}{name}: -")
-            elif isinstance(item, Sequence) and all(_is_scalar(entry) for entry in item):
-                lines.append(f"{pad}{name}: " + ", ".join(_scalar(entry) for entry in item))
-            elif isinstance(item, Mapping) and not item:
-                lines.append(f"{pad}{name}: -")
-            else:
-                lines.append(f"{pad}{name}:")
-                lines.extend(generic(item, indent + 1))
+            lines.extend(_generic_entry(label(str(key)), item, indent))
         return lines
     if isinstance(value, Sequence):
         lines = []
         for index, item in enumerate(value, start=1):
-            if _is_scalar(item):
-                lines.append(f"{pad}- {_scalar(item)}")
-            else:
-                lines.append(f"{pad}[{index}]")
-                lines.extend(generic(item, indent + 1))
+            lines.extend(_generic_item(index, item, indent))
         return lines
     return [pad + str(value)]
 
@@ -204,7 +212,7 @@ def _execution(value: Mapping[str, Any]) -> list[str]:
             lines.append(f"{label(key)}: {_scalar(value.get(key))}")
     steps = next_steps(value)
     if steps:
-        lines.extend(["", "Next:", *(f"  {step}" for step in steps)])
+        lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in steps)])
     return lines
 
 
@@ -293,11 +301,12 @@ def _init(value: Mapping[str, Any]) -> list[str]:
         lines.append(f".gitignore: .harness/ {value['gitignore']}")
     if value.get("exampleTask"):
         lines.append(f"Example task: {value['exampleTask']}")
-    lines.extend(["", "Next:", *(f"  {step}" for step in value.get("next", []))])
+    lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in value.get("next", []))])
     return lines
 
 
-def _review(brief: Mapping[str, Any]) -> list[str]:
+def _review_asked(brief: Mapping[str, Any]) -> list[str]:
+    """The header of the brief and what was asked."""
     run = brief["run"]
     waiting = ", waiting for your decision" if run["awaitingDecision"] else ""
     lines = [
@@ -318,28 +327,34 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
     for item in brief["asked"]["constraints"]:
         lines.append(f"  constraint: {short(item, 100)}")
     lines.extend(_assumption_lines(brief["asked"].get("assumptions")))
-    changed = brief["changed"]
+    return lines
+
+
+def _review_changed(changed: Mapping[str, Any]) -> list[str]:
     totals = changed.get("totals") or {"files": 0, "additions": 0, "deletions": 0}
-    lines.extend(
-        [
-            "",
-            f"What changed ({totals['files']} file(s), +{totals['additions']} "
-            f"-{totals['deletions']})",
-        ]
-    )
+    lines = [
+        "",
+        f"What changed ({totals['files']} file(s), +{totals['additions']} -{totals['deletions']})",
+    ]
     for item in changed.get("files", []):
         lines.append(
             f"  {item['status']:<9} {item['path']}  +{item['additions']} -{item['deletions']}"
         )
-    gate = brief.get("gate")
-    lines.append("")
-    if gate:
-        lines.append(f"Gate {gate['status']}")
-        lines.extend(f"  - {item['explanation']}" for item in gate["reasons"])
-    else:
-        lines.append("Gate: not evaluated yet")
-    risks = brief.get("risks", [])
-    lines.extend(["", f"Risks ({len(risks)})"])
+    return lines
+
+
+def _review_gate(gate: Mapping[str, Any] | None) -> list[str]:
+    if not gate:
+        return ["", "Gate: not evaluated yet"]
+    return [
+        "",
+        f"Gate {gate['status']}",
+        *(f"  - {item['explanation']}" for item in gate["reasons"]),
+    ]
+
+
+def _review_risks(risks: Sequence[Mapping[str, Any]]) -> list[str]:
+    lines = ["", f"Risks ({len(risks)})"]
     if not risks:
         lines.append("  no current finding")
     for item in risks:
@@ -348,8 +363,11 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
             f"  {flag:<6} {item['severity']:<8} {item['ruleId']}  {item['location']}  "
             f"{short(item['message'], 80)}"
         )
-    verified = brief["verified"]
-    lines.extend(["", f"Verified on {verified['changeSetDigest']}"])
+    return lines
+
+
+def _review_verified(verified: Mapping[str, Any]) -> list[str]:
+    lines = ["", f"Verified on {verified['changeSetDigest']}"]
     for item in verified["validations"]:
         kind = "mandatory" if item["mandatory"] else "optional"
         retry = f", {item['attempts']} attempts" if item["attempts"] > 1 else ""
@@ -357,81 +375,121 @@ def _review(brief: Mapping[str, Any]) -> list[str]:
     for item in verified["requirements"]:
         tests = ", ".join(item["tests"]) or "no test"
         lines.append(f"  requirement {item['requirementId']}: {tests}")
-    if brief.get("notVerified"):
-        lines.extend(["", "Not verified"])
-        lines.extend(f"  - {item}" for item in brief["notVerified"])
-    exceptions = brief.get("exceptions") or []
-    if exceptions:
-        lines.extend(["", "Exceptions in force"])
-        for item in exceptions:
-            lines.append(
-                f"  {item['exceptionId']} by {item['actorId']} until {item['expiresAt']}: "
-                f"{short(item['rationale'], 70)}"
-            )
-    history = brief["history"]
-    lines.extend(
-        [
-            "",
-            "History: "
-            f"{history['implementationAttempts']} implementation attempt(s), "
-            f"{history['verificationAttempts']} verification attempt(s), "
-            f"{history['automaticCorrections']} automatic correction(s), "
-            f"{history['requestedChanges']} requested change(s), "
-            f"{history['providerRetries']} provider retry(ies), "
-            f"{history['supersededFindings']} superseded finding(s)",
-        ]
-    )
+    return lines
+
+
+def _review_not_verified(brief: Mapping[str, Any]) -> list[str]:
+    if not brief.get("notVerified"):
+        return []
+    return ["", "Not verified", *(f"  - {item}" for item in brief["notVerified"])]
+
+
+def _review_exceptions(exceptions: Sequence[Mapping[str, Any]]) -> list[str]:
+    if not exceptions:
+        return []
+    return [
+        "",
+        "Exceptions in force",
+        *(
+            f"  {item['exceptionId']} by {item['actorId']} until {item['expiresAt']}: "
+            f"{short(item['rationale'], 70)}"
+            for item in exceptions
+        ),
+    ]
+
+
+def _review_history(history: Mapping[str, Any]) -> list[str]:
+    lines = [
+        "",
+        "History: "
+        f"{history['implementationAttempts']} implementation attempt(s), "
+        f"{history['verificationAttempts']} verification attempt(s), "
+        f"{history['automaticCorrections']} automatic correction(s), "
+        f"{history['requestedChanges']} requested change(s), "
+        f"{history['providerRetries']} provider retry(ies), "
+        f"{history['supersededFindings']} superseded finding(s)",
+    ]
     if history["passedAfterRetry"]:
         lines.append(
             "  passed only after an earlier failure on this digest: "
             + ", ".join(history["passedAfterRetry"])
         )
-    delta = brief.get("delta")
-    if delta:
-        since = delta["sinceDecision"]
-        lines.extend(
-            [
-                "",
-                f"Since the last decision ({since['decision']} by {since['actorId']} on "
-                f"{since['changeSetDigest']})",
-            ]
-        )
-        if delta.get("unchanged"):
-            lines.append("  the ChangeSet is the one that decision was bound to")
-        else:
-            for key in ("added", "changed", "removed"):
-                if delta["files"][key]:
-                    lines.append(f"  files {key}: {', '.join(delta['files'][key])}")
-            for key, title in (("findingsResolved", "resolved"), ("findingsNew", "new")):
-                for item in delta[key]:
-                    lines.append(f"  {title}: {item['ruleId']} {item['location']}")
-    provenance = brief.get("provenance")
-    if provenance:
-        lines.extend(
-            [
-                "",
-                f"Provenance: {provenance['agentFiles']} file(s) written by an agent invocation, "
-                f"{provenance['outOfBandFiles']} changed out of band",
-                *(f"  out of band: {path}" for path in provenance["outOfBandPaths"]),
-            ]
-        )
-    for report in brief.get("selfReports") or []:
-        lines.extend(
-            ["", f"Agent self-report (REPORTED, not verified) of {report['invocationId']}"]
-        )
-        lines.extend(f"  assumption: {item}" for item in report["assumptions"])
-        lines.extend(
+    return lines
+
+
+def _review_delta_changes(delta: Mapping[str, Any]) -> list[str]:
+    """The files and findings that changed since the last decision."""
+    lines: list[str] = []
+    for key in ("added", "changed", "removed"):
+        if delta["files"][key]:
+            lines.append(f"  files {key}: {', '.join(delta['files'][key])}")
+    for key, title in (("findingsResolved", "resolved"), ("findingsNew", "new")):
+        for item in delta[key]:
+            lines.append(f"  {title}: {item['ruleId']} {item['location']}")
+    return lines
+
+
+def _review_delta(delta: Mapping[str, Any] | None) -> list[str]:
+    if not delta:
+        return []
+    since = delta["sinceDecision"]
+    lines = [
+        "",
+        f"Since the last decision ({since['decision']} by {since['actorId']} on "
+        f"{since['changeSetDigest']})",
+    ]
+    if delta.get("unchanged"):
+        lines.append("  the ChangeSet is the one that decision was bound to")
+    else:
+        lines.extend(_review_delta_changes(delta))
+    return lines
+
+
+def _review_provenance(provenance: Mapping[str, Any] | None) -> list[str]:
+    if not provenance:
+        return []
+    return [
+        "",
+        f"Provenance: {provenance['agentFiles']} file(s) written by an agent invocation, "
+        f"{provenance['outOfBandFiles']} changed out of band",
+        *(f"  out of band: {path}" for path in provenance["outOfBandPaths"]),
+    ]
+
+
+def _review_self_report(report: Mapping[str, Any]) -> list[str]:
+    return [
+        "",
+        f"Agent self-report (REPORTED, not verified) of {report['invocationId']}",
+        *(f"  assumption: {item}" for item in report["assumptions"]),
+        *(
             f"  low confidence: {item.get('path') or '-'}: {item['description']}"
             for item in report["lowConfidenceAreas"]
-        )
-        lines.extend(
+        ),
+        *(
             f"  unrequested change: {item.get('path') or '-'}: {item['description']}"
             for item in report["unrequestedChanges"]
-        )
-        lines.extend(f"  problem: {item}" for item in report["problems"])
+        ),
+        *(f"  problem: {item}" for item in report["problems"]),
+    ]
+
+
+def _review(brief: Mapping[str, Any]) -> list[str]:
+    lines = _review_asked(brief)
+    changed = brief["changed"]
+    lines.extend(_review_changed(changed))
+    lines.extend(_review_gate(brief.get("gate")))
+    lines.extend(_review_risks(brief.get("risks", [])))
+    lines.extend(_review_verified(brief["verified"]))
+    lines.extend(_review_not_verified(brief))
+    lines.extend(_review_exceptions(brief.get("exceptions") or []))
+    lines.extend(_review_history(brief["history"]))
+    lines.extend(_review_delta(brief.get("delta")))
+    lines.extend(_review_provenance(brief.get("provenance")))
+    for report in brief.get("selfReports") or []:
+        lines.extend(_review_self_report(report))
     lines.extend(_ladder_sections(brief))
     if brief.get("next"):
-        lines.extend(["", "Next:", *(f"  {step}" for step in brief["next"])])
+        lines.extend(["", _NEXT_HEADING, *(f"  {step}" for step in brief["next"])])
     if changed.get("diff"):
         lines.extend(["", "Diff", changed["diff"]])
     return lines

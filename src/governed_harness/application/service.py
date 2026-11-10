@@ -1746,18 +1746,18 @@ class HarnessApplication(ReviewCodeCommands):
             events = services.events.list(execution_id)
             metrics = MetricsProjector(services.state).project(execution_id, events)
             reporter = TraceReporter()
-            kwargs = dict(
-                execution=execution,
-                task=task,
-                phases=phases,
-                validations=validations,
-                findings=findings,
-                gate=gate,
-                decision=decision,
-                events=events,
-                metrics=metrics,
-                retrospective=retrospectives[-1] if retrospectives else None,
-            )
+            kwargs = {
+                "execution": execution,
+                "task": task,
+                "phases": phases,
+                "validations": validations,
+                "findings": findings,
+                "gate": gate,
+                "decision": decision,
+                "events": events,
+                "metrics": metrics,
+                "retrospective": retrospectives[-1] if retrospectives else None,
+            }
             if format == "json":
                 return reporter.render_json(**kwargs)
             if format == "sarif":

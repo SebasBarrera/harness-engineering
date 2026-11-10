@@ -41,6 +41,17 @@ def declared_settings_report(
     each one this project sets (or receives from a profile) and for each declared setting that a
     ``governance`` key would apply but that key is off."""
     declarative = [{"key": key, "reason": reason} for key, reason in DECLARATIVE_SETTINGS.items()]
+    warnings = _declarative_key_warnings(resolved, raw)
+    warnings += _governance_warnings(resolved, raw)
+    warnings += _profile_policy_warnings(resolved)
+    if resolved.project.retention:
+        warnings.append("retention is applied only when harness gc --apply runs")
+    warnings.extend(ungranted_provider_warnings(resolved))
+    return declarative, warnings
+
+
+def _declarative_key_warnings(resolved: ResolvedConfiguration, raw: dict[str, Any]) -> list[str]:
+    """A warning for each declarative key the project sets or receives from a profile."""
     warnings: list[str] = []
     for key, path in _PROJECT_KEYS.items():
         if _present(raw, path):
@@ -50,6 +61,12 @@ def declared_settings_report(
             warnings.append(
                 f"policies.{key} is declarative: {DECLARATIVE_SETTINGS[f'policies.{key}']}"
             )
+    return warnings
+
+
+def _governance_warnings(resolved: ResolvedConfiguration, raw: dict[str, Any]) -> list[str]:
+    """A warning for each declared setting whose ``governance`` key is off."""
+    warnings: list[str] = []
     governance = resolved.project.governance_settings
     if not governance.phase_capabilities:
         warnings.append(
@@ -89,6 +106,13 @@ def declared_settings_report(
         warnings.append(
             "governance.applyNetworkPolicy has no effect while runtime.agentSandbox is off"
         )
+    return warnings
+
+
+def _profile_policy_warnings(resolved: ResolvedConfiguration) -> list[str]:
+    """Profile policies that ``governance.applyProfilePolicies`` would apply, or cannot."""
+    warnings: list[str] = []
+    governance = resolved.project.governance_settings
     profile_policies = {
         key
         for key in ("missingTestCommand", "missingTestScript", "coverage")
@@ -106,10 +130,7 @@ def declared_settings_report(
         and not any(profile.technology == "python" for profile in resolved.profiles)
     ):
         warnings.append("policies.coverage.minimumPercent is applied to Python projects only")
-    if resolved.project.retention:
-        warnings.append("retention is applied only when harness gc --apply runs")
-    warnings.extend(ungranted_provider_warnings(resolved))
-    return declarative, warnings
+    return warnings
 
 
 def ungranted_provider_warnings(resolved: ResolvedConfiguration) -> list[str]:
