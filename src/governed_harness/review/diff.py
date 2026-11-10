@@ -42,14 +42,14 @@ _GIT_BINARY_SUFFIX = " differ"
 # ``^diff --git (?:"?a/)?(.+?)"? (?:"?b/)?(.+?)"?$`` and
 # ``^Binary files (?:a/)?(.+?) and (?:b/)?(.+?) differ$`` capture on a line without line breaks
 # (the parser reads ``str.splitlines()``), or ``None`` where they do not match.
-def _side_starts(text: str, prefix: str, *, quoted: bool) -> tuple[int, ...]:
+def _side_starts(text: str, prefix: str, *, quoted: bool) -> list[int]:
     """Where a path may start after its optional ``a/``/``b/`` prefix (``"``-quoted when
     ``quoted``): past the prefix first, then at the very start."""
     if quoted and text.startswith('"' + prefix):
-        return (len(prefix) + 1, 0)
+        return [len(prefix) + 1, 0]
     if text.startswith(prefix):
-        return (len(prefix), 0)
-    return (0,)
+        return [len(prefix), 0]
+    return [0]
 
 
 def _new_side(value: str, *, quoted: bool) -> str:
