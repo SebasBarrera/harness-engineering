@@ -7,13 +7,14 @@ con el equipo anterior, y no debe volver a pasar.
 | Archivo | Qué es |
 |---|---|
 | [`CATALOGO.md`](CATALOGO.md) | Inventario de las pruebas existentes y 55 pruebas nuevas propuestas (H01–H55), con hipótesis, método, métricas, criterio de éxito, costo y sesgos; plan y reglas de integridad. |
+| [`PREREGISTRO.md`](PREREGISTRO.md) | Hipótesis, condiciones, métricas y criterio de éxito del top 10 de pruebas nuevas, congelados antes de su primera corrida, con la operacionalización de H01, H03, H05 y H38 (`evaluation/deterministic/h01_weakened_tests.py`, `h03_secrets.py`, `h05_dependencies.py`, `h38_false_fast_lane.py`). |
 | `run_deterministic.py` | Corre todas las suites deterministas (sin modelo) sobre un wheel: crea los entornos, verifica el archivo de `itsdangerous` y registra el código de salida de cada suite en `campaign-summary.json`. Sale con 1 si alguna falló. |
 | `../../.github/workflows/evaluation.yml` | El mismo script en Linux de GitHub Actions, con `bwrap` (sandbox real), lanzado a mano sobre la rama o etiqueta a evaluar (`workflow_dispatch`, «Use workflow from»): esa rama debe traer estos scripts. Los resultados quedan como artefacto para revisarlos y versionarlos. |
 
 ## Reglas de integridad
 
-- Los criterios de éxito se declaran antes de correr (`PREREGISTRO.md`, por crear a partir del
-  catálogo) y no se cambian después de ver resultados.
+- Los criterios de éxito se declaran antes de correr ([`PREREGISTRO.md`](PREREGISTRO.md), el top
+  10 del catálogo congelado el 2026-11-10) y no se cambian después de ver resultados.
 - **Toda corrida se reporta.** Ninguna prueba se descarta por dar un resultado desfavorable al
   harness; solo se excluyen corridas por causas técnicas declaradas (por ejemplo, el límite de uso
   de la cuenta), con su causa en el registro. Los costos del harness (tiempo, tokens, fricción) se
