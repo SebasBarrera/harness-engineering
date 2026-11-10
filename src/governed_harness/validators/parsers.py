@@ -88,20 +88,22 @@ def parse_sarif(data: dict[str, Any], workspace: Path) -> list[ParsedIssue]:
     for run in data.get("runs") or []:
         tool = str(((run.get("tool") or {}).get("driver") or {}).get("name") or "sarif")
         for result in run.get("results") or []:
-            location = ((result.get("locations") or [{}])[0] or {}).get("physicalLocation") or {}
-            region = location.get("region") or {}
-            issues.append(
-                ParsedIssue(
-                    rule=str(result.get("ruleId") or "result"),
-                    message=_message((result.get("message") or {}).get("text")),
-                    level=_SARIF_LEVELS.get(str(result.get("level") or "warning"), "warning"),
-                    path=_relative((location.get("artifactLocation") or {}).get("uri"), workspace),
-                    line=_line(region.get("startLine")),
-                    end_line=_line(region.get("endLine")),
-                    tool=tool,
-                )
-            )
+            issues.append(_sarif_issue(result, tool, workspace))
     return issues
+
+
+def _sarif_issue(result: dict[str, Any], tool: str, workspace: Path) -> ParsedIssue:
+    location = ((result.get("locations") or [{}])[0] or {}).get("physicalLocation") or {}
+    region = location.get("region") or {}
+    return ParsedIssue(
+        rule=str(result.get("ruleId") or "result"),
+        message=_message((result.get("message") or {}).get("text")),
+        level=_SARIF_LEVELS.get(str(result.get("level") or "warning"), "warning"),
+        path=_relative((location.get("artifactLocation") or {}).get("uri"), workspace),
+        line=_line(region.get("startLine")),
+        end_line=_line(region.get("endLine")),
+        tool=tool,
+    )
 
 
 def parse_eslint_json(data: list[dict[str, Any]], workspace: Path) -> list[ParsedIssue]:
@@ -280,21 +282,26 @@ def parse_junit(text: str, workspace: Path) -> list[ParsedIssue]:
             node = case.find(kind)
             if node is None:
                 continue
-            name = case.get("name") or "test"
-            classname = case.get("classname") or ""
-            identifier = f"{classname}::{name}" if classname else name
-            text_lines = (node.text or "").strip().splitlines()
-            message = node.get("message") or (text_lines[0] if text_lines else kind)
-            issues.append(
-                ParsedIssue(
-                    rule="test-failed" if kind == "failure" else "test-error",
-                    message=_message(f"{identifier} {kind}: {_message(message)}"),
-                    path=_relative(case.get("file"), workspace),
-                    line=_line(case.get("line")),
-                    tool="junit",
-                )
-            )
+            issues.append(_junit_issue(case, kind, node, workspace))
     return issues
+
+
+def _junit_issue(
+    case: ElementTree.Element, kind: str, node: ElementTree.Element, workspace: Path
+) -> ParsedIssue:
+    """The issue of one ``failure`` or ``error`` element of a test case."""
+    name = case.get("name") or "test"
+    classname = case.get("classname") or ""
+    identifier = f"{classname}::{name}" if classname else name
+    text_lines = (node.text or "").strip().splitlines()
+    message = node.get("message") or (text_lines[0] if text_lines else kind)
+    return ParsedIssue(
+        rule="test-failed" if kind == "failure" else "test-error",
+        message=_message(f"{identifier} {kind}: {_message(message)}"),
+        path=_relative(case.get("file"), workspace),
+        line=_line(case.get("line")),
+        tool="junit",
+    )
 
 
 # ----- text formats -----------------------------------------------------------------------
@@ -426,6 +433,20 @@ def _frame_path(path: str) -> str:
 
 
 def parse_pytest_text(lines: list[str]) -> list[ParsedIssue]:
+    sections = _pytest_sections(lines)
+    issues = []
+    for line in lines:
+        match = _PYTEST_SUMMARY.match(line)
+        if not match:
+            continue
+        issue = _pytest_issue(match, sections)
+        if issue is not None:
+            issues.append(issue)
+    return issues
+
+
+def _pytest_sections(lines: list[str]) -> dict[str, list[str]]:
+    """The lines of each ``___ name ___`` section of a pytest report, by name."""
     sections: dict[str, list[str]] = {}
     current: list[str] | None = None
     for line in lines:
@@ -433,37 +454,31 @@ def parse_pytest_text(lines: list[str]) -> list[ParsedIssue]:
             current = sections.setdefault(match["name"], [])
         elif current is not None:
             current.append(line)
-    issues = []
-    for line in lines:
-        match = _PYTEST_SUMMARY.match(line)
-        if not match:
-            continue
-        node = match["node"]
-        path = node.split("::", 1)[0]
-        if not path.endswith(".py"):
-            continue
-        name = node.split("::")[-1] if "::" in node else path
-        section = (
-            sections.get(name) or sections.get(node.split("::", 1)[-1].replace("::", ".")) or []
-        )
-        frames = [
-            int(found.group(1))
-            for text in section
-            if (found := re.match(rf"^{_frame_path(path)}:(\d+): ", text))
-        ]
-        kind = "test-failed" if match["kind"] == "FAILED" else "test-error"
-        issues.append(
-            ParsedIssue(
-                rule=kind,
-                message=_message(
-                    f"{node} {match['kind'].lower()}: {match['msg'] or ''}".rstrip(": ")
-                ),
-                path=path,
-                line=frames[-1] if frames else None,
-                tool="pytest",
-            )
-        )
-    return issues
+    return sections
+
+
+def _pytest_issue(match: re.Match[str], sections: dict[str, list[str]]) -> ParsedIssue | None:
+    """The issue of one summary line, at the last frame of its section in the test file;
+    ``None`` for a node outside a ``.py`` file."""
+    node = match["node"]
+    path = node.split("::", 1)[0]
+    if not path.endswith(".py"):
+        return None
+    name = node.split("::")[-1] if "::" in node else path
+    section = sections.get(name) or sections.get(node.split("::", 1)[-1].replace("::", ".")) or []
+    frames = [
+        int(found.group(1))
+        for text in section
+        if (found := re.match(rf"^{_frame_path(path)}:(\d+): ", text))
+    ]
+    kind = "test-failed" if match["kind"] == "FAILED" else "test-error"
+    return ParsedIssue(
+        rule=kind,
+        message=_message(f"{node} {match['kind'].lower()}: {match['msg'] or ''}".rstrip(": ")),
+        path=path,
+        line=frames[-1] if frames else None,
+        tool="pytest",
+    )
 
 
 def _load_json(text: str) -> Any:
@@ -482,21 +497,8 @@ def _parse_only(
     """The issues of one named format (``toolchain.validators[].parser``)."""
     texts = (*reports, stdout)
     lines = [line.rstrip() for line in (stdout + "\n" + stderr).splitlines()]
-    issues: list[ParsedIssue] = []
-    if parser == "junit":
-        for text in texts:
-            if "<testsuite" in text:
-                issues.extend(parse_junit(text, workspace))
-        return issues
-    if parser == "checkstyle":
-        for text in texts:
-            if "<checkstyle" in text:
-                issues.extend(parse_checkstyle(text, workspace))
-        return issues
-    if parser == "cargo":
-        for text in texts:
-            issues.extend(parse_cargo_messages(text, workspace))
-        return issues
+    if parser in {"junit", "checkstyle", "cargo"}:
+        return _parse_reports(parser, texts, workspace)
     text_parsers = {
         "mypy": parse_mypy_text,
         "tsc": parse_tsc_text,
@@ -505,22 +507,43 @@ def _parse_only(
     }
     if parser in text_parsers:
         return text_parsers[parser](lines)
+    issues: list[ParsedIssue] = []
     for text in texts:
-        data = _load_json(text)
-        if parser == "sarif" and isinstance(data, dict) and "runs" in data:
-            issues.extend(parse_sarif(data, workspace))
-        elif parser == "rubocop" and isinstance(data, dict):
-            issues.extend(parse_rubocop_json(data, workspace))
-        elif parser in {"eslint", "ruff"} and isinstance(data, list):
-            rows = [item for item in data if isinstance(item, dict)]
-            issues.extend(
-                parse_eslint_json(rows, workspace)
-                if parser == "eslint"
-                else parse_ruff_json(rows, workspace)
-            )
+        issues.extend(_parse_json_named(parser, _load_json(text), workspace))
     if parser == "ruff" and not issues:
         issues.extend(parse_ruff_text(lines))
     return issues
+
+
+def _parse_reports(parser: str, texts: tuple[str, ...], workspace: Path) -> list[ParsedIssue]:
+    """The issues of the ``junit``, ``checkstyle`` or ``cargo`` reports among ``texts``."""
+    issues: list[ParsedIssue] = []
+    for text in texts:
+        if parser == "junit":
+            if "<testsuite" in text:
+                issues.extend(parse_junit(text, workspace))
+        elif parser == "checkstyle":
+            if "<checkstyle" in text:
+                issues.extend(parse_checkstyle(text, workspace))
+        else:
+            issues.extend(parse_cargo_messages(text, workspace))
+    return issues
+
+
+def _parse_json_named(parser: str, data: Any, workspace: Path) -> list[ParsedIssue]:
+    """The issues of one JSON document in the named format; none for any other document."""
+    if parser == "sarif" and isinstance(data, dict) and "runs" in data:
+        return parse_sarif(data, workspace)
+    if parser == "rubocop" and isinstance(data, dict):
+        return parse_rubocop_json(data, workspace)
+    if parser in {"eslint", "ruff"} and isinstance(data, list):
+        rows = [item for item in data if isinstance(item, dict)]
+        return (
+            parse_eslint_json(rows, workspace)
+            if parser == "eslint"
+            else parse_ruff_json(rows, workspace)
+        )
+    return []
 
 
 def parse_output(

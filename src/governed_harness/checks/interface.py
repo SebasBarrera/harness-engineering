@@ -211,12 +211,7 @@ def _dataclass_params(node: ast.ClassDef, classes: dict[str, ast.ClassDef]) -> l
     """The ``__init__`` parameters ``@dataclass`` generates, base dataclasses of the same
     module first. Without this a declared ``__init__`` would be reported missing for every
     dataclass, which is how most value objects are written."""
-    params: list[_Param] = []
-    for base in node.bases:
-        if isinstance(base, ast.Name) and base.id in classes and base.id != node.name:
-            base_node = classes[base.id]
-            if _is_dataclass(base_node):
-                params.extend(_dataclass_params(base_node, classes))
+    params = _base_dataclass_params(node, classes)
     kw_only = _dataclass_kw_only(node)
     for statement in node.body:
         if not isinstance(statement, ast.AnnAssign) or not isinstance(statement.target, ast.Name):
@@ -226,29 +221,46 @@ def _dataclass_params(node: ast.ClassDef, classes: dict[str, ast.ClassDef]) -> l
         if _is_kw_only_marker(statement.annotation):
             kw_only = True
             continue
-        default: str | None = None
-        include = True
-        call = _field_call(statement.value)
-        if call is not None:
-            for keyword in call.keywords:
-                if keyword.arg == "default":
-                    default = ast.unparse(keyword.value)
-                elif keyword.arg == "default_factory":
-                    default = f"field(default_factory={ast.unparse(keyword.value)})"
-                elif (
-                    keyword.arg == "init"
-                    and isinstance(keyword.value, ast.Constant)
-                    and keyword.value.value is False
-                ):
-                    include = False
-        elif statement.value is not None:
-            default = ast.unparse(statement.value)
+        default, include = _field_default(statement)
         if not include:
             continue
         name = statement.target.id
         params = [param for param in params if param.name != name]
         params.append(_Param(name, "kwonly" if kw_only else "regular", default))
     return params
+
+
+def _base_dataclass_params(node: ast.ClassDef, classes: dict[str, ast.ClassDef]) -> list[_Param]:
+    """The generated parameters of the base dataclasses of the same module, in base order."""
+    params: list[_Param] = []
+    for base in node.bases:
+        if isinstance(base, ast.Name) and base.id in classes and base.id != node.name:
+            base_node = classes[base.id]
+            if _is_dataclass(base_node):
+                params.extend(_dataclass_params(base_node, classes))
+    return params
+
+
+def _field_default(statement: ast.AnnAssign) -> tuple[str | None, bool]:
+    """The default a dataclass field gives its parameter and whether ``__init__`` takes it."""
+    default: str | None = None
+    include = True
+    call = _field_call(statement.value)
+    if call is not None:
+        for keyword in call.keywords:
+            if keyword.arg == "default":
+                default = ast.unparse(keyword.value)
+            elif keyword.arg == "default_factory":
+                default = f"field(default_factory={ast.unparse(keyword.value)})"
+            elif (
+                keyword.arg == "init"
+                and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value is False
+            ):
+                include = False
+    elif statement.value is not None:
+        default = ast.unparse(statement.value)
+    return default, include
 
 
 def _find_method(
@@ -404,10 +416,50 @@ def check_interface(
     except SyntaxError as error:
         return [_unparsable("implementation", implementation_path, error)]
 
-    issues: list[Issue] = []
-    actual_functions = _functions(implementation_tree.body)
+    issues = _compare_functions(
+        declared_tree,
+        _functions(implementation_tree.body),
+        implementation_path=implementation_path,
+        severity=severity,
+    )
     actual_classes = _classes(implementation_tree.body)
+    for class_name, class_node in _classes(declared_tree.body).items():
+        if not is_public(class_name):
+            continue
+        actual_class = actual_classes.get(class_name)
+        if actual_class is None:
+            issues.append(
+                _missing(
+                    class_name,
+                    "class",
+                    implementation_path=implementation_path,
+                    line=None,
+                    severity=severity,
+                )
+            )
+            continue
+        issues.extend(
+            _compare_methods(
+                class_name,
+                class_node,
+                actual_class,
+                actual_classes,
+                implementation_path=implementation_path,
+                severity=severity,
+            )
+        )
+    return issues
 
+
+def _compare_functions(
+    declared_tree: ast.Module,
+    actual_functions: dict[str, FunctionNode],
+    *,
+    implementation_path: str,
+    severity: FindingSeverity,
+) -> list[Issue]:
+    """The issues of the declared public top-level functions, in declaration order."""
+    issues: list[Issue] = []
     for name, node in _functions(declared_tree.body).items():
         if not is_public(name):
             continue
@@ -432,47 +484,45 @@ def check_interface(
                 severity=severity,
             )
         )
+    return issues
 
-    for class_name, class_node in _classes(declared_tree.body).items():
-        if not is_public(class_name):
+
+def _compare_methods(
+    class_name: str,
+    class_node: ast.ClassDef,
+    actual_class: ast.ClassDef,
+    actual_classes: dict[str, ast.ClassDef],
+    *,
+    implementation_path: str,
+    severity: FindingSeverity,
+) -> list[Issue]:
+    """The issues of the public methods one declared class has, in declaration order."""
+    issues: list[Issue] = []
+    for method_name, method in _functions(class_node.body).items():
+        if not is_public(method_name):
             continue
-        actual_class = actual_classes.get(class_name)
-        if actual_class is None:
+        qualified = f"{class_name}.{method_name}"
+        found = _find_method(actual_class, method_name, actual_classes, set())
+        if found is None:
             issues.append(
                 _missing(
-                    class_name,
-                    "class",
+                    qualified,
+                    "method",
                     implementation_path=implementation_path,
-                    line=None,
+                    line=actual_class.lineno,
                     severity=severity,
                 )
             )
             continue
-        for method_name, method in _functions(class_node.body).items():
-            if not is_public(method_name):
-                continue
-            qualified = f"{class_name}.{method_name}"
-            found = _find_method(actual_class, method_name, actual_classes, set())
-            if found is None:
-                issues.append(
-                    _missing(
-                        qualified,
-                        "method",
-                        implementation_path=implementation_path,
-                        line=actual_class.lineno,
-                        severity=severity,
-                    )
-                )
-                continue
-            issues.extend(
-                _compare(
-                    qualified,
-                    _signature(method),
-                    found,
-                    implementation_path=implementation_path,
-                    severity=severity,
-                )
+        issues.extend(
+            _compare(
+                qualified,
+                _signature(method),
+                found,
+                implementation_path=implementation_path,
+                severity=severity,
             )
+        )
     return issues
 
 
@@ -491,11 +541,16 @@ def declared_names(declared_source: str) -> list[str]:
             if not node.name.startswith("_") and node.name not in names:
                 names.append(node.name)
         elif isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
-            for member in node.body:
-                if isinstance(
-                    member, ast.FunctionDef | ast.AsyncFunctionDef
-                ) and not member.name.startswith("_"):
-                    qualified = f"{node.name}.{member.name}"
-                    if qualified not in names:
-                        names.append(qualified)
+            _add_method_names(node, names)
     return names
+
+
+def _add_method_names(node: ast.ClassDef, names: list[str]) -> None:
+    """Append the public methods of a class (``Class.method``) that ``names`` lacks."""
+    for member in node.body:
+        if isinstance(
+            member, ast.FunctionDef | ast.AsyncFunctionDef
+        ) and not member.name.startswith("_"):
+            qualified = f"{node.name}.{member.name}"
+            if qualified not in names:
+                names.append(qualified)

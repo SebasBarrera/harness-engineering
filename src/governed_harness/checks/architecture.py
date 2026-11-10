@@ -65,15 +65,22 @@ def _imported_modules(tree: ast.Module, module: str, is_package: bool) -> Iterat
             for alias in node.names:
                 yield node.lineno, alias.name
         elif isinstance(node, ast.ImportFrom):
-            if node.level:
-                base = _resolve_relative(module, is_package, node.level, node.module)
-            else:
-                base = node.module or ""
-            if base:
-                yield node.lineno, base
-            for alias in node.names:
-                if alias.name != "*":
-                    yield node.lineno, f"{base}.{alias.name}" if base else alias.name
+            yield from _from_imported_modules(node, module, is_package)
+
+
+def _from_imported_modules(
+    node: ast.ImportFrom, module: str, is_package: bool
+) -> Iterator[tuple[int, str]]:
+    """The candidates of one ``from ... import`` statement: the base and each named module."""
+    if node.level:
+        base = _resolve_relative(module, is_package, node.level, node.module)
+    else:
+        base = node.module or ""
+    if base:
+        yield node.lineno, base
+    for alias in node.names:
+        if alias.name != "*":
+            yield node.lineno, f"{base}.{alias.name}" if base else alias.name
 
 
 def _functions(

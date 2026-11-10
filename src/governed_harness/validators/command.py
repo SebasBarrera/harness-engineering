@@ -275,26 +275,34 @@ class CommandValidator:
             status = ResultStatus.BLOCKED if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"validator {self.validator_id} has no configured command"
         if definition.script:
-            package_json = context.workspace / "package.json"
-            try:
-                package = json.loads(package_json.read_text(encoding="utf-8"))
-                scripts = package.get("scripts", {})
-            except (OSError, json.JSONDecodeError):
-                scripts = {}
-            if definition.script not in scripts:
-                status = missing_script if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                return status, f"package script {definition.script!r} is not defined"
+            undefined = _undefined_script(context, missing_script)
+            if undefined is not None:
+                return undefined
         argv0 = definition.command[0]
         if shutil.which(argv0) is None:
             status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
         if len(definition.command) >= 3 and definition.command[1] == "-m":
-            module = definition.command[2]
-            if not self._module_available(context, actor, argv0, module):
-                status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
-                kind = "mandatory" if definition.mandatory else "optional"
-                return status, f"{kind} Python module {module!r} is not installed for {argv0!r}"
+            return self._missing_module(
+                context, actor, argv0, definition.command[2], missing_command
+            )
         return None
+
+    def _missing_module(
+        self,
+        context: ValidationContext,
+        actor: Actor,
+        argv0: str,
+        module: str,
+        missing_command: ResultStatus,
+    ) -> tuple[ResultStatus, str] | None:
+        """The status of a ``python -m module`` command whose module is not installed."""
+        definition = context.definition
+        if self._module_available(context, actor, argv0, module):
+            return None
+        status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
+        kind = "mandatory" if definition.mandatory else "optional"
+        return status, f"{kind} Python module {module!r} is not installed for {argv0!r}"
 
     @staticmethod
     def _module_available(
@@ -315,3 +323,20 @@ class CommandValidator:
             cancellation=context.cancellation,
         )
         return probe.exit_code != _MODULE_MISSING_EXIT_CODE
+
+
+def _undefined_script(
+    context: ValidationContext, missing_script: ResultStatus
+) -> tuple[ResultStatus, str] | None:
+    """The status of a validator whose package script ``package.json`` does not define."""
+    definition = context.definition
+    package_json = context.workspace / "package.json"
+    try:
+        package = json.loads(package_json.read_text(encoding="utf-8"))
+        scripts = package.get("scripts", {})
+    except (OSError, json.JSONDecodeError):
+        scripts = {}
+    if definition.script not in scripts:
+        status = missing_script if definition.mandatory else ResultStatus.NOT_APPLICABLE
+        return status, f"package script {definition.script!r} is not defined"
+    return None

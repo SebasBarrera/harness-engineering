@@ -209,14 +209,28 @@ def _stores_of(node: ast.AST, stores_names: bool) -> Iterator[tuple[str, int]]:
     elif isinstance(node, ast.AnnAssign | ast.AugAssign):
         yield from _target_names(node.target, stores_names)
     elif isinstance(node, ast.Dict):
-        for key in node.keys:
-            if isinstance(key, ast.Constant) and isinstance(key.value, str):
-                yield key.value, key.lineno
+        yield from _dict_key_names(node)
     elif isinstance(node, ast.Call):
-        for keyword in node.keywords:
-            if keyword.arg is not None:
-                yield keyword.arg, keyword.value.lineno
-    elif (
+        yield from _keyword_names(node)
+    else:
+        yield from _create_table_names(node)
+
+
+def _keyword_names(node: ast.Call) -> Iterator[tuple[str, int]]:
+    for keyword in node.keywords:
+        if keyword.arg is not None:
+            yield keyword.arg, keyword.value.lineno
+
+
+def _dict_key_names(node: ast.Dict) -> Iterator[tuple[str, int]]:
+    for key in node.keys:
+        if isinstance(key, ast.Constant) and isinstance(key.value, str):
+            yield key.value, key.lineno
+
+
+def _create_table_names(node: ast.AST) -> Iterator[tuple[str, int]]:
+    """The identifiers of a string constant holding a ``CREATE TABLE`` statement."""
+    if (
         isinstance(node, ast.Constant)
         and isinstance(node.value, str)
         and _CREATE_TABLE.search(node.value)
@@ -251,13 +265,18 @@ def _hashlib_aliases(tree: ast.Module) -> tuple[set[str], dict[str, str]]:
     functions: dict[str, str] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.name == "hashlib":
-                    modules.add(alias.asname or "hashlib")
+            modules.update(_hashlib_module_names(node))
         elif isinstance(node, ast.ImportFrom) and node.module == "hashlib" and not node.level:
             for alias in node.names:
                 functions[alias.asname or alias.name] = alias.name
     return modules, functions
+
+
+def _hashlib_module_names(node: ast.Import) -> Iterator[str]:
+    """The names an ``import`` statement binds to the ``hashlib`` module."""
+    for alias in node.names:
+        if alias.name == "hashlib":
+            yield alias.asname or "hashlib"
 
 
 def _hash_function(call: ast.Call, modules: set[str], functions: dict[str, str]) -> str | None:
