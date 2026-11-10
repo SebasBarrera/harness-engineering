@@ -1,0 +1,3 @@
+# The dependency audit of the runtime set (security.yml); pip is the venv's installer.
+pip-audit
+pip

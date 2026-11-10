@@ -1,9 +1,13 @@
-# Build context: only pyproject.toml, setup.py, README.md, LICENSE and src/ are copied.
+# Build context: only pyproject.toml, setup.py, README.md, LICENSE, src/ and the hash-pinned
+# requirement files the image installs are copied.
 *
 !pyproject.toml
 !setup.py
 !README.md
 !LICENSE
 !src/
+!requirements/tools-build.txt
+!requirements/tools-pip.txt
+!requirements/runtime-api.txt
 **/__pycache__
 **/*.pyc

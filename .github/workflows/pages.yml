@@ -36,8 +36,8 @@ jobs:
           package-manager-cache: false
       - name: Install the package and the documentation toolchain
         run: |
-          python -m pip install -e ".[dev,api]"
-          python -m pip install -r docs/requirements.txt
+          python -m pip install --require-hashes -r requirements/pages.txt
+          python -m pip install --no-deps -e .
       - name: Build the documentation (strict)
         run: python -m mkdocs build --strict --site-dir site
       - name: Coverage report

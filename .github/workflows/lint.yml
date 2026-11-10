@@ -46,8 +46,8 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Install Ruff (version range from pyproject dev extra)
-        run: python -m pip install "ruff>=0.6,<1"
+      - name: Install Ruff (hash-pinned, requirements/tools-lint.txt)
+        run: python -m pip install --require-hashes -r requirements/tools-lint.txt
       - name: Ruff check and format check
         shell: bash
         run: |
@@ -71,7 +71,9 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install package with dev and api extras
-        run: python -m pip install -e ".[dev,api]"
+        run: |
+          python -m pip install --require-hashes -r requirements/dev.txt
+          python -m pip install --no-deps -e .
       - name: Mypy strict (package mode, configured in pyproject.toml)
         run: python -m mypy
 
@@ -108,7 +110,7 @@ jobs:
           python-version: "3.12"
       - name: Audit workflows with zizmor (offline audits)
         run: |
-          python -m pip install "zizmor==1.30.1"
+          python -m pip install --require-hashes -r requirements/tools-lint.txt
           zizmor --offline --format github .github/workflows/
 
   data-files:
@@ -121,7 +123,7 @@ jobs:
           persist-credentials: false
       - name: Parse every tracked YAML and JSON file
         run: |
-          python3 -m pip install --user pyyaml
+          python3 -m pip install --user --require-hashes -r requirements/tools-lint.txt
           python3 scripts/check_data_files.py
 
   markdownlint:
@@ -148,3 +150,19 @@ jobs:
         with:
           dockerfile: Dockerfile
           config: .hadolint.yaml
+
+  requirement-locks:
+    name: requirement locks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Check that requirements/*.txt match their sources
+        run: |
+          python -m pip install --require-hashes -r requirements/tools-lint.txt
+          python scripts/lock_requirements.py --check

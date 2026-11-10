@@ -3,7 +3,8 @@
 version: 2
 updates:
   - package-ecosystem: pip
-    directory: /
+    # The hash-pinned files under requirements/ (scripts/lock_requirements.py) and pyproject.toml.
+    directories: ["/", "/requirements"]
     target-branch: develop
     schedule:
       interval: weekly

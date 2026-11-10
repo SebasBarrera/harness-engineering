@@ -1,0 +1,3 @@
+# Building and checking the distributions (build.yml, release.yml, Dockerfile build stage).
+build>=1.2,<2
+twine
