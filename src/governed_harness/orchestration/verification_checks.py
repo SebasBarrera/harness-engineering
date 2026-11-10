@@ -315,32 +315,13 @@ class VerificationChecks:
         if config.assertions:
             issues.extend(assertion_free_tests(tests, severity=severity))
         if config.interface_tests and declared_interfaces(task):
-            names: list[str] = []
-            for stub, _module in declared_interfaces(task):
-                text = _read(self.results.s.paths.workspace, stub)
-                if text is not None:
-                    names.extend(declared_names(text))
-            issues.extend(untested_interface_methods(names, self._all_tests(), severity=severity))
+            issues.extend(self._untested_interfaces(task, severity))
         if config.diff_coverage is not None and self._python():
-            coverage, refs = self._coverage(execution, change_set)
-            evidence.extend(refs)
-            if coverage is None:
-                report["diffCoverage"] = None
-                issues.append(
-                    Issue(
-                        rule_id="tests.coverage-unavailable",
-                        severity=FindingSeverity.INFO,
-                        message="Coverage of the changed lines could not be measured (the "
-                        "coverage package or the tests did not run)",
-                        category="tests",
-                    )
+            issues.extend(
+                self._diff_coverage(
+                    execution, change_set, diff, config.diff_coverage, severity, report, evidence
                 )
-            else:
-                percent, found = changed_line_coverage(
-                    diff, coverage, minimum_percent=config.diff_coverage, severity=severity
-                )
-                report["diffCoverage"] = percent
-                issues.extend(found)
+            )
         if config.flaky_reruns and self._python():
             flaky, refs = self._flaky(execution, change_set, config.flaky_reruns)
             evidence.extend(refs)
@@ -358,6 +339,46 @@ class VerificationChecks:
             mandatory=policy == "enforce",
             report=report,
         )
+
+    def _untested_interfaces(self, task: Task, severity: FindingSeverity) -> list[Issue]:
+        """The methods of the task's declared interfaces that no test exercises."""
+        names: list[str] = []
+        for stub, _module in declared_interfaces(task):
+            text = _read(self.results.s.paths.workspace, stub)
+            if text is not None:
+                names.extend(declared_names(text))
+        return untested_interface_methods(names, self._all_tests(), severity=severity)
+
+    def _diff_coverage(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        diff: Sequence[DiffFile],
+        minimum_percent: float,
+        severity: FindingSeverity,
+        report: dict[str, Any],
+        evidence: list[str],
+    ) -> list[Issue]:
+        """The coverage of the changed lines against the minimum; records the percentage in
+        ``report`` and the coverage evidence in ``evidence``."""
+        coverage, refs = self._coverage(execution, change_set)
+        evidence.extend(refs)
+        if coverage is None:
+            report["diffCoverage"] = None
+            return [
+                Issue(
+                    rule_id="tests.coverage-unavailable",
+                    severity=FindingSeverity.INFO,
+                    message="Coverage of the changed lines could not be measured (the "
+                    "coverage package or the tests did not run)",
+                    category="tests",
+                )
+            ]
+        percent, found = changed_line_coverage(
+            diff, coverage, minimum_percent=minimum_percent, severity=severity
+        )
+        report["diffCoverage"] = percent
+        return found
 
     def _python(self) -> bool:
         return any(item.technology == "python" for item in self.results.s.resolved.profiles)
@@ -525,47 +546,9 @@ class VerificationChecks:
             kind, _, value = condition.partition(":")
             label = f"{item.get('itemId')} ({item.get('description')})"
             if kind == "test":
-                context = self._context(
-                    execution,
-                    change_set,
-                    CHANGE_REQUESTS_ID,
-                    ("python", "-m", "pytest", "-q", value.strip()),
-                )
-                output = CommandValidator(CHANGE_REQUESTS_ID).execute(context)
-                for tool in output.tool_invocations:
-                    self.results.engine._save_tool(execution, tool)
-                evidence.extend(output.result.evidence_refs[:1])
-                if output.result.status is not ResultStatus.PASSED:
-                    issues.append(
-                        Issue(
-                            rule_id="change-request.unmet",
-                            severity=FindingSeverity.HIGH,
-                            message=f"{label}: the test {value.strip()} does not pass",
-                            category="change-request",
-                            recommendation="Make the requested test pass.",
-                        )
-                    )
+                issues.extend(self._requested_test(execution, change_set, label, value, evidence))
             elif kind == "absent":
-                try:
-                    pattern = re.compile(value)
-                except re.error:
-                    pattern = re.compile(re.escape(value))
-                hit = next(
-                    ((path, number) for path, number, text in added if pattern.search(text)),
-                    None,
-                )
-                if hit is not None:
-                    issues.append(
-                        Issue(
-                            rule_id="change-request.unmet",
-                            severity=FindingSeverity.HIGH,
-                            message=f"{label}: {value!r} is still added by the ChangeSet",
-                            path=hit[0],
-                            line=hit[1],
-                            category="change-request",
-                            recommendation="Remove what the reviewer asked to remove.",
-                        )
-                    )
+                issues.extend(_requested_absence(label, value, added))
             else:
                 issues.append(
                     Issue(
@@ -586,6 +569,37 @@ class VerificationChecks:
             extra_evidence=tuple(evidence),
             report={"items": items},
         )
+
+    def _requested_test(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        label: str,
+        value: str,
+        evidence: list[str],
+    ) -> list[Issue]:
+        """Run the test a ``test:`` item names; an issue unless it passes."""
+        context = self._context(
+            execution,
+            change_set,
+            CHANGE_REQUESTS_ID,
+            ("python", "-m", "pytest", "-q", value.strip()),
+        )
+        output = CommandValidator(CHANGE_REQUESTS_ID).execute(context)
+        for tool in output.tool_invocations:
+            self.results.engine._save_tool(execution, tool)
+        evidence.extend(output.result.evidence_refs[:1])
+        if output.result.status is ResultStatus.PASSED:
+            return []
+        return [
+            Issue(
+                rule_id="change-request.unmet",
+                severity=FindingSeverity.HIGH,
+                message=f"{label}: the test {value.strip()} does not pass",
+                category="change-request",
+                recommendation="Make the requested test pass.",
+            )
+        ]
 
     # ----- invariants (#52) ------------------------------------------------------------------
     def _invariants(self, execution: Execution, change_set: ChangeSet) -> list[ValidatorOutput]:
@@ -614,29 +628,10 @@ class VerificationChecks:
                     missing.append(source.path)
                 continue
             results = read_sarif(text, workspace)
-            versions = sorted(
-                {
-                    f"{item.tool}@{item.tool_version or '?'}"
-                    + (f" rule {item.rule_id}@{item.rule_version}" if item.rule_version else "")
-                    for item in results
-                }
-            )
+            versions = _sarif_versions(results)
             tools.append({"path": source.path, "results": len(results), "versions": versions})
             for item in results:
-                issues.append(
-                    Issue(
-                        rule_id=f"sarif.{source.tool or item.tool}.{item.rule_id}",
-                        severity=_SARIF_SEVERITY.get(item.level, FindingSeverity.MEDIUM),
-                        message=(
-                            f"{item.message} ({item.tool} {item.tool_version or ''}"
-                            f"{', rule ' + item.rule_version if item.rule_version else ''})"
-                        ).replace(" )", ")"),
-                        path=item.path,
-                        line=item.line,
-                        category="external-scanner",
-                        recommendation=f"Reported by {item.tool}; fix it at the location shown.",
-                    )
-                )
+                issues.append(_sarif_issue(source, item))
         for path in missing:
             issues.append(
                 Issue(
@@ -796,7 +791,46 @@ def pure_checks(
     """The checks that read only the diff and the files (VERIFICATION and ``harness check``):
     interface, architecture, security patterns, constraints, weakened controls and secrets;
     since #56 the engineering principles and the architecture's layer rules."""
-    planned: list[tuple[str, str, Callable[[], tuple[list[Issue], str]]]] = []
+    planned = [
+        *_planned_design_checks(
+            config,
+            task,
+            diff,
+            files,
+            workspace,
+            baseline_text,
+            layers=layers,
+            layer_policy=layer_policy,
+            layer_differential=layer_differential,
+        ),
+        *_planned_diff_checks(config, task, diff, files),
+    ]
+    results: list[CheckResult] = []
+    for validator_id, policy, check in planned:
+        started = datetime.now(UTC)
+        issues, label = check()
+        results.append(CheckResult(validator_id, policy, issues, label, started))
+    return results
+
+
+_PlannedCheck = tuple[str, str, Callable[[], tuple[list[Issue], str]]]
+
+
+def _planned_design_checks(
+    config: Any,
+    task: Task,
+    diff: Sequence[DiffFile],
+    files: Mapping[str, str],
+    workspace: Path,
+    baseline_text: Callable[[str], str | None] | None,
+    *,
+    layers: LayerRules | None,
+    layer_policy: str,
+    layer_differential: bool,
+) -> list[_PlannedCheck]:
+    """The configured design checks of pure_checks: engineering principles, layer rules,
+    declared interfaces and the architecture rules, in that order."""
+    planned: list[_PlannedCheck] = []
     principles = getattr(config, "principles", None)
     if principles is not None and principles.enabled:
         planned.append(
@@ -839,6 +873,15 @@ def pure_checks(
                 lambda: architecture_issues(config.architecture, files, baseline_text),
             )
         )
+    return planned
+
+
+def _planned_diff_checks(
+    config: Any, task: Task, diff: Sequence[DiffFile], files: Mapping[str, str]
+) -> list[_PlannedCheck]:
+    """The configured checks of the diff in pure_checks: security patterns, constraints,
+    weakened controls and secrets in context, in that order."""
+    planned: list[_PlannedCheck] = []
     if config.security_patterns:
         planned.append(
             (
@@ -874,12 +917,59 @@ def pure_checks(
                 lambda: (scan_secrets(diff, task_text=_task_text(task)), "secrets in context"),
             )
         )
-    results: list[CheckResult] = []
-    for validator_id, policy, check in planned:
-        started = datetime.now(UTC)
-        issues, label = check()
-        results.append(CheckResult(validator_id, policy, issues, label, started))
-    return results
+    return planned
+
+
+def _requested_absence(label: str, value: str, added: list[tuple[str, int, str]]) -> list[Issue]:
+    """An issue when the ChangeSet still adds what an ``absent:`` item forbids."""
+    try:
+        pattern = re.compile(value)
+    except re.error:
+        pattern = re.compile(re.escape(value))
+    hit = next(
+        ((path, number) for path, number, text in added if pattern.search(text)),
+        None,
+    )
+    if hit is None:
+        return []
+    return [
+        Issue(
+            rule_id="change-request.unmet",
+            severity=FindingSeverity.HIGH,
+            message=f"{label}: {value!r} is still added by the ChangeSet",
+            path=hit[0],
+            line=hit[1],
+            category="change-request",
+            recommendation="Remove what the reviewer asked to remove.",
+        )
+    ]
+
+
+def _sarif_versions(results: Sequence[Any]) -> list[str]:
+    """The tool versions (and rule versions) of the results of one SARIF report."""
+    return sorted(
+        {
+            f"{item.tool}@{item.tool_version or '?'}"
+            + (f" rule {item.rule_id}@{item.rule_version}" if item.rule_version else "")
+            for item in results
+        }
+    )
+
+
+def _sarif_issue(source: Any, item: Any) -> Issue:
+    """The issue of one result of an external scanner's SARIF report."""
+    return Issue(
+        rule_id=f"sarif.{source.tool or item.tool}.{item.rule_id}",
+        severity=_SARIF_SEVERITY.get(item.level, FindingSeverity.MEDIUM),
+        message=(
+            f"{item.message} ({item.tool} {item.tool_version or ''}"
+            f"{', rule ' + item.rule_version if item.rule_version else ''})"
+        ).replace(" )", ")"),
+        path=item.path,
+        line=item.line,
+        category="external-scanner",
+        recommendation=f"Reported by {item.tool}; fix it at the location shown.",
+    )
 
 
 def interface_issues(workspace: Path, task: Task, policy: str) -> tuple[list[Issue], str]:

@@ -87,38 +87,49 @@ def validate_plan(task: Task, result: dict[str, Any], max_subtasks: int) -> list
     known = [item.requirement_id for item in task.requirements]
     criteria = {item.criterion_id for item in task.acceptance_criteria}
     seen: dict[str, int] = {}
-    items: list[SubTask] = []
-    for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"sub-task {index} is not an object")
-        title = str(entry.get("title") or "").strip()
-        if not title:
-            raise ValueError(f"sub-task {index} has no title")
-        requirements = entry.get("requirements")
-        if not isinstance(requirements, list) or not requirements:
-            raise ValueError(f"sub-task {index} has no requirements")
-        for requirement in requirements:
-            if requirement not in known:
-                raise ValueError(f"sub-task {index} names an unknown requirement {requirement!r}")
-            if requirement in seen:
-                raise ValueError(
-                    f"requirement {requirement} is in sub-tasks {seen[requirement]} and {index}"
-                )
-            seen[requirement] = index
-        named = [str(item) for item in entry.get("criteria") or []]
-        unknown = sorted(set(named) - criteria)
-        if unknown:
-            raise ValueError(f"sub-task {index} names unknown criteria: {', '.join(unknown)}")
-        constraints = [str(item) for item in entry.get("constraints") or [] if str(item).strip()]
-        items.append(
-            SubTask(
-                title[:300], tuple(str(r) for r in requirements), tuple(named), tuple(constraints)
-            )
-        )
+    items = [
+        _subtask(index, entry, known, criteria, seen) for index, entry in enumerate(raw, start=1)
+    ]
     missing = [item for item in known if item not in seen]
     if missing:
         raise ValueError(f"requirements in no sub-task: {', '.join(missing)}")
     return items
+
+
+def _subtask(
+    index: int, entry: Any, known: list[str], criteria: set[str], seen: dict[str, int]
+) -> SubTask:
+    """One validated sub-task of the plan (the ``index`` counts from 1); records in ``seen``
+    the sub-task that holds each of its requirements."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"sub-task {index} is not an object")
+    title = str(entry.get("title") or "").strip()
+    if not title:
+        raise ValueError(f"sub-task {index} has no title")
+    requirements = entry.get("requirements")
+    if not isinstance(requirements, list) or not requirements:
+        raise ValueError(f"sub-task {index} has no requirements")
+    _claim(index, requirements, known, seen)
+    named = [str(item) for item in entry.get("criteria") or []]
+    unknown = sorted(set(named) - criteria)
+    if unknown:
+        raise ValueError(f"sub-task {index} names unknown criteria: {', '.join(unknown)}")
+    constraints = [str(item) for item in entry.get("constraints") or [] if str(item).strip()]
+    return SubTask(
+        title[:300], tuple(str(r) for r in requirements), tuple(named), tuple(constraints)
+    )
+
+
+def _claim(index: int, requirements: list[Any], known: list[str], seen: dict[str, int]) -> None:
+    """Assign the requirements to sub-task ``index``: each one known and in no other."""
+    for requirement in requirements:
+        if requirement not in known:
+            raise ValueError(f"sub-task {index} names an unknown requirement {requirement!r}")
+        if requirement in seen:
+            raise ValueError(
+                f"requirement {requirement} is in sub-tasks {seen[requirement]} and {index}"
+            )
+        seen[requirement] = index
 
 
 class Decomposition:
@@ -200,6 +211,19 @@ class Decomposition:
                 {"requirements": size, "threshold": threshold, "reason": "coarse model first"},
             )
             return None
+        return self._propose(execution, phase, task, digest, threshold, replan)
+
+    def _propose(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        digest: str,
+        threshold: int,
+        replan: bool,
+    ) -> PhaseOutcome:
+        """Ask the planner for the decomposition, validate it and hold it for a person."""
+        results = self.results
         max_subtasks = self.config.max_subtasks or DEFAULT_MAX_SUBTASKS
         outcome = results.call_agent(
             execution,

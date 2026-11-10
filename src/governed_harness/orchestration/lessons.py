@@ -126,65 +126,100 @@ class Lessons:
         proposed: list[MemoryRecord] = []
         for (validator_id, rule_id), items in sorted(groups.items()):
             key = f"{LESSON_PREFIX}{validator_id}:{rule_id}"
-            previous = existing.get(key)
-            runs = list(previous.value.get("runs", [])) if previous else []
-            if execution.execution_id in runs:
-                continue
-            runs.append(execution.execution_id)
-            paths = sorted(
-                {
-                    *(previous.value.get("paths", []) if previous else []),
-                    *(item.location.path for item in items if item.location and item.location.path),
-                }
-            )[:20]
-            approved = bool(
-                (previous is not None and previous.approved)
-                or (self.config.auto_approve_recurring and len(runs) >= recurrence)
+            record = self._recur(
+                execution, store, validator_id, rule_id, items, existing.get(key), recurrence
             )
-            record = MemoryRecord(
-                memory_id=new_id("mem"),
-                project_id=execution.project_id,
-                level=MemoryLevel.PROJECT,
-                key=key,
-                value={
-                    "kind": "lesson",
-                    "validatorId": validator_id,
-                    "ruleId": rule_id,
-                    "lesson": lesson_text(items[0]),
-                    "paths": paths,
-                    "runs": runs,
-                    "occurrences": int(previous.value.get("occurrences", 0) if previous else 0)
-                    + len(items),
-                    "recurring": len(runs) >= recurrence,
-                },
-                provenance=self.results.engine._provenance(execution).model_copy(
-                    update={
-                        "actor": LESSON_ACTOR,
-                        "source_refs": tuple(
-                            f"record://finding/{item.finding_id}" for item in items[:10]
-                        ),
-                    }
-                ),
-                execution_id=execution.execution_id,
-                supersedes=previous.memory_id if previous else None,
-                approved=approved,
-            )
-            store.put(record)
-            proposed.append(record)
-            self.results.s.events.append(
-                execution.execution_id,
-                "lesson.proposed",
-                {
-                    "memoryId": record.memory_id,
-                    "key": key,
-                    "runs": len(runs),
-                    "approved": approved,
-                    "autoApproved": approved and not (previous and previous.approved),
-                    "findingIds": [item.finding_id for item in items[:10]],
-                },
-                actor=LESSON_ACTOR,
-            )
+            if record is not None:
+                proposed.append(record)
         return proposed
+
+    def _recur(
+        self,
+        execution: Execution,
+        store: MemoryStore,
+        validator_id: str,
+        rule_id: str,
+        items: list[Finding],
+        previous: MemoryRecord | None,
+        recurrence: int,
+    ) -> MemoryRecord | None:
+        """Propose the lesson of one (validator, rule), or record its recurrence; ``None`` when
+        this run already counts for it."""
+        key = f"{LESSON_PREFIX}{validator_id}:{rule_id}"
+        runs = list(previous.value.get("runs", [])) if previous else []
+        if execution.execution_id in runs:
+            return None
+        runs.append(execution.execution_id)
+        approved = bool(
+            (previous is not None and previous.approved)
+            or (self.config.auto_approve_recurring and len(runs) >= recurrence)
+        )
+        record = self._lesson_record(
+            execution, key, validator_id, rule_id, items, previous, runs, recurrence, approved
+        )
+        store.put(record)
+        self.results.s.events.append(
+            execution.execution_id,
+            "lesson.proposed",
+            {
+                "memoryId": record.memory_id,
+                "key": key,
+                "runs": len(runs),
+                "approved": approved,
+                "autoApproved": approved and not (previous and previous.approved),
+                "findingIds": [item.finding_id for item in items[:10]],
+            },
+            actor=LESSON_ACTOR,
+        )
+        return record
+
+    def _lesson_record(
+        self,
+        execution: Execution,
+        key: str,
+        validator_id: str,
+        rule_id: str,
+        items: list[Finding],
+        previous: MemoryRecord | None,
+        runs: list[str],
+        recurrence: int,
+        approved: bool,
+    ) -> MemoryRecord:
+        """The memory record of a lesson: its text, the paths and runs where it applied."""
+        paths = sorted(
+            {
+                *(previous.value.get("paths", []) if previous else []),
+                *(item.location.path for item in items if item.location and item.location.path),
+            }
+        )[:20]
+        return MemoryRecord(
+            memory_id=new_id("mem"),
+            project_id=execution.project_id,
+            level=MemoryLevel.PROJECT,
+            key=key,
+            value={
+                "kind": "lesson",
+                "validatorId": validator_id,
+                "ruleId": rule_id,
+                "lesson": lesson_text(items[0]),
+                "paths": paths,
+                "runs": runs,
+                "occurrences": int(previous.value.get("occurrences", 0) if previous else 0)
+                + len(items),
+                "recurring": len(runs) >= recurrence,
+            },
+            provenance=self.results.engine._provenance(execution).model_copy(
+                update={
+                    "actor": LESSON_ACTOR,
+                    "source_refs": tuple(
+                        f"record://finding/{item.finding_id}" for item in items[:10]
+                    ),
+                }
+            ),
+            execution_id=execution.execution_id,
+            supersedes=previous.memory_id if previous else None,
+            approved=approved,
+        )
 
     # ----- use -------------------------------------------------------------------------------
     def active(self, execution: Execution, task: Task, paths: list[str]) -> list[MemoryRecord]:
