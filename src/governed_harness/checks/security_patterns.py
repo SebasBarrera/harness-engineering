@@ -29,7 +29,7 @@ _OTHER_DESERIALIZATION = (
     re.compile(r"\byaml\.unsafe_load\s*\("),
 )
 _YAML_LOAD = re.compile(r"\byaml\.load\s*\(")
-_SAFE_LOADER = re.compile(r"\b(?:C?SafeLoader)\b")
+_SAFE_LOADER = re.compile(r"\bC?SafeLoader\b")
 
 # A run of 13-19 digits, optionally grouped by single spaces or dashes. A digit or a decimal
 # point right before it means it is part of a longer number or a float, not a card number.
