@@ -90,7 +90,7 @@ def analyze(
                 evidence_refs=tuple(refs[(validator, status)][:10]),
             )
         )
-    gate_optional = optional_failures - {validator for validator, _ in mandatory}
+    gate_optional = optional_failures - {key[0] for key in mandatory}
     if gate_optional:
         analysis.notes.append(
             "Optional validators that did not pass had no effect on the gate and are not counted "
