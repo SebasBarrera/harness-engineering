@@ -156,7 +156,7 @@ def allocate_call(directory: Path) -> Path:
     while True:
         path = directory / f"call-{number}.json"
         try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
             number += 1
             continue
