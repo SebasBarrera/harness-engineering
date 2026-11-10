@@ -104,6 +104,34 @@ class Differential:
         definitions = {
             item.validator_id: item for item in self.results.s.resolved.effective_validators
         }
+        failing_mandatory, failing_optional = self._failing(outputs, definitions)
+        if not failing_mandatory and not failing_optional:
+            return outputs
+        baseline = self.results.baseline_snapshot(execution)
+        if baseline is None:
+            return outputs
+        validator_ids = [
+            outputs[index].result.validator_id for index in failing_mandatory + failing_optional
+        ]
+        runs = self._baseline_runs(execution, change_set, baseline, validator_ids)
+        updated = list(outputs)
+        workspace = self.results.s.paths.workspace
+        self._reclassify_mandatory(
+            execution, change_set, outputs, failing_mandatory, runs, workspace, updated
+        )
+        if failing_optional:
+            updated.append(
+                self._ratchet_validation(
+                    execution, change_set, outputs, failing_optional, runs, workspace
+                )
+            )
+        return updated
+
+    def _failing(
+        self, outputs: list[Any], definitions: dict[str, Any]
+    ) -> tuple[list[int], list[int]]:
+        """The indices of the failed mandatory validators the differential mode may
+        reclassify, and of the failed optional validators the ratchet compares."""
         failing_mandatory = [
             index
             for index, output in enumerate(outputs)
@@ -122,17 +150,19 @@ class Differential:
             and output.result.validator_id in definitions
             and output.result.tool_invocation_ids
         ]
-        if not failing_mandatory and not failing_optional:
-            return outputs
-        baseline = self.results.baseline_snapshot(execution)
-        if baseline is None:
-            return outputs
-        validator_ids = [
-            outputs[index].result.validator_id for index in failing_mandatory + failing_optional
-        ]
-        runs = self._baseline_runs(execution, change_set, baseline, validator_ids)
-        updated = list(outputs)
-        workspace = self.results.s.paths.workspace
+        return failing_mandatory, failing_optional
+
+    def _reclassify_mandatory(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        outputs: list[Any],
+        failing_mandatory: list[int],
+        runs: dict[str, RunSummary],
+        workspace: Path,
+        updated: list[Any],
+    ) -> None:
+        """Replace in ``updated`` the failed mandatory outputs the baseline explains."""
         for index in failing_mandatory:
             output = outputs[index]
             run = runs.get(output.result.validator_id)
@@ -142,6 +172,18 @@ class Differential:
             replacement = self._classify(execution, change_set, output, candidate, run)
             if replacement is not None:
                 updated[index] = replacement
+
+    def _ratchet_validation(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        outputs: list[Any],
+        failing_optional: list[int],
+        runs: dict[str, RunSummary],
+        workspace: Path,
+    ) -> ValidatorOutput:
+        """The ratchet's validation: the optional validators that report more problems than
+        on the baseline."""
         regressions: list[Finding] = []
         refs: list[str] = []
         for index in failing_optional:
@@ -154,27 +196,25 @@ class Differential:
             refs.extend((*output.result.evidence_refs[:1], *run.evidence_refs[:1]))
             if finding is not None:
                 regressions.append(finding)
-        if failing_optional:
-            enforce = self.ratchet == "enforce"
-            blocking = enforce and bool(regressions)
-            ratchet = self.results.record_validation(
-                execution,
-                validator_id=RATCHET_ID,
-                digest=change_set.digest,
-                status=ResultStatus.FAILED if blocking else ResultStatus.PASSED,
-                kind=ValidationKind.INTRODUCED_ERROR if regressions else ValidationKind.SUCCESS,
-                mandatory=enforce,
-                summary=(
-                    f"{len(regressions)} optional validator(s) report more problems than on "
-                    "the baseline"
-                    if regressions
-                    else "No optional validator got worse than on the baseline"
-                ),
-                findings=tuple(regressions),
-                evidence_refs=tuple(dict.fromkeys(refs)) or (change_set.diff_ref,),
-            )
-            updated.append(ValidatorOutput(ratchet, tuple(regressions)))
-        return updated
+        enforce = self.ratchet == "enforce"
+        blocking = enforce and bool(regressions)
+        ratchet = self.results.record_validation(
+            execution,
+            validator_id=RATCHET_ID,
+            digest=change_set.digest,
+            status=ResultStatus.FAILED if blocking else ResultStatus.PASSED,
+            kind=ValidationKind.INTRODUCED_ERROR if regressions else ValidationKind.SUCCESS,
+            mandatory=enforce,
+            summary=(
+                f"{len(regressions)} optional validator(s) report more problems than on "
+                "the baseline"
+                if regressions
+                else "No optional validator got worse than on the baseline"
+            ),
+            findings=tuple(regressions),
+            evidence_refs=tuple(dict.fromkeys(refs)) or (change_set.diff_ref,),
+        )
+        return ValidatorOutput(ratchet, tuple(regressions))
 
     # ----- baseline runs ---------------------------------------------------------------------
     def _baseline_runs(
