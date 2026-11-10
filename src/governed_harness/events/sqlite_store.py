@@ -294,18 +294,20 @@ class SQLiteEventStore:
 
     @staticmethod
     def _from_row(row: sqlite3.Row) -> StoredEvent:
+        # The columns by name, as a plain mapping (sqlite3.Row reads the same values by key).
+        fields = dict(row)
         return StoredEvent(
-            event_id=row["event_id"],
-            sequence=row["execution_sequence"],
-            execution_id=row["execution_id"],
-            event_type=row["event_type"],
-            occurred_at=row["occurred_at"],
-            actor=json.loads(row["actor_json"]),
-            payload=json.loads(row["payload_json"]),
-            previous_digest=row["previous_digest"],
-            event_digest=row["event_digest"],
-            phase_execution_id=row["phase_execution_id"],
-            causation_id=row["causation_id"],
-            correlation_id=row["correlation_id"],
-            redaction_version=row["redaction_version"],
+            event_id=fields["event_id"],
+            sequence=fields["execution_sequence"],
+            execution_id=fields["execution_id"],
+            event_type=fields["event_type"],
+            occurred_at=fields["occurred_at"],
+            actor=json.loads(fields["actor_json"]),
+            payload=json.loads(fields["payload_json"]),
+            previous_digest=fields["previous_digest"],
+            event_digest=fields["event_digest"],
+            phase_execution_id=fields["phase_execution_id"],
+            causation_id=fields["causation_id"],
+            correlation_id=fields["correlation_id"],
+            redaction_version=fields["redaction_version"],
         )

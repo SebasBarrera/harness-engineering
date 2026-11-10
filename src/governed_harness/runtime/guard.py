@@ -98,7 +98,8 @@ class ExcludedPathGuard:
         for directory, dirnames, filenames in os.walk(self.root, followlinks=False):
             current = Path(directory)
             inside = self._inside_guarded(current)
-            for name in list(dirnames):
+            # A copy: the loop removes pruned names from dirnames, which os.walk reads.
+            for name in list(dirnames):  # NOSONAR(S7504)
                 path = current / name
                 if path.is_symlink():
                     self._add(prints, path)

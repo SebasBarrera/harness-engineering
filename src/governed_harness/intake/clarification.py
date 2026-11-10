@@ -304,7 +304,8 @@ _QUOTED = (
     re.compile(r"‘[^’]+’|(?<![A-Za-z])'[^']+'(?![A-Za-z])"),
 )
 _CALL = re.compile(r"[A-Za-z_][\w.]*\(")
-_SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
+# Explicit ASCII classes: \w would also match non-ASCII letters, and re.ASCII would change \b.
+_SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")  # NOSONAR(S6353)
 _PATH = re.compile(r"(?:^|[\s(])\.{0,2}/?[\w.-]+/[\w./-]+")
 _FILE = re.compile(rf"\b[\w-]+\.(?:{_FILE_EXTENSIONS})\b")
 _CAMEL = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b")
