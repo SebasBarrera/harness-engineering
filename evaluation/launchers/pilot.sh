@@ -7,7 +7,7 @@
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... pilot.sh
 source "$(dirname "$0")/common.sh"
 keep_awake "$0" "$@"
-EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/pilot}"
+EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/pilot-2.0.0}"
 mkdir -p "$EVAL_OUT"
 check_account
 take_lock pilot

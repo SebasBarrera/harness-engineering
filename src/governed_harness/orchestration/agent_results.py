@@ -146,13 +146,12 @@ class AgentResults:
     def after_verification(
         self,
         execution: Execution,
-        phase: PhaseExecution,
         change_set: Any,
         outputs: list[Any],
     ) -> list[Any]:
         """Reclassify failing validators against the baseline (``verification.differential``,
         ``verification.ratchet``)."""
-        return self.differential.reclassify(execution, phase, change_set, outputs)
+        return self.differential.reclassify(execution, change_set, outputs)
 
     def baseline_stored(self, execution: Execution) -> StoredSnapshot | None:
         """The workspace as DISCOVERY recorded it (1.0.0 text snapshot or manifest)."""
@@ -551,7 +550,10 @@ class AgentResults:
         )
 
     def after_agent_call(
-        self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
+        self,
+        execution: Execution,
+        phase: PhaseExecution,  # NOSONAR(S1172) ResultsHost.after_agent_call signature
+        result: AgentExecutionResult,
     ) -> None:
         """Account for a finished call: per-call limit, warnings at ``warnAt``, and a crossing
         that blocks the next call. First, the frozen acceptance tests the call changed are put
@@ -1081,7 +1083,6 @@ class AgentResults:
         phase: PhaseExecution,
         task: Task,
         provider_id: str,
-        actor: Actor,
         grants: list[CapabilityGrant],
     ) -> dict[str, Any] | None:
         """The keys the agent-results settings add to the implement request; with any of

@@ -1,9 +1,10 @@
 # Evaluation plan
 
-This is the plan written before the evaluation. The executed design differs in the brownfield
-fixture (a Python project, `pallets/itsdangerous`) and in the supervision measures (evidence bound
-to each decision and correction requests instead of review time and perceived control); see the
-[controlled evaluation of v0.9.0](results.md).
+This is the plan written before the evaluation of the `v0.8.0` cut. The executed design differs in
+the brownfield fixture (a Python project, `pallets/itsdangerous`) and in the supervision measures
+(evidence bound to each decision and correction requests instead of review time and perceived
+control). The evaluation reports only version 2.0.0 (campaign in progress); see the
+[controlled evaluation of v2.0.0](results.md).
 
 ## Design
 

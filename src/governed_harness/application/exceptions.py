@@ -54,7 +54,7 @@ class ExceptionOptions:
         )
 
 
-_DURATION = re.compile(r"^\s*(\d+)\s*([dhw]?)\s*$", re.IGNORECASE)
+_DURATION = re.compile(r"^\s*(\d+)\s*(?:([dhw])\s*)?$", re.IGNORECASE)
 
 
 def parse_expiry(

@@ -279,11 +279,13 @@ DEFAULT_RISK_ACTIONS: dict[str, RiskAction] = {
 Decomposition = Literal["agent", "off"]
 Granularity = Literal["fixed", "adaptive"]
 
+_GPT_SOL = "gpt-6.1-sol"
+
 DEFAULT_DECOMPOSITION_THRESHOLD = 12
 DEFAULT_COARSE_MODELS: tuple[str, ...] = (
     "claude-sonnet-5-5",
     "claude-opus-5-5",
-    "gpt-6.1-sol",
+    _GPT_SOL,
 )
 """Models ``harness init`` lets start with a coarse (undecomposed) task under
 ``planning.granularity: adaptive``; a starting point from the evaluation, not a statement about
@@ -520,27 +522,27 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
     "codex": {
         "implement": {
             "S": {"model": "gpt-6-luna", "effort": "high"},
-            "M": {"model": "gpt-6.1-sol", "effort": "medium"},
-            "L": {"model": "gpt-6.1-sol", "effort": "high"},
+            "M": {"model": _GPT_SOL, "effort": "medium"},
+            "L": {"model": _GPT_SOL, "effort": "high"},
         },
-        "clarify": {"model": "gpt-6.1-sol", "effort": "medium"},
-        "plan": {"model": "gpt-6.1-sol", "effort": "high"},
-        "review": {"model": "gpt-6.1-sol", "effort": "high"},
-        "acceptance": {"model": "gpt-6.1-sol", "effort": "medium"},
-        "architecture": {"model": "gpt-6.1-sol", "effort": "high"},
+        "clarify": {"model": _GPT_SOL, "effort": "medium"},
+        "plan": {"model": _GPT_SOL, "effort": "high"},
+        "review": {"model": _GPT_SOL, "effort": "high"},
+        "acceptance": {"model": _GPT_SOL, "effort": "medium"},
+        "architecture": {"model": _GPT_SOL, "effort": "high"},
         "reviewers": {
-            "quality": {"model": "gpt-6.1-sol", "effort": "medium"},
-            "architecture": {"model": "gpt-6.1-sol", "effort": "high"},
-            "resilience": {"model": "gpt-6.1-sol", "effort": "medium"},
+            "quality": {"model": _GPT_SOL, "effort": "medium"},
+            "architecture": {"model": _GPT_SOL, "effort": "high"},
+            "resilience": {"model": _GPT_SOL, "effort": "medium"},
             "tests": {"model": "gpt-6-luna", "effort": "high"},
-            "concurrency": {"model": "gpt-6.1-sol", "effort": "high"},
-            "pipeline-security": {"model": "gpt-6.1-sol", "effort": "medium"},
+            "concurrency": {"model": _GPT_SOL, "effort": "high"},
+            "pipeline-security": {"model": _GPT_SOL, "effort": "medium"},
         },
         "ladder": [
             {"model": "gpt-6-luna", "effort": "high"},
-            {"model": "gpt-6.1-sol", "effort": "medium"},
-            {"model": "gpt-6.1-sol", "effort": "high"},
-            {"model": "gpt-6.1-sol", "effort": "xhigh"},
+            {"model": _GPT_SOL, "effort": "medium"},
+            {"model": _GPT_SOL, "effort": "high"},
+            {"model": _GPT_SOL, "effort": "xhigh"},
         ],
     },
 }
