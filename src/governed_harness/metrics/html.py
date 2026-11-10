@@ -11,6 +11,8 @@ import html
 from typing import Any
 
 _SECTION_END = "</section>"
+_COST_TITLE = "Cost and tokens"
+_LIMITS_TITLE = "Limits reached"
 _CSS = """
 :root { color-scheme: light; --surface: #fcfcfb; --panel: #ffffff; --ink: #0b0b0b;
   --ink-2: #52514e; --grid: #d9d8d3; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a;
@@ -249,7 +251,7 @@ def _dimension_cards(report: dict[str, Any]) -> str:
     rate = quality["approvedFirstTimeRate"]
     groups = [
         (
-            "Cost and tokens",
+            _COST_TITLE,
             "#s-cost",
             [
                 _card("Agent calls", totals["agentCalls"]),
@@ -287,7 +289,7 @@ def _dimension_cards(report: dict[str, Any]) -> str:
                 _card("Blocked runs", quality["blockedRuns"]),
                 _card("Rejected runs", quality["rejectedRuns"]),
                 _card("Open HIGH or CRITICAL findings", quality["openBlockingFindings"]),
-                _card("Limits reached", sum(quality["limitsReached"].values())),
+                _card(_LIMITS_TITLE, sum(quality["limitsReached"].values())),
             ],
         ),
         (
@@ -316,7 +318,7 @@ def _dimension_cards(report: dict[str, Any]) -> str:
 _NAV = (
     ("#s-overview", "Status"),
     ("#s-summary", "Summary"),
-    ("#s-cost", "Cost and tokens"),
+    ("#s-cost", _COST_TITLE),
     ("#s-time", "Time"),
     ("#s-friction", "Friction"),
     ("#s-quality", "Quality"),
@@ -426,7 +428,7 @@ def _cost_group(report: dict[str, Any]) -> str:
     )
     return _group(
         "s-cost",
-        "Cost and tokens",
+        _COST_TITLE,
         "What the agent calls consumed, by model, agent, task and phase.",
         blocks,
     )
@@ -560,7 +562,7 @@ def _stops_blocks(quality: dict[str, Any]) -> list[str]:
     limits = quality["limitsReached"]
     gates = quality["gateResults"]
     limit_table = _table(
-        "Limits reached",
+        _LIMITS_TITLE,
         ["Limit", "Times"],
         [
             ["Budget exceeded", limits["budget"]],
@@ -590,7 +592,7 @@ def _stops_blocks(quality: dict[str, Any]) -> list[str]:
         set(),
     )
     return [
-        _sub("h-limits", "Limits reached", limit_table),
+        _sub("h-limits", _LIMITS_TITLE, limit_table),
         _sub("h-gates", "Gate results", gate_table),
         _sub("h-blocked", "Blocked runs and their reason", blocked),
     ]

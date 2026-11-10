@@ -126,7 +126,7 @@ def deliver(hook: WebhookConfig, body: dict[str, Any]) -> dict[str, Any]:
             outcome["httpStatus"] = failure.code
             error = f"HTTP {failure.code}"
             failure.close()
-        except (urllib.error.URLError, OSError, ValueError) as failure:
+        except (OSError, ValueError) as failure:  # urllib.error.URLError is an OSError
             error = type(failure).__name__
         if attempt < hook.retries:
             time.sleep(min(RETRY_MAX_SECONDS, RETRY_BASE_SECONDS * 2**attempt))

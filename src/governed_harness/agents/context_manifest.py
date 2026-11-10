@@ -38,7 +38,7 @@ MAX_FILE_BYTES = 1024 * 1024
 """Files larger than this are never candidates: they are usually generated or data files."""
 
 _BINARY_PROBE = 8192
-_WORD = re.compile(r"[A-Za-z0-9_]+")
+_WORD = re.compile(r"\w+", re.ASCII)
 _PATH_TOKEN = re.compile(r"[A-Za-z0-9_./\-]+")
 _STOPWORDS: frozenset[str] = frozenset(
     {

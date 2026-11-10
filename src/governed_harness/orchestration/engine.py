@@ -166,6 +166,9 @@ from governed_harness.validators.base import ValidatorOutput
 from governed_harness.validators.coverage import CoverageValidator, coverage_minimum
 
 CANCELLATION_REQUESTED = "Cancellation requested"
+_CORRECTION_AUTHORIZED = "correction.authorized"
+_FINDING_RECORDED = "finding.recorded"
+_FILESYSTEM_READ = "filesystem.read"
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -556,6 +559,12 @@ class RunEngine:
         contract_digest = self._current_contract_digest(execution)
         decided_at = utc_now()
         expiry = self.s.resolved.project.governance_settings.decision_expiry_hours
+        # One expiry, HumanDecision.expires_at: the exception's when one is recorded
+        # (review.exceptions, which the exception ledger reuses), otherwise the decision's
+        # validity (governance.decisionExpiryHours).
+        decision_expires_at = expires_at
+        if decision_expires_at is None and expiry:
+            decision_expires_at = decided_at + timedelta(hours=expiry)
         actor = Actor(
             actor_type=ActorType.HUMAN, actor_id=actor_id, display_name=actor_display_name
         )
@@ -572,12 +581,7 @@ class RunEngine:
             acceptance_contract_digest=contract_digest,
             identity_source=identity_source,
             decided_at=decided_at,
-            # One expiry, HumanDecision.expires_at: the exception's when one is recorded
-            # (review.exceptions, which the exception ledger reuses), otherwise the decision's
-            # validity (governance.decisionExpiryHours).
-            expires_at=expires_at
-            if expires_at is not None
-            else (decided_at + timedelta(hours=expiry) if expiry else None),
+            expires_at=decision_expires_at,
             acknowledged_risks=tuple(dict.fromkeys(acknowledged_risks)),
             change_requests=change_requests,
             checked_items=tuple(dict.fromkeys(checked_items)),
@@ -618,7 +622,7 @@ class RunEngine:
             )
             self.s.events.append(
                 execution_id,
-                "correction.authorized",
+                _CORRECTION_AUTHORIZED,
                 {
                     "decisionId": record.decision_id,
                     "invalidatedPhases": [phase.value for phase in transition.invalidated],
@@ -1177,7 +1181,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -1304,13 +1308,13 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description=f"Apply implementation instruction using mode {task.implementation.mode}",
-                capabilities=("filesystem.read", "filesystem.write", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "filesystem.write", "process.execute"),
                 expected_evidence=("agent invocation", "ChangeSet"),
             ),
             PlanStep(
                 step_id=new_id("step"),
                 description="Execute technology-profile validators",
-                capabilities=("filesystem.read", "process.execute"),
+                capabilities=(_FILESYSTEM_READ, "process.execute"),
                 expected_evidence=tuple(
                     item.validator_id for item in self.s.resolved.effective_validators
                 ),
@@ -1318,7 +1322,7 @@ class RunEngine:
             PlanStep(
                 step_id=new_id("step"),
                 description="Perform independent review and evaluate policy",
-                capabilities=("filesystem.read", "approval.request"),
+                capabilities=(_FILESYSTEM_READ, "approval.request"),
                 expected_evidence=("findings", "gate evaluation", "human decision"),
             ),
         )
@@ -1415,7 +1419,7 @@ class RunEngine:
         if self.results.active:
             task = self.results.implementation_task(execution, task)
             request_extra = self.results.implement_extras(
-                execution, phase, task, provider_id, actor, grants
+                execution, phase, task, provider_id, grants
             )
         if self.ladder.active:
             # Locations of the locate call and a person's intake attachments, only when there
@@ -2366,7 +2370,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -2534,7 +2538,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -2568,8 +2572,8 @@ class RunEngine:
         if self.results.active:
             # Deterministic checks of the agent-results settings, then the comparison of
             # failing validators with the baseline (verification.differential, #7).
-            outputs.extend(self.results.verification.run(execution, phase, change_set))
-            outputs = self.results.after_verification(execution, phase, change_set, outputs)
+            outputs.extend(self.results.verification.run(execution, change_set))
+            outputs = self.results.after_verification(execution, change_set, outputs)
         if self.ladder.active:
             # Probes, light mutation and the certification of the ChangeSet (#55).
             outputs.extend(self.ladder.verification(execution, change_set, outputs))
@@ -3018,12 +3022,11 @@ class RunEngine:
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )
-        summary = (
-            f"Closure commit {commit.commit[:12]} ({commit.status.lower()})"
-            + (f" on branch {commit.branch}" if commit.branch else " on the current branch")
-            if commit.commit
-            else f"Closure commit skipped: {commit.reason}"
-        )
+        if commit.commit:
+            where = f" on branch {commit.branch}" if commit.branch else " on the current branch"
+            summary = f"Closure commit {commit.commit[:12]} ({commit.status.lower()})" + where
+        else:
+            summary = f"Closure commit skipped: {commit.reason}"
         self._record_evidence(
             execution,
             phase.phase_id,
@@ -3087,7 +3090,7 @@ class RunEngine:
         used = sum(
             1
             for event in events
-            if event.event_type == "correction.authorized"
+            if event.event_type == _CORRECTION_AUTHORIZED
             and event.payload.get("trigger") == "VERIFICATION_FAILED"
         )
         limit = runtime.correction_limit
@@ -3131,7 +3134,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "correction.authorized",
+            _CORRECTION_AUTHORIZED,
             {
                 "trigger": "VERIFICATION_FAILED",
                 "cycle": used + 1,
@@ -3247,7 +3250,7 @@ class RunEngine:
         )
         self.s.events.append(
             execution.execution_id,
-            "finding.recorded",
+            _FINDING_RECORDED,
             finding.model_dump(mode="json"),
             actor=finding.provenance.actor,
         )
@@ -3687,7 +3690,7 @@ class RunEngine:
             )
             self.s.events.append(
                 execution.execution_id,
-                "finding.recorded",
+                _FINDING_RECORDED,
                 finding.model_dump(mode="json"),
                 actor=finding.provenance.actor,
             )
