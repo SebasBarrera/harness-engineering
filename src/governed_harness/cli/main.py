@@ -1922,7 +1922,7 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         answer = typer.prompt(question, default="", show_default=False)
         return str(answer).strip() or None
 
-    return replace(
+    answered: ExceptionOptions = replace(
         exception,
         expires_in=exception.expires_in
         if exception.expires_in or exception.expires_at
@@ -1931,6 +1931,7 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         or ask("Alternative evidence (optional)"),
         follow_up=exception.follow_up or ask("Follow-up issue or task (optional)"),
     )
+    return answered
 
 
 DIGEST_CONFIRM_CHARS = 12

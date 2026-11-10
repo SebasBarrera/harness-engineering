@@ -58,9 +58,8 @@ class CoverageValidator:
                 )
             }
         )
-        first = CommandValidator(self.validator_id).execute(
-            replace(context, definition=run_definition)
-        )
+        run_context: ValidationContext = replace(context, definition=run_definition)
+        first = CommandValidator(self.validator_id).execute(run_context)
         if not first.result.status.successful:
             return first
         report_definition = context.definition.model_copy(
@@ -75,9 +74,8 @@ class CoverageValidator:
                 )
             }
         )
-        second = CommandValidator(self.validator_id).execute(
-            replace(context, definition=report_definition)
-        )
+        report_context: ValidationContext = replace(context, definition=report_definition)
+        second = CommandValidator(self.validator_id).execute(report_context)
         result = second.result.model_copy(
             update={
                 "summary": (
