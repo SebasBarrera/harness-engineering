@@ -49,7 +49,7 @@ MAX_AGENT_QUESTIONS = 40
 _TEXT_LIMIT = 1000
 _DOC_SUFFIXES = (".md", ".txt", ".rst", ".pdf", ".doc", ".docx", ".yaml", ".yml", ".json")
 _DOC_REFERENCE = re.compile(
-    r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
+    r"(?<![\w/.-])([\w-]+(?:/[\w-]+)*\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
 )
 _ID_REFERENCE = re.compile(
     r"\b(?:per|see|as in|according to|following|by|from|under|in)\s+"
@@ -458,40 +458,64 @@ class IntentReview:
         seen: set[str] = set()
         for answer in answers:
             text = answer["answer"]
-            for document in _DOC_REFERENCE.findall(text):
-                if document in seen or _document_exists(workspace, document):
-                    continue
-                seen.add(document)
-                items.append(
-                    (
-                        "consistency",
-                        "task",
-                        f"The answer to {answer['questionId']} refers to {document}, which is "
-                        "not in the workspace: attach the document or transcribe the part "
-                        "the answer relies on.",
-                    )
-                )
-            identifiers = set(_ID_REFERENCE.findall(text)) | set(_LIST_REFERENCE.findall(text))
-            for identifier in sorted(identifiers):
-                if identifier in seen or re.search(
-                    rf"(?<!\w){re.escape(identifier)}(?!\w)", task_text
-                ):
-                    continue
-                if corpus is None:
-                    corpus = _workspace_text(workspace)
-                if re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", corpus):
-                    continue
-                seen.add(identifier)
-                items.append(
-                    (
-                        "consistency",
-                        "task",
-                        f"The answer to {answer['questionId']} cites {identifier!r}, which "
-                        "appears neither in the task nor in the workspace: transcribe what "
-                        f"{identifier} says, or attach the document that defines it.",
-                    )
-                )
+            _dangling_documents(workspace, answer, text, seen, items)
+            corpus = _dangling_identifiers(workspace, answer, text, task_text, corpus, seen, items)
         return items
+
+
+def _dangling_documents(
+    workspace: Path,
+    answer: dict[str, str],
+    text: str,
+    seen: set[str],
+    items: list[tuple[str, str, str]],
+) -> None:
+    """A question for every document the answer refers to that is not in the workspace."""
+    for document in _DOC_REFERENCE.findall(text):
+        if document in seen or _document_exists(workspace, document):
+            continue
+        seen.add(document)
+        items.append(
+            (
+                "consistency",
+                "task",
+                f"The answer to {answer['questionId']} refers to {document}, which is "
+                "not in the workspace: attach the document or transcribe the part "
+                "the answer relies on.",
+            )
+        )
+
+
+def _dangling_identifiers(
+    workspace: Path,
+    answer: dict[str, str],
+    text: str,
+    task_text: str,
+    corpus: str | None,
+    seen: set[str],
+    items: list[tuple[str, str, str]],
+) -> str | None:
+    """A question for every identifier the answer cites that appears neither in the task nor
+    in the workspace; returns the workspace text once it was read, so it is read only once."""
+    identifiers = set(_ID_REFERENCE.findall(text)) | set(_LIST_REFERENCE.findall(text))
+    for identifier in sorted(identifiers):
+        if identifier in seen or re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", task_text):
+            continue
+        if corpus is None:
+            corpus = _workspace_text(workspace)
+        if re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", corpus):
+            continue
+        seen.add(identifier)
+        items.append(
+            (
+                "consistency",
+                "task",
+                f"The answer to {answer['questionId']} cites {identifier!r}, which "
+                "appears neither in the task nor in the workspace: transcribe what "
+                f"{identifier} says, or attach the document that defines it.",
+            )
+        )
+    return corpus
 
 
 def _document_exists(workspace: Path, document: str) -> bool:

@@ -35,6 +35,7 @@ from governed_harness.domain.models import (
 from governed_harness.orchestration.engine_types import ReviewOutcome as ReviewOutcome
 
 if TYPE_CHECKING:
+    from governed_harness.orchestration.engine_types import AgentCallOutcome
     from governed_harness.orchestration.hosts import ResultsHost
 
 AGENT_REVIEW_ID = "review.agent"
@@ -66,9 +67,18 @@ class AgentReview:
     ) -> ReviewOutcome:
         if self.policy == "off":
             return ReviewOutcome(False)
+        key = f"agentreview:{execution.execution_id}"
+        if self._skipped(execution, change_set, key):
+            return ReviewOutcome(False)
+        if self.results.panel.configured:
+            return self.results.panel.run(execution, phase, change_set)
+        return self._review(execution, phase, change_set, key)
+
+    def _skipped(self, execution: Execution, change_set: ChangeSet, key: str) -> bool:
+        """Whether the review is skipped (and the event recorded): the ChangeSet was reviewed
+        already, or a blocking deterministic check fails."""
         results = self.results
         engine = results.engine
-        key = f"agentreview:{execution.execution_id}"
         last = results.flag_json(key)
         if isinstance(last, dict) and last.get("digest") == change_set.digest:
             results.s.events.append(
@@ -79,7 +89,7 @@ class AgentReview:
                     "digest": change_set.digest,
                 },
             )
-            return ReviewOutcome(False)
+            return True
         validations = engine._latest_validations(execution.execution_id, change_set.digest)
         failing = [
             item.validator_id
@@ -105,9 +115,15 @@ class AgentReview:
                     "blockingFindings": len(blocking_findings),
                 },
             )
-            return ReviewOutcome(False)
-        if self.results.panel.configured:
-            return self.results.panel.run(execution, phase, change_set)
+            return True
+        return False
+
+    def _review(
+        self, execution: Execution, phase: PhaseExecution, change_set: ChangeSet, key: str
+    ) -> ReviewOutcome:
+        """The call to the reviewer agent and the record of its answer."""
+        results = self.results
+        engine = results.engine
         task = engine.run_task(execution)
         diff = engine._compute_owned_diff(execution).unified_diff.decode("utf-8", "replace")
         payload: dict[str, Any] = {
@@ -170,6 +186,31 @@ class AgentReview:
                 enforce,
             )
             return ReviewOutcome(True)
+        findings = self._record_findings(execution, items, outcome, actor, enforce)
+        blocking = tuple(item for item in findings if item.severity in self.blocking_severities())
+        self._record(
+            execution,
+            change_set,
+            tuple(findings),
+            ResultStatus.PASSED,
+            f"Agent review by {provider}: {len(findings)} finding(s), {len(blocking)} blocking",
+            outcome.evidence_refs,
+            enforce,
+        )
+        results.set_flag_json(key, {"digest": change_set.digest})
+        return ReviewOutcome(True, blocking if enforce else ())
+
+    def _record_findings(
+        self,
+        execution: Execution,
+        items: list[dict[str, Any]],
+        outcome: AgentCallOutcome,
+        actor: Actor,
+        enforce: bool,
+    ) -> list[Finding]:
+        """Record the reviewer's findings (at most MAX_FINDINGS); outside ``enforce`` none is
+        above MEDIUM."""
+        results = self.results
         findings: list[Finding] = []
         for item in items[:MAX_FINDINGS]:
             severity = FindingSeverity(item["severity"])
@@ -195,18 +236,7 @@ class AgentReview:
                     actor=actor,
                 )
             )
-        blocking = tuple(item for item in findings if item.severity in self.blocking_severities())
-        self._record(
-            execution,
-            change_set,
-            tuple(findings),
-            ResultStatus.PASSED,
-            f"Agent review by {provider}: {len(findings)} finding(s), {len(blocking)} blocking",
-            outcome.evidence_refs,
-            enforce,
-        )
-        results.set_flag_json(key, {"digest": change_set.digest})
-        return ReviewOutcome(True, blocking if enforce else ())
+        return findings
 
     def _record(
         self,
@@ -237,32 +267,32 @@ def _findings_from(result: dict[str, Any]) -> list[dict[str, Any]]:
     raw = result.get("findings")
     if not isinstance(raw, list):
         raise ValueError("the review result needs a 'findings' list")
-    items: list[dict[str, Any]] = []
-    for index, entry in enumerate(raw, start=1):
-        if not isinstance(entry, dict):
-            raise ValueError(f"finding {index} is not an object")
-        severity = str(entry.get("severity", "")).upper()
-        if severity not in REVIEW_SEVERITIES:
-            raise ValueError(f"finding {index} has an unknown severity {entry.get('severity')!r}")
-        message = entry.get("message")
-        if not isinstance(message, str) or not message.strip():
-            raise ValueError(f"finding {index} has no message")
-        rule = (
-            "".join(
-                char if char.isalnum() or char in "-_." else "-"
-                for char in str(entry.get("rule") or "finding").strip().lower()
-            )[:60]
-            or "finding"
-        )
-        line = entry.get("line")
-        items.append(
-            {
-                "severity": severity,
-                "rule": rule,
-                "path": str(entry["path"]) if entry.get("path") else None,
-                "line": line if isinstance(line, int) and line >= 1 else None,
-                "message": " ".join(message.split())[:1000],
-                "evidence": " ".join(str(entry.get("evidence") or "").split())[:1000],
-            }
-        )
-    return items
+    return [_finding_item(index, entry) for index, entry in enumerate(raw, start=1)]
+
+
+def _finding_item(index: int, entry: Any) -> dict[str, Any]:
+    """One validated finding of the review result (the ``index`` counts from 1)."""
+    if not isinstance(entry, dict):
+        raise ValueError(f"finding {index} is not an object")
+    severity = str(entry.get("severity", "")).upper()
+    if severity not in REVIEW_SEVERITIES:
+        raise ValueError(f"finding {index} has an unknown severity {entry.get('severity')!r}")
+    message = entry.get("message")
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError(f"finding {index} has no message")
+    rule = (
+        "".join(
+            char if char.isalnum() or char in "-_." else "-"
+            for char in str(entry.get("rule") or "finding").strip().lower()
+        )[:60]
+        or "finding"
+    )
+    line = entry.get("line")
+    return {
+        "severity": severity,
+        "rule": rule,
+        "path": str(entry["path"]) if entry.get("path") else None,
+        "line": line if isinstance(line, int) and line >= 1 else None,
+        "message": " ".join(message.split())[:1000],
+        "evidence": " ".join(str(entry.get("evidence") or "").split())[:1000],
+    }

@@ -49,6 +49,7 @@ from governed_harness.validators.review import RULES
 
 if TYPE_CHECKING:
     from governed_harness.orchestration.hosts import ResultsHost
+    from governed_harness.validators.base import ValidatorOutput
 
 CHECK_DIRECTORY = "check"
 
@@ -297,21 +298,47 @@ def permissions(
 # ----- harness check ------------------------------------------------------------------------
 def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
     """Run the gate's validators and the diff checks on the workspace; nothing is recorded."""
-    from governed_harness.orchestration.architecture import effective_rules
-    from governed_harness.orchestration.verification_checks import (
-        current_files,
-        pure_checks,
-    )
-
     resolved = ConfigurationResolver().resolve(path)
     workspace = resolved.workspace_root.resolve()
     state = _check_state(workspace / ".harness", execution_id)
     task = Task.model_validate(state["task"]) if state else None
     baseline_ref = state.get("baselineRef") if state else None
     run_id = str(state["executionId"]) if state else "check"
-    validators: list[dict[str, Any]] = []
     blocking_names = resolved.effective_policies.get("findingBlockSeverities", ["HIGH", "CRITICAL"])
     blocking = {FindingSeverity(str(name)) for name in blocking_names}
+    diff_text, digest, baseline_text = _check_baseline(resolved, workspace, baseline_ref)
+    validators = _check_validators(resolved, workspace, run_id, task, digest)
+    checks = _check_diff(resolved, workspace, task, diff_text, baseline_text)
+    failed_validators = [
+        item for item in validators if item["mandatory"] and item["status"] != "PASSED"
+    ]
+    blocking_issues = [
+        issue
+        for check in checks
+        if check["policy"] == "enforce"
+        for issue in check["issues"]
+        if FindingSeverity(issue["severity"]) in blocking
+    ]
+    status = ResultStatus.FAILED if failed_validators or blocking_issues else ResultStatus.PASSED
+    return {
+        "status": status.value,
+        "executionId": state["executionId"] if state else None,
+        "workspace": str(workspace),
+        "validators": validators,
+        "checks": checks,
+        "blockingIssues": len(blocking_issues),
+        "note": (
+            "Nothing was recorded. The gate also runs the independent review and, when "
+            "configured, requirement traceability, coverage, SARIF and the baseline comparison."
+        ),
+    }
+
+
+def _check_baseline(
+    resolved: ResolvedConfiguration, workspace: Path, baseline_ref: Any
+) -> tuple[str, str, Callable[[str], str | None] | None]:
+    """The diff against the run's baseline snapshot (its text and digest) and a reader of the
+    baseline files; without a baseline an empty diff and no reader."""
     diff_text = ""
     digest = "sha256:check"
     baseline_text: Callable[[str], str | None] | None = None
@@ -336,51 +363,101 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
             data = snapshots.content(stored, path)
             return data.decode("utf-8", "replace") if data is not None else None
 
+    return diff_text, digest, baseline_text
+
+
+def _check_validators(
+    resolved: ResolvedConfiguration,
+    workspace: Path,
+    run_id: str,
+    task: Task | None,
+    digest: str,
+) -> list[dict[str, Any]]:
+    """Run every validator of the gate in a scratch artifact store and report each one."""
+    validators: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory(prefix="harness-check-") as scratch:
         store = LocalArtifactStore(Path(scratch) / "artifacts")
         change_set = ChangeSet(
             change_set_id="check", execution_id=run_id, files=(), diff_ref="check", digest=digest
         )
         for definition in _definitions(resolved):
-            actor = Actor(
-                actor_type=ActorType.TOOL,
-                actor_id=f"validator.{definition.validator_id}",
-                version="1",
+            output = _run_validator(
+                resolved, workspace, run_id, task, change_set, definition, store
             )
-            output = CommandValidator(definition.validator_id).execute(
-                ValidationContext(
-                    execution_id=run_id,
-                    workspace=workspace,
-                    task=task or _placeholder_task(resolved),
-                    change_set=change_set,
-                    definition=definition,
-                    grants=grants_from_rules(run_id, actor, resolved.effective_capabilities),
-                    artifact_store=store,
-                    process_runner=SafeProcessRunner(workspace),
-                    provenance=Provenance(actor=actor, core_version=__version__),
-                    cancellation=CancellationToken(lambda: False),
-                    max_output_bytes=resolved.project.runtime.max_output_bytes,
-                    parse_output=True,
-                )
-            )
-            validators.append(
-                {
-                    "id": definition.validator_id,
-                    "mandatory": definition.mandatory,
-                    "status": output.result.status.value,
-                    "summary": output.result.summary,
-                    "problems": [
-                        {
-                            "rule": item.rule_id,
-                            "path": item.location.path if item.location else None,
-                            "line": item.location.start_line if item.location else None,
-                            "message": item.message,
-                        }
-                        for item in output.findings[1:51]
-                    ],
-                    "output": _tail(store, output.result.evidence_refs),
-                }
-            )
+            validators.append(_validator_entry(definition, output, store))
+    return validators
+
+
+def _run_validator(
+    resolved: ResolvedConfiguration,
+    workspace: Path,
+    run_id: str,
+    task: Task | None,
+    change_set: ChangeSet,
+    definition: ValidatorDefinition,
+    store: LocalArtifactStore,
+) -> ValidatorOutput:
+    """Run one validator of the gate with the grants of the configuration."""
+    actor = Actor(
+        actor_type=ActorType.TOOL,
+        actor_id=f"validator.{definition.validator_id}",
+        version="1",
+    )
+    return CommandValidator(definition.validator_id).execute(
+        ValidationContext(
+            execution_id=run_id,
+            workspace=workspace,
+            task=task or _placeholder_task(resolved),
+            change_set=change_set,
+            definition=definition,
+            grants=grants_from_rules(run_id, actor, resolved.effective_capabilities),
+            artifact_store=store,
+            process_runner=SafeProcessRunner(workspace),
+            provenance=Provenance(actor=actor, core_version=__version__),
+            cancellation=CancellationToken(lambda: False),
+            max_output_bytes=resolved.project.runtime.max_output_bytes,
+            parse_output=True,
+        )
+    )
+
+
+def _validator_entry(
+    definition: ValidatorDefinition, output: ValidatorOutput, store: LocalArtifactStore
+) -> dict[str, Any]:
+    """The report of one validator: status, summary, the first problems and its output."""
+    return {
+        "id": definition.validator_id,
+        "mandatory": definition.mandatory,
+        "status": output.result.status.value,
+        "summary": output.result.summary,
+        "problems": [
+            {
+                "rule": item.rule_id,
+                "path": item.location.path if item.location else None,
+                "line": item.location.start_line if item.location else None,
+                "message": item.message,
+            }
+            for item in output.findings[1:51]
+        ],
+        "output": _tail(store, output.result.evidence_refs),
+    }
+
+
+def _check_diff(
+    resolved: ResolvedConfiguration,
+    workspace: Path,
+    task: Task | None,
+    diff_text: str,
+    baseline_text: Callable[[str], str | None] | None,
+) -> list[dict[str, Any]]:
+    """The checks that read only the diff and the files, when the run has a task and a
+    baseline and verification or architecture rules are configured."""
+    from governed_harness.orchestration.architecture import effective_rules
+    from governed_harness.orchestration.verification_checks import (
+        current_files,
+        pure_checks,
+    )
+
     checks: list[dict[str, Any]] = []
     verification = resolved.project.verification
     architecture = resolved.project.architecture
@@ -418,29 +495,7 @@ def run_check(path: Path, execution_id: str | None = None) -> dict[str, Any]:
                     ],
                 }
             )
-    failed_validators = [
-        item for item in validators if item["mandatory"] and item["status"] != "PASSED"
-    ]
-    blocking_issues = [
-        issue
-        for check in checks
-        if check["policy"] == "enforce"
-        for issue in check["issues"]
-        if FindingSeverity(issue["severity"]) in blocking
-    ]
-    status = ResultStatus.FAILED if failed_validators or blocking_issues else ResultStatus.PASSED
-    return {
-        "status": status.value,
-        "executionId": state["executionId"] if state else None,
-        "workspace": str(workspace),
-        "validators": validators,
-        "checks": checks,
-        "blockingIssues": len(blocking_issues),
-        "note": (
-            "Nothing was recorded. The gate also runs the independent review and, when "
-            "configured, requirement traceability, coverage, SARIF and the baseline comparison."
-        ),
-    }
+    return checks
 
 
 def _definitions(resolved: ResolvedConfiguration) -> list[ValidatorDefinition]:

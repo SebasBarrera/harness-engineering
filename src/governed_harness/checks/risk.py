@@ -85,7 +85,12 @@ _PYPROJECT_INLINE = re.compile(
     rf"^\s*dependencies\s*=\s*\[\s*[\"']{_REQUIREMENT}"
     rf"|^\s*[\w-]+\s*=\s*\[\s*[\"']{_REQUIREMENT}\s*(?:[<>=!~]=?|;|@)"
 )
-_KEY_VERSION = re.compile(r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*(?P<value>.+?)\s*,?\s*$")
+# The value ends at its last character before the trailing ``\s*,?\s*`` (a comma also stays
+# in the value when another comma follows it); only an all-blank value keeps one blank.
+_KEY_VERSION = re.compile(
+    r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*"
+    r"(?P<value>\S(?:[^\n]*[^\s,])?(?:[^\S\n]*,(?=\s*,))*|[^\S\n](?=\n*$))\s*(?:,\s*)?$"
+)
 _VERSION_VALUE = re.compile(
     r"^(?:[\"'](?:[\^~<>=*]|\d|latest\b|workspace:|file:|git\+|npm:)"
     r"|\{[^}]*\b(?:version|git|path|url)\s*=)"
@@ -218,17 +223,16 @@ def _destructive_migrations(diff: Sequence[DiffFile]) -> Iterable[RiskSignal]:
 
 
 # ----- publicContract ------------------------------------------------------------------------
-_DEFINITION = re.compile(
-    r"^\s*(?:async\s+)?def\s+(?P<function>[A-Za-z]\w*)\s*\(|^\s*(?:export\s+)?class\s+(?P<cls>[A-Za-z]\w*)\b"
-)
+_FUNCTION_DEFINITION = re.compile(r"^\s*(?:async\s+)?def\s+(?P<name>[A-Za-z]\w*)\s*\(")
+_CLASS_DEFINITION = re.compile(r"^\s*(?:export\s+)?class\s+(?P<name>[A-Za-z]\w*)\b")
 
 
 def _definitions(lines: Iterable[DiffLine]) -> list[tuple[str, DiffLine]]:
     found: list[tuple[str, DiffLine]] = []
     for line in lines:
-        match = _DEFINITION.match(line.text)
+        match = _FUNCTION_DEFINITION.match(line.text) or _CLASS_DEFINITION.match(line.text)
         if match:
-            found.append((match.group("function") or match.group("cls"), line))
+            found.append((match.group("name"), line))
     return found
 
 

@@ -11,14 +11,14 @@ división o resta hecha aquí sobre cifras citadas.
 
 Lo que este catálogo da por cierto, porque lo leyó:
 
-- Los resultados de `evaluation/results/` son de la evaluación de la tesis (0.9.0, macOS 15.7.9 arm64, Claude Code
-  2.1.285; `evaluation/results/environment.json`). Los de `evaluation/results-2.0.0/deterministic/` se corrieron el
-  2026-10-06 sobre el código con la ola 9 (`repositoryHead 6158cc6`, `harnessVersion "harness 1.0.0"`, macOS arm64;
+- La evaluación reporta solo la 2.0.0; los resultados de versiones anteriores y de los pilotos de desarrollo se
+  retiraron del árbol (están en el historial de git y, los de la tesis, en el tag `v0.8.0`) y no forman parte de
+  este análisis. Los de `evaluation/results-2.0.0/deterministic/` se corrieron el 2026-10-06 sobre el código con la ola 9 (`repositoryHead 6158cc6`, `harnessVersion "harness 1.0.0"`, macOS arm64;
   `block0/block0-summary.json`, campo `environment`). **Ningún resultado de `results-2.0.0` cubre la ola 11**
   (`agentContract`, `architecture.catalogue`, `architecture.documentation`, informe de métricas tipo Sonar; ver
   `CHANGELOG.md`, sección «Unreleased»).
-- Con modelo real en 2.0.0 solo existen dos pilotos de 5 corridas con Haiku (`results-2.0.0/pilot/` y
-  `results-2.0.0/pilot-wave9/`). Los bloques A, B, D y embebido no se han lanzado (los launchers existen:
+- Con modelo real no hay resultados 2.0.0 en el árbol. Ni el piloto ni los bloques A, B, D y embebido se han
+  lanzado sobre la 2.0.0 (los launchers existen:
   `evaluation/launchers/block-*.sh`).
 
 Huecos (cada uno afecta el diseño de la campaña):
@@ -32,8 +32,7 @@ Huecos (cada uno afecta el diseño de la campaña):
 2. **`evaluation/rides/` y `evaluation/large/`** tienen runner (`run_rides.py`, `run_large.py`), prompts y
    fixtures, pero ningún launcher de 2.0.0, ningún resultado en el repo y `rides/hidden/` está vacío (solo
    `hidden_cases.json` y `rescore.py`; `large/hidden/test_hidden_shop.py` sí existe).
-3. **Bloque del segundo agente (Codex)** solo tiene resultados 0.9.0 (`results/codex-*.jsonl`); no hay launcher
-   2.0.0 ni `codex` en `conditions.py`.
+3. **Bloque del segundo agente (Codex)**: no hay launcher 2.0.0 ni `codex` en `conditions.py`.
 4. **Plataforma única.** Todos los `environment.json` dicen macOS arm64. Existe CI de Windows
    (`.github/workflows/windows.yml`) pero ninguna evidencia de la evaluación en Linux o Windows.
 5. **Resultados deterministas previos a correcciones posteriores.** `later-change` no coincide con su expectativa
@@ -44,13 +43,11 @@ Huecos (cada uno afecta el diseño de la campaña):
    y `MAX_BUDGET_USD = "5"` y pasa `--max-budget-usd` (línea 251). Cualquier prueba de «agente sin tope» (H18, H21)
    debe declarar qué tope conserva el directo; no existe un directo «sin tope» en la evaluación actual.
 7. **La persona simulada no mide tiempo humano y aprueba sin leer el contenido de las pruebas.** El tiempo de la
-   persona se separa (P15, `evaluation/README.md`, «Measures») y en el piloto de la ola 9 aprobó pruebas de aceptación
-   erróneas (`results-2.0.0/pilot-wave9/README.md`, «Why the governed runs did not reach DECISION»). Es un sesgo a
-   favor del harness en tiempo y en fricción, declarado en §4.
-8. **Resultado del 0.9.0 que NO favorece al harness y debe conservarse:** la contraseña real de desarrollo se
-   aprobó en 3 de 13 entregas con harness (frente a 2 de 15 sin él) (`docs/evaluation/results.md`, tabla de
-   resultados). H03 está diseñada para medir si 2.0.0 lo cierra (`secrets.declared-value`,
-   `secrets.environment-assignment` en `src/governed_harness/checks/secrets.py:306-387`).
+   persona se separa (P15, `evaluation/README.md`, «Measures») puede aprobar pruebas de aceptación
+   erróneas. Es un sesgo a favor del harness en tiempo y en fricción, declarado en §4.
+8. **La contraseña real de desarrollo declarada en la especificación** (escenario `alerts`) es un caso de
+   seguridad que debe medirse y reportarse tal como salga, favorable o no. H03 lo mide en 2.0.0
+   (`secrets.declared-value`, `secrets.environment-assignment` en `src/governed_harness/checks/secrets.py:306-387`).
 9. **`later-change`/`verify` y demás sondas de P08 están en un solo proyecto** (itsdangerous 2.2.0, Python):
    cualquier conclusión de «interceptación» generalizada a otros lenguajes necesita H33/H46 y las pruebas de
    corpus de §2.
@@ -60,7 +57,7 @@ Huecos (cada uno afecta el diseño de la campaña):
 Convenciones: «Costo» = llamadas a modelo (sí/no) y cantidad de corridas según los launchers. «Lectura» =
 favorece / neutral / costo del harness. Todas se conservan; la columna «Precio de la gobernanza y mitigación»
 dice cómo se interpreta y qué configuración lo reduce. Resultados 2.0.0 deterministas viven bajo
-`evaluation/results-2.0.0/deterministic/`; los de la tesis, bajo `evaluation/results/`.
+`evaluation/results-2.0.0/deterministic/`.
 
 ### 1.1 Deterministas (sin modelo)
 
@@ -81,23 +78,22 @@ dice cómo se interpreta y qué configuración lo reduce. Resultados 2.0.0 deter
 | N03-a | Fricción de 2 cambios S con proveedor fixture: flujo completo vs carril rápido vs carril rápido + pre-aprobación, con y sin factor de riesgo | `evaluation/deterministic/friction.py` | `full`, `fast-lane`, `fast-lane+pre-approval` | No; 24 corridas | `friction/friction.jsonl`, `friction-summary.json` | **Costo y mitigación**: flujo completo mediana 3 comandos, 1 interacción humana, 6 llamadas, 8810 tokens (estimados), 6.72 s; carril rápido 2 comandos, 3 llamadas, 4966 tokens, 5.4 s (−50 % llamadas, −43.6 % tokens, −19.6 % tiempo, calculado); con pre-aprobación 1 comando. Con factor de riesgo: 6/6 bloqueados, 0 falsos carriles rápidos (`byCondition`) |
 | N04 | Validez de `harness metrics` frente a una medición externa | `evaluation/deterministic/metrics_validity.py` | 24 corridas medidas + 21 proyectos demo | No | `metrics-validity/metrics-validity-summary.json` | Favorece con límite: llamadas, tokens de entrada, salida y caché iguales en 24/24 comparables; los segundos de llamada difieren (mediana de diferencia relativa 7.26 porque el fixture se cronometra a sí mismo; diferencia absoluta máxima 0.312 s); el costo no es comparable (0 comparables, es estimado) |
 | P24 | Reglas de INTENT (C0–C3, T1) aplicadas a las 109 tareas de los experimentos | `evaluation/deterministic/intent_equivalence.py` | `harness do` vs archivo de tarea sin criterios | No | `intent-equivalence/intent-equivalence-summary.json` | **Costo de fricción**: 38 de 109 tareas generan preguntas; las 3 tareas completas sin criterios dan 21 preguntas C0, mientras que `harness do` da 0 (`bySource`). Mitigación: `harness do` y `intake.criteriaPolicy` |
-| Dry run | Todas las condiciones y runners con `fake_claude.py` | `evaluation/dry_run.py` | direct, core, harness, anchored, embebido, casual | No | `results-2.0.0/dry-run/*` | Neutral/validación del montaje: `failedRequired: 0` (`dry-run-checks.json`) |
+| Dry run | Todas las condiciones y runners con `fake_claude.py` | `evaluation/dry_run.py` | direct, core, harness, anchored, embebido, casual | No | no se conservan en el árbol | Validación del montaje, no resultado de evaluación |
 
 ### 1.2 Con modelo real
 
-Costos de referencia por corrida de agente (mediana de celda): `evaluation/results/summary.json`; cifras agregadas:
-`docs/evaluation/results.md`.
+Todas las pruebas con modelo están pendientes en 2.0.0: no hay cifras de referencia en el árbol. La evaluación reporta solo la 2.0.0; los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
 
 | Id | Qué mide | Script / launcher | Condiciones | Costo | Resultados | Lectura y cifra (fuente) |
 |---|---|---|---|---|---|---|
-| P09+P10+N10 (bloque A; en 0.9.0 la «matriz principal») | Tarea completa × escenarios (greenfield, brownfield, security) × 3 modelos | `run_matrix.py`, `launchers/block-a.sh` | direct, harness ×3 reps; harness-anchored ×2 reps | **Sí**: 54 + 18 = 72 corridas. En 0.9.0: 90 corridas × 2 condiciones (45 + 45) | 0.9.0: `results/claude-*.jsonl`, `summary.json`; 2.0.0: `results-2.0.0/block-a/` (no existe aún) | Mixto (0.9.0, `docs/evaluation/results.md`): pruebas ocultas 1,064/1,065 sin harness vs 1,065/1,065 con harness (favorece, diferencia de una prueba); regresiones brownfield 0 en 15 vs 0 en 15 (neutral); literal tipo credencial en pruebas entregadas 6/15 vs 0/13 (favorece); **contraseña real aprobada 2/15 vs 3/13 (no favorece)**; **costo USD 7.23 vs 8.99 (+24 %, calculado)**; sobrecarga mediana 4.34 s (2.89–8.43); trazabilidad 45/45. Por celda, el costo mediano de Opus security pasó de 0.191723 a 0.443573 USD (+131 %) y 65.1 a 146.4 s (calculado de `summary.json`), mientras Sonnet brownfield bajó de 0.07657 a 0.048781 USD |
-| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («It works.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual\|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 3 modelos × 3 escenarios × 3 reps = 162 (27 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo: `dry-run-checks.json`, caso `casual-core`) | 0.9.0: `claude-casual-*.jsonl`, `claude-minimal-*.jsonl`, `summary-prompts.json`; 2.0.0: `block-b/` (no existe) | Mixto (0.9.0): estructurar la tarea explica casi toda la mejora (defecto 5/27 sin harness con tarea mínima vs 1/45 con tarea completa sin harness); con tarea mínima y harness 4 entregas defectuosas de 21 entregadas, **5 correctas bloqueadas** (costo: falsos bloqueos) y 1 defectuosa bloqueada; los 6 sin pruebas en greenfield/security bloqueados (favorece) (`summary-prompts.json`, `promptLevels`). El harness rechaza el prompt de una línea (`casual-harness-rejection.json`) |
-| P13+P20+N01-b (bloque D) | Desarrollo iterativo: 5 incrementos, oráculo de 25 pruebas ocultas, hasta 2 rondas de reportes de bug | `longitudinal/run_session.py`, `launchers/block-d.sh` | baseline casual, structured directo, harness | **Sí**: 3 condiciones × 3 modelos × 3 sesiones = 27 sesiones (0.9.0: 18 sesiones, 17 válidas, sin la condición `structured`) | `results/longitudinal-*.jsonl`, `summary-longitudinal.json` | Mixto (0.9.0): Sonnet y Opus con harness sin ninguna solicitud de corrección (0 vs 5 y 7) y menor costo (Sonnet 0.39 vs 0.65 USD, Opus 1.41 vs 1.98) y tiempo (Sonnet 218 vs 282 s; Opus 345 vs 577 s, medianas de `summary-longitudinal.json`). **Haiku al revés**: 0 sesiones completas con harness vs 1 sin él, 12 vs 7 solicitudes de corrección, costo 1.53 vs 0.75 USD y 1168 vs 622 s (+88 % tiempo, calculado); el defecto `path.endswith` sobre `Path` pasó con pruebas propias verdes (`docs/evaluation/results.md`) |
-| N08 (embebido) | Claude Code como host de la sesión sobre `harness mcp serve` y la skill | `run_embedded.py`, `launchers/block-embedded.sh` | `harness` embebido; factor: modelo host | **Sí**: 3 modelos × 2 reps = 6 (brownfield) | `results-2.0.0/block-embedded/` (no existe); dry run: `dry-run/embedded-dry.jsonl` | Sin resultado con modelo; el dry run aprueba la configuración `init` (`dry-run/embedded-dry.jsonl`, caso `embedded-init`) |
-| P15 | Segundos por fase y recomendaciones retrospectivas de las corridas gobernadas | `report_phases.py` | solo gobernadas (45) | No (post-hoc) | `results/phases-retrospective.jsonl`, `summary-phases.json` | Favorece: en 36 corridas aprobadas sin corrección, IMPLEMENTATION ocupó la mediana de 97.1 % del tiempo de fases; las otras siete fases suman 0.303 s (mediana) (`summary-phases.json`). Nota: no incluye tiempo humano |
-| (sin id) revisión post-hoc | Reglas deterministas de revisión sobre el cambio final de cada corrida de ambas condiciones | `posthoc_review.py` | las 90 corridas del bloque principal | No (post-hoc) | `results/review-posthoc.jsonl` (90 registros) | Cifras no extraídas en este catálogo; revisar antes de citar |
-| (sin id) segundo agente | Codex CLI 0.159.2, 2 modelos, tarea completa | `run_matrix.py --agent codex`, `report_prompts.py` | baseline vs harness | **Sí** (0.9.0): 35 corridas válidas | `results/codex-*.jsonl`, `summary-prompts.json` | Mixto: 18 gobernadas aprobadas al primer intento, 0 fallos ocultos; sobrecarga mediana 5.557 s (luna) y 5.627 s (sol); tiempo total mediano 106.97→132.42 s (+23.8 %, luna) y 106.36→113.67 s (+6.9 %, sol, calculado). **Costo** de tiempo |
-| (sin id) pilotos 2.0.0 | 5 corridas Haiku brownfield por piloto | `launchers/pilot.sh` | direct, harness-core, harness, harness-anchored, casual×harness | **Sí**: 5 corridas | `results-2.0.0/pilot/pilot.jsonl`, `pilot-wave9/pilot.jsonl` | **Costo alto (n=1 por celda)**: en el piloto de la ola 9 ninguna corrida gobernada con la configuración `init` llegó a DECISION; harness-anchored costó 1.971764 USD y 1355.7 s frente a 0.226347 USD y 158.2 s del directo (8.7× y 8.6×, calculado); `harness-core` aprobó con 0.161907 USD (`pilot-wave9/README.md`). Causas: escritura en llamada de solo lectura, pruebas de aceptación erróneas aprobadas por la persona simulada, falso positivo de capas. Corregidas en «Unreleased» (#92, #93, #94) sin re-medir |
+| P09+P10+N10 (bloque A, «matriz principal») | Tarea completa × escenarios (greenfield, brownfield, security) × 3 modelos | `run_matrix.py`, `launchers/block-a.sh` | direct, harness ×3 reps; harness-anchored ×2 reps | **Sí**: 54 + 18 = 72 corridas | 2.0.0: `results-2.0.0/block-a/` (no existe aún) | Sin resultados 2.0.0 |
+| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («It works.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual\|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 3 modelos × 3 escenarios × 3 reps = 162 (27 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo) | 2.0.0: `block-b/` (no existe) | Sin resultados 2.0.0 |
+| P13+P20+N01-b (bloque D) | Desarrollo iterativo: 5 incrementos, oráculo de 25 pruebas ocultas, hasta 2 rondas de reportes de bug | `longitudinal/run_session.py`, `launchers/block-d.sh` | baseline casual, structured directo, harness | **Sí**: 3 condiciones × 3 modelos × 3 sesiones = 27 sesiones | 2.0.0: `block-d/` (no existe) | Sin resultados 2.0.0 |
+| N08 (embebido) | Claude Code como host de la sesión sobre `harness mcp serve` y la skill | `run_embedded.py`, `launchers/block-embedded.sh` | `harness` embebido; factor: modelo host | **Sí**: 3 modelos × 2 reps = 6 (brownfield) | `results-2.0.0/block-embedded/` (no existe) | Sin resultado con modelo |
+| P15 | Segundos por fase y recomendaciones retrospectivas de las corridas gobernadas | `report_phases.py` | solo gobernadas | No (post-hoc) | 2.0.0: sobre las corridas del bloque A | Sin resultados 2.0.0. Nota: no incluye tiempo humano |
+| (sin id) revisión post-hoc | Reglas deterministas de revisión sobre el cambio final de cada corrida de ambas condiciones | `posthoc_review.py` | corridas del bloque A | No (post-hoc) | 2.0.0: sobre las corridas del bloque A | Sin resultados 2.0.0 |
+| (sin id) segundo agente | Codex CLI, tarea completa | `run_matrix.py --agent codex`, `report_prompts.py` | baseline vs harness | **Sí** | ninguno | Sin resultados 2.0.0 (hueco 3) |
+| (sin id) piloto 2.0.0 | 5 corridas Haiku brownfield | `launchers/pilot.sh` | direct, harness-core, harness, harness-anchored, casual×harness | **Sí**: 5 corridas | `results-2.0.0/pilot-2.0.0/` (no existe aún) | Sin resultados 2.0.0: el piloto se repite sobre la 2.0.0 |
 | (sin id) escenarios `rides` y `large` | Proyecto grande por niveles de instrucción (`one_line`, `paragraph`, `requirements`, `super`) y condiciones `direct`, `stepwise`, `harness`, `clarify` | `rides/run_rides.py`, `large/run_large.py` | ver docstrings | **Sí** (no lanzado) | ninguno | Sin resultados (hueco 2) |
 
 ### 1.3 Interpretación obligatoria de las pruebas que muestran costo
@@ -109,11 +105,6 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 |---|---|---|---|
 | P07: +2521 % (python) / +639 % (node) en el escenario sintético | El directo en ese escenario es un parche más `pytest` de ~0.12 s; el harness fija ~1–3 s de proceso y validadores. Es un costo absoluto casi fijo (3.1 s y 1.8 s), no proporcional al tiempo del agente | `friction.fastLane` (`src/governed_harness/orchestration/friction.py`, `docs/reference/configuration.md` «Friction»), `friction.fastLane.verification.cache/parallel/affectedTestsFirst` | H37 |
 | P07/N16: arranque en repos grandes | Costo de recorrer y hashear el árbol | `workspace.snapshot: git`, `baseline: manifest`, `snapshotCache: true` (`runtime/snapshots.py`) | H49 |
-| Matriz: +24 % de costo (USD 7.23→8.99), Opus security +131 % | Llamadas de gobierno (clarificación, aceptación, revisión, correcciones) que el directo no hace. En security se suman 11 ciclos de corrección | `agentRouting.mode: anchored` (`agents/routing.py:378`), `agentContract` (contexto mínimo), `review.panel.budget`, `friction.fastLane.skip` | H21, H22, H25, H41 |
-| Haiku longitudinal: 2× tiempo y costo, peor resultado | Un modelo débil con puertas estrictas entra en ciclos de corrección; la puerta verifica pruebas del propio agente | `runtime.verificationCorrections`, `agentContract.maxIterations`, `verification.acceptanceTests`, `verification.ladder` | H18, H21, H31 |
-| Instrucciones pobres: 5 correctas bloqueadas | Falsos bloqueos por exigir criterio observable | `intake.criteriaPolicy`, `intake.ambiguityReview`, `harness do` | H43, H44, H45 |
-| Codex: +23.8 % tiempo | Sobrecarga fija (~5.6 s) sobre ~107 s | carril rápido y caché de validadores | H37 |
-| Pilotos 2.0.0: 8.7× costo, sin llegar a DECISION | Defectos del flujo de la ola 9 y del adaptador | correcciones de «Unreleased» (#92–#95) | pilotos de §3 |
 | N03-a flujo completo: 3 comandos, 6 llamadas | Fricción del flujo completo para cambios S | `friction.fastLane`, `--pre-approve` | H37, H38, H43 |
 | N01-a: 3 falsos positivos de 8 correctos | Falsas alarmas de la combinación de señales | `verification.ladder.mode`, `verification.mutation.mode: warn` | H35, H45 |
 | P24: 38 de 109 tareas con preguntas | Tareas sin criterios observables son bloqueadas por diseño | `harness do` | H43 |
@@ -170,15 +161,14 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   «cualquier señal»; si no se mejora se reporta como límite).
 - Se apoya en: `checks/suite_quality.py` (`tests.assertion-free`), `orchestration/ladder_mutation.py`
   (`tests.change-not-exercised`, `tests.weak`), `verification.testQuality`, `verification.mutation`.
-- Sesgos: casos escritos a medida de las reglas. Mitigación: incluir pruebas reales de los 90 workspaces de la
-  matriz 0.9.0 si se conservaron (no están en el repo; marcar «no disponible» si no).
+- Sesgos: casos escritos a medida de las reglas. Mitigación: incluir pruebas reales de los workspaces del
+  bloque A de 2.0.0 cuando existan (marcar «no disponible» si no).
 
 **H03 Secretos: formas y contexto, incluida la contraseña de desarrollo declarada** — Esfuerzo S · Modelo: 0 (variante con modelo en H25)
 
-- Hipótesis: 2.0.0 detecta la contraseña de desarrollo que 0.9.0 aprobó (3/13) y los formatos usuales de secreto;
+- Hipótesis: 2.0.0 detecta la contraseña de desarrollo declarada en la especificación y los formatos usuales de secreto;
   D\* los entrega todos.
-- Beneficio: intercepción; corrige con evidencia el único resultado de 0.9.0 donde el harness no superó al directo
-  en seguridad.
+- Beneficio: intercepción; mide con evidencia el caso de seguridad más difícil del escenario `alerts`.
 - Condiciones: D\*; H (`verification.secrets: context`); H-core; H-ablated(`verification.secrets: off` si el valor
   existe; si no, quitar el check).
 - Método: 30 casos: credencial literal en fuente, en prueba, en `os.environ[...] = ...`, en `monkeypatch.setenv`,
@@ -188,7 +178,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Métricas: detección por forma (`secrets.credential`, `secrets.credential-format`, `secrets.declared-value`,
   `secrets.environment-assignment`, `secrets.constant`, `secrets.test-credential`, `secrets.test-dummy`),
   severidad asignada, bloqueo del gate, falsos positivos en los señuelos.
-- Criterio: la contraseña declarada se detecta en ≥ 95 % de sus variantes (0.9.0: 3 de 13 aprobadas); 0 falsos
+- Criterio: la contraseña declarada se detecta en ≥ 95 % de sus variantes; 0 falsos
   bloqueos en señuelos.
 - Se apoya en: `checks/secrets.py:scan_secrets`; clave `verification.secrets`; escenario `evaluation/fixtures/greenfield-alerts`,
   constante `SECRET_LITERAL` de `evaluation/measure.py`.
@@ -232,8 +222,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: una importación nueva que viola las capas aprobadas es entregada por D\* y bloqueada por H; con
   `architecture.layerCheck: differential` no se culpa al cambio de importaciones que la línea base ya tenía.
-- Beneficio: intercepción de erosión arquitectónica y reducción de falsos positivos (el piloto de la ola 9 mostró
-  uno: `results-2.0.0/pilot-wave9/README.md`).
+- Beneficio: intercepción de erosión arquitectónica y reducción de falsos positivos.
 - Condiciones: D\*; H `layerCheck: differential`; H con comportamiento anterior (clave ausente); H sin
   `architecture.enforce`.
 - Método: 5 clases (violación nueva, violación preexistente intacta, violación preexistente tocada, archivo nuevo
@@ -334,7 +323,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: un agente que reescribe las pruebas de aceptación aprobadas es detectado y revertido; una prueba
   errónea congelada se puede disputar con digest.
-- Beneficio: intercepción de «agente cambia el juez»; en el piloto de la ola 9 ocurrió (`acceptance.modified`).
+- Beneficio: intercepción de «agente cambia el juez» (`acceptance.modified`).
 - Condiciones: H con `verification.acceptanceTests.protect: true` y `disputes: person`; H con ambos apagados;
   D\* (no tiene pruebas de aceptación congeladas).
 - Método: fixture que reescribe los archivos (3 casos), deja uno intacto, lista una prueba disputada; flujo
@@ -388,8 +377,8 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Condiciones: corridas `direct` y `harness` del bloque A (post-hoc).
 - Método: un script `trace_posthoc.py` (por crear) lee cada workspace final y calcula: requisitos con prueba que
   nombra su id, criterios con prueba, decisión ligada al digest (solo harness).
-- Métricas: fracción de requisitos con prueba nombrada, relaciones de `harness_state.trace_completeness` (8 relaciones
-  de 0.9.0 y las de 2.0.0).
+- Métricas: fracción de requisitos con prueba nombrada, relaciones de `harness_state.trace_completeness` (las 8 relaciones
+  base y las de 2.0.0).
 - Criterio: se reporta la fracción por condición; la hipótesis se cumple si harness ≥ directo en cada celda.
 - Se apoya en: `validators/traceability.py` (`traceability.requirement-untested`), `evaluation/harness_state.py`,
   `verification.requirementTraceability`.
@@ -512,7 +501,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Criterio: 15/15 detectadas; 0 respuestas fuera de tope llegan al padre en `enforce`.
 - Se apoya en: `agents/contract.py:check_answer,_field_problems,limit_summary`, `limits.summaryChars/resultBytes/fieldChars`,
   `runtime.contractRetry`, evento `agent.call.contract-retry`.
-- Sesgos: respuestas sintéticas. Mitigación: añadir las respuestas malformadas observadas en los pilotos.
+- Sesgos: respuestas sintéticas. Mitigación: añadir las respuestas malformadas observadas en el piloto de 2.0.0.
 
 **H24 Contexto excesivo en repos grandes** — Esfuerzo M · Modelo: 0
 
@@ -682,8 +671,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: `verification.principles` detecta duplicación, símbolos públicos sin uso, funciones largas y regresión
   del trabajo de limpieza sin bloquear reformateos.
-- Beneficio: calidad; el directo en 0.9.0 introdujo hallazgos de Ruff (`ruffIntroduced`, p. ej. 14 en Haiku greenfield
-  directo, `summary.json`).
+- Beneficio: calidad; se mide con los hallazgos de Ruff que cada condición introduce (`ruffIntroduced`).
 - Condiciones: H `principles.mode: enforce`; H off; D\*.
 - Método: 20 casos sembrados y 10 reformateos puros (`principles.boy-scout.reformat-only`).
 - Métricas: detección por regla, falsos positivos en reformateos.
@@ -700,8 +688,8 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 - Beneficio: decide con datos cuándo usar carril rápido o gobierno completo.
 - Condiciones: D\*; H completo; H carril rápido; H carril rápido + `--pre-approve`; 9 tareas (3 por tamaño).
 - Método: ampliar `friction.py` a tareas M y L; registrar comandos tecleados, llamadas por tipo, tokens estimados,
-  interacciones y segundos del proceso (sin tiempo humano). Proyección: sumar la mediana de IMPLEMENTATION de
-  `summary-phases.json` (88.524 s) como tiempo de agente y calcular el costo relativo; marcar la proyección.
+  interacciones y segundos del proceso (sin tiempo humano). Proyección: sumar la mediana de IMPLEMENTATION medida en el bloque A de 2.0.0
+  como tiempo de agente y calcular el costo relativo; marcar la proyección.
 - Métricas: sobrecarga absoluta y relativa por tamaño y modo; tamaño de equilibrio donde la sobrecarga < 10 %
   del tiempo del agente (umbral propuesto).
 - Criterio: se publica la tabla; la recomendación de modo sale de la tabla, no se fija antes.
@@ -812,8 +800,8 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 **H45 Falsos positivos y carga de revisión en cambios limpios** — Esfuerzo M · Modelo: 0
 
 - Hipótesis: en cambios correctos el harness produce pocos hallazgos bloqueantes; los que aparecen se reportan.
-- Beneficio: honestidad sobre fricción; el piloto de la ola 9 tuvo `architecture.layer-violation` y
-  `ratchet.regressed` sobre un cambio correcto.
+- Beneficio: honestidad sobre fricción: reportar los bloqueos (p. ej. `architecture.layer-violation`, `ratchet.regressed`)
+  sobre cambios correctos.
 - Condiciones: H; H-core; 30 cambios limpios (soluciones de referencia de `evaluation/reference/` y los casos limpios
   de los corpus).
 - Método: ejecutar H; contar hallazgos por severidad y regla.
@@ -957,20 +945,19 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 1. **Fase 0, sin modelo (re-ejecución sobre la rueda 2.0.0).** Instalar la rueda, correr las suites de
    `results-2.0.0/deterministic/README.md` («Re-running on the v2.0.0 wheel»): P03, P04, P06, P07, N16, P08/N13/N12,
-   N01-a, N02-a, N03-a, N04, P24, y el dry run (`evaluation/dry_run.py`). Compara contra los resultados de la ola 9
+   N01-a, N02-a, N03-a, N04, P24, y el dry run (`evaluation/dry_run.py`). Compara contra los resultados deterministas de la ola 9
    y reporta cada diferencia (en particular `later-change`).
 2. **Fase 1, nuevas deterministas por orden de §3.2**, con corpus y criterios congelados antes (§4).
 3. **Fase 2, piloto con Haiku, máximo 6 corridas**: las 5 de `launchers/pilot.sh` (brownfield: direct, harness-core,
-   harness, harness-anchored y casual×harness) y 1 corrida de repuesto para una cortada por el límite de uso
-   (como en `pilot-wave9/README.md`). Puerta de paso a la fase 3 (propuesta): las corridas gobernadas con la
+   harness, harness-anchored y casual×harness) y 1 corrida de repuesto para una cortada por el límite de uso. Puerta de paso a la fase 3 (propuesta): las corridas gobernadas con la
    configuración `init` llegan a DECISION o el bloqueo tiene una causa registrada que no es un defecto del
    adaptador; si falla, se corrige y se reporta (no se oculta).
 4. **Fase 3, bloques con modelo real**, en este orden y con revisión entre bloques:
 
 | Orden | Bloque | Corridas | Comentario de costo |
 |---:|---|---|---|
-| 1 | A (P09+P10+N10) | 72 (54 + 18 anclado) | referencia de costo por corrida: 0.9.0 mediana por celda 0.05–0.44 USD (`summary.json`); el piloto de la ola 9 registró 1.97 USD en una corrida anclada |
-| 2 | D (P13+P20+N01-b) | 27 sesiones de 5 incrementos | 0.9.0: medianas 0.39–1.53 USD por sesión gobernada |
+| 1 | A (P09+P10+N10) | 72 (54 + 18 anclado) | el costo por corrida se mide en esta campaña (sin referencia de versiones anteriores) |
+| 2 | D (P13+P20+N01-b) | 27 sesiones de 5 incrementos | el costo por sesión se mide en esta campaña |
 | 3 | B (P11+N09+N11) | 162, de las cuales 27 terminan en rechazo sin modelo | arrancar con un modelo y un escenario y decidir |
 | 4 | N08 embebido | 6 | brownfield |
 | 5 | Nuevos con modelo: H21 (6), H25 (6), H08-modelo (6), H29 (6), H30 (6), H26 (120 llamadas de solo lectura), H34 (69 invocaciones de panel + 69 autorrevisiones), H54 opcional (6) | ≈ 36 corridas + 120 llamadas + 138 invocaciones | solo Haiku, salvo H29 con Sonnet |
@@ -993,7 +980,7 @@ Impacto 1–5 (aporte al capítulo de la tesis) sobre esfuerzo (S=1, M=2, L=3); 
 
 | # | Prueba | Impacto | Esfuerzo | Por qué primero |
 |---:|---|---:|---|---|
-| 1 | H03 Secretos (formas y contraseña declarada) | 5 | S | Cierra el único resultado desfavorable de seguridad de 0.9.0 (3 de 13 aprobadas) con evidencia de 2.0.0 |
+| 1 | H03 Secretos (formas y contraseña declarada) | 5 | S | Mide con evidencia de 2.0.0 el caso de seguridad de la contraseña declarada |
 | 2 | H01 Prueba borrada, debilitada o silenciada | 5 | S | Defecto clásico de agentes; D\* lo entrega, el harness lo bloquea o no: se sabe en un día |
 | 3 | H22 Bytes y tokens por tipo de llamada | 4 | S | Mide el contexto mínimo (ola 11) sin modelo y sustenta la mitigación de costo |
 | 4 | H18 Agente que no converge | 4 | S | Control de recursos medible con el fixture existente |
@@ -1013,22 +1000,21 @@ Siguientes: H04, H09, H15, H37, H43, H19, H02.
    fecha y el commit del código de evaluación (`evaluation/environment.py` ya calcula un `codeDigest`). Los
    umbrales de §2 son propuestas hasta que se congelen.
 2. **Se reportan todas las corridas.** Ninguna corrida se descarta por desfavorable. Solo se admiten exclusiones
-   técnicas con causa escrita y registro aparte (como `pilot.invalid.jsonl`, el límite de uso en
-   `run_matrix.py` con `LIMIT_EXIT_CODE = 75` y la exclusión de la sesión de Haiku sin importar el paquete en
-   `docs/evaluation/results.md`). Los resultados desfavorables se conservan en el mismo archivo y con el mismo
+   técnicas con causa escrita y registro aparte (como el límite de uso en `run_matrix.py` con
+   `LIMIT_EXIT_CODE = 75`). Los resultados desfavorables se conservan en el mismo archivo y con el mismo
    formato; el capítulo cita las cifras de costo junto a las de beneficio (§1.3).
 3. **La persona simulada se declara como simulación** en toda tabla y párrafo que dependa de ella
    (`human.product-owner-simulated` y `human.reviewer-simulated`, `evaluation/README.md`, «The simulated person»).
    Sesgos conocidos: conoce la tarea completa y la especificación (a favor del harness en la fase de aclaración);
-   aprueba pruebas sin evaluar su contenido (observado en el piloto de la ola 9); no consume tiempo humano (el
+   puede aprobar pruebas sin evaluar su contenido; no consume tiempo humano (el
    costo de las interacciones se reporta por conteo y con un análisis de sensibilidad de minutos por interacción
    etiquetado como supuesto).
 4. **El directo-equivalente (D\*) no es un agente.** Toda conclusión sobre «lo que entregaría el agente directo»
    obtenida con D\* se rotula como tal; la comparación con agentes reales es la de los bloques A, B y D.
 5. **Estadística descriptiva.** Con 3 a 5 repeticiones por celda no se hacen pruebas de significación; se
    reportan n, mínimo, mediana y máximo (como `report.py --v2`) e intervalos de Wilson para proporciones.
-6. **Una versión, un entorno.** No se mezclan cifras de 0.9.0 con las de 2.0.0 (`evaluation/README.md`, «The 2.0.0
-   evaluation»); cada resultado guarda `environment.json` con versión, SHA-256 de la rueda y plataforma; todo se
+6. **Una versión, un entorno.** La evaluación reporta solo la 2.0.0: no se mezclan cifras de otras versiones
+   (`evaluation/README.md`, «The 2.0.0 evaluation»); cada resultado guarda `environment.json` con versión, SHA-256 de la rueda y plataforma; todo se
    corre sobre la rueda 2.0.0 y se registra el commit.
 7. **Claves de configuración exactas.** Cada condición guarda su `project.yaml` y su resumen de configuración
    (`projectConfig`, `grantCheck`, `coreCheck`) como en `conditions.py`.

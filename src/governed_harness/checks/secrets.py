@@ -17,6 +17,7 @@ from governed_harness.domain.enums import FindingSeverity
 from .model import DiffFile, Issue, is_test_path
 
 CATEGORY = "security"
+_CREDENTIAL_RULE = "secrets.credential"
 
 # ----- values --------------------------------------------------------------------------------
 _DUMMY_WORDS = frozenset(
@@ -43,8 +44,9 @@ _DUMMY_WORDS = frozenset(
     }
 )
 _DUMMY_PREFIX = re.compile(r"(?:test|dummy|fake|example|sample|mock)[\w.-]*")
-_PLACEHOLDER = re.compile(
-    r"\$\{[^}]*\}|\{\{[^}]*\}\}|\{[A-Za-z_][\w.]*(?:![rsa])?(?::[^{}]*)?\}|\{\}|%(?:\([^)]*\))?[sdr]"
+_PLACEHOLDER = (
+    re.compile(r"\$\{[^}]*\}|\{\{[^}]*\}\}|\{\}|%(?:\([^)]*\))?[sdr]"),
+    re.compile(r"\{[A-Za-z_][\w.]*(?:![rsa])?(?::[^{}]*)?\}"),
 )
 _MIN_SECRET_LENGTH = 6
 
@@ -74,7 +76,7 @@ def is_dummy_value(value: str) -> bool:
         or re.fullmatch(r"x+", lowered) is not None
         or re.fullmatch(r"\*+", stripped) is not None
         or re.fullmatch(r"<[^<>]*>", stripped) is not None
-        or _PLACEHOLDER.search(stripped) is not None
+        or any(pattern.search(stripped) for pattern in _PLACEHOLDER)
         or len(stripped) < _MIN_SECRET_LENGTH
     )
 
@@ -84,7 +86,7 @@ def _is_template(value: str, prefix: str) -> bool:
     stripped = value.strip()
     return (
         ("f" in prefix.lower() and "{" in stripped)
-        or _PLACEHOLDER.search(stripped) is not None
+        or any(pattern.search(stripped) for pattern in _PLACEHOLDER)
         or re.fullmatch(r"<[^<>]*>", stripped) is not None
     )
 
@@ -299,7 +301,7 @@ def _graded(
             _TEST_RECOMMENDATION,
         )
     else:
-        test_rule = "secrets.test-credential" if rule == "secrets.credential" else rule
+        test_rule = "secrets.test-credential" if rule == _CREDENTIAL_RULE else rule
         collector.add(test_rule, FindingSeverity.MEDIUM, message, path, line, _TEST_RECOMMENDATION)
 
 
@@ -376,7 +378,7 @@ def _named_credentials(
         named = True
         _graded(
             collector,
-            "secrets.credential",
+            _CREDENTIAL_RULE,
             f"{name!r} is assigned",
             value,
             prefix,
@@ -388,7 +390,7 @@ def _named_credentials(
         named = True
         _graded(
             collector,
-            "secrets.credential",
+            _CREDENTIAL_RULE,
             f"{function}() receives a positional string",
             value,
             prefix,

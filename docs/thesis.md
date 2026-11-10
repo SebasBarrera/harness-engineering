@@ -18,7 +18,9 @@ and its evaluation is formative and descriptive (no statistical generalization).
 
 The thesis documents the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
 which reproduces it byte for byte (see [provenance](provenance.md)), and runs its
-[controlled evaluation](evaluation/results.md) on `v0.9.0`. `v0.8.1` adds
+[controlled evaluation](evaluation/results.md) only on `v2.0.0` (campaign in progress,
+`evaluation/campaign/`); results of earlier versions are in the git history and the `v0.8.0` tag
+and are not part of that analysis. `v0.8.1` adds
 infrastructure, documentation and quality fixes without behavior change. `v0.9.0` fixes seven
 behavioral defects; the only difference visible in the thesis cases is the brownfield closure, which
 is now a plain `APPROVE` instead of an `APPROVE_EXCEPTION` (see the
@@ -45,7 +47,6 @@ state of `develop`):
 | Ruff 0.16.5 | 140 findings in `src`, 11 in `tests` (60 F401, 40 B008) |
 | Mypy strict | package mode blocked by the missing `py.typed`; 54 errors in 15 files on sources |
 | Wheel in a clean environment | installs its runtime dependencies (18 counted during publication) and `harness` runs |
-| Governed-process overhead | 10.09 % and 11.23 % in two runs, about 1.2 ms |
 | Exit codes | 0, 1, 2, 3, 4, 5, 6, 130 |
 | Brownfield case | `pallets/itsdangerous` 2.2.0; baseline broken by a missing `freezegun`; 298 tests after installing it; ChangeSet digest invariant |
 
@@ -56,4 +57,4 @@ The re-verification of these figures during publication is recorded in the
 
 Use the citation metadata in [`CITATION.cff`](https://github.com/SebasBarrera/harness-engineering/blob/develop/CITATION.cff)
 (GitHub shows a "Cite this repository" button), and cite the version you used, for example
-`v0.8.0` for the documented cut or `v0.9.0` for the controlled evaluation.
+`v0.8.0` for the documented cut or `v2.0.0` for the controlled evaluation.
