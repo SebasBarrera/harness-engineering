@@ -75,7 +75,9 @@ def test_c0_texts_come_from_the_templates() -> None:
 
 
 def test_c0_is_deterministic() -> None:
-    assert assess_intent(pending_task()) == assess_intent(pending_task())
+    first = assess_intent(pending_task())
+    second = assess_intent(pending_task())
+    assert first == second
 
 
 def test_c0_subsumes_t1() -> None:
