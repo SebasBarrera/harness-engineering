@@ -161,10 +161,20 @@ class AgentContractFlow:
             for item in events
             if item.event_type == RECORD_EVENT and item.payload.get("callKind") == kind
         ]
+        config = self.config or AgentContractConfig()
+        # #149: what the parent receives instead of a call, as a response contract.
+        response = AgentCallResponse(
+            call_kind=cast(CallKind, kind),
+            iteration=max(1, used),
+            final_status="ITERATIONS_EXHAUSTED",
+            summary=limit_summary(message, config.summary_chars)[0],
+        )
         record = {
             "callKind": kind,
             "used": used,
             "max": cap,
+            "finalStatus": response.final_status,
+            "response": response.model_dump(mode="json", by_alias=True),
             "iterations": history,
             "possibleCauses": list(POSSIBLE_CAUSES),
             "recommendation": RECOMMENDATION,

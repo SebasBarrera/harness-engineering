@@ -55,7 +55,7 @@ Lo que el padre recibe de una llamada es una respuesta con este contrato
 | Campo | Para qué sirve |
 |---|---|
 | `contractVersion`, `callKind`, `iteration` | Versión, tipo de llamada y número de iteración (obligatorios). |
-| `finalStatus` | Estado final de la ejecución (obligatorio): `PASSED`, `FAILED`, `BLOCKED`, `ERROR`, `CANCELLED`, `LIMIT_REACHED` (se alcanzó un límite), `CONTRACT_VIOLATION` (la respuesta rompió el contrato) o `ITERATIONS_EXHAUSTED`. |
+| `finalStatus` | Estado final de la ejecución (obligatorio): `PASSED`, `FAILED`, `BLOCKED`, `ERROR`, `CANCELLED`, `LIMIT_REACHED` (se alcanzó un límite), `CONTRACT_VIOLATION` (la respuesta rompió el contrato) o `ITERATIONS_EXHAUSTED` (el agente agotó su tope de iteraciones y no se hizo la llamada; lo escribe el harness en el evento `agent.iterations.exhausted`, ningún proveedor lo devuelve). |
 | `summary` | Resumen acotado (obligatorio). |
 | `status` | Estado que reportó el agente (`PASSED`, `FAILED` o `BLOCKED`), si reportó alguno. |
 | `result` | El resultado mínimo. Solo existe si la llamada terminó en `PASSED`. |

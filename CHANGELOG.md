@@ -43,6 +43,9 @@
   - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
     corrections, contract retries, escalations and calls cut by a limit count; at the cap the
     phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+    The event and its `agent-iteration-cap` evidence carry the response the parent gets
+    instead of a call, with `finalStatus: ITERATIONS_EXHAUSTED` (#149; before, no code wrote
+    that status of the response schema).
   - Token budget and time limit per call from the router's S/M/L size (starting values, to be
     calibrated): the time limit stops the process, the token budget is checked on the usage the
     provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
