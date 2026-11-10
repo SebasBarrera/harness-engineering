@@ -18,7 +18,12 @@ class SecretRedactor:
     _RULES: tuple[tuple[str, re.Pattern[bytes], bytes], ...] = (
         (
             "authorization_header",
-            re.compile(rb"(?im)^(authorization\s*:\s*)([^\r\n]+)$"),
+            # The value starts after the blanks; when no such value ends its line, it is the
+            # last blank before a line end.
+            re.compile(
+                rb"(?im)^(authorization\s*:(?:\s*(?=\S[^\r\n]*$)|\s*(?=[^\S\r\n]$)))"
+                rb"(\S[^\r\n]*|[^\S\r\n])$"
+            ),
             rb"\1<REDACTED>",
         ),
         (

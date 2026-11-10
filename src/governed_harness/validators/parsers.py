@@ -302,7 +302,10 @@ _RUFF_CONCISE = re.compile(
     r"^(?P<path>[^\s:][^:]*):(?P<line>\d+):(?P<col>\d+): (?P<rule>[A-Z]+\d+) (?:\[\*\] )?(?P<msg>.+)$"
 )
 _RUFF_FULL_HEAD = re.compile(r"^(?P<rule>[A-Z]+\d+) (?:\[\*\] )?(?P<msg>.+)$")
-_RUFF_FULL_ARROW = re.compile(r"^\s*-->\s*(?P<path>[^:]+):(?P<line>\d+):(?P<col>\d+)\s*$")
+# The path starts after the blanks, or is the last blank itself when a colon follows them.
+_RUFF_FULL_ARROW = re.compile(
+    r"^\s*-->\s*(?P<path>[^\s:][^:]*|\s(?=:)):(?P<line>\d+):(?P<col>\d+)\s*$"
+)
 _MYPY = re.compile(
     r"^(?P<path>[^\s:][^:]*\.pyi?):(?P<line>\d+)(?::\d+)?: (?P<level>error|warning|note): "
     r"(?P<msg>.+?)(?:\s+\[(?P<code>[a-z0-9-]+)\])?$"

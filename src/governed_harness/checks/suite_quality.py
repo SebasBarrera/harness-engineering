@@ -228,7 +228,7 @@ def changed_line_coverage(
 
 # ----- pytest node ids -----------------------------------------------------------------------
 _SUMMARY_ID = re.compile(r"^(?:FAILED|ERROR)\s+(\S+::\S+)", re.MULTILINE)
-_VERBOSE_ID = re.compile(r"^(\S+::\S+)\s+(?:FAILED|ERROR)\b", re.MULTILINE)
+_VERBOSE_ID = re.compile(r"^(?=\S+::\S)(\S+)\s+(?:FAILED|ERROR)\b", re.MULTILINE)
 
 
 def pytest_node_ids(text: str) -> list[str]:

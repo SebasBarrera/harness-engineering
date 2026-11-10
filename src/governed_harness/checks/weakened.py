@@ -77,7 +77,9 @@ _NOT_A_RUN = re.compile(
 )
 
 # ----- error handling ------------------------------------------------------------------------
-_EXCEPT = re.compile(r"^\s*except\s*(?::|\(?\s*(?:Exception|BaseException)\b[^:]*:)(?P<rest>.*)$")
+_EXCEPT = re.compile(
+    r"^\s*except\s*(?::|(?:\(\s*)?(?:Exception|BaseException)\b[^:]*:)(?P<rest>.*)$"
+)
 _SWALLOW = re.compile(r"^(?:pass|\.\.\.|continue|return|return\s+None)\s*(?:#.*)?$")
 _ERROR_TO_SUCCESS = re.compile(
     r"\|\|\s*true\b|\|\|\s*exit\s+0\b|continue-on-error:\s*true\b|--exit-zero\b"

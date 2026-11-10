@@ -305,7 +305,7 @@ _SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")
 _PATH = re.compile(r"(?:^|[\s(])\.{0,2}/?[\w.-]+/[\w./-]+")
 _FILE = re.compile(rf"\b[\w-]+\.(?:{_FILE_EXTENSIONS})\b")
 _CAMEL = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b")
-_TRAILING = re.compile(r"[\s.!?;:,]+$")
+_TRAILING = re.compile(r"(?<![\s.!?;:,])[\s.!?;:,]+$")
 _SPACE = re.compile(r"\s+")
 
 

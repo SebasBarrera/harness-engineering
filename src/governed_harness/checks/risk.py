@@ -85,7 +85,12 @@ _PYPROJECT_INLINE = re.compile(
     rf"^\s*dependencies\s*=\s*\[\s*[\"']{_REQUIREMENT}"
     rf"|^\s*[\w-]+\s*=\s*\[\s*[\"']{_REQUIREMENT}\s*(?:[<>=!~]=?|;|@)"
 )
-_KEY_VERSION = re.compile(r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*(?P<value>.+?)\s*,?\s*$")
+# The value ends at its last character before the trailing ``\s*,?\s*`` (a comma also stays
+# in the value when another comma follows it); only an all-blank value keeps one blank.
+_KEY_VERSION = re.compile(
+    r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*"
+    r"(?P<value>\S(?:[^\n]*[^\s,])?(?:[^\S\n]*,(?=\s*,))*|[^\S\n](?=\n*$))\s*(?:,\s*)?$"
+)
 _VERSION_VALUE = re.compile(
     r"^(?:[\"'](?:[\^~<>=*]|\d|latest\b|workspace:|file:|git\+|npm:)"
     r"|\{[^}]*\b(?:version|git|path|url)\s*=)"
