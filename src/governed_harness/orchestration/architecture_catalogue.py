@@ -148,7 +148,7 @@ def render_recommendation(options: list[dict[str, Any]], project_kind: dict[str,
         "## How to decide",
         "",
         "- Accept the recommendation: `harness architecture decide --option <recommended id> "
-        "--digest <digest> --rationale <why>`.",
+        + "--digest <digest> --rationale <why>`.",
         "- Choose another option of the list with its id.",
         f"- Choose any style of the catalogue with `--style <style>` ({styles}).",
         "",

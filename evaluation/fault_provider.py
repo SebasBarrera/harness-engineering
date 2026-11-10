@@ -162,7 +162,7 @@ def log_call(args: argparse.Namespace, record: dict[str, Any]) -> None:
         with (Path(args.log_dir) / "calls.jsonl").open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
     except OSError:
-        pass
+        pass  # the call log is only a record for the experiment: the reply does not depend on it
 
 
 def whole_task_plan(request: dict[str, Any]) -> dict[str, Any]:

@@ -47,7 +47,7 @@ from governed_harness.orchestration.acceptance import ACCEPTANCE_ID, AcceptanceT
 from governed_harness.orchestration.engine_types import PhaseOutcome
 
 if TYPE_CHECKING:
-    from governed_harness.orchestration.agent_results import AgentResults
+    from governed_harness.orchestration.hosts import ResultsHost
 
 DISPUTE_FLAG = "acceptdispute"
 RESUME_FLAG = "acceptresume"
@@ -76,7 +76,7 @@ def decide_command(execution_id: str, digest: str) -> str:
 
 
 class AcceptanceDisputes:
-    def __init__(self, results: AgentResults, acceptance: AcceptanceTests) -> None:
+    def __init__(self, results: ResultsHost, acceptance: AcceptanceTests) -> None:
         self.results = results
         self.acceptance = acceptance
 

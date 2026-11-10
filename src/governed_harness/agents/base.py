@@ -37,36 +37,61 @@ class AgentContext(Protocol):
     """Read-only execution context the engine hands to every agent provider."""
 
     @property
-    def execution_id(self) -> str: ...
+    def execution_id(self) -> str:
+        """The identifier of the execution the agent works for."""
+
     @property
-    def workspace(self) -> Any: ...
+    def workspace(self) -> Any:
+        """The workspace the agent works in."""
+
     @property
-    def grants(self) -> list[CapabilityGrant]: ...
+    def grants(self) -> list[CapabilityGrant]:
+        """The capability grants the agent holds for this execution."""
+
     @property
-    def artifact_store(self) -> LocalArtifactStore: ...
+    def artifact_store(self) -> LocalArtifactStore:
+        """The store where the agent records its artifacts."""
+
     @property
-    def process_runner(self) -> SafeProcessRunner: ...
+    def process_runner(self) -> SafeProcessRunner:
+        """The runner that executes the commands the agent is allowed to launch."""
+
     @property
-    def patch_applier(self) -> PatchApplier: ...
+    def patch_applier(self) -> PatchApplier:
+        """The applier that writes the changes of the agent into the workspace."""
+
     @property
-    def provenance(self) -> Provenance: ...
+    def provenance(self) -> Provenance:
+        """The provenance recorded for everything the agent produces."""
+
     @property
-    def timeout_seconds(self) -> int: ...
+    def timeout_seconds(self) -> int:
+        """The time limit of the call, in seconds."""
+
     @property
-    def max_output_bytes(self) -> int: ...
+    def max_output_bytes(self) -> int:
+        """The largest output the call may produce, in bytes."""
+
     @property
-    def cancellation(self) -> CancellationToken: ...
+    def cancellation(self) -> CancellationToken:
+        """The token that tells the agent the call was cancelled."""
+
     @property
-    def context_manifest_ref(self) -> str | None: ...
+    def context_manifest_ref(self) -> str | None:
+        """The reference of the context manifest of the call, or ``None``."""
+
     @property
-    def memory_context(self) -> dict[str, Any] | None: ...
+    def memory_context(self) -> dict[str, Any] | None:
+        """The project memory the call may read, or ``None``."""
+
     @property
-    def feedback(self) -> dict[str, Any] | None: ...
+    def feedback(self) -> dict[str, Any] | None:
+        """The feedback of the previous attempt, or ``None`` on the first one."""
+
     @property
     def request_extra(self) -> dict[str, Any] | None:
         """Keys the agent-results settings add to the request (gate contract, permissions,
         context manifest, lessons, budget, routing); ``None`` keeps the 1.0 request."""
-        ...
 
 
 @dataclass(frozen=True)
@@ -82,9 +107,11 @@ class AgentCallResult:
 class AgentProvider(Protocol):
     provider_id: str
 
-    def capabilities(self) -> tuple[str, ...]: ...
+    def capabilities(self) -> tuple[str, ...]:
+        """The capabilities the provider declares."""
 
-    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult: ...
+    def implement(self, task: Task, plan: Plan, context: AgentContext) -> AgentExecutionResult:
+        """Implement the plan of the task in the workspace and return the outcome."""
 
     def call(
         self,
@@ -93,4 +120,5 @@ class AgentProvider(Protocol):
         context: AgentContext,
         *,
         phase_id: PhaseId,
-    ) -> AgentCallResult: ...
+    ) -> AgentCallResult:
+        """Make a ``clarify``, ``review`` or ``plan`` call and return its outcome."""

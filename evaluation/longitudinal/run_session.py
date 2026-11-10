@@ -34,10 +34,8 @@ sys.path.insert(0, str(HERE.parent))
 
 import agentlib  # noqa: E402
 import run_eval  # noqa: E402
-from agentlib import build_prompt, call_records, load_calls, run_claude  # noqa: E402
 from measure import _bandit, _ruff  # noqa: E402
 from product_owner import ProductOwner  # noqa: E402
-from run_eval import git, run_harness  # noqa: E402
 
 INCREMENTS = yaml.safe_load((HERE / "increments.yaml").read_text(encoding="utf-8"))
 HIDDEN = HERE / "hidden" / "test_hidden_inventory.py"
@@ -54,9 +52,9 @@ def prepare(workspace: Path, site_packages: Path) -> None:
     (site_packages / "zz_eval_workspace.pth").write_text(
         str(workspace / "src") + "\n", encoding="utf-8"
     )
-    git(workspace, "init", "-q")
-    git(workspace, "add", "-A")
-    git(workspace, "commit", "-qm", "baseline")
+    run_eval.git(workspace, "init", "-q")
+    run_eval.git(workspace, "add", "-A")
+    run_eval.git(workspace, "commit", "-qm", "baseline")
 
 
 def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
@@ -119,7 +117,7 @@ def failing(result: dict[str, Any], parts: list[str]) -> list[str]:
 
 
 def calls_since(calls_dir: Path, start: int) -> list[dict[str, Any]]:
-    return load_calls(calls_dir)[start:]
+    return agentlib.load_calls(calls_dir)[start:]
 
 
 def usage(calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -256,16 +254,16 @@ def main() -> int:
         kind: str, increment: dict[str, Any], text: str | None, task: dict[str, Any] | None
     ) -> dict[str, Any]:
         (run_dir / "feedback.md").unlink(missing_ok=True)
-        before = len(call_records(calls_dir))
+        before = len(agentlib.call_records(calls_dir))
         t0 = time.monotonic()
         step: dict[str, Any] = {"increment": increment["id"], "kind": kind}
         if args.condition == "baseline":
-            run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
+            agentlib.run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
         elif args.condition == "structured":
-            prompt = build_prompt(
+            prompt = agentlib.build_prompt(
                 {"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})}
             )
-            run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
+            agentlib.run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
         else:
             task_file = run_dir / f"task-{increment['id']}-{kind}.yaml"
             task_file.write_text(
@@ -276,7 +274,7 @@ def main() -> int:
                 encoding="utf-8",
             )
             if args.condition == "harness-legacy":
-                outcome = run_harness(workspace, run_dir, task_file, args.model)
+                outcome = run_eval.run_harness(workspace, run_dir, task_file, args.model)
             else:
                 # The simulated product owner knows the increment's structured task and SPEC.md.
                 owner = ProductOwner(
@@ -287,7 +285,7 @@ def main() -> int:
                     args.model,
                     run_dir,
                 )
-                outcome = run_harness(
+                outcome = run_eval.run_harness(
                     workspace,
                     run_dir,
                     task_file,

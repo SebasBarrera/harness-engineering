@@ -22,31 +22,58 @@ class NormalizedResult:
 
 
 class ProjectDetector(Protocol):
-    def detect(self, workspace: Path) -> DetectionResult: ...
+    def detect(self, workspace: Path) -> DetectionResult:
+        """Detect the project in ``workspace`` (or whether the validator applies to ``context``)."""
 
 
 class TechnologyProfile(Protocol):
-    def capabilities(self) -> tuple[str, ...]: ...
-    def default_validators(self) -> tuple[str, ...]: ...
-    def default_commands(self) -> dict[str, tuple[str, ...]]: ...
-    def default_policies(self) -> dict[str, Any]: ...
+    def capabilities(self) -> tuple[str, ...]:
+        """The capabilities the extension declares."""
+
+    def default_validators(self) -> tuple[str, ...]:
+        """The identifiers of the validators the profile enables by default."""
+
+    def default_commands(self) -> dict[str, tuple[str, ...]]:
+        """The commands the profile uses by default, by name."""
+
+    def default_policies(self) -> dict[str, Any]:
+        """The policies the profile sets by default."""
 
 
 class Validator(Protocol):
-    def detect(self, context: dict[str, Any]) -> bool: ...
-    def execute(self, context: dict[str, Any]) -> Any: ...
-    def parse(self, raw_result: Any) -> Any: ...
-    def normalize(self, parsed_result: Any) -> NormalizedResult: ...
+    def detect(self, context: dict[str, Any]) -> bool:
+        """Detect the project in ``workspace`` (or whether the validator applies to ``context``)."""
+
+    def execute(self, context: dict[str, Any]) -> Any:
+        """Run the validator on ``context`` and return its raw result."""
+
+    def parse(self, raw_result: Any) -> Any:
+        """Parse the raw result of the validator."""
+
+    def normalize(self, parsed_result: Any) -> NormalizedResult:
+        """Normalize the parsed result into a ``NormalizedResult``."""
 
 
 class AgentProvider(Protocol):
-    def capabilities(self) -> tuple[str, ...]: ...
-    def start(self, request: dict[str, Any]) -> str: ...
-    def resume(self, session: str) -> None: ...
-    def cancel(self, session: str) -> None: ...
-    def collect_events(self, session: str) -> list[dict[str, Any]]: ...
-    def collect_usage(self, session: str) -> dict[str, Any]: ...
+    def capabilities(self) -> tuple[str, ...]:
+        """The capabilities the extension declares."""
+
+    def start(self, request: dict[str, Any]) -> str:
+        """Start a session for ``request`` and return its identifier."""
+
+    def resume(self, session: str) -> None:
+        """Resume the session."""
+
+    def cancel(self, session: str) -> None:
+        """Cancel the session."""
+
+    def collect_events(self, session: str) -> list[dict[str, Any]]:
+        """Return the events the session produced."""
+
+    def collect_usage(self, session: str) -> dict[str, Any]:
+        """Return the resource usage of the session."""
 
 
 class Reporter(Protocol):
-    def render(self, execution: dict[str, Any], format: str) -> bytes: ...
+    def render(self, execution: dict[str, Any], format: str) -> bytes:
+        """Render ``execution`` in ``format`` as bytes."""

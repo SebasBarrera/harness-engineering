@@ -56,4 +56,5 @@ class ValidatorOutput:
 class Validator(Protocol):
     validator_id: str
 
-    def execute(self, context: ValidationContext) -> ValidatorOutput: ...
+    def execute(self, context: ValidationContext) -> ValidatorOutput:
+        """Run the validator on ``context`` and return its output."""

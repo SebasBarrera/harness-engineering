@@ -32,7 +32,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-from governed_harness.capabilities.authorizer import CapabilityDenied, command_in_scope
+from governed_harness.capabilities.denial import CapabilityDenied, command_in_scope
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.enums import ActorType
 from governed_harness.domain.models import Actor

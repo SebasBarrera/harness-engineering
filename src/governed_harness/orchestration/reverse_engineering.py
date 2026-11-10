@@ -109,9 +109,9 @@ def _render(
                 *[f"- `{name}`" for name in FILES[1:]],
                 "",
                 "The harness did this analysis once. Agents read these documents instead of "
-                "analysing the project again. To redo it after the project changed materially, "
-                "run `harness architecture refresh`: the next run surveys the project again "
-                "and rewrites them.",
+                + "analysing the project again. To redo it after the project changed materially, "
+                + "run `harness architecture refresh`: the next run surveys the project again "
+                + "and rewrites them.",
             ]
         ),
         "structure.md": "\n".join(
@@ -146,9 +146,9 @@ def _render(
                 *_bullets(docs["guidance"]),
                 "",
                 "- Read these documents before searching the code; do not analyse the whole "
-                "project again.",
+                + "project again.",
                 "- Respect the architecture rules the project approved; a change that needs "
-                "another structure goes through a person.",
+                + "another structure goes through a person.",
             ]
         ),
     }

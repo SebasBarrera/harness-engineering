@@ -186,7 +186,7 @@ def _bandit(paths: list[Path], cwd: Path) -> dict[str, int]:
         for issue in json.loads(proc.stdout or "{}").get("results", []):
             counts[issue["issue_severity"]] += 1
     except json.JSONDecodeError:
-        pass
+        pass  # bandit printed no JSON (it failed or was not installed): the counts stay at zero
     return counts
 
 

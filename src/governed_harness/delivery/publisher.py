@@ -39,7 +39,8 @@ class PublishError(HarnessError):
 
 
 class Transport(Protocol):
-    def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any: ...
+    def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+        """Send a REST request to ``path`` and return the decoded response."""
 
 
 @dataclass

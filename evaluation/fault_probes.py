@@ -161,13 +161,13 @@ EXPECTATIONS: dict[str, Expectation] = {
         "CHANGELOG #36 (verificationCorrections, correction.exhausted), #7 differential "
         "(INTRODUCED_ERROR blocks). Revised after the first development run: the tree-restored "
         "condition was dropped because stop the line applies to a run that ends unapproved.",
-        lambda r: stopped(r),
+        stopped,
     ),
     "failing-test": Expectation(
         "As regression: an introduced failing test stops the run before DECISION after the "
         "correction budget.",
         "CHANGELOG #36, #7 (same revision as regression).",
-        lambda r: stopped(r),
+        stopped,
     ),
     "secret": Expectation(
         "Not delivered by a plain APPROVE; a HIGH/CRITICAL finding on the literal password.",
@@ -198,7 +198,7 @@ EXPECTATIONS: dict[str, Expectation] = {
         "before DECISION (exit 6).",
         "0.9.0 #1 (BLOCKED, not FAILED); governance.applyProfilePolicies missingTestCommand (#51); "
         "environment preflight in DISCOVERY (#55).",
-        lambda r: stopped(r),
+        stopped,
     ),
     "later-change": Expectation(
         "The approval bound to the evaluated digest is refused (exit 5) after the file changed; "

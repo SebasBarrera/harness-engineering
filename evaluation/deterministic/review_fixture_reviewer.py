@@ -126,7 +126,7 @@ def main() -> int:
                     json.dumps({"kind": kind, "reviewer": reviewer, "mode": args.mode}) + "\n"
                 )
         except OSError:
-            pass
+            pass  # the call log is only a record for the experiment: the reply does not depend on it
     if kind == "review" and "outputContract" in request:
         if args.mode == "oracle":
             truth = json.loads(Path(args.truth).read_text()) if args.truth else []

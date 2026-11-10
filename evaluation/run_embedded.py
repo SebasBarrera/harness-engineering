@@ -46,7 +46,6 @@ import agentlib  # noqa: E402
 import conditions  # noqa: E402
 import harness_state  # noqa: E402
 import run_eval  # noqa: E402
-from agentlib import allocate_call, build_prompt, load_calls  # noqa: E402
 from measure import measure  # noqa: E402
 from person import SimulatedPerson  # noqa: E402
 from product_owner import ProductOwner  # noqa: E402
@@ -122,7 +121,7 @@ class HostSession:
             command, self.workspace, self.model, agentlib.AGENT_TIMEOUT_SECONDS
         )
         record.update({"kind": "host-session", "segment": len(self.segments) + 1})
-        log = allocate_call(self.run_dir / "session-calls")
+        log = agentlib.allocate_call(self.run_dir / "session-calls")
         log.write_text(json.dumps(record, indent=2), encoding="utf-8")
         log.with_suffix(".stderr.txt").write_text(stderr[-20000:], encoding="utf-8")
         log.with_suffix(".prompt.txt").write_text(prompt, encoding="utf-8")
@@ -233,7 +232,7 @@ def main() -> int:
     task_file = run_eval.SCENARIOS[args.scenario]["task"]
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     document = {**task, "implementation": {"mode": "none"}}
-    prompt = build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(task=json.dumps(document, indent=2))
+    prompt = agentlib.build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(task=json.dumps(document, indent=2))
     host = HostSession(workspace, run_dir, args.model, args.max_segments)
     host.call(prompt)
     run_id, task_id = latest_run(workspace)
@@ -298,9 +297,9 @@ def main() -> int:
         record["productOwner"] = owner.rounds
     record["session"] = {"segments": host.segments, "calls": len(host.segments)}
     record["wallSeconds"] = round(time.monotonic() - started, 3)
-    record["agent"] = run_eval.summarize_calls(load_calls(run_dir / "agent-calls"))
-    record["hostSession"] = run_eval.summarize_calls(load_calls(run_dir / "session-calls"))
-    record["productOwnerCalls"] = run_eval.summarize_calls(load_calls(run_dir / "po-calls"))
+    record["agent"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "agent-calls"))
+    record["hostSession"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "session-calls"))
+    record["productOwnerCalls"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "po-calls"))
     quarantine = ((record["harness"].get("state") or {}).get("measures") or {}).get("quarantine")
     if quarantine and quarantine.get("patchRef"):
         record["measures"] = run_eval.measure_quarantine(
