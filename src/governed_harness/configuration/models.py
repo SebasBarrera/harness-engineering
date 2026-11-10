@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+import sys
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from pydantic import (
@@ -209,6 +210,14 @@ def _sandbox_mode_from_yaml(value: Any) -> Any:
     return "off" if value is False else value
 
 
+def _is_state_dir_path(value: str) -> bool:
+    """A ``runtime.stateDir`` path: absolute or under ``~/``. On Windows an absolute path also
+    starts with a drive or a UNC share (``C:\\...``, ``\\\\server\\share``)."""
+    if value.startswith(("/", "~/")):
+        return True
+    return sys.platform == "win32" and PureWindowsPath(value).is_absolute()
+
+
 class RuntimeConfig(ConfigModel):
     """Process bounds and, since 1.1, the agent sandbox and the feedback loop around the agent
     provider.
@@ -309,7 +318,7 @@ class RuntimeConfig(ConfigModel):
     def _state_dir(cls, value: str | None) -> str | None:
         if value is None or value == "auto":
             return value
-        if not value.startswith(("/", "~/")) or "$" in value:
+        if not _is_state_dir_path(value) or "$" in value:
             raise ValueError(
                 f"stateDir is auto, an absolute path or a path that starts with ~/: {value!r}"
             )
