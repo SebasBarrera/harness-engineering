@@ -31,10 +31,12 @@ def test_diff_counts_additions_and_deletions(tmp_path: Path) -> None:
 
 def test_diff_lines_are_not_followed_by_empty_lines(tmp_path: Path) -> None:
     file = tmp_path / "a.txt"
-    file.write_text("one\ntwo\n")
+    # Bytes, not text: on Windows write_text would store CRLF line endings, which the diff
+    # reproduces faithfully.
+    file.write_bytes(b"one\ntwo\n")
     snapshotter = WorkspaceSnapshotter(tmp_path)
     before = snapshotter.snapshot()
-    file.write_text("one\nthree\n")
+    file.write_bytes(b"one\nthree\n")
     diff = snapshotter.diff(before, snapshotter.snapshot())
     assert diff.unified_diff == (b"--- a/a.txt\n+++ b/a.txt\n@@ -1,2 +1,2 @@\n one\n-two\n+three\n")
 

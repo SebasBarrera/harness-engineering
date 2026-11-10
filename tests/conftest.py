@@ -111,7 +111,7 @@ def without_agent_results(root: Path) -> None:
         *API_SECTIONS,
     ):
         config.pop(section, None)
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
 
 
 def git_init(path: Path) -> None:
@@ -131,24 +131,27 @@ def python_workspace(tmp_path: Path) -> Path:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "src" / "sample" / "__init__.py").write_text(
-        "from .pricing import apply_discount\n", encoding="utf-8"
+        "from .pricing import apply_discount\n", encoding="utf-8", newline="\n"
     )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
         "    return subtotal\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from sample import apply_discount\n\n"
         "def test_below_threshold() -> None:\n"
         "    assert apply_discount(99, 100, 0.1) == 99\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         "[build-system]\nrequires=[]\nbuild-backend='setuptools.build_meta'\n\n"
         "[project]\nname='sample-fixture'\nversion='0.1.0'\n\n"
         "[tool.pytest.ini_options]\ntestpaths=['tests']\npythonpath=['src']\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
@@ -166,6 +169,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  return { ...defaults, ...task, ...repository };\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "test" / "resolve-config.test.js").write_text(
         "import assert from 'node:assert/strict';\n"
@@ -175,6 +179,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n"
         "});\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "package.json").write_text(
         "{\n"
@@ -189,6 +194,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  }\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
@@ -198,5 +204,5 @@ def node_workspace(tmp_path: Path) -> Path:
 
 def write_task(path: Path, content: str) -> Path:
     task = path / "task-input.yaml"
-    task.write_text(content, encoding="utf-8")
+    task.write_text(content, encoding="utf-8", newline="\n")
     return task
