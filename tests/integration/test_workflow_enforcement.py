@@ -269,11 +269,13 @@ with open(sys.argv[1], "a", encoding="utf-8") as handle:
 def test_parallel_safe_validators_run_at_once(python_workspace: Path, tmp_path: Path) -> None:
     probe = tmp_path / "probe.py"
     probe.write_text(PROBE, encoding="utf-8")
-    log = tmp_path / "probe.log"
+    # One log per probe: appends from two processes to one file can overwrite each other on
+    # Windows, where O_APPEND is not atomic.
+    logs = {name: tmp_path / f"probe-{name}.log" for name in ("a", "b")}
     validators = [
         {
             "id": f"project.probe{name}",
-            "command": [sys.executable, str(probe), str(log), name],
+            "command": [sys.executable, str(probe), str(logs[name]), name],
             "mandatory": False,
             "parallelSafe": True,
         }
@@ -283,9 +285,10 @@ def test_parallel_safe_validators_run_at_once(python_workspace: Path, tmp_path: 
     run = start(python_workspace, tmp_path)
     assert run.current_phase is PhaseId.DECISION
     times: dict[str, dict[str, float]] = {}
-    for line in log.read_text(encoding="utf-8").splitlines():
-        name, edge, value = line.split()
-        times.setdefault(name, {})[edge] = float(value)
+    for log in logs.values():
+        for line in log.read_text(encoding="utf-8").splitlines():
+            name, edge, value = line.split()
+            times.setdefault(name, {})[edge] = float(value)
     # Both probes started before either ended.
     assert times["a"]["start"] < times["b"]["end"]
     assert times["b"]["start"] < times["a"]["end"]
