@@ -22,8 +22,12 @@ any run:
                           recommended (the first one when none is); none proposed: not decided.
   architecture rules      ``--decision APPROVE`` when the survey returned its layers, else REJECT.
   acceptance tests        APPROVE when the proposal has at least one test file, each with a path
-                          and content, and its digest is the one ``acceptance show`` prints;
-                          REJECT otherwise.
+                          and content, its digest is the one ``acceptance show`` prints and its
+                          CONTENT passes ``review_acceptance_content``: every pytest file parses
+                          and every ``test_*`` function makes a check that can fail (no
+                          ``assert True``), every Gherkin scenario has a Then step, and there is
+                          at least one test case per acceptance criterion of the task; REJECT
+                          otherwise, naming what falls short.
   plan (decomposition)    APPROVE when every sub-task has a title and the proposal's digest is the
                           one ``plan show`` prints; REJECT otherwise.
   preflight UNAVAILABLE   ``harness verification decide --continue-uncertified``, citing the
@@ -56,6 +60,7 @@ harness showed (inbox kinds, the phase summary) and the command answered.
 
 from __future__ import annotations
 
+import ast
 import json
 import re
 import time
@@ -131,6 +136,80 @@ def _json(proc: Any) -> Any:
         return None
 
 
+def _trivial_assert(node: ast.Assert) -> bool:
+    """``assert True``, ``assert 1``, ``assert "x"`` or ``assert x == x``: it can never fail."""
+    test = node.test
+    if isinstance(test, ast.Constant):
+        return bool(test.value)
+    if isinstance(test, ast.Compare) and len(test.comparators) == 1:
+        return ast.dump(test.left) == ast.dump(test.comparators[0]) and isinstance(
+            test.ops[0], ast.Eq | ast.Is
+        )
+    return False
+
+
+def _is_check(node: ast.AST) -> bool:
+    """A non-trivial assert, or a ``pytest.raises`` / ``pytest.warns`` call."""
+    if isinstance(node, ast.Assert):
+        return not _trivial_assert(node)
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr in {"raises", "warns"}
+    )
+
+
+def _checks(function: ast.AST) -> int:
+    """How many checks that can fail one test function makes."""
+    return sum(1 for node in ast.walk(function) if _is_check(node))
+
+
+def review_acceptance_content(
+    tests: list[dict[str, Any]], criteria: int | None, *, gherkin: bool = False
+) -> dict[str, Any]:
+    """What a product owner checks in the CONTENT of proposed acceptance tests (simulated).
+
+    pytest files must parse, hold ``test_*`` functions and every one of them must make at least
+    one check that can fail (no ``assert True`` or ``assert x == x``); Gherkin files need a
+    ``Then`` step in every scenario. With the task's criterion count known, there must be at
+    least one test (or scenario) per criterion. Fixed rules, written before any run; they read
+    the files, never run them."""
+    problems: list[str] = []
+    cases = 0
+    for item in tests:
+        path = str(item.get("path") or "?")
+        content = str(item.get("content") or "")
+        if gherkin:
+            scenarios = re.split(r"(?m)^\s*Scenario(?: Outline)?:", content)[1:]
+            cases += len(scenarios)
+            if not scenarios:
+                problems.append(f"{path}: no scenario")
+            for number, body in enumerate(scenarios, start=1):
+                if not re.search(r"(?m)^\s*Then\b", body):
+                    problems.append(f"{path}: scenario {number} has no Then step")
+            continue
+        try:
+            module = ast.parse(content, filename=path)
+        except SyntaxError as error:
+            problems.append(f"{path}: does not parse ({error.msg}, line {error.lineno})")
+            continue
+        functions = [
+            node
+            for node in ast.walk(module)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef)
+            and node.name.startswith("test")
+        ]
+        cases += len(functions)
+        if not functions:
+            problems.append(f"{path}: no test function")
+        for function in functions:
+            if not _checks(function):
+                problems.append(f"{path}: {function.name} checks nothing that can fail")
+    if criteria is not None and cases < criteria:
+        problems.append(f"{cases} test case(s) for {criteria} acceptance criteria")
+    return {"testCases": cases, "criteria": criteria, "problems": problems}
+
+
 class SimulatedPerson:
     """Drives one governed run from its first exit code to an outcome."""
 
@@ -153,6 +232,7 @@ class SimulatedPerson:
         a message when the run waits for its edits (and after REQUEST_CHANGES or a failed
         verification, which the session provider does not correct on its own); it returns the
         exit code of the run afterwards."""
+        self.task_id: str | None = None
         self.waits: list[dict[str, Any]] = []
         self.clarification: list[dict[str, Any]] = []
         self.gate_history: list[str] = []
@@ -181,6 +261,7 @@ class SimulatedPerson:
 
     # ----- the loop --------------------------------------------------------------------------
     def drive(self, run_id: str, task_id: str, code: int) -> dict[str, Any]:
+        self.task_id = task_id
         outcome = None
         for _ in range(MAX_WAITS):
             if code == 4:
@@ -389,20 +470,33 @@ class SimulatedPerson:
     def _acceptance(self, run_id: str, digest: str, entry: dict[str, Any]) -> int | None:
         shown = self.hj("acceptance", "show", "--run", run_id) or {}
         tests = shown.get("tests") or []
-        complete = (
-            bool(tests)
-            and all(t.get("path") and t.get("content") for t in tests)
-            and shown.get("digest") == digest
+        structured = bool(tests) and all(t.get("path") and t.get("content") for t in tests)
+        review = review_acceptance_content(
+            tests, self._criteria_count(), gherkin=shown.get("format") == "gherkin"
         )
-        entry["evidence"] = {"files": len(tests), "digestMatches": shown.get("digest") == digest}
-        return self._decide_proposal(
-            run_id,
-            "acceptance",
-            digest,
-            complete,
-            entry,
-            "Acceptance tests proposed for every criterion; evidence complete.",
-        )
+        complete = structured and not review["problems"] and shown.get("digest") == digest
+        entry["evidence"] = {
+            "files": len(tests),
+            "digestMatches": shown.get("digest") == digest,
+            "contentReview": review,
+        }
+        why = "Acceptance tests proposed for every criterion; their content was reviewed."
+        reject_why = "The proposal is incomplete."
+        if structured and review["problems"]:
+            reject_why = "The content of the acceptance tests falls short: " + "; ".join(
+                review["problems"]
+            )
+        return self._decide_proposal(run_id, "acceptance", digest, complete, entry, why, reject_why)
+
+    def _criteria_count(self) -> int | None:
+        """How many acceptance criteria the run's task has (``harness task show``); None when
+        the harness does not say, and then the per-criterion check is skipped."""
+        if not self.task_id:
+            return None
+        shown = self.hj("task", "show", "--task", self.task_id) or {}
+        task = shown.get("task") if isinstance(shown.get("task"), dict) else shown
+        criteria = task.get("acceptanceCriteria") if isinstance(task, dict) else None
+        return len(criteria) if isinstance(criteria, list) else None
 
     def _plan(self, run_id: str, digest: str, entry: dict[str, Any]) -> int | None:
         shown = self.hj("plan", "show", "--run", run_id) or {}
@@ -440,9 +534,10 @@ class SimulatedPerson:
         complete: bool,
         entry: dict[str, Any],
         why: str,
+        reject_why: str = "The proposal is incomplete.",
     ) -> int | None:
         decision = "APPROVE" if complete else "REJECT"
-        rationale = why if complete else "The proposal is incomplete."
+        rationale = why if complete else reject_why
         proc = self.h(
             command,
             "decide",
