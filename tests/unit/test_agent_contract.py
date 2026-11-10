@@ -321,6 +321,28 @@ def test_file_content_is_a_problem_when_a_conclusion_is_due() -> None:
     assert any("carries file content" in item for item in problems)
 
 
+def test_layer_names_of_an_allow_mapping_are_not_file_content() -> None:
+    # Regression: a layer called source, content or body was rejected as file content.
+    allow = {"source": ["domain"], "content": ["source"], "body": [], "domain": []}
+    result = {
+        "style": "layered",
+        "layers": [{"name": "source", "paths": ["src/**"]}],
+        "allow": allow,
+        "options": [{"id": "a", "allow": allow}],
+    }
+    assert check_answer("architecture", result, AgentContractConfig()) == []
+
+
+def test_file_content_elsewhere_in_an_architecture_result_is_still_a_problem() -> None:
+    result = {
+        "layers": [{"name": "core", "source": "def f(): ..."}],
+        "allow": {"core": {"content": "def g(): ..."}},
+    }
+    problems = check_answer("architecture", result, AgentContractConfig())
+    assert any("result.layers[0].source carries file content" in item for item in problems)
+    assert any("result.allow.core.content carries file content" in item for item in problems)
+
+
 def test_acceptance_may_return_the_content_of_its_tests() -> None:
     result = {"tests": [{"path": "tests/acceptance/test_a.py", "content": "x" * 500}]}
     assert check_answer("acceptance", result, AgentContractConfig()) == []
