@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794281429227,
+  "lastUpdate": 1794284897772,
   "repoUrl": "https://github.com/SebasBarrera/harness-engineering",
   "entries": {
     "Governed Agent Harness microbenchmarks": [
@@ -4145,6 +4145,70 @@ window.BENCHMARK_DATA = {
           {
             "name": "Governed process overhead (relative median)",
             "value": 3.582,
+            "unit": "%"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sebasbarrera981119@gmail.com",
+            "name": "Juan Sebastián Barrera Pulido",
+            "username": "SebasBarrera"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c78334e9ebfed5f0cde6d6a4f44aa66de932adae",
+          "message": "Merge pull request #112 from SebasBarrera/test/evaluation-person-review\n\ntest(evaluation): review acceptance-test content and restrict usage-record permissions",
+          "timestamp": "2026-11-09T23:20:11-05:00",
+          "tree_id": "d16e96b9a3ded205ee594cc4a2a798e9f5f837c2",
+          "url": "https://github.com/SebasBarrera/harness-engineering/commit/c78334e9ebfed5f0cde6d6a4f44aa66de932adae"
+        },
+        "date": 1794284897172,
+        "tool": "customSmallerIsBetter",
+        "benches": [
+          {
+            "name": "State transition (median)",
+            "value": 0.001148,
+            "unit": "ms"
+          },
+          {
+            "name": "Gate evaluation (median)",
+            "value": 0.001889,
+            "unit": "ms"
+          },
+          {
+            "name": "Canonical hash (digest) (median)",
+            "value": 0.010736,
+            "unit": "ms"
+          },
+          {
+            "name": "Artifact put (deduplicated) (median)",
+            "value": 0.056714,
+            "unit": "ms"
+          },
+          {
+            "name": "Event append (hash chain) (median)",
+            "value": 0.170914,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, direct (median)",
+            "value": 11.047624,
+            "unit": "ms"
+          },
+          {
+            "name": "Process launch, governed (median)",
+            "value": 11.890016,
+            "unit": "ms"
+          },
+          {
+            "name": "Governed process overhead (relative median)",
+            "value": 6.472,
             "unit": "%"
           }
         ]
