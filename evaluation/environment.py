@@ -6,7 +6,8 @@ Usage: python environment.py <out.json> [--wheel PATH] [--code DIR] [--block NAM
 Records the harness executable (``EVAL_HARNESS``, default ``harness``) and its version, the SHA-256
 of the wheel it was installed from, the Claude Code version, the Python and tool versions of the
 interpreter running it (pytest, coverage, ruff, bandit, mypy), a digest of the evaluation code
-copy, the operating system and the start time. Paths of the machine are not recorded. Existing
+copy, the operating system, the start time and what every agent call gets (``agentCalls``: the
+prompt-cache TTL variables, the allowed tools and the validator commands of the prompt). Paths of the machine are not recorded. Existing
 entries of the file are kept under ``blocks``.
 """
 
@@ -66,6 +67,19 @@ def package(name: str) -> str | None:
         return None
 
 
+def agent_calls() -> dict[str, object]:
+    """What ``agentlib`` gives every agent call, the same in every condition."""
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import agentlib
+
+    return {
+        "promptCache": dict(agentlib.PROMPT_CACHE_ENV),
+        "allowedTools": list(agentlib.ALLOWED_TOOLS),
+        "readOnlyTools": list(agentlib.READ_ONLY_TOOLS),
+        "validatorCommands": list(agentlib.VALIDATOR_COMMANDS),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out", type=Path)
@@ -105,6 +119,9 @@ def main() -> int:
         "os": f"{platform.system()} {platform.release()} {platform.machine()}",
         "codeDigest": code_digest(args.code) if args.code else None,
     }
+    # The agent's command line and environment of every condition (amendment of 2026-11-11): the
+    # prompt-cache TTL variables and the Bash commands the agent may run.
+    entry["agentCalls"] = agent_calls()
     if sys.platform == "win32":
         # Declared deviation: conditions.apply_provider sets runtime.agentSandbox off on Windows.
         entry["agentSandbox"] = "off (no OS sandbox on Windows)"

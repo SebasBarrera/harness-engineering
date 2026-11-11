@@ -117,8 +117,10 @@ Criterios de aceptación:
 - Funciona.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 ### 5.3. requirements con el harness
@@ -161,8 +163,10 @@ Restricciones:
 - Sigue INTERFACE.md exactamente.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 ### 5.4. Super prompt con el harness, y stepwise sin él: los 16 pasos
@@ -215,8 +219,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S02. Conductores, repartidores y vehículos
@@ -256,8 +262,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S03. Geografía y zonas
@@ -295,8 +303,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S04. Cotizaciones de viajes, tarifas y precio dinámico
@@ -338,8 +348,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S05. Tarjetas, billetera y pagos
@@ -378,8 +390,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S06. Despacho y ciclo de vida del viaje
@@ -423,8 +437,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S07. Tarifa final, propinas y viajes programados
@@ -466,8 +482,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S08. Restaurantes y menús
@@ -506,8 +524,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S09. Precio y ciclo de vida de los pedidos de comida
@@ -552,8 +572,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S10. Repartidores y agrupación de pedidos
@@ -592,8 +614,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S11. Promociones y referidos
@@ -632,8 +656,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S12. Ganancias, liquidaciones y calificaciones
@@ -675,8 +701,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S13. Soporte, compartir viaje y notificaciones
@@ -715,8 +743,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S14. Reportes y registro de auditoría
@@ -755,8 +785,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S15. Persistencia en SQLite
@@ -793,8 +825,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 #### S16. Requisitos no funcionales
@@ -834,8 +868,10 @@ Restricciones:
 - Guía de ingeniería: Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada tipo de excepción, son independientes entre sí y corren en menos de un minuto.
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
-paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,
-responde con un resumen breve del cambio.
+paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
+`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
+proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+Cuando termines, responde con un resumen breve del cambio.
 ```
 
 ## 6. Clarificación con el harness 1.1.0 (condición clarify)

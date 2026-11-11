@@ -20,7 +20,8 @@ evaluation adapter ``claude_provider.py`` as a command provider, or the harness'
 ``simulated`` provider in a dry run), the grant of exactly that provider command (wave 9, #87:
 a provider command must be allowed by a ``process.execute`` grant; it goes to
 ``capabilities.extend`` under ``governance.phaseCapabilities`` and to ``capabilities.grants``,
-the 1.0.0 key, in ``harness-core``), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
+the 1.0.0 key, in ``harness-core``), where the gate contract is on the grant of ``harness check``
+to ``capabilities.extend`` (amendment of 2026-11-11), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
 of 1500 s plus the harness's own work, as in the 0.9.0 evaluation) and, where the write sandbox
 is on, one extra ``runtime.sandboxWritePaths`` entry: the run's ``agent-calls`` directory outside
 the workspace, where the adapter writes its usage records. The exact file of every run is saved
@@ -131,6 +132,8 @@ def apply_provider(
             "claude": {"kind": "command", "command": command, "model": model}
         }
         grant_provider_command(config, command, core=condition == "harness-core")
+        if runtime.get("gateContract"):
+            grant_check_command(config)
     if sys.platform == "win32" and runtime.get("agentSandbox") == "enforce":
         # Windows has no OS write sandbox (no sandbox-exec, no bwrap): under ``enforce`` the
         # harness blocks IMPLEMENTATION by design. The Windows runs set it off, a deviation from
@@ -173,6 +176,22 @@ def grant_provider_command(config: dict[str, Any], command: list[str], *, core: 
     if rule not in rules:
         rules.append(rule)
     capabilities[key] = rules
+
+
+CHECK_GRANT = {"capability": "process.execute", "scope": ["harness check"]}
+
+
+def grant_check_command(config: dict[str, Any]) -> None:
+    """Grant the agent ``harness check`` (amendment of 2026-11-11 to the pre-registration) where
+    the gate contract is on (``harness``, ``harness-anchored``): without it the contract carries
+    only ``gate.checkCommands`` (#84) and the agent cannot run the command the harness offers for
+    checking its change. The scope is that command and its arguments, never ``harness`` alone
+    (``command_in_scope``); ``harness check`` records nothing."""
+    capabilities = config.setdefault("capabilities", {"default": "deny", "grants": []})
+    rules = [dict(r) for r in capabilities.get("extend") or []]
+    if CHECK_GRANT not in rules:
+        rules.append(dict(CHECK_GRANT))
+    capabilities["extend"] = rules
 
 
 def write_config(
