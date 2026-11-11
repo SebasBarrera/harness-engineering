@@ -883,6 +883,28 @@ class TestRiskFactors:
         few = factors(diff_of(unified("src/app/legacy.py", removed[:19], ())))
         assert few == []
 
+    def test_line_ending_rewrite_raises_no_factor_for_old_lines(self) -> None:
+        # A CRLF file rewritten with LF endings: the diff removes and adds every line. The
+        # money signature was already in the baseline; only the changed body is new.
+        signature = "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:"
+        body = "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal"
+        text = (
+            "--- a/src/sample/pricing.py\n+++ b/src/sample/pricing.py\n@@ -1,2 +1,2 @@\n"
+            f"-{signature}\r\n-    return subtotal\r\n+{signature}\n+{body}\n"
+        )
+        assert factors(parse_unified_diff(text)) == []
+        changed = text.replace(f"+{signature}", "+def apply_discount(subtotal: float) -> float:")
+        assert factors(parse_unified_diff(changed)) == [("floatMoney", "src/sample/pricing.py", 1)]
+
+    def test_moved_lines_are_not_new_or_deleted(self) -> None:
+        body = tuple(f"value_{n} = {n}" for n in range(20))
+        moved = diff_of(
+            unified("src/app/fares.py", ("fee: float = 1", *body), (*body, "fee: float = 1"))
+        )
+        assert factors(moved) == []
+        twice = diff_of(unified("src/app/fares.py", ("fee: float = 1",), ("fee: float = 1",) * 2))
+        assert factors(twice) == [("floatMoney", "src/app/fares.py", 2)]
+
     def test_order_is_by_factor_then_path_then_line(self) -> None:
         diff = diff_of(
             unified("src/b.py", (), ("import socket", "fee: float = 1")),

@@ -41,6 +41,15 @@
   questions with and without the key. See
   `docs/reference/configuration.md` (the language of the rules) and
   `docs/es/tareas-en-espanol.md`.
+- The risk factors (`verification.riskFactors`, #52) no longer count a line the ChangeSet removes
+  and adds again with the same text (Refs #70). A file rewritten with other line endings (a CRLF
+  file written back with LF, common on Windows) lists every line as removed and added, so the
+  lines it already had raised factors: in H44 (R02, R04, B15) the correct change of the sample
+  project reached DECISION with the gate `FAILED` by `risk.floatMoney` (`HIGH` under `block`,
+  validator `harness.risk-factors`) on the unchanged signature
+  `def apply_discount(subtotal: float, ...) -> float`. A line moved within a file is no longer a
+  new line or a deleted one either (`deletedWithoutTests`). New and changed lines raise factors
+  as before.
 - Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
   `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
   provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so
