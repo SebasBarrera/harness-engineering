@@ -7,15 +7,28 @@ between conditions is the governance around the invocation.
 
 from __future__ import annotations
 
+import getpass
 import json
 import os
-import pwd
 import re
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+if sys.platform != "win32":
+    import pwd
+
+
+def _account() -> tuple[str, str]:
+    """The login name and home directory of the current user (``pwd`` is POSIX only)."""
+    if sys.platform == "win32":
+        return getpass.getuser(), str(Path.home())
+    entry = pwd.getpwuid(os.getuid())
+    return entry.pw_name, entry.pw_dir
+
 
 CLAUDE_BIN = os.environ.get("EVAL_CLAUDE_BIN", "claude")
 # The deterministic stand-in for the Claude Code CLI used by the dry runs (no model call).
@@ -123,9 +136,9 @@ def build_prompt(task: dict[str, Any], feedback: str | None = None) -> str:
 
 def agent_environment() -> dict[str, str]:
     """Minimal environment for the agent CLI: identity, locale and the evaluation PATH."""
-    user = pwd.getpwuid(os.getuid()).pw_name
+    user, home = _account()
     env = {
-        "HOME": os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir),
+        "HOME": os.environ.get("HOME", home),
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "USER": user,
         "LOGNAME": user,
@@ -213,7 +226,7 @@ def ensure_account() -> str:
     for name in ("ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"):
         if os.environ.get(name):
             raise AccountError(f"{name} is set: the evaluation runs only on the subscription login")
-    path = Path(os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir)) / ".claude.json"
+    path = Path(os.environ.get("HOME", _account()[1])) / ".claude.json"
     try:
         account = (json.loads(path.read_text(encoding="utf-8")).get("oauthAccount") or {}).get(
             "emailAddress", ""
