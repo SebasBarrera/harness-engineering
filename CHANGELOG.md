@@ -14,6 +14,17 @@
   test functions and assertions, a docstring that names the requirements and the Ruff fixes); the
   unedited form still runs and is reported apart (`ref-*-as-is`, outside the criterion). No
   criterion and no harness behavior changes.
+- Implementation routes very easy tasks to Haiku and keeps Sonnet as the default (#197).
+  Under `agentRouting.mode: tiered` or `anchored` an `implement` call whose task is `trivial`
+  (size `S`, between 1 and `agentRouting.thresholds.trivial.requirements` requirements, between
+  1 and `files` owned files, at most `loc` lines in them, no risk flag, not decomposed; starting
+  values 1, 1 and 150, to be calibrated) runs on the family's new `trivial` rung:
+  `claude-haiku-5-5` with `medium` effort in the claude-code table, the `S` rung in the codex
+  table and in tables without the entry. Every other task stays on Sonnet (`S`, `M`) or Opus
+  (`L`). A trivial call that fails verification or review escalates to the `S` rung first and
+  then up the ladder (rule `escalation:N:implement:trivial`). The decision records the size
+  `trivial`; the `S`/`M`/`L` classification of the agent contract, friction and metrics does not
+  change. Neither 0.8.0 nor 1.0.0 had routing, so no evaluated behavior changes.
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
