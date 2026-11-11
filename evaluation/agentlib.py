@@ -47,7 +47,43 @@ ALLOWED_TOOLS = [
     "Bash(pytest:*)",
     "Bash(ls:*)",
     "Bash(cd:*)",
+    *(
+        # The project's validators (the commands of the gate's Python profile) and the harness's
+        # read-only ``harness check`` (#52, ``runtime.gateContract``), so the agent can verify its
+        # change in the workspace before it finishes: in the 2.0.0 pilots Claude Code denied every
+        # Ruff and Mypy call (amendment of 2026-11-11 to the pre-registration). Only these
+        # commands: no arbitrary ``python``, nothing that installs, deletes or leaves the workspace.
+        f"Bash({command}:*)"
+        for command in (
+            "python -m ruff check",
+            "python3 -m ruff check",
+            "ruff check",
+            "python -m ruff format --check",
+            "python -m mypy",
+            "python3 -m mypy",
+            "mypy",
+            "harness check",
+        )
+    ),
 ]
+# The commands the implement prompt names, in every condition (``build_prompt``): the validators the
+# gate of the Python profile runs (``python.pytest``, ``python.ruff``, ``python.mypy``).
+VALIDATOR_COMMANDS = ("python -m pytest -q", "python -m ruff check --no-fix .", "python -m mypy .")
+# Prompt caching with the 5-minute TTL in every call of every condition (amendment of 2026-11-11):
+# a subscription login otherwise asks for the 1-hour TTL on the main conversation, whose cache
+# writes the API prices at 2x the input price instead of 1.25x. ``FORCE_PROMPT_CACHING_5M``
+# overrides every other TTL setting of Claude Code; the two TTL variables say the same for the
+# main conversation and for requests outside it (Claude Code environment-variable reference).
+PROMPT_CACHE_ENV = {
+    "FORCE_PROMPT_CACHING_5M": "1",
+    "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
+    "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "5m",
+}
+# What a caller adds to the agent's environment: the run's harness state directory
+# (``HARNESS_STATE_DIR``, ``runtime.stateDir: auto``), without which ``harness check`` in the agent's
+# shell looks for the run in the user's data directory and fails (``claude_provider.main``,
+# ``run_embedded``).
+EXTRA_AGENT_ENV: dict[str, str] = {}
 # The tools of a read-only call of the governed conditions (``clarify``, ``acceptance``, ``locate``,
 # ``architecture``, ``plan``, ``review``): the ones the built-in ``claude-code`` adapter gives it
 # (#92, ``governed_harness.agents.native.READ_ONLY_TOOLS``), without accepted edits; the tools that
@@ -126,8 +162,10 @@ def build_prompt(task: dict[str, Any], feedback: str | None = None) -> str:
     lines += [
         "",
         "Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales",
-        "paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,",
-        "responde con un resumen breve del cambio.",
+        "paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin",
+        "`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:",
+        ", ".join(f"`{command}`" for command in VALIDATOR_COMMANDS) + ".",
+        "Cuando termines, responde con un resumen breve del cambio.",
     ]
     if feedback:
         lines += [
@@ -172,6 +210,7 @@ def _windows_environment() -> dict[str, str]:
         "USERNAME": user,
         "LOGNAME": user,
         "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        **PROMPT_CACHE_ENV,
     }
     if os.environ.get("TMPDIR"):
         env["TMPDIR"] = os.environ["TMPDIR"]
@@ -179,7 +218,12 @@ def _windows_environment() -> dict[str, str]:
 
 
 def agent_environment() -> dict[str, str]:
-    """Minimal environment for the agent CLI: identity, locale and the evaluation PATH."""
+    """Minimal environment for the agent CLI: identity, locale, the evaluation PATH, the prompt-cache
+    TTL and what the caller put in ``EXTRA_AGENT_ENV``."""
+    return {**_base_environment(), **EXTRA_AGENT_ENV}
+
+
+def _base_environment() -> dict[str, str]:
     if WINDOWS:
         return _windows_environment()
     user = pwd.getpwuid(os.getuid()).pw_name
@@ -189,6 +233,7 @@ def agent_environment() -> dict[str, str]:
         "USER": user,
         "LOGNAME": user,
         "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+        **PROMPT_CACHE_ENV,
     }
     if os.environ.get("TMPDIR"):
         env["TMPDIR"] = os.environ["TMPDIR"]

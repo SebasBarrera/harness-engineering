@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- The evaluation's agent can check its own change, the same way in every condition (amendment of
+  2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
+  pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`
+  and `python -m mypy` calls. `evaluation/agentlib.py` now allows the project's validators and
+  `harness check` (no other shell command), the base prompt says the agent is already in the
+  repository (no `cd`) and names the gate's validator commands, and the `harness` and
+  `harness-anchored` conditions grant `harness check` so the adapter can ask for
+  `gate.checkCommand` before the agent finishes; the adapter passes the run's `HARNESS_STATE_DIR`
+  to the agent, without which `harness check` cannot find the run. Every Claude Code call of the evaluation runs with
+  the 5-minute prompt-cache TTL (`FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`,
+  `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), recorded in `environment.json` (`agentCalls`). The
+  amendment also states that the reported cost is computed from tokens at API list prices (the
+  runs use a subscription login) and lists the prices. Only the evaluation apparatus changes.
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
   INTENT blocked by clarification questions names the rules that asked
   (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the

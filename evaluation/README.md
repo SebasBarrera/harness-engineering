@@ -76,6 +76,21 @@ registro gobernado guarda `grantCheck` (las reglas escritas y las advertencias d
 `harness config validate`, vacío cuando el permiso se sostiene). El registro de cada corrida
 (`runtime.stateDir: auto`) se guarda en el directorio de la corrida (`HARNESS_STATE_DIR`).
 
+Desde la enmienda del 2026-11-11 al pre-registro (autoverificación del agente y caché de prompts),
+las llamadas implement de todas las condiciones permiten, además de pytest, `ls` y `cd`, los
+validadores del proyecto (`python -m ruff check`, `python -m ruff format --check`, `python -m mypy`,
+sus formas `python3` y sin `python -m`) y `harness check` (`agentlib.ALLOWED_TOOLS`); ningún otro
+comando de shell. El prompt base (`agentlib.build_prompt`) dice que el agente ya está en el
+repositorio (sin `cd`) y que verifique su cambio con
+`agentlib.VALIDATOR_COMMANDS`; en las condiciones con contrato del gate (`harness`,
+`harness-anchored`) la evaluación otorga `harness check` (`process.execute`, alcance `harness
+check`, en `capabilities.extend`) y el adaptador pide correr `gate.checkCommand` antes de terminar,
+con el directorio de estado de la corrida en el entorno del agente (`HARNESS_STATE_DIR`,
+`agentlib.EXTRA_AGENT_ENV`).
+Toda llamada de Claude Code corre con el TTL de caché de prompts de 5 minutos
+(`agentlib.PROMPT_CACHE_ENV`: `FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`,
+`CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), registrado en `environment.json` (`agentCalls`).
+
 ### El adaptador (`claude_provider.py`, protocolo de proveedor 1.1)
 
 El adaptador lee `kind` y responde cada llamada de solo lectura (clarify, review y los revisores del

@@ -54,6 +54,9 @@ def harness_sections(request: dict[str, Any]) -> list[str]:
     extras = native.implement_extras_lines(request)
     if extras:
         lines += ["", *extras]
+    check = check_instruction(request.get("gate"))
+    if check:
+        lines += ["", check]
     for key, title in (("locations", "Dónde intervenir"), ("attachments", "Adjuntos")):
         if request.get(key):
             lines += [
@@ -73,6 +76,33 @@ def harness_sections(request: dict[str, Any]) -> list[str]:
 
         lines += ["", "## Self-report", PROMPT_INSTRUCTIONS]
     return lines
+
+
+def check_instruction(gate: Any) -> str:
+    """What the implement prompt asks the agent to run before it finishes, from the gate contract
+    (amendment of 2026-11-11): ``gate.checkCommand`` (``harness check``) when the agent may run it,
+    else the validator commands of ``gate.checkCommands``; empty without a gate contract (the
+    ``harness-core`` condition: there the base prompt's validators are the check)."""
+    if not isinstance(gate, dict):
+        return ""
+    command = gate.get("checkCommand")
+    if isinstance(command, list) and command:
+        return (
+            "Antes de terminar, ejecuta desde el directorio actual (sin `cd`) el comando de "
+            f"`gate.checkCommand`: `{' '.join(str(part) for part in command)}`, y corrige lo que "
+            "reporte hasta que termine con código 0."
+        )
+    commands = [
+        " ".join(str(part) for part in item["command"])
+        for item in gate.get("checkCommands") or []
+        if isinstance(item, dict) and item.get("command")
+    ]
+    if commands:
+        return (
+            "Antes de terminar, ejecuta desde el directorio actual (sin `cd`) los validadores de "
+            "`gate.checkCommands`: " + ", ".join(f"`{c}`" for c in commands) + "."
+        )
+    return ""
 
 
 def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
@@ -132,6 +162,11 @@ def main() -> int:
     workspace = Path.cwd()
     run_dir = workspace.parent
     calls = args.calls_dir or run_dir / "agent-calls"
+    state = run_dir / "state"
+    if state.is_dir():
+        # The run's state directory (run_eval sets HARNESS_STATE_DIR for the harness, which does
+        # not pass it to the provider): ``harness check`` in the agent's shell needs it.
+        agentlib.EXTRA_AGENT_ENV["HARNESS_STATE_DIR"] = str(state.resolve())
     log = agentlib.allocate_call(calls)
     stem = log.stem
     kind = str(request.get("kind") or "implement")
