@@ -1,6 +1,9 @@
 # Release pipeline for tags v* (from v0.8.1; v0.8.0 is the thesis cut released with its original
-# artifacts). Builds sdist and wheel, generates an SPDX SBOM, attests build provenance, writes
-# SHA256SUMS and creates the GitHub release with notes generated from Conventional Commits.
+# artifacts). Builds sdist and wheel, generates an SPDX SBOM, attests build provenance, signs the
+# distributions with Sigstore (keyless), writes SHA256SUMS and creates the GitHub release with
+# notes generated from Conventional Commits. The release assets carry a `<file>.sigstore.json`
+# bundle per distribution and the provenance attestation as `<name>.intoto.jsonl`, so a verifier
+# (and the OpenSSF Scorecard Signed-Releases check) finds them without the GitHub attestations API.
 # PyPI: the publish-pypi job uploads the same distributions through a Trusted Publisher (OIDC, no
 # token) and runs only when the repository variable PYPI_PUBLISH is 'true'; without it the release
 # is created as before (docs/maintainer-setup.md).
@@ -50,9 +53,25 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
       - name: Attest build provenance of the distributions
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
+      - name: Sign the distributions with Sigstore (keyless)
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          inputs: ./dist/*.whl ./dist/*.tar.gz
+          verify: true
+          verify-cert-identity: https://github.com/${{ github.workflow_ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
+          release-signing-artifacts: false
+      - name: Publish the provenance attestation as a release asset
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          jq -c . "${BUNDLE}" > "dist/governed-agent-harness-${TAG#v}.intoto.jsonl"
+          ls dist/*.whl.sigstore.json dist/*.tar.gz.sigstore.json
       - name: Keep the attested distributions for the PyPI job
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -77,6 +96,8 @@ jobs:
             echo '```bash'
             echo "sha256sum -c SHA256SUMS"
             echo "gh attestation verify governed_agent_harness-${TAG#v}-py3-none-any.whl --repo ${GITHUB_REPOSITORY}"
+            echo "gh attestation verify governed_agent_harness-${TAG#v}-py3-none-any.whl --repo ${GITHUB_REPOSITORY} --bundle governed-agent-harness-${TAG#v}.intoto.jsonl"
+            echo "python -m sigstore verify identity governed_agent_harness-${TAG#v}-py3-none-any.whl --cert-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG} --cert-oidc-issuer https://token.actions.githubusercontent.com"
             echo '```'
           } >> notes.md
       - name: Create the GitHub release

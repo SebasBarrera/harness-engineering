@@ -437,6 +437,12 @@ class RunEngine:
             blocked = self.recover_interrupted(execution_id)
             if blocked is not None:
                 return blocked
+        if self.results.active:
+            # governance.stopTheLine: restore took the run's changes out of the workspace; a
+            # run that is evaluated again gets them back first, intact or not at all.
+            blocked = self.results.stop_line.reapply(execution)
+            if blocked is not None:
+                return blocked
         resumed = self._resume_recorded_decision(execution_id)
         if resumed is not None and not run_is_open(resumed):
             # A rejection recorded before the harness died ends the run here (#179).
