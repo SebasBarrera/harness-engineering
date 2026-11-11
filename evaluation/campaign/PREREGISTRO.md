@@ -716,4 +716,18 @@ anterior produce esa espera (su fixture responde el survey sin capas).
   restauración y una prueba congelada modificada o borrada da `acceptance.modified` (HIGH); con
   `disputes: off` la prueba errónea solo hace fallar la verificación. Una disputa solo se abre si
   lo único que falla son las pruebas congeladas (`_only_acceptance`).
+- **Enmienda 2026-11-10 (antes de cualquier resultado).** Al revisar el aparato con una corrida
+  de humo local (que no es un resultado, regla 6) se leyó que, con la configuración de `init`,
+  la tarea de tamaño S toma el carril rápido (`lane.classified: fast`) y su verificación corre
+  primero las pruebas afectadas (`friction.fastLane.verification.affectedTestsFirst`, validador
+  `harness.affected-tests`, `orchestration/friction.py:_affected_first`), que incluyen la prueba
+  congelada; al fallar, la verificación termina sin correr la validación
+  `harness.acceptance-tests`, y la disputa no se abre porque `_only_acceptance` exige que esa
+  validación esté entre las que fallaron. En `harness` el caso `REVISE` no puede llegar a la
+  disputa por el carril, no por la disputa misma. Se **añaden** dos condiciones con el carril
+  rápido apagado (`friction.fastLane.mode: off`): `harness-full` (la de `init`) y
+  `harness-off-full` (`protect: false`, `disputes: off`). Las condiciones originales se conservan
+  y se reportan igual. El criterio se evalúa tal cual en `harness` y, aparte, en `harness-full`.
+  Los casos, las definiciones y las métricas no cambian. La interacción entre el carril rápido y
+  las disputas se reporta como hallazgo del producto, no se corrige en esta campaña.
 - **Sesgo:** depende de cómo reescribe un agente real; ver H25 y pilotos.
