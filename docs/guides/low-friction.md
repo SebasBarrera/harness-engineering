@@ -54,6 +54,77 @@ validators run side by side (`runtime.maxParallel`), and a `PASSED` validator re
 the same validator, ChangeSet digest, baseline and configuration (`validator.reused`). Other
 technologies have no affected-test selection.
 
+## Governance profiles by risk
+
+```yaml
+governance:
+  riskProfile: auto        # auto | light | full; harness init writes auto
+```
+
+`governance.riskProfile` chooses, task by task, between two governance profiles. It is read at
+INTENT, from the same size and risk flags as the fast lane.
+
+| Value | Light profile | Full profile |
+|---|---|---|
+| `auto` | a task the router sizes `S` with no risk flag | every other task |
+| `light` | every task without a risk flag, whatever its size | a task with a risk flag |
+| `full` | never | every task (no fast lane, even when `friction.fastLane` is on) |
+| absent | the fast lane of `friction.fastLane`, as in 1.x | the rest |
+
+A **risk flag** is `security` (a security term in the intent, the constraints or the
+requirements, or an owned file matching `agentRouting.riskPaths`) or `interface` (the task
+declares an interface); a task that declares verification beyond `L1` (probes, a checklist, a
+deferred, manual or probe-verified criterion) always takes the full profile.
+
+**The light profile** is the fast lane above (the `skip` and `verification` of
+`friction.fastLane` when the section is there, the defaults otherwise, even when its `mode` is
+`off`) and leaves out two more optional steps:
+
+| Step | In the light profile |
+|---|---|
+| `ambiguityReview`, `decomposition`, `preflight`, `mutation` | Left out, as in the fast lane (or as `fastLane.skip` says). |
+| `agentReview` | The agent review, or the review panel, runs only on a signal (a risk factor, a finding of this change of severity MEDIUM or above, a ChangeSet larger than `S`). |
+| `locate` | No `locate` call at INTENT (`lane.step.skipped`). |
+| `planApproval` | No plan-approval checkpoint under `planApproval: risk`; `always` still asks a person. |
+
+What the light profile **always keeps**: the nine normative phases in their order, the
+harness's own verification with every mandatory validator before the gate (tests, the
+requirement traceability, the configured validators), the frozen acceptance tests of the task
+when there are any (`acceptanceTests` is left out only when `fastLane.skip` names it), the
+fail-closed gate, the human decision bound to the ChangeSet digest (or a pre-authorisation under
+its condition) and the hash-chained event record. A defective change is blocked in VERIFICATION
+as in the full profile. When the ChangeSet shows a risk factor or outgrows `S`, the run leaves
+the light profile (`lane.escalated`) and the agent review runs.
+
+**The full profile** is the flow of every setting `harness init` writes: the agent ambiguity
+review, `locate` for `M` and `L` tasks, the decomposition, the plan approval of risky and large
+tasks, the preflight, the light mutation and the agent review or panel on every run.
+
+`lane.classified` and the `lane-decision` evidence carry `profile` (the configured value) and
+`governance` (`light` or `full`) when the key is set; without it they are unchanged.
+
+### The security flag in context
+
+Without `governance.riskProfile` the `security` flag is the substring list of 1.x: `password`,
+`secret`, `token`, `authentic`, `authoriz`, `credential`, `card`, `payment` or `encrypt`
+anywhere in the text, so "discard", "tokenize" or "product card" make a small task risky. With
+any value of the key the text is read in context:
+
+* a strong term flags the task on its own: passwords, credentials, authentication and
+  authorisation, OAuth, JWT, CSRF, MFA, encryption, API, private, secret and signing keys,
+  access, refresh, bearer, session, auth and reset tokens, credit, debit and payment cards, card
+  numbers, CVV, and the Spanish contraseña, credencial, autenticación, autorización, cifrado,
+  encriptar and tarjeta de crédito;
+* `token`, `secret`, `card` and `payment` count only within three words of a word of their
+  context (`token` next to `bearer`, `refresh`, `user`, `rotate`...; `card` next to `credit`,
+  `number`, `billing`...) or when an owned file has a sensitive path component (`auth`,
+  `security`, `crypto`, `payment`, `session`...).
+
+"Hash the users' passwords", "encrypt the e-mail addresses at rest" and "rotate the token when
+the user signs out" are security tasks; "count the tokens of the tokenizer" and "rename the
+product card" are not. The ChangeSet's risk factors are read from the diff whatever the task
+says, so a change that touches authentication code still leaves the light profile.
+
 ## Change types
 
 ```yaml

@@ -237,6 +237,7 @@ governance:
   phaseCapabilities: true
   applyRepositoryPolicies: true
   enforceWorkflow: true
+  riskProfile: auto
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -379,6 +380,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
+| `governance.riskProfile` | absent: the fast lane is `friction.fastLane` alone and the `security` flag is the 1.x word list; `init` writes `auto` | Governance by risk: `auto` gives a task sized `S` with no risk flag the light profile and every other task the full one, `light` gives every task without a risk flag the light profile whatever its size, `full` gives every task the full flow (no fast lane). Any value reads the `security` flag in context. See [governance profiles by risk](../guides/low-friction.md#governance-profiles-by-risk). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `agentRouting.thresholds.trivial` | `requirements: 1`, `files: 1`, `loc: 150` when absent | Since #197: the upper bounds under which an `S` task (with at least one requirement and one owned file, no risk flag, not decomposed) is `trivial` and its `implement` call runs on the family's `trivial` rung (`claude-haiku-5-5` in the claude-code table); a failed trivial call escalates to the `S` rung. Starting values to calibrate; `requirements: 0` turns the tier off. See [trivial implement tasks](../guides/agent-results.md#trivial-implement-tasks-197). |

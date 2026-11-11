@@ -283,6 +283,10 @@ class LadderIntake:
                 phase_execution_id=phase.phase_execution_id,
             )
             return IntentResult()
+        friction = hub.engine.friction
+        if friction.active and friction.skips(execution, "locate", PhaseId.INTENT):
+            # governance.riskProfile: the light profile asks for no localisation.
+            return IntentResult()
         key = f"locate:{execution.project_id}:{task.task_id}:{digest}"
         scope_key = (
             f"locatescope:{execution.project_id}:{task.task_id}:"
