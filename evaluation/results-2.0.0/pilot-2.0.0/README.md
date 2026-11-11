@@ -28,9 +28,9 @@ version string still reads 1.0.0 because the version is set on the release branc
 | `pilot.jsonl` | One record per run: condition, prompt, harness phases and findings, measures (hidden tests), agent usage and cost, the simulated person's waits and decisions |
 | `summary-blocks.json` | The same records summarized per block |
 | `environment.json` | Tool versions, OS, Claude Code version, source commit |
-| `log.txt`, `log-runs.txt` | Launcher log and one line per run (wall time, outcome, calls) |
 
-Raw run directories (workspaces, run registries, agent calls) are not kept in Git.
+The launcher logs (`log*.txt`), raw run directories (workspaces, run registries, agent calls)
+are not kept in Git (`.gitignore`); wall times come from `pilot.jsonl`.
 
 ## Results
 
