@@ -420,7 +420,13 @@ def select(work: Path, project_venv: Path, cap: int) -> dict[str, Any]:
         shutil.rmtree(root)
     build_baseline(root)
     python = interception.venv_python(project_venv)
-    env = interception.harness_env(project_venv, work / "h10-selection-state")
+    # No bytecode cache: a mutant of the same size written in the same second as the file it
+    # replaces would otherwise be run from the stale .pyc of the previous one (mtime and size
+    # are what the cache checks).
+    env = {
+        **interception.harness_env(project_venv, work / "h10-selection-state"),
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
     baseline_probe = probe(python, root, env)
     baseline_pass = visible_pass(python, root, env)
     if baseline_probe is None or not baseline_pass:
