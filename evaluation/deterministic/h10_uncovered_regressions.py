@@ -23,7 +23,11 @@ The archive is read from ``$EVAL_CACHE`` or ``<work>/cache`` (downloaded there w
 Usage:
   python evaluation/deterministic/h10_uncovered_regressions.py --out DIR [--harness PATH]
       [--work DIR] [--project-venv DIR] [--only id,...] [--conditions a,b] [--reps 1]
-      [--summarize-only]
+      [--summarize-only] [--max-candidates 400]
+
+``--max-candidates`` is the cap of candidates tried per class; its default, 400, is the one of
+the amendment of 2026-11-10. The registered selection (cap 80) is its prefix and is written apart
+to ``DIR/h10-selection.json``; the widened one goes to ``DIR/h10-selection-wide.json``.
 
 Output: DIR/environment.json, DIR/h10-selection.json, DIR/h10-uncovered-regressions.jsonl (one
 record per case, condition and repetition), DIR/h10-uncovered-regressions-summary.json,
@@ -58,10 +62,15 @@ ARCHIVE_SHA256 = "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f
 SEED = 20261110
 PER_CLASS = 5
 MAX_TRIED = 80
+"""The cap of candidates tried per class as first registered."""
+WIDE_TRIED = 400
+"""The cap of the amendment of 2026-11-10 (PREREGISTRO.md, H10): larger than the biggest
+class, so every class is walked whole; the registered selection is its prefix."""
 CONTROLS = 5
 CLASSES = ("off-by-one", "exception", "order", "encoding")
 PROBE = HERE / "h10_probe.py"
 SELECTION = "h10-selection.json"
+WIDE_SELECTION = "h10-selection-wide.json"
 SIGNAL_PREFIXES = ("ratchet.", "differential.", "principles.", "tests.")
 EXCEPTIONS = (
     "BadData",
@@ -402,8 +411,10 @@ def covered_lines(python: Path, root: Path, env: dict[str, str]) -> dict[str, li
     }
 
 
-def select(work: Path, project_venv: Path) -> dict[str, Any]:
-    """Draw the cases (PREREGISTRO.md, H10). Deterministic for one archive, seed and code."""
+def select(work: Path, project_venv: Path, cap: int) -> dict[str, Any]:
+    """Draw the cases (PREREGISTRO.md, H10) trying at most ``cap`` candidates per class.
+    Deterministic for one archive, seed, cap and code. Every draw is listed, so the selection
+    with a smaller cap is its prefix (``prefix``)."""
     root = work / "h10-selection"
     if root.exists():
         shutil.rmtree(root)
@@ -423,6 +434,7 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
     random.Random(SEED).shuffle(order)
     texts = {s["file"]: (root / s["file"]).read_text(encoding="utf-8") for s in candidates}
     chosen: list[dict[str, Any]] = []
+    draws: list[list[Any]] = []
     tried: dict[str, int] = {}
     outcomes: dict[str, dict[str, int]] = {}
     for cls in (*CLASSES, "control"):
@@ -431,7 +443,7 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
         tried[cls] = 0
         outcomes[cls] = {"testsFail": 0, "equivalentByProbe": 0, "probeError": 0, "taken": 0}
         for item in (s for s in order if s["class"] == cls):
-            if count >= want or tried[cls] >= MAX_TRIED:
+            if count >= want or tried[cls] >= cap:
                 break
             tried[cls] += 1
             original = texts[item["file"]]
@@ -440,6 +452,7 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
                 ast.parse(mutated)
             except SyntaxError:
                 outcomes[cls]["probeError"] += 1
+                draws.append([cls, tried[cls], "probeError"])
                 continue
             target = root / item["file"]
             interception.write_text(target, mutated)
@@ -459,6 +472,7 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
             )
             if not passes:
                 outcomes[cls]["testsFail"] += 1
+                draws.append([cls, tried[cls], "testsFail"])
                 continue
             differs = output != baseline_probe
             if output is None and cls != "control":
@@ -466,12 +480,15 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
                 differs = True
             if cls == "control" and (output is None or differs):
                 outcomes[cls]["probeError"] += 1
+                draws.append([cls, tried[cls], "probeError"])
                 continue
             if cls != "control" and not differs:
                 outcomes[cls]["equivalentByProbe"] += 1
+                draws.append([cls, tried[cls], "equivalentByProbe"])
                 continue
             count += 1
             outcomes[cls]["taken"] += 1
+            draws.append([cls, tried[cls], "taken"])
             lines = (coverage or {}).get(item["file"])
             chosen.append(
                 {
@@ -490,6 +507,7 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
                     },
                     "id": f"{'ct' if cls == 'control' else cls[:3]}-{count}",
                     "drawIndex": order.index(item),
+                    "triedAt": tried[cls],
                     "lineCovered": None if lines is None else item["line"] in lines,
                     "probeCrashed": output is None,
                 }
@@ -500,31 +518,56 @@ def select(work: Path, project_venv: Path) -> dict[str, Any]:
         "seed": SEED,
         "codeDigest": code_digest(),
         "perClass": PER_CLASS,
-        "maxTriedPerClass": MAX_TRIED,
+        "maxTriedPerClass": cap,
         "candidates": {
             c: sum(1 for s in candidates if s["class"] == c) for c in (*CLASSES, "control")
         },
         "tried": tried,
         "outcomes": outcomes,
         "coverageAvailable": coverage is not None,
+        "draws": draws,
         "cases": chosen,
     }
 
 
+def prefix(selection: dict[str, Any], cap: int) -> dict[str, Any]:
+    """The selection a smaller ``cap`` gives: the draws tried within it (same seed and order)."""
+    draws = [d for d in selection["draws"] if d[1] <= cap]
+    classes = (*CLASSES, "control")
+    outcomes = {
+        cls: {
+            name: sum(1 for d in draws if d[0] == cls and d[2] == name)
+            for name in ("testsFail", "equivalentByProbe", "probeError", "taken")
+        }
+        for cls in classes
+    }
+    return {
+        **selection,
+        "maxTriedPerClass": cap,
+        "tried": {cls: max([d[1] for d in draws if d[0] == cls], default=0) for cls in classes},
+        "outcomes": outcomes,
+        "draws": draws,
+        "cases": [c for c in selection["cases"] if c["triedAt"] <= cap],
+    }
+
+
 def load_selection(
-    out: Path, work: Path, project_venv: Path, summarize_only: bool
+    out: Path, work: Path, project_venv: Path, summarize_only: bool, cap: int
 ) -> dict[str, Any]:
-    path = out / SELECTION
+    """The draw with ``cap`` (the amendment's, ``WIDE_SELECTION``, when larger than the
+    registered cap); the registered selection is written apart (``SELECTION``) as its prefix."""
+    path = out / (WIDE_SELECTION if cap > MAX_TRIED else SELECTION)
     if path.exists():
         saved = json.loads(path.read_text(encoding="utf-8"))
-        if saved.get("codeDigest") == code_digest() and saved.get("seed") == SEED:
-            return saved
-        if summarize_only:
+        current = saved.get("codeDigest") == code_digest() and saved.get("seed") == SEED
+        if summarize_only or (current and saved.get("maxTriedPerClass") == cap):
             return saved
     if summarize_only:
         raise SystemExit(f"--summarize-only needs {path}")
-    selection = select(work, project_venv)
+    selection = select(work, project_venv, cap)
     write_json(path, selection)
+    if cap > MAX_TRIED:
+        write_json(out / SELECTION, prefix(selection, MAX_TRIED))
     return selection
 
 
@@ -555,6 +598,7 @@ def to_case(item: dict[str, Any]) -> dict[str, Any]:
         "set": "itsdangerous",
         "description": f"{item['operator']} at {item['file']}:{item['line']}",
         "lineCovered": item.get("lineCovered"),
+        "inOriginal": item.get("triedAt", 0) <= MAX_TRIED,
         "write": write,
         "delete": [],
     }
@@ -605,7 +649,8 @@ def make_suite(cases: list[dict[str, Any]], selection: dict[str, Any]) -> interc
         rules=(),
         relevant=SIGNAL_PREFIXES,
         notes={
-            "selection": {k: v for k, v in selection.items() if k != "cases"},
+            "selection": {k: v for k, v in selection.items() if k not in ("cases", "draws")},
+            "original": f"neutrality: the cases drawn within the registered cap of {MAX_TRIED}; neutralityWidened: every case, the widened draw of the amendment",
             "signal": "a finding of a rule ratchet.*, differential.*, principles.* or tests.*, any severity (CERTIFICATION_NOT_CERTIFIED reported apart)",
             "escape": "delivered by D* (visible tests pass) and by H (not blocked)",
             "harness-full": "harness init with friction.fastLane.mode: off (init's fast lane skips mutation)",
@@ -620,72 +665,11 @@ def summarizer(suite: interception.Suite) -> Any:
         first = [r for r in records if r["rep"] == 1 and "apparatusError" not in r]
         direct = {r["case"]: r["delivered"] for r in first if r["condition"] == interception.DIRECT}
         covered = {c["id"]: c.get("lineCovered") for c in suite.cases}
-        neutrality: dict[str, Any] = {}
-        for condition, builder in suite.conditions.items():
-            rows = [r for r in first if r["condition"] == condition]
-            if builder is None or not rows:
-                continue
-            regressions = [r for r in rows if r["kind"] == "seeded"]
-            controls = [r for r in rows if r["kind"] == "clean"]
-
-            def escaped(r: dict[str, Any]) -> bool:
-                return bool(direct.get(r["case"])) and not r["blocked"]
-
-            def rules_count(items: list[dict[str, Any]]) -> dict[str, int]:
-                counts: dict[str, int] = {}
-                for r in items:
-                    for rule in signal_rules(r["findings"]):
-                        counts[rule] = counts.get(rule, 0) + 1
-                return dict(sorted(counts.items()))
-
-            uncovered = [r for r in regressions if covered.get(r["case"]) is False]
-            neutrality[condition] = {
-                "regressionsDeliveredByHarness": interception.proportion(
-                    sum(not r["blocked"] for r in regressions), len(regressions)
-                ),
-                "escapedBoth": interception.proportion(
-                    sum(escaped(r) for r in regressions), len(regressions)
-                ),
-                "escapedBothByClass": {
-                    cls: interception.proportion(
-                        sum(escaped(r) for r in regressions if r["group"] == cls),
-                        sum(1 for r in regressions if r["group"] == cls),
-                    )
-                    for cls in CLASSES
-                },
-                "escapedBothUncoveredLines": interception.proportion(
-                    sum(escaped(r) for r in uncovered), len(uncovered)
-                ),
-                "withSignal": {
-                    "regressions": interception.proportion(
-                        sum(r["detected"] for r in regressions), len(regressions)
-                    ),
-                    "controls": interception.proportion(
-                        sum(r["detected"] for r in controls), len(controls)
-                    ),
-                },
-                "signalRules": {
-                    "regressions": rules_count(regressions),
-                    "controls": rules_count(controls),
-                },
-                "ratchetRegressed": sum(
-                    any(f["rule"] == "ratchet.regressed" for f in r["findings"]) for r in rows
-                ),
-                "certificationNotCertified": {
-                    "regressions": sum(
-                        "CERTIFICATION_NOT_CERTIFIED" in r["gateReasons"] for r in regressions
-                    ),
-                    "controls": sum(
-                        "CERTIFICATION_NOT_CERTIFIED" in r["gateReasons"] for r in controls
-                    ),
-                },
-                "controlsBlocked": interception.proportion(
-                    sum(r["blocked"] for r in controls), len(controls)
-                ),
-                "blockedRegressions": sorted(r["case"] for r in regressions if r["blocked"]),
-                "lanes": sorted({str((r.get("lanes") or {}).get("classified")) for r in rows}),
-            }
-        summary["neutrality"] = neutrality
+        original = {c["id"] for c in suite.cases if c.get("inOriginal")}
+        summary["neutrality"] = neutrality_of(suite, first, direct, covered, original)
+        summary["neutralityWidened"] = neutrality_of(
+            suite, first, direct, covered, {c["id"] for c in suite.cases}
+        )
         summary["directDeliveredRegressions"] = interception.proportion(
             sum(bool(direct.get(c["id"])) for c in suite.cases if c["kind"] == "seeded"),
             sum(1 for c in suite.cases if c["kind"] == "seeded" and c["id"] in direct),
@@ -695,13 +679,94 @@ def summarizer(suite: interception.Suite) -> Any:
     return summarize
 
 
+def neutrality_of(
+    suite: interception.Suite,
+    first: list[dict[str, Any]],
+    direct: dict[str, bool],
+    covered: dict[str, Any],
+    cases: set[str],
+) -> dict[str, Any]:
+    """The neutrality metrics per governed condition over ``cases``."""
+    neutrality: dict[str, Any] = {}
+    for condition, builder in suite.conditions.items():
+        rows = [r for r in first if r["condition"] == condition and r["case"] in cases]
+        if builder is None or not rows:
+            continue
+        regressions = [r for r in rows if r["kind"] == "seeded"]
+        controls = [r for r in rows if r["kind"] == "clean"]
+
+        def escaped(r: dict[str, Any]) -> bool:
+            return bool(direct.get(r["case"])) and not r["blocked"]
+
+        def rules_count(items: list[dict[str, Any]]) -> dict[str, int]:
+            counts: dict[str, int] = {}
+            for r in items:
+                for rule in signal_rules(r["findings"]):
+                    counts[rule] = counts.get(rule, 0) + 1
+            return dict(sorted(counts.items()))
+
+        uncovered = [r for r in regressions if covered.get(r["case"]) is False]
+        neutrality[condition] = {
+            "regressionsDeliveredByHarness": interception.proportion(
+                sum(not r["blocked"] for r in regressions), len(regressions)
+            ),
+            "escapedBoth": interception.proportion(
+                sum(escaped(r) for r in regressions), len(regressions)
+            ),
+            "escapedBothByClass": {
+                cls: interception.proportion(
+                    sum(escaped(r) for r in regressions if r["group"] == cls),
+                    sum(1 for r in regressions if r["group"] == cls),
+                )
+                for cls in CLASSES
+            },
+            "escapedBothUncoveredLines": interception.proportion(
+                sum(escaped(r) for r in uncovered), len(uncovered)
+            ),
+            "withSignal": {
+                "regressions": interception.proportion(
+                    sum(r["detected"] for r in regressions), len(regressions)
+                ),
+                "controls": interception.proportion(
+                    sum(r["detected"] for r in controls), len(controls)
+                ),
+            },
+            "signalRules": {
+                "regressions": rules_count(regressions),
+                "controls": rules_count(controls),
+            },
+            "ratchetRegressed": sum(
+                any(f["rule"] == "ratchet.regressed" for f in r["findings"]) for r in rows
+            ),
+            "certificationNotCertified": {
+                "regressions": sum(
+                    "CERTIFICATION_NOT_CERTIFIED" in r["gateReasons"] for r in regressions
+                ),
+                "controls": sum(
+                    "CERTIFICATION_NOT_CERTIFIED" in r["gateReasons"] for r in controls
+                ),
+            },
+            "controlsBlocked": interception.proportion(
+                sum(r["blocked"] for r in controls), len(controls)
+            ),
+            "blockedRegressions": sorted(r["case"] for r in regressions if r["blocked"]),
+            "lanes": sorted({str((r.get("lanes") or {}).get("classified")) for r in rows}),
+        }
+    return neutrality
+
+
 def criteria(summary: dict[str, Any]) -> dict[str, Any]:
     """The pre-registered criterion (PREREGISTRO.md, H10): report, no threshold in favour."""
     neutrality = summary.get("neutrality") or {}
+    widened = summary.get("neutralityWidened") or {}
     return {
-        "statement": "report the share of regressions that escape both D* and H; no threshold in favour",
+        "statement": "report the share of regressions that escape both D* and H; no threshold in favour; on the registered selection (cap 80) and, per the amendment of 2026-11-10, on the widened one (cap 400), reported apart",
         "harnessEscapedBoth": (neutrality.get("harness") or {}).get("escapedBoth"),
         "harnessFullEscapedBoth": (neutrality.get("harness-full") or {}).get("escapedBoth"),
+        "widened": {
+            "harnessEscapedBoth": (widened.get("harness") or {}).get("escapedBoth"),
+            "harnessFullEscapedBoth": (widened.get("harness-full") or {}).get("escapedBoth"),
+        },
         "met": None,
         "evaluable": bool(neutrality.get("harness")),
     }
@@ -713,7 +778,18 @@ def main() -> int:
     pre.add_argument("--work", type=Path, default=None)
     pre.add_argument("--project-venv", type=Path, default=Path(sys.executable).parent.parent)
     pre.add_argument("--summarize-only", action="store_true")
+    pre.add_argument("--max-candidates", type=int, default=WIDE_TRIED)
     known, _ = pre.parse_known_args()
+    # --max-candidates is this suite's own option: the shared command line does not know it.
+    argv = list(sys.argv)
+    for index, value in enumerate(argv):
+        if value == "--max-candidates":
+            del argv[index : index + 2]
+            break
+        if value.startswith("--max-candidates="):
+            del argv[index]
+            break
+    sys.argv[:] = argv
     if known.out is None or "-h" in sys.argv or "--help" in sys.argv:
         suite = make_suite([], {})
         return interception.main(
@@ -724,7 +800,11 @@ def main() -> int:
     work.mkdir(parents=True, exist_ok=True)
     if not known.summarize_only:
         _state["archive"] = fetch_archive(cache_dir(work))
-    selection = load_selection(out, work, known.project_venv.resolve(), known.summarize_only)
+    if known.max_candidates < MAX_TRIED:
+        raise SystemExit(f"--max-candidates must be at least the registered cap, {MAX_TRIED}")
+    selection = load_selection(
+        out, work, known.project_venv.resolve(), known.summarize_only, known.max_candidates
+    )
     suite = make_suite([to_case(item) for item in selection["cases"]], selection)
     return interception.main(
         suite,
