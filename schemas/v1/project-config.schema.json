@@ -1415,6 +1415,7 @@
               },
               "propertyNames": {
                 "enum": [
+                  "trivial",
                   "S",
                   "M",
                   "L"
@@ -4393,6 +4394,17 @@
           ],
           "default": null,
           "title": "Requirements"
+        },
+        "trivial": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TrivialThresholds"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "SizeThresholds",
@@ -4751,6 +4763,53 @@
         }
       },
       "title": "ToolchainConfig",
+      "type": "object"
+    },
+    "TrivialThresholds": {
+      "additionalProperties": false,
+      "description": "Since #197: the upper bounds under which an ``S`` task is ``trivial`` for the\n``implement`` call. A trivial task also has at least one requirement and one owned file,\nno risk flag and no decomposition; ``requirements: 0`` turns the tier off.",
+      "properties": {
+        "files": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Files"
+        },
+        "loc": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Loc"
+        },
+        "requirements": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requirements"
+        }
+      },
+      "title": "TrivialThresholds",
       "type": "object"
     },
     "ValidatorDefinition": {

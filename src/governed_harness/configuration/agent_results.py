@@ -414,6 +414,8 @@ class MemoryConfig(_Section):
 # ----- Routing (#44) -------------------------------------------------------------------------
 RoutingMode = Literal["fixed", "tiered", "anchored"]
 SizeClass = Literal["S", "M", "L"]
+ImplementSize = Literal["trivial", "S", "M", "L"]
+"""Since #197: the keys of a family's ``implement`` rungs, ``trivial`` below ``S``."""
 ProviderFamily = Literal["claude-code", "codex", "generic"]
 
 
@@ -422,12 +424,25 @@ class Rung(_Section):
     effort: str | None = None
 
 
+class TrivialThresholds(_Section):
+    """Since #197: the upper bounds under which an ``S`` task is ``trivial`` for the
+    ``implement`` call. A trivial task also has at least one requirement and one owned file,
+    no risk flag and no decomposition; ``requirements: 0`` turns the tier off."""
+
+    requirements: int | None = Field(default=None, ge=0)
+    files: int | None = Field(default=None, ge=0)
+    loc: int | None = Field(default=None, ge=0)
+
+
 class SizeThresholds(_Section):
     """Upper bounds of ``S`` and ``M`` for each signal; above the ``M`` bound a task is ``L``."""
 
     requirements: tuple[int, int] | None = None
     files: tuple[int, int] | None = None
     loc: tuple[int, int] | None = None
+    trivial: TrivialThresholds | None = None
+    """Since #197: the bounds of the ``trivial`` implement tier; without it
+    ``DEFAULT_TRIVIAL_THRESHOLDS``."""
 
     @model_validator(mode="after")
     def _ordered(self) -> SizeThresholds:
@@ -442,7 +457,8 @@ class FamilyTable(_Section):
     """The rung of each call kind and size for one provider family, and its escalation
     ladder (effort before model)."""
 
-    implement: dict[SizeClass, Rung] | None = None
+    implement: dict[ImplementSize, Rung] | None = None
+    """The rung of each task size; since #197 ``trivial`` (without it the ``S`` rung)."""
     clarify: Rung | None = None
     plan: Rung | None = None
     review: Rung | None = None
@@ -492,9 +508,15 @@ DEFAULT_SIZE_THRESHOLDS: dict[str, tuple[int, int]] = {
 """Starting thresholds ``harness init`` writes (S up to the first value, M up to the second);
 to be calibrated with ``harness routing calibrate``, not a measured optimum."""
 
+DEFAULT_TRIVIAL_THRESHOLDS: dict[str, int] = {"requirements": 1, "files": 1, "loc": 150}
+"""Since #197: starting upper bounds of the ``trivial`` implement tier (one requirement, one
+owned file of at most 150 lines), deliberately conservative and to be calibrated, not a
+measured optimum."""
+
 DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
     "claude-code": {
         "implement": {
+            "trivial": {"model": "claude-haiku-5-5", "effort": "medium"},
             "S": {"model": "claude-sonnet-5-5", "effort": "medium"},
             "M": {"model": "claude-sonnet-5-5", "effort": "high"},
             "L": {"model": "claude-opus-5-5", "effort": "high"},
@@ -521,6 +543,7 @@ DEFAULT_ROUTING_TABLES: dict[str, dict[str, Any]] = {
     },
     "codex": {
         "implement": {
+            "trivial": {"model": "gpt-6-luna", "effort": "high"},
             "S": {"model": "gpt-6-luna", "effort": "high"},
             "M": {"model": _GPT_SOL, "effort": "medium"},
             "L": {"model": _GPT_SOL, "effort": "high"},

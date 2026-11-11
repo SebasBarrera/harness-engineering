@@ -80,6 +80,15 @@ Una bandera de riesgo (interfaz pública o palabras de seguridad) sube S a M, y 
 planificación ya descompuso por grande es L. Se puede calibrar con `harness routing calibrate`.
 No se creó una segunda clasificación: se reutiliza la del router.
 
+Desde #197 el router tiene además un nivel `trivial` solo para la llamada `implement`: una
+tarea S con entre 1 y `thresholds.trivial.requirements` requisitos (por defecto 1), entre 1 y
+`thresholds.trivial.files` archivos propios (por defecto 1), como mucho `thresholds.trivial.loc`
+líneas (por defecto 150), sin banderas de riesgo y sin descomponer se implementa con Haiku
+(`claude-haiku-5-5`, esfuerzo `medium`); todo lo demás sigue en Sonnet (S, M) u Opus (L). Si esa
+llamada falla la verificación, la escalada pasa primero al nivel S (Sonnet). Los presupuestos de
+esta página siguen usando S, M y L: una tarea trivial recibe el presupuesto de S. Los umbrales
+son valores iniciales por calibrar.
+
 ## Presupuesto de tokens y límite de tiempo
 
 Cada llamada recibe un presupuesto según el tamaño de su tarea, anotado en el contrato

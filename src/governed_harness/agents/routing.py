@@ -14,14 +14,15 @@ and the decision carries the digest of the policy it came from so it can be audi
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
 from governed_harness.configuration.agent_results import (
     DEFAULT_ROUTING_TABLES,
     DEFAULT_SIZE_THRESHOLDS,
+    DEFAULT_TRIVIAL_THRESHOLDS,
     AgentCallConfig,
     AgentRoutingConfig,
     CallKind,
@@ -50,6 +51,7 @@ __all__ = [
     "classify_size",
     "flags_for",
     "invoking_model",
+    "is_trivial",
     "model_argument",
     "model_rank",
     "provider_family",
@@ -62,6 +64,8 @@ DEFAULT_MAX_ESCALATIONS = 2
 """Escalation steps allowed per run when ``agentRouting.maxEscalations`` is not set."""
 
 _SIZE_ORDER: dict[str, int] = {"S": 0, "M": 1, "L": 2}
+TRIVIAL = "trivial"
+_IMPLEMENT_ORDER: dict[str, int] = {TRIVIAL: -1, **_SIZE_ORDER}
 _SIGNALS: tuple[str, ...] = ("requirements", "files", "loc")
 _ESCALATING_KINDS: frozenset[str] = frozenset({"implement", "review"})
 
@@ -166,6 +170,30 @@ def classify_size(signals: TaskSignals, thresholds: SizeThresholds | None) -> tu
         size = "L"
         rule = "planned-large -> L"
     return size, rule
+
+
+def is_trivial(signals: TaskSignals, thresholds: SizeThresholds | None) -> tuple[bool, str]:
+    """Whether an implement call may run on the ``trivial`` rung (#197), and why.
+
+    Deliberately conservative: the task is ``S``, has between one and the trivial bound of
+    requirements and of owned files (an unknown scope is not trivial), at most the trivial
+    bound of lines in them, no risk flag and no decomposition. Anything else keeps its size.
+    """
+    size, rule = classify_size(signals, thresholds)
+    if size != "S":
+        return False, rule
+    if signals.risk_flags:
+        return False, f"risk:{','.join(signals.risk_flags)}"
+    configured = thresholds.trivial if thresholds is not None else None
+    for name in _SIGNALS:
+        bound: int | None = getattr(configured, name, None) if configured else None
+        limit = bound if bound is not None else DEFAULT_TRIVIAL_THRESHOLDS[name]
+        value: int = getattr(signals, name)
+        if value > limit:
+            return False, f"{name}={value}>{limit} -> not trivial"
+        if name != "loc" and value < 1:
+            return False, f"{name}={value}<1 -> not trivial"
+    return True, "all signals within trivial"
 
 
 def _basename(element: str) -> str:
@@ -356,7 +384,7 @@ def _anchored_choice(
     table: FamilyTable,
     base: Rung,
     call_kind: CallKind,
-    size: SizeClass,
+    size: str,
     steps: int,
     anchor: str | None,
     family: ProviderFamily,
@@ -393,7 +421,8 @@ def select(
     output the deterministic verifier scores; the size is always classified so the record
     shows it. Under ``anchored`` (#85) ``anchor``, the invoking model, is the ceiling.
     """
-    size, _size_rule = classify_size(signals, policy.thresholds if policy else None)
+    thresholds = policy.thresholds if policy else None
+    size, _size_rule = classify_size(signals, thresholds)
     mode = policy.mode if policy is not None and policy.mode is not None else "fixed"
     digest = _policy_digest(policy, family)
 
@@ -433,6 +462,8 @@ def select(
     if base is None:
         return decision("fixed", None, None)
     steps = min(history.escalations, _max_escalations(policy))
+    if call_kind == "implement" and is_trivial(signals, thresholds)[0]:
+        return _trivial_decision(decision, table, base, steps, anchor, family, mode=mode)
     if mode == ANCHORED:
         return decision(*_anchored_values(table, base, call_kind, size, steps, anchor, family))
     if warning is not None:
@@ -446,11 +477,44 @@ def select(
     return decision(rule, chosen.model, chosen.effort, index, escalations)
 
 
+def _trivial_decision(
+    decision: Callable[..., RoutingDecision],
+    table: FamilyTable,
+    s_rung: Rung,
+    steps: int,
+    anchor: str | None,
+    family: ProviderFamily,
+    *,
+    mode: str,
+) -> RoutingDecision:
+    """The decision of a trivial implement call (#197): the family's ``trivial`` rung (else its
+    ``S`` rung). Its first escalation runs on the ``S`` rung and further ones climb the ladder
+    from there, so a trivial call that fails moves to the S model (Sonnet in the starting
+    claude-code table) before anything else."""
+    trivial = (table.implement or {}).get("trivial") or s_rung
+    base, remaining = trivial, steps
+    if steps > 0 and trivial != s_rung:
+        base, remaining = s_rung, steps - 1
+    if mode == ANCHORED:
+        rule, model, effort, index, _ = _anchored_values(
+            table, base, "implement", TRIVIAL, remaining, anchor, family
+        )
+        prefix = "anchored:"
+    else:
+        rule, rung, index, _ = _tier_choice(table, base, "implement", TRIVIAL, remaining)
+        model, effort = rung.model, rung.effort
+        prefix = ""
+    if steps > 0 and model is not None:
+        rule = f"{prefix}escalation:{steps}:implement:{TRIVIAL}"
+    result: RoutingDecision = decision(rule, model, effort, index, steps if model else 0)
+    return replace(result, size=TRIVIAL)
+
+
 def _anchored_values(
     table: FamilyTable,
     base: Rung,
     call_kind: CallKind,
-    size: SizeClass,
+    size: str,
     steps: int,
     anchor: str | None,
     family: ProviderFamily,
@@ -465,7 +529,7 @@ def _anchored_values(
 
 
 def _tier_choice(
-    table: FamilyTable, base: Rung, call_kind: CallKind, size: SizeClass, steps: int
+    table: FamilyTable, base: Rung, call_kind: CallKind, size: str, steps: int
 ) -> tuple[str, Rung, int | None, int]:
     """``(rule, rung, ladder index, escalations)`` of a tiered call: ``steps`` rungs up the
     family's ladder from ``base`` for a call that escalates, else ``base`` itself."""
@@ -594,7 +658,7 @@ def suggest_table(summary: list[dict[str, Any]]) -> dict[str, dict[str, dict[str
     """
     best: dict[str, dict[str, dict[str, Any]]] = {}
     for item in summary:
-        if item["callKind"] != "implement" or item["size"] not in _SIZE_ORDER:
+        if item["callKind"] != "implement" or item["size"] not in _IMPLEMENT_ORDER:
             continue
         per_task = item["costPerApprovedTask"]
         if per_task is None or item["approvedRuns"] < 2:
@@ -611,7 +675,7 @@ def suggest_table(summary: list[dict[str, Any]]) -> dict[str, dict[str, dict[str
     return {
         family: {
             size: {"model": sizes[size]["model"], "effort": sizes[size]["effort"]}
-            for size in sorted(sizes, key=lambda name: _SIZE_ORDER[name])
+            for size in sorted(sizes, key=lambda name: _IMPLEMENT_ORDER[name])
         }
         for family, sizes in sorted(best.items())
     }
