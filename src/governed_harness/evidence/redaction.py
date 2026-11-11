@@ -96,32 +96,33 @@ class SecretRedactor:
         document that no longer parses; redacting the decoded strings cannot. A value of a type
         JSON does not know is redacted in its ``str`` form, the form ``default=str`` stores."""
         applied: list[str] = []
+        return self._redact_json_value(value, applied), tuple(applied)
 
-        def text(item: str) -> str:
-            result = self.redact(item.encode("utf-8", "surrogatepass"))
-            if not result.redacted:
-                return item
-            applied.extend(rule for rule in result.rule_ids if rule not in applied)
-            try:
-                return result.data.decode("utf-8", "surrogatepass")
-            except UnicodeDecodeError:
-                return result.data.decode("utf-8", "replace")
+    def _redact_json_value(self, item: Any, applied: list[str]) -> Any:
+        if isinstance(item, str):
+            return self._redact_json_text(item, applied)
+        if isinstance(item, dict):
+            return {
+                (self._redact_json_text(key, applied) if isinstance(key, str) else key): (
+                    self._redact_json_value(entry, applied)
+                )
+                for key, entry in item.items()
+            }
+        if isinstance(item, list | tuple):
+            return [self._redact_json_value(entry, applied) for entry in item]
+        if item is None or isinstance(item, bool | int | float):
+            return item
+        return self._redact_json_text(str(item), applied)
 
-        def walk(item: Any) -> Any:
-            if isinstance(item, str):
-                return text(item)
-            if isinstance(item, dict):
-                return {
-                    (text(key) if isinstance(key, str) else key): walk(entry)
-                    for key, entry in item.items()
-                }
-            if isinstance(item, list | tuple):
-                return [walk(entry) for entry in item]
-            if item is None or isinstance(item, bool | int | float):
-                return item
-            return text(str(item))
-
-        return walk(value), tuple(applied)
+    def _redact_json_text(self, item: str, applied: list[str]) -> str:
+        result = self.redact(item.encode("utf-8", "surrogatepass"))
+        if not result.redacted:
+            return item
+        applied.extend(rule for rule in result.rule_ids if rule not in applied)
+        try:
+            return result.data.decode("utf-8", "surrogatepass")
+        except UnicodeDecodeError:
+            return result.data.decode("utf-8", "replace")
 
     def redact_configured_text(self, text: str) -> str:
         """Apply only the redaction configured for the store (provider environment values
