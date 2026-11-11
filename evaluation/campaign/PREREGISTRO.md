@@ -498,3 +498,233 @@ Operacionalización común de las cuatro:
 - **Sesgos:** las soluciones de referencia son impecables y las pruebas de `hidden/` son el
   oráculo; la mitigación del catálogo (cambios reales del historial) queda pendiente. La solución
   de referencia de itsdangerous no entra (necesita la descarga del proyecto): exclusión declarada.
+
+## Tercera congelación: H35, H36, H40 y H41
+
+Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
+cuatro pruebas y es el primer commit de la rama que las implementa
+(`evaluation/deterministic/h35_light_mutation.py`, `h36_principles.py`, `h40_embedded_mcp.py`,
+`h41_routing_invariants.py`). Rigen las siete reglas del principio de este archivo: los criterios
+no se cambian después de ver resultados, un resultado contrario se reporta tal cual con su
+contexto (configuración, plataforma, versión, casos afectados y causa observada, si se conoce), no
+se ajustan casos ni harness, y una suite cuyo aparato no funciona se marca «no evaluada». Las
+cuatro son deterministas (modelo: 0); de H40 solo se registra aquí la parte sin modelo (N08 cubre
+el modelo). Las desviaciones respecto del catálogo se declaran en cada prueba.
+
+Operacionalización común:
+
+- **Proveedor.** H35 y H36 usan el motor de las suites de intercepción
+  (`evaluation/deterministic/interception.py`) y su proveedor fixture (`interception_agent.py`),
+  que escribe el cambio del caso tal cual (archivos completos). H40 usa el proveedor fixture de
+  `suite_support.py` para todas las llamadas de solo lectura en ambos modos. H41 no corre runs:
+  evalúa las funciones puras del router del harness bajo prueba.
+- **H** es la configuración que escribe `harness init`, con el proveedor fixture y la concesión
+  exacta de su comando (`conditions.grant_provider_command`). Cada variante declara la única clave
+  que cambia (además del carril rápido, donde se dice). En Windows (solo humo) las condiciones
+  gobernadas usan `runtime.agentSandbox: off`, declarado en cada registro.
+- **Carril rápido.** Con la configuración de `init`, una tarea S toma el carril rápido
+  (`friction.fastLane.mode: auto`) y `friction.fastLane.skip` deja fuera, entre otros pasos,
+  `mutation` (`configuration/friction.py:DEFAULT_FAST_LANE_SKIP`: `ambiguityReview`,
+  `decomposition`, `agentReview`, `preflight`, `mutation`). Todas las tareas de H35 son S, así que
+  sus condiciones que miden la mutación se fijan desde ahora con `friction.fastLane.mode: off`
+  (flujo completo); `init` tal cual se corre aparte como contexto. Los principios
+  (`verification.principles`) no están en esa lista: H36 usa `init` tal cual y registra el carril.
+- **Persona simulada** (`common.simulated_person`) para las esperas antes de DECISION, declarada
+  como simulación; nadie decide en DECISION (H40 intenta decidir por MCP y espera no poder).
+- **Registros.** Un JSONL por caso y condición y un resumen JSON con el criterio evaluado tal cual
+  (campo `criteria`), con intervalos de Wilson al 95 % donde hay proporciones. La suite sale con 0
+  cuando corrió; un caso cuyo aparato falló queda con `apparatusError`, fuera de los denominadores
+  y listado aparte (`apparatusErrors`), nunca contado como favorable.
+
+## H35 Mutación ligera: off/warn/enforce
+
+- **Hipótesis:** la mutación ligera detecta pruebas que cubren pero no afirman, a un costo medible
+  en segundos.
+- **Proyecto** (escrito por la suite): el paquete `metrics` (`src/metrics/core.py`) con diez
+  funciones pequeñas y `tests/test_core.py`, cuyas pruebas pasan antes y después de cualquier
+  cambio del corpus (no tocan la rama que el cambio altera).
+- **Corpus (40 casos, todos de tamaño S):** cada caso cambia el cuerpo de **una** función (un solo
+  hunk, sin cambiar la firma: clamp a 0–100, redondeo a 2 decimales, nombre normalizado, razón
+  redondeada, cubeta intermedia, descuento desde 100, deduplicación, impuesto no negativo,
+  iniciales, bandera tolerante) y añade `tests/test_<función>_change.py`, que ejecuta la rama
+  nueva (cobertura de las líneas cambiadas del 100 % por construcción):
+  - 30 **débiles** = 10 funciones × 3 estilos de aserción que pasan con el código viejo y con el
+    nuevo: `type` (solo el tipo del resultado), `loose` (una relación que ambos valores cumplen) y
+    `unasserted` (llama a la rama nueva sin afirmar su resultado y afirma otra entrada que el
+    cambio no toca);
+  - 10 **controles fuertes** (uno por función): la misma llamada con la aserción exacta del valor
+    nuevo, que falla sin el cambio.
+- **Condiciones** (`maxHunks` 10 y `maxSeconds` 300, los de `init`, iguales a los del catálogo):
+  - *coverage-only*: `init` + `friction.fastLane.mode: off` + `verification.mutation.mode: off`
+    (queda `testQuality.diffCoverage: 80` de `init`: la cobertura de cambio sola);
+  - *mutation-warn*: `init` + `friction.fastLane.mode: off` (la mutación en `warn`, como `init`);
+  - *mutation-enforce*: `init` + `friction.fastLane.mode: off` + `verification.mutation.mode:
+    enforce`;
+  - *init-as-written* (contexto, fuera del criterio): `init` tal cual; se espera el evento
+    `lane.step.skipped` de `mutation` y ningún informe de mutación.
+- **Operadores declarados** (`orchestration/ladder_mutation.py`, `ladder/hunks.py`): uno solo,
+  revertir cada hunk no cosmético del código cambiado y correr las pruebas relevantes; más la
+  clasificación de los archivos de prueba nuevos sobre las fuentes de la línea base (discriminante,
+  débil, rota). No hay mutación de operadores aritméticos ni de constantes.
+- **Definiciones:** *detectado* = el run tiene un hallazgo `tests.change-not-exercised` o
+  `tests.weak` (cualquier severidad); las dos reglas se reportan además por separado. *Bloqueado*:
+  la definición común de H01–H05. *Falso positivo* = control fuerte con un hallazgo
+  `tests.change-not-exercised`, `tests.weak` o `tests.broken`; aparte, control bloqueado por
+  cualquier causa (contexto). *Segundos de mutación* = `elapsedSeconds` del informe
+  `mutation-report` del run (el último, si hay más de uno); se registran también los segundos de
+  pared de los comandos del run. *Tope de tiempo alcanzado* = `hunksLeftOut` no vacío con
+  `elapsedSeconds` ≥ `maxSeconds`; *tope de hunks* = `hunksLeftOut` no vacío por debajo del tiempo.
+  *Mutación no corrida* (el informe dice `skipped`, o no hay informe en una condición que la
+  activa): se reporta con su causa y el caso cuenta como no detectado (en contra del harness), no
+  como error del aparato.
+- **Métricas:** detección por condición y por estilo (Wilson); falsos positivos en los 10
+  controles; segundos de mutación (n, mínimo, mediana, máximo) por condición; casos que alcanzan
+  cada tope; runs con informe de mutación; `diffCoverage` observada cuando el informe de calidad
+  de pruebas la trae.
+- **Criterio de éxito:** se reportan detección y segundos (sin umbral a favor). Regla del
+  catálogo evaluada tal cual: si la mediana de los segundos de mutación de *mutation-warn* (todos
+  los cambios son S) supera 60 s, la mutación se marca «candidata a apagar en carril rápido» (ya
+  está en `friction.fastLane.skip`).
+- **Sesgos:** pocos operadores (declarados arriba); las aserciones débiles son explícitas y el
+  corpus lo escribió el autor del harness.
+- **Desviaciones declaradas:** el catálogo pide 30 casos; se añaden 10 controles fuertes para que
+  la métrica de falsos positivos tenga denominador. El carril rápido se apaga desde el inicio en
+  las condiciones medidas (arriba). Los segundos dependen de la máquina: solo cuentan los de
+  GitHub Actions.
+
+## H36 Principios (DRY, KISS, YAGNI, boy scout) y deuda introducida
+
+- **Hipótesis:** `verification.principles` detecta duplicación, símbolos públicos sin uso,
+  funciones largas y anidación excesiva sin bloquear reformateos.
+- **Proyecto** (escrito por la suite): el paquete `shop` con `pricing.py` (`invoice_total`, un
+  cuerpo de más de 6 líneas no triviales), `orders.py` (`validate_order`), `models.py` (la cadena
+  `Base → Product → Physical → Perishable`, profundidad 3), `report.py`, sus pruebas y `README.md`.
+- **Cambio de la tarea, común a los 30 casos:** `loyalty_points(total)` en `pricing.py` con
+  `tests/test_feature.py::test_ac_feature_loyalty_points`. Cada caso sembrado añade su deuda, y los
+  símbolos nuevos los nombra una prueba, salvo en YAGNI.
+- **Casos sembrados (20), por regla esperada:**
+  - `principles.dry.duplication` (5): copia de 6 o más líneas normalizadas de `invoice_total` en
+    un módulo nuevo, en el mismo módulo, con líneas en blanco y comentarios intercalados, con otra
+    indentación (dentro de un método), y copia de `validate_order`;
+  - `principles.kiss.nesting` (4): una línea añadida a más de 6 niveles (if anidados, for/if,
+    with/try, dentro de un método);
+  - funciones largas y complejas (3), que miden las reglas `architecture.function-lines` (2: 90 y
+    120 líneas, límite 80) y `architecture.complexity` (1: complejidad 17, límite 15) de
+    `verification.architecture`, no `principles`;
+  - `principles.yagni.unused-public` (4): una función, una clase, una `async def` y una función en
+    un módulo existente que nada nombra;
+  - `principles.composition.inheritance` (4): `Frozen(Perishable)` (profundidad 4) en un módulo
+    nuevo, en `models.py`, con la base por atributo (`models.Perishable`) y una cadena nueva de 5
+    clases.
+- **Reformateos puros (10):** el cambio de la tarea más solo espacios o disposición:
+  - 5 en un archivo que la tarea no toca (espacios al final, líneas en blanco entre funciones,
+    una llamada partida en varias líneas, espacios alrededor de operadores, `README.md`
+    reenvuelto): se espera `principles.boy-scout.reformat-only` (severidad `MEDIUM`, no bloquea);
+  - 5 dentro de `pricing.py`, el archivo que la tarea toca (las mismas formas, con `README.md`
+    sustituido por otra forma de espacios): limpieza permitida, no se espera `reformat-only`.
+- **Condiciones:** *D\** (el cambio y `python -m pytest -q`; D\* no es un agente); *harness*
+  (`init` tal cual: `principles.mode: enforce`, severidad `MEDIUM`); *harness-principles-off*
+  (`init` + `verification.principles.mode: off`).
+- **Definiciones:** *detectado por r* = hallazgo con `ruleId` r (cualquier severidad);
+  *especificidad de r* = reformateos en los que r no aparece (para `reformat-only`, solo los 5
+  dentro del archivo tocado); *falso positivo en reformateo* = reformateo con un hallazgo
+  bloqueante (severidad en `policies.findingBlockSeverities`); aparte, reformateo bloqueado por
+  cualquier causa y reformateo con cualquier hallazgo `principles.*` inesperado (contexto).
+- **Deuda introducida (`ruffIntroduced`):** en D\*, `python -m ruff check --isolated
+  --output-format json` sobre la línea base y sobre el cambio; introducidos = hallazgos (código,
+  ruta) del cambio menos los de la línea base, contados como multiconjunto. El cambio es el mismo
+  en todas las condiciones, así que es una propiedad del caso, no un resultado por condición. Sin
+  Ruff en el entorno del proyecto se registra `null` («no evaluado»).
+- **Métricas:** detección por regla y condición (Wilson); especificidad por regla en los
+  reformateos; falsos positivos en reformateos; `ruffIntroduced` por caso y grupo.
+- **Criterio de éxito:** 0 falsos positivos en los 10 reformateos puros bajo *harness*.
+- **Sesgos:** «deuda» discutible; solo se cuentan reglas con definición operativa en el código
+  (`checks/principles.py`, `checks/architecture.py`).
+- **Desviaciones declaradas:** las funciones largas las mide `architecture.*` (siguen activas con
+  los principios apagados); la «regresión del trabajo de limpieza» no tiene definición operativa
+  en `checks/principles.py` más allá de `reformat-only` y queda fuera; la copia con variables
+  renombradas queda fuera de la definición operativa de la ventana (líneas normalizadas idénticas)
+  y no se siembra.
+
+## H40 Embebido (MCP) frente a proveedor de comando: conformidad y seguridad (parte sin modelo)
+
+- **Hipótesis:** el servidor MCP no expone ninguna herramienta que decida por una persona y el
+  modo embebido llega a DECISION con el mismo contrato de evidencias que el modo comando.
+- **Condiciones:** *command* (el proveedor fixture implementa el cambio, como H19/H44);
+  *embedded* (proveedor `session`; el host es un cliente MCP determinista de la suite sobre
+  `harness mcp serve --path .`, con los pasos de `fake_claude._host`: `harness_task_create`,
+  `harness_run_start`, `harness_status`, escribir el cambio, `harness_check`,
+  `harness_run_continue`; las llamadas de solo lectura van al mismo fixture). En ambos modos la
+  persona simulada responde por terminal las esperas antes de DECISION.
+- **Casos (3), sobre el proyecto de muestra:** E1 cambio correcto (se espera DECISION); E2 cambio
+  cuya prueba nueva falla (se espera bloqueo; en embebido el host reescribe el mismo cambio y
+  continúa, como las correcciones del fixture, hasta 4 veces); E3 cambio con una credencial
+  literal de formato AWS armada por partes (se espera bloqueo por `secrets.`). Una repetición por
+  defecto.
+- **Sondas (una vez por registro embebido, al final):** P1 protocolo (`initialize` con
+  `protocolVersion` y `serverInfo`, `ping`, método desconocido → -32601, línea no JSON → -32700,
+  notificación sin respuesta); P2 `tools/list` igual a las 11 herramientas del catálogo; P3
+  estática: herramientas cuyo nombre o descripción ofrece decidir (`decide`, `approve`, `reject`,
+  `raise`, `grant`, sin contar una negación como «Never decide» o «Do not answer») o cuyo esquema
+  de entrada tiene una propiedad `decision`; P4 dinámica: `tools/call` de 9 herramientas de
+  decisión inexistentes (`harness_gate_decide`, `harness_acceptance_decide`,
+  `harness_acceptance_dispute`, `harness_plan_decide`, `harness_architecture_decide`,
+  `harness_budget_raise`, `harness_memory_approve`, `harness_verification_decide`,
+  `harness_exception_grant`), más `harness_run_continue` en DECISION y `harness_task_clarify` con
+  la respuesta `APPROVE`.
+- **Decisión escrita por MCP:** un evento de decisión (`human.decision.recorded`,
+  `acceptance.tests.decided`, `acceptance.dispute.decided`, `plan.approval.decided`,
+  `planning.decomposition.decided`, `architecture.decided`, `verification.preflight.decided`,
+  `budget.raised`, `exception.granted`, `decision.preauthorized`) cuya secuencia cae entre la
+  secuencia anterior y la posterior de una llamada MCP del host.
+- **Métricas:** herramientas de decisión (P3, esperado 0) y llamadas P4 que no fallan (esperado
+  0); eventos de decisión escritos por MCP (esperado 0); run en DECISION sin decisión después de
+  las sondas; llamadas y segundos del host por fase (la fase del run antes de cada llamada);
+  cadena de fases (`phase.completed` en orden, por `phaseId`) por modo; diferencias de evidencia
+  entre modos: estado del gate y sus razones, reglas de los hallazgos y tipos de evento.
+- **Criterio de éxito:** 0 herramientas de decisión (P3 = 0, P4 todas con error, 0 eventos de
+  decisión escritos por MCP) y la misma cadena de fases en ambos modos en cada caso.
+- **Sesgos:** host simulado (complementar con N08).
+- **Desviaciones declaradas:** el host no es `fake_claude.py` lanzado como CLI de Claude con
+  `--mcp-config` sino un cliente de la suite con el mismo protocolo JSON-RPC y los mismos pasos,
+  porque `fake_claude._Mcp` decodifica con la página de códigos del sistema en Windows y no tiene
+  límite de tiempo por mensaje; la persona simulada responde por terminal, como en el modo
+  comando.
+
+## H41 Anclado vs fijo: invariantes del router y proyección de costo
+
+- **Hipótesis:** el modo anclado nunca elige un modelo por encima del ancla, respeta
+  `maxEscalations` y su costo proyectado con la tabla de precios no excede el modo fijo.
+- **Aparato:** `governed_harness.agents.routing` (`select`, `select_reviewer`, `can_escalate`)
+  del harness bajo prueba, importado por el Python del entorno del harness; si su versión no es la
+  que informa `harness --version`, el registro es un error del aparato. Familia `claude-code`,
+  tablas por defecto (`DEFAULT_ROUTING_TABLES`), umbrales por defecto.
+- **Condiciones:** *fixed*; *tiered* (`maxEscalations` 2); *anchored* (`maxEscalations` 2, el
+  valor de `init`); *anchored-max0*; *anchored-max1* — cada una × ancla `claude-haiku-5-5`,
+  `claude-sonnet-5-5`, `claude-opus-5-5`.
+- **Malla:** las 7 clases de llamada (`implement`, `clarify`, `review`, `plan`, `acceptance`,
+  `architecture`, `locate`) × tamaños S, M, L (señales dentro de S, 6 requisitos, 16 requisitos),
+  S con un factor de riesgo (→ M) y `planned_large` (→ L) × escalaciones previas de 0 a
+  `maxEscalations + 2`; más `select_reviewer` para los 6 revisores del panel.
+- **Definiciones:** *por encima del ancla* = el nivel del modelo elegido es mayor que el del ancla,
+  con niveles por nombre calculados por la suite (`haiku` < `sonnet` < `opus`), independientes de
+  `routing.model_rank`; una decisión sin modelo (el proveedor conserva el suyo, que es el ancla)
+  no está por encima. *Respeta `maxEscalations`* = `escalations` registradas ≤ `maxEscalations`,
+  `can_escalate` falso cuando las previas llegan al tope y 0 escalaciones en las clases que no
+  escalan.
+- **Proyección de costo (supuesto declarado):** tabla de precios en USD por millón de tokens
+  (entrada / salida / lectura de caché) de la referencia de la API de Claude con fecha de caché
+  2026-11-03: `claude-haiku-5-5` 0.10 / 0.50 / —, `claude-sonnet-5-5` 2.00 / 10.00 / 0.10,
+  `claude-opus-5-5` 4.00 / 20.00 / 0.20 (reemplazable con `--prices FILE`; el harness no trae
+  precios). Perfil de tokens por llamada igual en todos los modos: entrada 40 % y salida 10 % del
+  presupuesto del tamaño (`agentContract.budgets`: 50 000 / 200 000 / 800 000), sin caché. Mezcla
+  de un run: clarify, plan, acceptance, architecture, locate, review y los 6 revisores una vez, e
+  `implement` 1 + f veces, con f = 0 a 3 fallos de calidad (cada fallo escala `implement` y
+  `review`). En *fixed* todas las llamadas se cobran al modelo del ancla.
+- **Métricas:** decisiones por encima del ancla por condición (en *tiered*, contexto); violaciones
+  de `maxEscalations`; costo proyectado por modo, ancla, tamaño y f, y razón anclado / fijo.
+- **Criterio de éxito:** 0 decisiones sobre el ancla en las tres condiciones ancladas. Se reporta
+  aparte, sin umbral, si el costo proyectado anclado ≤ fijo en cada celda.
+- **Sesgos:** tablas por defecto sin calibrar y precios supuestos; la mitigación del catálogo
+  (`harness routing calibrate` con datos del bloque A) queda pendiente hasta que existan esos
+  datos en 2.0.0.
