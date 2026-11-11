@@ -41,6 +41,8 @@ if request.get("kind") == "acceptance":
         "from sample import apply_discount\\n\\n\\n"
         f"def test_ac_1() -> None:\\n    assert {expected}\\n"
     )
+    if MODE == "lint":
+        content = "import os\\n" + content
     print(json.dumps({"status": "PASSED", "summary": "1 file",
                       "result": {"tests": [{"path": "tests/acceptance/test_ac_1.py", "content": content}]}}))
     sys.exit(0)
@@ -151,6 +153,26 @@ def test_tests_that_pass_before_the_change_are_a_finding(
         if item.rule_id == "acceptance.passes-before"
     ]
     assert weak.severity is FindingSeverity.MEDIUM
+
+
+def test_the_ratchet_spares_problems_in_the_frozen_tests(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#183: Ruff's problems in a frozen acceptance test still as approved are not the agent's
+    (the file is write-protected); the ratchet held them as a HIGH regression that the
+    correction loop could never fix."""
+    configure(python_workspace, tmp_path, "lint")
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["verification"]["ratchet"] = "enforce"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, run = start(python_workspace, tmp_path)
+    result = approve(application, python_workspace, run)
+    found = application.list_findings(python_workspace, run)
+    # Ruff still fails on the frozen file (F401); only the ratchet no longer blames the agent.
+    assert "python.ruff.failed" in {item.rule_id for item in found}
+    assert not [item for item in found if item.rule_id == "ratchet.regressed"]
+    assert result["execution"]["currentPhase"] == PhaseId.DECISION
 
 
 # ----- #82: frozen files of two runs in one workspace ------------------------------------------
