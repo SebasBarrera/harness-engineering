@@ -15,9 +15,9 @@ and the decision carries the digest of the policy it came from so it can be audi
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from governed_harness.configuration.agent_results import (
     DEFAULT_ROUTING_TABLES,
@@ -403,6 +403,52 @@ def _anchored_choice(
     return f"{prefix}:{call_kind}:{size}", chosen, start, 0
 
 
+NO_EFFORT_MODELS: tuple[str, ...] = (
+    "claude-3",
+    "haiku-4",
+    "sonnet-4-0",
+    "sonnet-4-5",
+    "sonnet-4-2025",
+    "opus-4-0",
+    "opus-4-1",
+    "opus-4-2025",
+)
+"""Since 2.0.1: Claude models (matched by name) whose API rejects or ignores ``effort``; a
+read-only effort (``agentRouting.readOnlyEffort``) is never sent to them."""
+
+
+def takes_effort(model: str) -> bool:
+    lowered = model.lower()
+    return not any(item in lowered for item in NO_EFFORT_MODELS)
+
+
+def _read_only_effort(
+    decision: RoutingDecision, policy: AgentRoutingConfig | None
+) -> RoutingDecision:
+    """The decision with the read-only effort of its kind (``agentRouting.readOnlyEffort``)
+    for the first attempt of a routed call; unchanged without the key, for ``implement``, an
+    explicit per-call setting, an escalation, an unknown model or one that takes no effort."""
+    own = (policy.read_only_effort if policy else None) or {}
+    efforts = {str(kind): str(value) for kind, value in own.items()}
+    effort = efforts.get(decision.call_kind)
+    if (
+        effort is None
+        or decision.call_kind == "implement"
+        or decision.rule == "override"
+        or decision.escalations
+        or decision.model is None
+        or not takes_effort(decision.model)
+        or effort == decision.effort
+    ):
+        return decision
+    return replace(
+        decision,
+        effort=effort,
+        rule=f"{decision.rule}:read-only-effort",
+        flags=flags_for(cast("ProviderFamily", decision.family), decision.model, effort),
+    )
+
+
 def select(
     call_kind: CallKind,
     signals: TaskSignals,
@@ -465,11 +511,15 @@ def select(
     if call_kind == "implement" and is_trivial(signals, thresholds)[0]:
         return _trivial_decision(decision, table, base, steps, anchor, family, mode=mode)
     if mode == ANCHORED:
-        return decision(*_anchored_values(table, base, call_kind, size, steps, anchor, family))
-    if warning is not None:
-        return decision(*_fallback_values(table, base, call_kind, size))
-    rule, chosen, index, escalations = _tier_choice(table, base, call_kind, size, steps)
-    return decision(rule, chosen.model, chosen.effort, index, escalations)
+        chosen_decision = decision(
+            *_anchored_values(table, base, call_kind, size, steps, anchor, family)
+        )
+    elif warning is not None:
+        chosen_decision = decision(*_fallback_values(table, base, call_kind, size))
+    else:
+        rule, chosen, index, escalations = _tier_choice(table, base, call_kind, size, steps)
+        chosen_decision = decision(rule, chosen.model, chosen.effort, index, escalations)
+    return _read_only_effort(chosen_decision, policy)
 
 
 def _fallback_values(
@@ -587,7 +637,7 @@ def select_reviewer(
         index = _ladder_index(anchored_ladder(table, anchor, family), rung, by_model=False)
     else:
         index = _ladder_index(table.ladder, rung, by_model=False) if table.ladder else None
-    return RoutingDecision(
+    chosen = RoutingDecision(
         call_kind="review",
         mode=decision.mode,
         family=family,
@@ -601,6 +651,7 @@ def select_reviewer(
         flags=flags_for(family, rung.model, rung.effort),
         anchor=decision.anchor,
     )
+    return _read_only_effort(chosen, policy)
 
 
 # ----- Calibration (N14: cost per approved task) ------------------------------------------

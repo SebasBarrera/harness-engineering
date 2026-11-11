@@ -62,6 +62,11 @@ _MAX_SEARCH_BYTES = 2_000_000
 
 CONVERGE_KEY = ":converge"
 """Suffix of the stored review of a revision under the converging review (#79)."""
+LAST_ROUND_KEY = "agentclarifylast"
+"""Since 2.0.1 (``skipSettled``): the digest and question count of the last review of a task
+in a run."""
+STOP_EVENT = "stop.condition"
+AMBIGUITY_STOP = "unresolvable-ambiguity"
 
 
 @dataclass(frozen=True)
@@ -221,13 +226,90 @@ class IntentReview:
                 "intent.agent-review.reused",
                 {"taskDigest": digest, "questions": len(items), "evidenceRef": cached["ref"]},
             )
+            self._remember_round(execution, task, context, len(items))
             return _Items(items, (cached["ref"],))
+        reason = self._settled(execution, task, context)
+        if reason is not None and context is not None:
+            ref = self._record_skip(execution, phase, task, reason, context)
+            results.set_flag_json(key, {"items": [], "ref": ref})
+            return _Items([], (ref,))
         fetched = self._call_review(execution, phase, task, deterministic, answers, context)
         if fetched.blocked is None:
             results.set_flag_json(
                 key, {"items": [list(item) for item in fetched.items], "ref": fetched.refs[-1]}
             )
+            self._remember_round(execution, task, context, len(fetched.items))
         return fetched
+
+    # ----- a settled review (2.0.1, ``skipSettled``) -------------------------------------------
+    @staticmethod
+    def _skips(context: Convergence | None) -> bool:
+        return context is not None and context.settings.skips_settled
+
+    def _remember_round(
+        self, execution: Execution, task: Task, context: Convergence | None, questions: int
+    ) -> None:
+        if not self._skips(context):
+            return
+        self.results.set_flag_json(
+            f"{LAST_ROUND_KEY}:{execution.execution_id}:{task.task_id}",
+            {"taskDigest": task_digest(task), "questions": questions},
+        )
+
+    def _settled(self, execution: Execution, task: Task, context: Convergence | None) -> str | None:
+        """Why the review of this new revision is not called (``skipSettled``): the previous
+        round of this run left no agent question, or the ``unresolvable-ambiguity`` stop
+        condition was recorded in this run; ``None`` otherwise."""
+        if not self._skips(context):
+            return None
+        stopped = any(
+            item.event_type == STOP_EVENT and item.payload.get("condition") == AMBIGUITY_STOP
+            for item in self.results.s.events.list(execution.execution_id)
+        )
+        if stopped:
+            return AMBIGUITY_STOP
+        last = self.results.flag_json(f"{LAST_ROUND_KEY}:{execution.execution_id}:{task.task_id}")
+        if (
+            isinstance(last, dict)
+            and last.get("questions") == 0
+            and last.get("taskDigest") != task_digest(task)
+        ):
+            return "no-new-questions"
+        return None
+
+    def _record_skip(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        task: Task,
+        reason: str,
+        context: Convergence,
+    ) -> str:
+        """Evidence and event of a review that was not called: the run goes on as after an
+        exhausted review with no open point (``onExhausted`` has nothing to ask or assume)."""
+        results = self.results
+        record = {
+            "taskDigest": task_digest(task),
+            "reason": reason,
+            "rounds": context.rounds,
+            "maxRounds": context.settings.rounds,
+            "onExhausted": context.settings.exhausted,
+            "questions": [],
+        }
+        ref = results.record_json(
+            execution,
+            phase.phase_id,
+            record,
+            kind="agent-clarify-skipped",
+            summary=f"Agent review of the task not called again ({reason})",
+        )
+        results.s.events.append(
+            execution.execution_id,
+            "intent.agent-review.skipped",
+            {**record, "evidenceRef": ref},
+            phase_execution_id=phase.phase_execution_id,
+        )
+        return ref
 
     def _call_review(
         self,
