@@ -672,6 +672,21 @@ anterior produce esa espera (su fixture responde el survey sin capas).
   bloqueados o con señal.
 - **Criterio (de honestidad, no de victoria):** se reporta la proporción de regresiones que
   escapan a ambos; no se fija umbral a favor. El resumen lo marca `evaluable: true`, `met: null`.
+- **Enmienda 2026-11-10 (antes de cualquier resultado).** Una corrida local del sorteo (la
+  selección del corpus, no un resultado del harness, regla 6) dio solo 5 regresiones de 20: con
+  el tope de 80 candidatos por clase, *cambio de excepción* (154 sitios) y *cambio de orden* (104)
+  agotaron el tope con 0 y 2 regresiones; *off-by-one* (27 sitios) y *otra codificación* (13) se
+  recorrieron enteras con 3 y 0. Con n = 5 la proporción de escapes no informa. Se **añade** una
+  selección ampliada con un tope de **400** candidatos por clase: es mayor que la clase más grande
+  (154 sitios), así que cada clase se recorre entera hasta llegar a 5 regresiones o agotar sus
+  sitios; el número no se ajusta a lo visto, solo garantiza el recorrido completo. La semilla
+  (`20261110`), los operadores, el orden del sorteo, la sonda y las condiciones de aceptación de un
+  mutante no cambian; los controles siguen siendo 5. Como el orden es el mismo, la selección
+  original es el prefijo de la ampliada: se guardan las dos (`h10-selection.json`, la registrada,
+  y `h10-selection-wide.json`, la de la enmienda), cada caso dice si está en la original, y el
+  resumen reporta las métricas y el criterio por separado para las dos. Si una clase sigue sin
+  regresiones con el tope ampliado, ese es el resultado y se reporta así. Las condiciones, las
+  definiciones y las métricas no cambian.
 - **Sesgo:** la tentación de elegir regresiones «que el harness atrapa» se evita con el sorteo; la
   sonda se escribe antes de ver la selección y no se cambia después.
 
