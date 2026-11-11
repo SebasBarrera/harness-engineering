@@ -41,7 +41,16 @@ REPO = EVAL_DIR.parent
 ITSDANGEROUS_URL = "https://github.com/pallets/itsdangerous/archive/refs/tags/2.2.0.tar.gz"
 ITSDANGEROUS_SHA256 = "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b"
 # The validators' tools of the deterministic suites (evaluation/results-2.0.0/deterministic).
-TOOLS = ["pytest", "pytest-cov", "freezegun==1.4.0", "ruff", "mypy", "coverage"]
+# Exact versions (amendment 2026-11-11 (2) of H44, PREREGISTRO.md): the ratchet and the validators
+# see the same rule defaults on every campaign run; they match requirements/ and the launchers.
+TOOLS = [
+    "pytest==8.3.5",
+    "pytest-cov==7.1.0",
+    "freezegun==1.4.0",
+    "ruff==0.17.4",
+    "mypy==2.4.1",
+    "coverage==7.17.2",
+]
 # The suites of the pre-registered tests (PREREGISTRO.md): one script each, the same arguments as
 # the ladder (--out, --work, --project-venv), plus the extras of suite_commands where a suite needs
 # more.

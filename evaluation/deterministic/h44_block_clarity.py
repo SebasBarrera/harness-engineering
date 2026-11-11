@@ -235,6 +235,9 @@ CASES: list[dict[str, Any]] = [
             },
         },
         location=("requirements.txt", False),
+        # Amendment 2026-11-11 (2): a blocking risk factor is a non-mandatory finding, so the
+        # run waits at DECISION for an exception (exit 4, docs/reference/exit-codes.md).
+        exit_code=4,
         mutate=block_dependency,
         task=discount_task("task_h44_b06", owned=[*OWNED, "requirements.txt"]),
     ),
@@ -290,7 +293,16 @@ CASES: list[dict[str, Any]] = [
         grant=False,
         outside_profile=True,
     ),
-    state("B13", "run", "a task without acceptance criteria", r"\bC0\b", task=NO_CRITERIA),
+    # Amendment 2026-11-11 (2): the questions are left unanswered, as in B14; an answer gives
+    # the task criteria and the C0 block the state declares is gone.
+    state(
+        "B13",
+        "run",
+        "a task without acceptance criteria, questions left unanswered",
+        r"\bC0\b",
+        task=NO_CRITERIA,
+        answer=False,
+    ),
     state(
         "B14",
         "run",
@@ -617,7 +629,9 @@ def runner(
     if action == "reject" and state_now.get("phase") == "DECISION":
         code, _ = decide(recording, workspace.ws, run_id, "REJECT", digest, SIMULATED_PERSON)
         stop = recording.outputs[-1]
-    elif action == "approve" and state_now.get("phase") == "DECISION":
+    elif action == "approve" and state_now.get("changeSetDigest"):
+        # Amendment 2026-11-11 (2): B02's run fails in VERIFICATION and never reaches DECISION;
+        # the person tries to approve it there (its ChangeSet exists), which is R01's state.
         code, _ = decide(recording, workspace.ws, run_id, "APPROVE", digest, SIMULATED_PERSON)
         stop = recording.outputs[-1]
     elif action == "stale-digest" and state_now.get("phase") == "DECISION":
@@ -728,8 +742,8 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     summary = {
         "suite": "H44",
         "title": "clarity and actionability of blocks",
-        "simulatedPerson": "human.reviewer-simulated answers the waits before DECISION and "
-        "takes the declared actions of B15 and R01-R04 (a declared simulation)",
+        "simulatedPerson": "human.reviewer-simulated answers the waits before DECISION (not "
+        "the INTENT questions of B13 and B14) and takes the declared actions of B15 and R01-R04 (a declared simulation)",
         "humanRating": "pending: the 1-5 rating by two people (a judgement) is not part of this "
         "deterministic suite",
         "states": {

@@ -880,6 +880,55 @@ Para no ocultar nada, las mismas referencias con las pruebas ocultas tal cual se
 aparece ningún hallazgo `floatMoney` ni `constraints.float-money` en ninguna de las dos
 referencias); no se cambia nada por él.
 
+### Enmienda 2026-11-11 (2) a H44 (tras el humo local que siguió a la enmienda anterior y antes de cualquier resultado de la campaña)
+
+Un humo local de H44 en Windows con la enmienda anterior (regla 6: no es un resultado y no se cita
+aquí ninguna cifra) dejó cinco estados sin cumplir la rúbrica. Se leyó cada uno contra el código y
+`docs/reference/exit-codes.md`. Ninguna corrida de la campaña de H44 se ha hecho. El criterio
+(≥ 90 %), la rúbrica R1–R4, el denominador y las causas esperadas no cambian.
+
+**Defectos del harness (2.0.0; se corrigen en el harness, no en la suite).** Ninguno de los dos
+mensajes existe en `v0.8.0` (`git show v0.8.0:` de `orchestration/engine.py` no tiene la
+clarificación de INTENT, y `application/hints.py` y `_decide_hint` no existen), así que no tocan
+conducta evaluada.
+
+- *B13 y B14 (R1).* INTENT bloqueado por preguntas decía solo `Intent needs clarification: N
+  question(s)`: la causa (la regla `C0`, `C1`–`C3` o `T1` que preguntó) no aparecía en ninguna
+  superficie y la persona tenía que correr `harness task questions` para saber por qué. Desde esta
+  enmienda el resumen nombra las reglas: `Intent needs clarification: N question(s) (rules C1,
+  T1)`.
+- *R04 (R3).* El rechazo de `gate decide` con un actor `agent.*`, `validator.*` o `harness.*`
+  nombraba la causa pero no traía `hint`: ningún comando siguiente. Desde esta enmienda el `hint`
+  remite a `harness review --run <run>` y a decidir como persona con su propio `--actor`.
+
+**Errores del aparato (se corrigen en la suite).**
+
+- *B06 (R4).* La salida esperada 6 contradecía el documento que la rúbrica cita: un factor de
+  riesgo con acción `block` es un hallazgo de un validador no obligatorio (`risk.*`,
+  `mandatory=False`), el run se detiene en DECISION con el gate `FAILED` esperando una excepción
+  de una persona («A person must approve an exception for this change») y `exit-codes.md`
+  documenta 4 para un run detenido en DECISION (6 es «outside DECISION»). Es la conducta de
+  `v0.8.0` (`_exit_for_execution`), así que no se cambia el harness. Desde esta enmienda la salida
+  esperada de B06 es 4; causa, ubicación y R1–R3 no cambian.
+- *B13 (R1, R4).* La persona simulada respondía las preguntas `C0`; la respuesta da criterios a la
+  tarea, el bloqueo `C0` que el estado declara desaparece y el run seguía hasta DECISION (salida
+  4), donde la causa ya no era la declarada. Desde esta enmienda B13 deja las preguntas sin
+  responder, como B14; la causa (`C0`) y la salida (6, «a task without acceptance criteria (rule
+  `C0`)» en `exit-codes.md`) no cambian.
+- *R01 (no evaluado).* La acción se tomaba solo si el run llegaba a DECISION, pero el run de B02
+  (secreto) falla en VERIFICATION por un validador obligatorio y nunca llega; el caso quedaba sin
+  evaluar. Desde esta enmienda la persona intenta `APPROVE` sobre ese run cuando su ChangeSet
+  existe (en VERIFICATION `FAILED`), que es el estado que R01 declara («APPROVE sobre el gate
+  fallido de B02»); salida (5) y causa (`FAILED` o «not pass») no cambian.
+
+**Versiones exactas de las herramientas.** `TOOLS` de `evaluation/campaign/run_deterministic.py`
+instalaba `pytest`, `pytest-cov`, `ruff`, `mypy` y `coverage` sin versión, de modo que una versión
+nueva de Ruff podía cambiar las reglas por defecto que ve el ratchet (`ratchet.regressed`) entre
+dos corridas. Desde esta enmienda se fijan a las versiones del resto del repositorio:
+`pytest==8.3.5` (la de `evaluation/launchers/common.sh`), `pytest-cov==7.1.0`, `freezegun==1.4.0`,
+`ruff==0.17.4`, `mypy==2.4.1` y `coverage==7.17.2` (`requirements/dev.txt`). Bandit (1.9.4) no
+está en `TOOLS` y no se añade.
+
 ## Tercera congelación: H27, H28, H31 y H32
 
 Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
