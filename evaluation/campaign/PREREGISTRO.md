@@ -726,3 +726,17 @@ Operacionalización común de las cuatro (la de la segunda congelación, salvo l
   referencia (nada acotado se envía) y no tiene límite que cumplir.
 - **Exclusión declarada:** la mitigación del catálogo (añadir itsdangerous) queda sin evaluar:
   necesita la descarga del proyecto.
+
+### Enmienda 1 a H13 (2026-11-10, antes de cualquier resultado)
+
+Al implementar la suite, y antes de correr nada, la lectura de `scripts/demo_flows.py` (flujo
+`agent-results`, agente `stubborn`: «after two corrections the run stopped in VERIFICATION»,
+salida 6) muestra que un cambio con una prueba que falla no llega a DECISION: el run se detiene en
+VERIFICATION tras `runtime.verificationCorrections` y no admite `gate decide`. Los 4 rechazados
+«con una prueba que falla (gate no `PASSED`)» no pueden producirse como se escribieron. Se
+sustituyen por 4 rechazados con el gate `FAILED` en DECISION por un requisito sin prueba que lo
+nombre (`traceability.requirement-untested`, HIGH; el flujo `traceability` de `demo_flows.py`
+llega a DECISION con el gate `FAILED` y registra el `REJECT`): la tarea declara un segundo
+requisito y el fixture escribe pruebas solo para el primero y el criterio. Las condiciones (D\* y
+H), las preguntas, las métricas y el criterio no cambian; en la pregunta 8 la verdad sigue siendo
+el resultado de la corrida independiente de `pytest` (que en estos 4 casos pasa).
