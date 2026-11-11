@@ -305,7 +305,7 @@ Full reference: [docs/reference/configuration.md](docs/reference/configuration.m
 
 | Profile | Detected by | Mandatory validator | Optional (when available) |
 |---|---|---|---|
-| Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check .`, `python -m mypy .` |
+| Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check --no-fix .`, `python -m mypy .` |
 | Node.js | `package.json` and lock files | `npm test --silent` (needs a `test` script) | `npm run lint`, `npm run typecheck` (if defined) |
 | Go, Rust, Java/Kotlin (Gradle, Maven), Swift, Android | `go.mod`, `Cargo.toml`, `build.gradle`, `pom.xml`, `Package.swift`, `AndroidManifest.xml` (under `toolchain.extendedProfiles`) | the toolchain's test command | its static check |
 

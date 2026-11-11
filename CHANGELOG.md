@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
+  which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
+  pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported
+  `acceptance.modified` and `acceptance.write-undone` against an agent that had not touched them.
+  The Python profile now runs `python -m ruff check --no-fix .` (also its `lint` default command
+  and the Ruff entry of the Python standards catalogue); Ruff reports every problem and changes
+  nothing.
 - The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
   request target with its query, so a token sent by mistake as `?token=...` was refused with 401
   but written in clear to standard output. The access line now keeps the client, method, path,
