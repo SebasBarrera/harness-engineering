@@ -282,6 +282,10 @@ class LadderIntake:
                 phase_execution_id=phase.phase_execution_id,
             )
             return IntentResult()
+        friction = hub.engine.friction
+        if friction.active and friction.skips(execution, "locate", PhaseId.INTENT):
+            # governance.riskProfile: the light profile asks for no localisation.
+            return IntentResult()
         key = f"locate:{execution.project_id}:{task.task_id}:{digest}"
         cached = results.flag_json(key)
         if isinstance(cached, dict) and isinstance(cached.get("locations"), list):

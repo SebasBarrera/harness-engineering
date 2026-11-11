@@ -261,6 +261,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             # Wave 7 (#5): repository content is untrusted, destructive commands are denied.
             "applyRepositoryPolicies": True,
             "enforceWorkflow": True,
+            # Governance by risk: small, risk-free tasks take the light profile, the others the
+            # full one; the security flag is read in context.
+            "riskProfile": "auto",
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
