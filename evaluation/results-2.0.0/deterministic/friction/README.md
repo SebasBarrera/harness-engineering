@@ -31,7 +31,7 @@ Command (worktree code with wave 9 merged). On 2026-10-06 it ran after the fault
 finished, with no other suite running (the first results shared the machine with the probes):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 $SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/friction.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/friction --work $SCRATCH/work/friction-w9
 ```
