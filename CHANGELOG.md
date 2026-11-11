@@ -26,6 +26,21 @@
   venv's installed harness and rejected the configuration `harness init` had written). With the
   source tree in a `.pth` file of a venv with the measuring tools, both cases pass on `develop`
   unchanged. No harness behavior changes.
+- The deterministic INTENT rules read Spanish tasks (`intake.language`, written by `harness init`
+  as `auto`; Refs #70). The rules (`C0` to `C3`, `T1`) only knew English: their words were ASCII
+  runs (`contraseñas` became `contrase` and `as`, `rápido` became `r` and `pido`), Spanish vague
+  words, result verbs, quality words and number words were unknown, and the questions were in
+  English. Under the key words are Unicode runs compared without diacritics; `es` adds Spanish
+  vocabularies to the English ones and asks the questions (and the next step of a `warn`
+  finding) in Spanish; `auto` detects the language of each task with a fixed count of Spanish
+  and English signals. Rule ids, question ids and targets do not change. Without the key the
+  rules, the questions and the configuration digest stay as they were. On the experiment tasks
+  of `evaluation/deterministic/intent_equivalence.py`, the Spanish set of the evaluation in
+  Spanish goes from `C0` 196, `C1` 6, `T1` 7 (no key) to `C0` 196, `C1` 6, `C2` 1, `T1` 6
+  (`auto`), against `C0` 196, `C1` 6, `C2` 1, `T1` 8 for the English set, which gives the same
+  questions with and without the key. See
+  `docs/reference/configuration.md` (the language of the rules) and
+  `docs/es/tareas-en-espanol.md`.
 - Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
   `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
   provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so

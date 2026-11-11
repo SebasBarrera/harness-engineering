@@ -39,7 +39,7 @@ def _state_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup", "language"),
     "verification": (
         "interface",
         "architecture",
