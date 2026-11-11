@@ -26,6 +26,15 @@
     the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
     the documents. `harness architecture refresh` redoes it. Guides in Spanish:
     `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+- `harness verify` and the events after the anchored head (#149), behind the new key
+  `governance.unanchoredEvents` that `harness init` writes (`warn`). The chain anchor covers
+  the chain up to its head; before, the events appended after it passed verify (only counted
+  in `eventsAfterAnchor`), and a forged `retention.artifacts.pruned` event appended after the
+  anchor made a deleted blob pass. Under the key, verify lists those events
+  (`anchor.unanchoredEvents`, a `warnings` entry; `fail` makes the anchor status `unanchored`
+  and exits 6), and a prune event excuses a missing artifact only when it is within the
+  anchored part (retention re-anchors after it prunes). A project without the key keeps the
+  earlier report and exit codes.
 - A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
   `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
   `project.yaml` without it behaves, and digests, as before.
