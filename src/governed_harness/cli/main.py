@@ -2767,6 +2767,7 @@ def api_serve(
     import uvicorn
 
     from governed_harness.api import create_app
+    from governed_harness.api.access_log import log_config
     from governed_harness.api.auth import api_settings, start_token
 
     settings = _call(lambda: api_settings(path))
@@ -2801,7 +2802,8 @@ def api_serve(
     api = _call(lambda: create_app(path, start_token=token))
     for notice in api.state.auth_notices:
         typer.echo(f"warning: {notice}", err=True)
-    uvicorn.run(api, host=host, port=port, log_level="info")
+    # The access log never holds query strings, where a mistaken token would be written (#174).
+    uvicorn.run(api, host=host, port=port, log_level="info", log_config=log_config())
 
 
 def main() -> None:

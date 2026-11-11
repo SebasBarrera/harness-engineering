@@ -283,11 +283,23 @@ def test_invalid_sections_and_short_tokens_stop_the_server(python_workspace: Pat
         create_app(python_workspace, start_token=ADMIN, environ={"TEST_API_REVIEWER": ADMIN})
 
 
-def _serve(workspace: Path, monkeypatch: pytest.MonkeyPatch, env: dict[str, str]) -> Any:
+def _serve(
+    workspace: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    env: dict[str, str],
+    options: list[dict[str, Any]] | None = None,
+) -> Any:
     import uvicorn
 
     served: list[object] = []
-    monkeypatch.setattr(uvicorn, "run", lambda app, **_: served.append(app))
+    if options is None:
+        options = []
+
+    def run(app: object, **kwargs: Any) -> None:
+        served.append(app)
+        options.append(kwargs)
+
+    monkeypatch.setattr(uvicorn, "run", run)
     for name in ("TEST_API_START", "TEST_API_REVIEWER", "TEST_API_VIEWER"):
         monkeypatch.delenv(name, raising=False)
     for name, value in env.items():
@@ -342,3 +354,69 @@ def test_api_serve_refuses_an_invalid_section(
     assert served == []
     assert "invalid api section" in result.stderr
     assert "inline" not in result.stderr  # the offending value is not echoed
+
+
+def test_api_serve_keeps_query_strings_out_of_the_access_log(
+    python_workspace: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A token sent by mistake in the query string is refused and never logged (#174)."""
+    import logging
+    import secrets
+    import socket
+    import threading
+    import time
+
+    import httpx
+    import uvicorn
+
+    token = secrets.token_urlsafe(32)
+    _write_api(python_workspace, SECTION)
+    options: list[dict[str, Any]] = []
+    result, served = _serve(python_workspace, monkeypatch, {"TEST_API_START": token}, options)
+    assert result.exit_code == 0, result.stderr
+    log_config = options[0]["log_config"]
+
+    names = ("uvicorn", "uvicorn.error", "uvicorn.access")
+    saved = {
+        name: (lg.handlers[:], lg.filters[:], lg.propagate, lg.level)
+        for name in names
+        for lg in [logging.getLogger(name)]
+    }
+    records: list[str] = []
+
+    class Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record.getMessage())
+
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    config = uvicorn.Config(served[0], log_level="info", log_config=log_config)  # type: ignore[arg-type]
+    server = uvicorn.Server(config)
+    capture = Capture()
+    for name in names:
+        logging.getLogger(name).addHandler(capture)
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 10
+        while not server.started and time.monotonic() < deadline:
+            time.sleep(0.05)
+        assert server.started
+        base = f"http://127.0.0.1:{port}"
+        refused = httpx.get(f"{base}/api/runs?token={token}", timeout=10)
+        assert refused.status_code == 401
+        accepted = httpx.get(f"{base}/api/session", headers=_bearer(token), timeout=10)
+        assert accepted.status_code == 200
+    finally:
+        server.should_exit = True
+        thread.join(timeout=10)
+        sock.close()
+        for name, (handlers, filters, propagate, level) in saved.items():
+            lg = logging.getLogger(name)
+            lg.handlers[:], lg.filters[:], lg.propagate = handlers, filters, propagate
+            lg.setLevel(level)
+    access = [line for line in records if "/api/runs" in line]
+    assert access, records
+    assert any('"GET /api/runs HTTP/1.1" 401' in line for line in access), access
+    assert all(token not in line and "?" not in line for line in records), records
