@@ -28,7 +28,7 @@ for MODEL in $EVAL_MODELS; do
       i=$((i + 1))
       if done_session "$CONDITION" "$MODEL" "$REP"; then continue; fi
       SLOT=$(make_slot "d$i")
-      CMD=("$SLOT/bin/python" "$CODE/longitudinal/run_session.py" --condition "$CONDITION" --model "$MODEL"
+      CMD=("$SLOT/$VENV_BIN/python" "$CODE/longitudinal/run_session.py" --condition "$CONDITION" --model "$MODEL"
         --rep "$REP" --work "$EVAL_WORK/runs/block-d/$MODEL" --out "$EVAL_OUT/longitudinal-$MODEL-$CONDITION.part.jsonl"
         ${DRY_FLAG[@]+"${DRY_FLAG[@]}"})
       if [ "$EVAL_PARALLEL" = "1" ]; then
@@ -47,5 +47,5 @@ for MODEL in $EVAL_MODELS; do
   done
 done
 SLOT=$(make_slot d1)
-"$SLOT/bin/python" "$CODE/longitudinal/report.py" "$EVAL_OUT" "$EVAL_OUT/summary-longitudinal.json" > /dev/null
+"$SLOT/$VENV_BIN/python" "$CODE/longitudinal/report.py" "$EVAL_OUT" "$EVAL_OUT/summary-longitudinal.json" > /dev/null
 log "BLOCK-D-DONE"

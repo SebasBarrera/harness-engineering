@@ -43,7 +43,7 @@ def main() -> int:
             print(f"{record['model']} {record['level']} {record['condition']} r{record['rep']}: "
                   f"{hidden['passed']}/{hidden['total']} cases, "
                   f"{hidden['requirementsMet']}/{hidden['requirementsTotal']} requirements")
-        path.with_suffix(".scored.jsonl").write_text("\n".join(scored) + "\n", encoding="utf-8")
+        path.with_suffix(".scored.jsonl").write_text("\n".join(scored) + "\n", encoding="utf-8", newline="\n")
     return 0
 
 

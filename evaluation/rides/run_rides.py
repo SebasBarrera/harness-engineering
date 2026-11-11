@@ -157,7 +157,7 @@ def prepare(workspace: Path, site_packages: Path, with_spec: bool) -> None:
     if with_spec:
         (workspace / "docs").mkdir()
         shutil.copy2(HERE / "SPEC.md", workspace / "docs" / "SPEC.md")
-    (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
+    (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8", newline="\n")
     git(workspace, "init", "-q")
     git(workspace, "add", "-A")
     git(workspace, "commit", "-qm", "baseline")
@@ -224,7 +224,7 @@ def configure_limits(workspace: Path, model: str) -> None:
         "--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET, "--resumable"]
     # Waits for the usage limit happen inside the provider call, so the harness must not cut it short.
     config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
 
 
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str,
@@ -232,7 +232,7 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
     # Feedback belongs to the correction cycles of one task; a later step must not receive it.
     (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
-    task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+    task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8", newline="\n")
     if "acceptanceCriteria" not in task:
         harness(workspace, "init", "--path", ".")
         created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
@@ -274,7 +274,7 @@ def main() -> int:
     if unfinished:
         run_dir = unfinished[-1]
         workspace, scratch = run_dir / "ws", run_dir / "measure"
-        (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
+        (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8", newline="\n")
         progress = json.loads((run_dir / "progress.json").read_text(encoding="utf-8"))
         progress["restarts"] += 1
     else:
@@ -294,7 +294,7 @@ def main() -> int:
     def save_progress(current: str | None) -> None:
         progress["current"] = current
         progress["elapsedSeconds"] = round(time.monotonic() - started, 3)
-        (run_dir / "progress.json").write_text(json.dumps(progress, indent=1), encoding="utf-8")
+        (run_dir / "progress.json").write_text(json.dumps(progress, indent=1), encoding="utf-8", newline="\n")
 
     def direct(text: str, label: str) -> None:
         before = len(list(calls_dir.glob("call-*.json")))
@@ -368,10 +368,10 @@ def main() -> int:
         "final": {"hidden": hidden, **final_measures(workspace, scratch)},
         "quality": analyze(workspace, TOOLS_PYTHON),
     }
-    (run_dir / "prompts-sent.json").write_text(json.dumps(prompts_sent, indent=1), encoding="utf-8")
-    (run_dir / "record.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
+    (run_dir / "prompts-sent.json").write_text(json.dumps(prompts_sent, indent=1), encoding="utf-8", newline="\n")
+    (run_dir / "record.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
     print(json.dumps({k: record[k] for k in ("level", "condition", "model", "rep", "wallSeconds")}
                      | ({"hidden": "pending"} if hidden.get("pending") else

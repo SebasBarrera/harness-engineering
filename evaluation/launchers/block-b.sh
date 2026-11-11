@@ -20,7 +20,7 @@ for MODEL in $EVAL_MODELS; do
     for SC in $EVAL_SCENARIOS; do
       i=$((i + 1))
       SLOT=$(make_slot "b$i")
-      CMD=("$SLOT/bin/python" "$CODE/run_matrix.py" --model "$MODEL" --reps "$EVAL_REPS" --scenarios "$SC"
+      CMD=("$SLOT/$VENV_BIN/python" "$CODE/run_matrix.py" --model "$MODEL" --reps "$EVAL_REPS" --scenarios "$SC"
         --prompt "$PROMPT" --conditions "$CONDITIONS" --work "$EVAL_WORK/runs/block-b/$MODEL"
         --cache "$EVAL_CACHE" --out "$EVAL_OUT/B-$PROMPT-$MODEL-$SC.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"} ${CORE_FLAG[@]+"${CORE_FLAG[@]}"})
       if [ "$EVAL_PARALLEL" = "1" ]; then
@@ -34,6 +34,6 @@ for MODEL in $EVAL_MODELS; do
   done
 done
 SLOT=$(make_slot b1)
-"$SLOT/bin/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
-"$SLOT/bin/python" "$CODE/report_prompts.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-prompts.json" > /dev/null
+"$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+"$SLOT/$VENV_BIN/python" "$CODE/report_prompts.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-prompts.json" > /dev/null
 log "BLOCK-B-DONE"

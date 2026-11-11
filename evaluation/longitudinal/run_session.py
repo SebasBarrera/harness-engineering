@@ -272,6 +272,7 @@ def main() -> int:
                     sort_keys=False,
                 ),
                 encoding="utf-8",
+                newline="\n",
             )
             if args.condition == "harness-legacy":
                 outcome = run_eval.run_harness(workspace, run_dir, task_file, args.model)
@@ -295,7 +296,9 @@ def main() -> int:
                     claude_bin=claude_bin,
                 )
                 (run_dir / f"project-{increment['id']}-{kind}.yaml").write_text(
-                    (run_dir / "project.yaml").read_text(encoding="utf-8"), encoding="utf-8"
+                    (run_dir / "project.yaml").read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                    newline="\n",
                 )
                 step["productOwner"] = owner.rounds
             keys = (
@@ -385,7 +388,7 @@ def main() -> int:
         },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE.parent, args.work)
             + "\n"
