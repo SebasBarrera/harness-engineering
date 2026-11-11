@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from governed_harness.evidence.redaction import SecretRedactor
@@ -26,3 +28,16 @@ def test_non_secret_is_unchanged() -> None:
     result = SecretRedactor().redact(data)
     assert result.data == data
     assert not result.redacted
+
+
+def test_redact_json_redacts_a_quoted_secret_in_a_decoded_string() -> None:
+    # #178: the text redaction of the serialized JSON cannot see this value (its quotes are
+    # escaped there); the decoded string shows it.
+    value = {"content": 'password = "supersecret123"\n_ = password\n', "line": 'a\\nb\t"c"'}
+    serialized = json.dumps(value).encode("utf-8")
+    assert b"supersecret123" in SecretRedactor().redact(serialized).data
+    redacted, rule_ids = SecretRedactor().redact_json(value)
+    assert redacted == {"content": "password = <REDACTED>\n_ = password\n", "line": value["line"]}
+    assert rule_ids == ("generic_secret_assignment",)
+    again, _ = SecretRedactor().redact_json(redacted)
+    assert again == redacted

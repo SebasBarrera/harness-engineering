@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Security: a quoted secret inside a JSON string is no longer stored in clear (#178). The
+  `generic_secret_assignment` rule (unchanged since 0.8.0) runs on the serialized JSON of an
+  artifact, where `password = "..."` in a string is escaped as `password = \"...\"` and does not
+  match, and the string-by-string redaction of #152 ran only when the text redaction broke the
+  document. `put_json` now also runs the redactor on every decoded string and, when any of them
+  redacts, stores the document redacted string by string. A JSON artifact with nothing to redact
+  in its strings keeps its bytes and digest; the stored bytes of 1.0.0 change only where such a
+  secret was stored in clear. A redacted artifact is never applied as data: a pinned task revision
+  stored redacted is replaced by the stored task while it has the digest pinned with it (otherwise
+  the run stops with a policy error), and a snapshot text that no longer matches its file's digest
+  is never written back by a restore or a materialized copy (Git gives it back under
+  `baseline: manifest`, otherwise the path is reported as not restorable). The reproduce-first
+  check keeps the snapshot its correction started from in memory.
 - The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
   They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
   regression, but the agent cannot change them (approved by a person, write-protected): in the
