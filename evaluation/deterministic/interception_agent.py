@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fixture command provider of the interception suites (H01-H05, H09, H15, H38). No model.
+"""Fixture command provider of the interception suites (H01-H07, H09, H10, H12, H15, H38). No model.
 
 The same protocol as the fixture agent of ``friction.py``: the request arrives as JSON on stdin;
 the read-only kinds get empty results; ``implement`` writes the seeded change exactly as the case
@@ -8,7 +8,11 @@ declares it (whole files, and deletions) and reports success. The usage it repor
 
 Usage (as a provider command): python interception_agent.py --change CHANGE.json
 where CHANGE.json is ``{"write": {path: content}, "delete": [path, ...]}``, optionally with
-``"append": {path: text}``, ``"symlink": {path: target}`` and ``"tolerateDenied": true`` (H04).
+``"append": {path: text}``, ``"symlink": {path: target}`` and ``"tolerateDenied": true`` (H04),
+``"results": {kind: result}`` (the result of a read-only call instead of the empty one; under
+``"acceptanceRevision"`` the answer to an acceptance request that carries a ``revision``; H06,
+H12), ``"summary"`` and ``"selfReport"`` (what ``implement`` answers with; H07, H12). Without
+these keys it answers as before.
 """
 
 from __future__ import annotations
@@ -108,12 +112,19 @@ def main() -> int:
     )
     if kind == "review" and "outputContract" in request:
         results["review"] = {"verdict": "PASS", "findings": [], "summary": "No finding."}
+    change = json.loads(Path(args.change).read_text(encoding="utf-8"))
+    overrides = change.get("results") or {}
+    if kind in overrides and not (kind == "architecture" and request.get("mode") == "advise"):
+        results[kind] = overrides[kind]
+    if kind == "acceptance" and request.get("revision") and "acceptanceRevision" in overrides:
+        results[kind] = overrides["acceptanceRevision"]
     if kind == "implement":
-        change = json.loads(Path(args.change).read_text(encoding="utf-8"))
         denied = write_change(change)
-        answer = {"status": "PASSED", "summary": "Change written"}
+        answer = {"status": "PASSED", "summary": str(change.get("summary") or "Change written")}
+        if "selfReport" in change:
+            answer["selfReport"] = change["selfReport"]
         if denied:
-            answer["summary"] = "Change written; denied: " + ", ".join(denied)
+            answer["summary"] += "; denied: " + ", ".join(denied)
         if change.get("tolerateDenied"):
             # Next to the change file, for the suite's record; where the sandbox does not allow
             # it, nothing is written and the suite records that it could not read it.
