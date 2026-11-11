@@ -691,3 +691,22 @@ Operacionalización común de las cuatro:
 - **Desviaciones declaradas:** el runner es un script fixture, no behave (no hay versión de un
   runner BDD que registrar; se registra el SHA-256 del script); son 5 reescrituras más un control,
   sobre el proyecto de muestra del flujo `bdd` y no sobre `demo_flows.py` mismo.
+
+### Enmienda 1 a la tercera congelación (2026-11-10, antes de cualquier resultado)
+
+Al escribir el corpus de H27 contra las plantillas (`resources/architecture/*.md`), sin haber
+corrido nada, se vio que la definición de los papeles de las capas no es consistente para
+`layered`: su primera capa (`presentation`) puede depender de `services`, así que «B = primera
+capa» y «T1 = segunda capa» harían de P una importación permitida y no una violación. Se precisa
+la definición, sin cambiar condiciones, cambios, métricas ni criterio: **B** es la capa sin entrada
+en `allow` (no puede depender de nada), **T1** una capa que puede depender de B, **T2** otra capa
+distinta de B y T1 y **U** una capa de la que T1 no puede depender. Por estilo (B, T1, T2, U):
+layered (data, services, presentation, presentation); hexagonal (domain, application, adapters,
+adapters); clean (entities, usecases, adapters, frameworks); ddd (domain, application,
+infrastructure, interfaces); mvvm (model, viewmodel, view, view); mvi (model, intent, view,
+view); cqrs (domain, commands, queries, queries). Directorios del nombrado alternativo: layered
+`web`, `service`, `repositories`; hexagonal `core`, `ports`, `infrastructure`; clean `entities`,
+`use_cases`, `interface_adapters`, `drivers`; ddd `domain`, `application`, `infrastructure`,
+`api`; mvvm `models`, `viewmodels`, `views`; mvi `state`, `intents`, `ui`; cqrs `domain`,
+`write`, `read` (donde la plantilla tiene un solo patrón se repite el nombre bajo
+`src/shop/sales/`).
