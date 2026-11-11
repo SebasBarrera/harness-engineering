@@ -703,3 +703,31 @@ Operacionalización común de las cuatro:
 - **Expectativa leída en el código, no criterio:** E03 con `dirtyTree: warn` (init) aparece solo
   como dato del check `environment` en `PASSED`, y E05 no tiene check de versión del intérprete
   del proyecto: se espera que no se detecten; se reporta tal cual.
+
+### Enmienda del 2026-11-10 a la tercera congelación (antes de cualquier resultado)
+
+Tres corridas de humo del aparato en Windows (no son resultados; no se versionan) mostraron que
+dos piezas de lo congelado no pueden distinguir lo que deben. Se enmiendan aquí, antes de
+cualquier resultado, sin quitar condiciones ni cambiar criterios:
+
+1. **El cambio de H47, H48, H50 y H51.** El «cambio correcto» de las suites anteriores
+   (`resource_support.CORRECT_CODE`) añade `subtotal: float`, que el factor de riesgo
+   `floatMoney` (`block` en `harness init`) convierte en un hallazgo HIGH: ese run no se puede
+   aprobar ni cerrar, con o sin muerte, y H47 no podría distinguir una recuperación de un gate
+   fallido por otra causa. Estas cuatro suites usan el mismo descuento sin anotaciones `float`
+   (`robustness_support.APPROVABLE_CODE`) y las mismas pruebas. H48 usa sus propias funciones,
+   sin palabras de dinero.
+2. **Puntos de H47 y llamadas de H50.** Con la tarea S del proyecto de muestra y la
+   configuración de `init`, el run solo llama a `architecture`, `acceptance` e `implement` (el
+   registro del fixture); `clarify`, `locate`, `plan` y `review` no ocurren. Por eso:
+   - en H47, K01, K02, K05 y K09 pasan a ser fronteras de fase observadas en la base, como
+     pide el catálogo («matar el proceso en cada frontera de fase»), con la misma carrera
+     declarada que K08 y K10: K01 en cuanto aparece `phase.completed` de INTENT, K02 de
+     DISCOVERY, K05 de PLANNING, y K09 en cuanto aparece `phase.started` de
+     INDEPENDENT_REVIEW. K03, K04, K06, K07, K08 y K10 no cambian;
+   - en H50, M3 a M6 fallan en `acceptance` (SPECIFICATION, de solo lectura y con
+     `contractRetry`) en lugar de `plan`, con la misma expectativa.
+
+Se mantienen las condiciones, las métricas, las definiciones y los criterios. Además se registra
+(es una métrica, no un cambio): en H47, el detalle de lo que `harness verify` no verificó; en
+H48 y H47, los mensajes del candado sin el nombre del equipo ni el pid.
