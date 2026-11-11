@@ -287,6 +287,78 @@ al agente por igual en todas las condiciones; no cambia hipótesis, métricas ni
    `total_cost_usd` no se inspeccionó; si el análisis recalcula el costo desde los tokens con esta
    tabla y difiere del de Claude Code, se reportan los dos.
 
+### Enmienda 2026-11-11: la campaña corre sobre la versión 2.0.1
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña** (los pilotos Haiku y Sonnet
+corrieron sobre 2.0.0 y son comprobaciones del aparato, no resultados). No cambia hipótesis,
+métricas ni criterios de éxito; declara la versión bajo prueba y cómo cambian las condiciones.
+
+**Versión bajo prueba.** La campaña corre sobre el harness **2.0.1**, no sobre 2.0.0. Cada
+resultado lo registra igual que antes (`environment.json`: versión del harness, SHA-256 del wheel,
+`repositoryHead`). Donde este registro dice «2.0.0» al nombrar la versión bajo prueba de la
+campaña, se lee 2.0.1; las referencias a los pilotos y a resultados anteriores siguen siendo 2.0.0.
+
+**Lo que `harness init` escribe además en 2.0.1.** Cada clave es opcional y su ausencia conserva el
+comportamiento y el digest de configuración de 2.0.0:
+
+1. `governance.riskProfile: auto`: gobierno por riesgo. Una tarea que el router clasifica `S` sin
+   bandera de riesgo (sin término de seguridad, sin coincidencia con `riskPaths`, sin verificación
+   por encima de `L1`) va por el **perfil liviano**; toda otra tarea, por el completo. El perfil
+   liviano es el carril rápido de `friction.fastLane` (su `skip` y su `verification` si están
+   configurados; si no, los valores por defecto), sin llamada `locate` y sin el punto de control
+   `planApproval: risk`; conserva las nueve fases, los validadores obligatorios, las pruebas de
+   aceptación congeladas, el gate que falla cerrado, la decisión humana ligada al digest y la
+   cadena de eventos, y un ChangeSet con factor de riesgo saca a la corrida de él. Con la clave
+   presente la bandera `security` la lee el detector en contexto (`agents/risk_terms.py`) en vez de
+   la lista de palabras de 1.x. Con `auto` el carril existe aunque falte la sección `friction`.
+2. `context.locate.reuse: scope`: `locate` reutiliza su último resultado de la tarea mientras el
+   alcance no cambie (rutas propias, `scope`, `scopePaths` y `outOfScope` del contrato, tamaño y
+   `maxLocations`): una llamada en vez de una por revisión respondida (evento `locate.reused` con
+   `scope: true`).
+3. `intake.ambiguityReview.skipSettled: true`: la revisión de ambigüedad no se vuelve a llamar en
+   una revisión nueva cuando la ronda anterior no dejó preguntas del agente o cuando ya se registró
+   la parada `unresolvable-ambiguity` (evento `intent.agent-review.skipped` con la razón).
+4. `agentRouting.readOnlyEffort` (`clarify: low`, `locate: low`, `architecture: medium`,
+   `review: medium`): el esfuerzo del primer intento de una llamada de solo lectura **ruteada**,
+   incluidos los revisores del panel; `implement` y las escaladas no cambian, y un modelo que no
+   admite esfuerzo (Haiku 4.x, entre ellos `claude-haiku-4-5-20251001`) no lo recibe.
+5. `agentContract.budgetProfile: by-kind`: topes de tokens por tipo de llamada en vez del tope
+   uniforme por tamaño (50 000 / 200 000 / 800 000): `implement` S 120 000, M 300 000, L 800 000;
+   las de solo lectura S 100 000, M 200 000, L 800 000. Los límites de tiempo no cambian
+   (600 / 1 800 / 5 400 s) y un tamaño de `agentContract.budgets` con `tokens` propios gana.
+6. **Registro en lote de los hallazgos** (sin clave): VERIFICATION guarda los hallazgos de una
+   validación en una transacción de cada almacén (`put_many`, `append_many`) en vez de dos commits
+   por hallazgo. Los eventos son los mismos que escribe `append` (mismo sobre, secuencia y cadena
+   de digests); cambia solo el tiempo de reloj.
+
+**Condiciones afectadas.**
+
+- `harness` y `harness-anchored`: **sí**. Toman lo que escribe `harness init` de la versión bajo
+  prueba, así que llevan los puntos 1 a 5 y su `project.yaml` (regla 7) y su digest de
+  configuración difieren de los de 2.0.0. El punto 4 solo actúa en llamadas ruteadas: en `harness`
+  (`agentRouting.mode: fixed`, toda llamada con el modelo de la celda) no tiene efecto; en
+  `harness-anchored` actúa en las celdas Sonnet y no en las Haiku (`claude-haiku-4-5-20251001` no
+  admite esfuerzo).
+- `harness-core`: **no**. Es la configuración que escribía `harness init` en 1.0.0
+  (`evaluation/conditions.py:core_config`), sin ninguna de esas claves: sin perfiles por riesgo
+  (la bandera `security` sigue siendo la lista de palabras de 1.x), sin reutilización de `locate`,
+  sin `skipSettled`, sin esfuerzo de solo lectura y con el tope uniforme. Solo el punto 6, que no
+  tiene clave, le aplica igual que a las otras condiciones gobernadas, sin cambiar sus eventos.
+- `direct`: **no**. No usa el harness.
+
+**Suites deterministas que parten de `harness init`.** Heredan las mismas claves:
+
+- H19, condición *H* («presupuestos por defecto»): los presupuestos por defecto pasan a ser los del
+  punto 5 (por tipo de llamada); los perfiles de uso se calculan, como antes, sobre el presupuesto
+  que recibe cada llamada en `agentContract`. *H-reduced* fija `tokens` en cada tamaño de
+  `agentContract.budgets`, que gana sobre el perfil por tipo: no cambia.
+- H38 / N03-a, condición «flujo completo» (`harness init` sin la sección `friction`): con
+  `riskProfile: auto` quitar `friction` ya no deja el flujo completo, porque el perfil liviano
+  existe sin esa sección. La condición se define desde esta enmienda como `harness init` sin la
+  sección `friction` y con `governance.riskProfile: full`. Al escribir esta enmienda
+  `evaluation/deterministic/friction.py:configure` solo quita `friction` y no escribe esa clave:
+  hasta que lo haga, sus corridas de esa condición no cuentan como flujo completo.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos
