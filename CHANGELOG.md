@@ -9,8 +9,8 @@
   now checks that flow (the `environment.baseline-failing` and `differential.preexisting`
   findings, the project's suite after installing `freezegun`: 298 passed, `APPROVE` 0), keeps the
   run registry in its work directory (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory
-  in Git Bash, which used to split `PATH` at the drive colon. The brownfield guides and the README
-  describe the current flow.
+  in Git Bash, which used to split `PATH` at the drive colon. The `docs-smoke` flows job runs it on
+  the built wheel; the brownfield guides and the README describe the current flow.
 - The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
   which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
   pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported

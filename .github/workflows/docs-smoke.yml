@@ -1,6 +1,7 @@
 # Keeps the documentation honest: reproduces the README quickstart and the demonstration flows
-# with their documented exit codes, checks that the generated references are up to date and
-# builds the documentation site in strict mode.
+# with their documented exit codes, runs the brownfield example on the built wheel (it downloads
+# the itsdangerous tag archive, checked by SHA-256, and hash-pinned packages), checks that the
+# generated references are up to date and builds the documentation site in strict mode.
 name: docs-smoke
 
 on:
@@ -67,6 +68,10 @@ jobs:
           for s in steps:
               print(f"| {s['flow']} | `{s['command'][:80]}` | {s['expected']} | {s['actual']} |")
           PY
+      - name: Reproduce the brownfield case (pallets/itsdangerous 2.2.0)
+        run: |
+          wheel=$(ls "$PWD"/dist/*.whl)
+          PYTHON=python bash examples/brownfield-itsdangerous/reproduce.sh "$wheel" "$RUNNER_TEMP/brownfield"
 
   references:
     name: generated references
