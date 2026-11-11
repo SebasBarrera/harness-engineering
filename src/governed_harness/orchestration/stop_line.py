@@ -36,7 +36,7 @@ from governed_harness.domain.models import ChangeSet, Execution, utc_now
 from governed_harness.evidence.hashing import sha256_bytes, sha256_file
 from governed_harness.orchestration.workspace_ops import restore_changes
 from governed_harness.runtime.guard import IGNORED_PATTERNS
-from governed_harness.runtime.workspace import WorkspaceDiff
+from governed_harness.runtime.workspace import WorkspaceDiff, WorkspaceSnapshot
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
@@ -51,6 +51,27 @@ REAPPLY_PHASES = frozenset(
 """The phases that evaluate the run's ChangeSet: a run quarantined in one of them and continued
 gets its quarantined changes back. A run quarantined in IMPLEMENTATION implements again from the
 baseline."""
+
+
+def _write_checked(path: str, target: Path, data: bytes | None) -> None:
+    """Write ``data`` to ``target`` (``None`` deletes it) and check it holds it afterwards."""
+    if data is None:
+        target.unlink(missing_ok=True)
+    else:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(data)
+    expected = sha256_bytes(data) if data is not None else None
+    if (sha256_file(target) if target.is_file() else None) != expected:
+        raise OSError(f"{path} does not hold the quarantined content after writing")
+
+
+def _undo_writes(written: list[tuple[Path, bytes | None]]) -> None:
+    """Put back the previous content of each written target, the last written first."""
+    for target, previous in reversed(written):
+        if previous is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_bytes(previous)
 
 
 class StopLine:
@@ -330,55 +351,57 @@ class StopLine:
         planned: list[tuple[str, Path, bytes | None]] = []
         problems: list[str] = []
         for path in record["restoredPaths"]:
-            entry = entries.get(path)
-            if entry is None or baseline is None:
-                problems.append(f"{path}: no recorded content")
-                continue
-            target = contained_path(workspace, Path(path))
-            digest = entry.get("digest")
-            current = sha256_file(target) if target.is_file() else None
-            state = baseline.files.get(path)
-            if current == digest:
-                continue  # already holds the quarantined content
-            if current != (state.digest if state else None):
-                problems.append(f"{path}: changed since the quarantine")
-                continue
-            if digest is None:
-                planned.append((path, target, None))
-                continue
-            data: bytes | None = None
-            if entry.get("contentRef"):
-                try:
-                    data = self.results.s.artifacts.get(str(entry["contentRef"]))
-                except (OSError, ValueError):
-                    data = None
-            if data is None or sha256_bytes(data) != digest:
-                problems.append(f"{path}: quarantined content missing or not matching its digest")
-                continue
-            planned.append((path, target, data))
+            item, problem = self._plan_path(workspace, baseline, entries.get(path), path)
+            if problem is not None:
+                problems.append(problem)
+            elif item is not None:
+                planned.append(item)
         return planned, problems
+
+    def _plan_path(
+        self,
+        workspace: Path,
+        baseline: WorkspaceSnapshot | None,
+        entry: dict[str, Any] | None,
+        path: str,
+    ) -> tuple[tuple[str, Path, bytes | None] | None, str | None]:
+        """What to write for one restored path (nothing when it already holds the quarantined
+        content), or why it cannot be written."""
+        if entry is None or baseline is None:
+            return None, f"{path}: no recorded content"
+        target = contained_path(workspace, Path(path))
+        digest = entry.get("digest")
+        current = sha256_file(target) if target.is_file() else None
+        state = baseline.files.get(path)
+        if current == digest:
+            return None, None  # already holds the quarantined content
+        if current != (state.digest if state else None):
+            return None, f"{path}: changed since the quarantine"
+        if digest is None:
+            return (path, target, None), None
+        data = self._quarantined_content(entry)
+        if data is None or sha256_bytes(data) != digest:
+            return None, f"{path}: quarantined content missing or not matching its digest"
+        return (path, target, data), None
+
+    def _quarantined_content(self, entry: dict[str, Any]) -> bytes | None:
+        """The stored quarantined content of a path, ``None`` when it cannot be read."""
+        if not entry.get("contentRef"):
+            return None
+        try:
+            return self.results.s.artifacts.get(str(entry["contentRef"]))
+        except (OSError, ValueError):
+            return None
 
     def _write(self, planned: list[tuple[str, Path, bytes | None]]) -> list[str]:
         """Write the planned contents; on a failure undo what was written and report it."""
         written: list[tuple[Path, bytes | None]] = []
         try:
             for path, target, data in planned:
-                previous = target.read_bytes() if target.is_file() else None
-                written.append((target, previous))
-                if data is None:
-                    target.unlink(missing_ok=True)
-                else:
-                    target.parent.mkdir(parents=True, exist_ok=True)
-                    target.write_bytes(data)
-                expected = sha256_bytes(data) if data is not None else None
-                if (sha256_file(target) if target.is_file() else None) != expected:
-                    raise OSError(f"{path} does not hold the quarantined content after writing")
+                written.append((target, target.read_bytes() if target.is_file() else None))
+                _write_checked(path, target, data)
         except OSError as error:
-            for target, previous in reversed(written):
-                if previous is None:
-                    target.unlink(missing_ok=True)
-                else:
-                    target.write_bytes(previous)
+            _undo_writes(written)
             return [f"writing the quarantined content failed: {error}"]
         return []
 
