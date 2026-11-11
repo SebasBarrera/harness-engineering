@@ -344,7 +344,7 @@ class HarnessApplication(ReviewCodeCommands):
                 for item in resolved.effective_capabilities
             ],
             "policies": resolved.effective_policies,
-            "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "intake": self._intake_settings(resolved.project),
             "verification": self._verification(resolved.project),
             "review": self._review(resolved.project),
             "agentSandbox": {
@@ -482,6 +482,13 @@ class HarnessApplication(ReviewCodeCommands):
             "applyProfilePolicies": bool(settings.apply_profile_policies),
             "applyNetworkPolicy": bool(settings.apply_network_policy),
         }
+
+    @staticmethod
+    def _intake_settings(project: ProjectConfiguration) -> dict[str, Any]:
+        value: dict[str, Any] = {"criteriaPolicy": project.criteria_policy}
+        if project.intake is not None and project.intake.language is not None:
+            value["language"] = project.intake.language
+        return value
 
     @staticmethod
     def _verification(project: ProjectConfiguration) -> dict[str, Any]:

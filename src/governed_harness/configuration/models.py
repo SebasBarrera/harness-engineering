@@ -486,6 +486,7 @@ class AgentProviderConfiguration(ConfigModel):
 
 
 CriteriaPolicy = Literal["enforce", "warn", "off"]
+IntakeLanguage = Literal["auto", "en", "es"]
 
 DEFAULT_CRITERIA_POLICY: CriteriaPolicy = "warn"
 """Policy of a project.yaml without ``intake.criteriaPolicy`` (files written before 1.1)."""
@@ -528,6 +529,14 @@ class IntakeConfig(ConfigModel):
     testing strategy and the standards of a new project, and of an existing project whatever
     detection could not establish (rule ``P1``)."""
 
+    language: IntakeLanguage | None = None
+    """Since 2.0: the language of the deterministic INTENT rules (C0 to C3, T1). ``en`` and
+    ``es`` choose it, ``auto`` detects it from the task text (Spanish when the task has more
+    Spanish than English function words and Spanish marks, otherwise English). Words are
+    Unicode tokens compared without diacritics, ``es`` adds the Spanish vocabularies to the
+    English ones and asks the questions in Spanish; rule and question ids do not change.
+    Absent keeps the earlier rules: ASCII words, English vocabularies and questions."""
+
     @field_validator("ambiguity_review", "operational_contract", "project_setup", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
@@ -557,6 +566,7 @@ class IntakeConfig(ConfigModel):
             "operational_contract",
             "interruptions",
             "project_setup",
+            "language",
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
