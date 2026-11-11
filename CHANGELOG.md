@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `evaluation/dry_run.py` refuses an environment that cannot test the harness it means to (#70):
+  it exits 2 before any case when `PYTHONPATH` is set, `harness` is not on `PATH` or the measuring
+  tools lack `pytest` or `freezegun`. A dry run with a source tree mounted through `PYTHONPATH` on
+  a venv without `freezegun` failed `casual-harness` (pytest stopped while collecting the
+  brownfield suite, so the differential verification blocked the run, as #190 requires) and
+  `embedded-init` (the host session's processes drop `PYTHONPATH`, so its MCP server imported the
+  venv's installed harness and rejected the configuration `harness init` had written). With the
+  source tree in a `.pth` file of a venv with the measuring tools, both cases pass on `develop`
+  unchanged. No harness behavior changes.
 - Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
   `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
   provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so

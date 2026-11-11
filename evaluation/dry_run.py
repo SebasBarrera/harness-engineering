@@ -7,7 +7,8 @@ simulated person (REQUEST_CHANGES, REJECT and the measure of a quarantined chang
 block D and the embedded mode, then checks what each must show. The records go to
 ``<out>/dry-run.jsonl``, ``longitudinal-dry.jsonl`` and ``embedded-dry.jsonl``, the checks to
 ``<out>/dry-run-checks.json``. Exit code 1 when a required check fails; the checks marked
-``observed`` document a behaviour of the harness under test and do not fail the dry run.
+``observed`` document a behaviour of the harness under test and do not fail the dry run. Exit code
+2 before any case when the environment cannot give a meaningful result (see ``preflight``).
 
 Usage: python dry_run.py --work DIR --cache DIR --out DIR [--core-reference-src DIR] [--only NAME ...]
 """
@@ -16,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -422,6 +425,35 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
 }
 
 
+def preflight() -> list[str]:
+    """What keeps the dry run from testing the harness it is meant to test.
+
+    The agent and host-session processes run with a minimal environment
+    (``agentlib.agent_environment``) that drops ``PYTHONPATH``: with a source tree mounted through
+    it, ``harness init`` and the runner use that tree while the embedded mode's MCP server runs
+    whatever package the venv has installed, and rejects the configuration it did not write. A
+    source tree goes first on the import path through a ``.pth`` file in the venv's site-packages
+    instead (``EVAL_EXTRA_PATH`` in ``launchers/common.sh``). The brownfield suite imports
+    ``freezegun``: without it pytest stops while collecting and the differential verification
+    blocks the run (#190), which reads as a harness failure.
+    """
+    problems = []
+    if os.environ.get("PYTHONPATH"):
+        problems.append(
+            "PYTHONPATH is set; the agent processes drop it, so the MCP server would import "
+            "another harness: put the source tree in a .pth file of the venv (EVAL_EXTRA_PATH)"
+        )
+    harness = os.environ.get("EVAL_HARNESS", "harness").split()[0]
+    if shutil.which(harness) is None:
+        problems.append(f"{harness!r} is not on PATH: put the venv's scripts directory first")
+    python = shutil.which("python") or sys.executable
+    for module in ("pytest", "freezegun"):
+        probe = subprocess.run([python, "-c", f"import {module}"], capture_output=True)
+        if probe.returncode != 0:
+            problems.append(f"{module} is not importable by {python}: install the measuring tools")
+    return problems
+
+
 def run(
     name: str, runner: str, extra: list[str], args: argparse.Namespace, rep: int
 ) -> dict[str, Any] | None:
@@ -475,6 +507,11 @@ def main() -> int:
     parser.add_argument("--only", nargs="*", default=None)
     parser.add_argument("--rep", type=int, default=1)
     args = parser.parse_args()
+    problems = preflight()
+    for problem in problems:
+        print(f"dry run not started: {problem}", file=sys.stderr)
+    if problems:
+        return 2
     args.out.mkdir(parents=True, exist_ok=True)
     results: dict[str, Any] = {}
     failed = 0

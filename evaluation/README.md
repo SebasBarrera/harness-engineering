@@ -156,6 +156,13 @@ provider warning, every answered wait read from the inbox, the anchored routing 
 model as the anchor, `plan decide --no-continue` exiting 0, a rejected run staying closed, and the
 harness's own retry of a malformed acceptance answer (`agent.call.contract-retry`).
 
+Run it with the python of a venv that has the measuring tools (`freezegun` among them) and whose
+`harness` is first on `PATH`. To test a source tree instead of the installed package, list it in a
+`.pth` file of that venv's site-packages, as `EVAL_EXTRA_PATH` does in `launchers/common.sh`, not in
+`PYTHONPATH`: the agent and host-session processes run with a minimal environment without it, so
+the embedded mode's MCP server would import the installed package. The dry run exits 2 before any
+case when `PYTHONPATH` is set, `harness` is not on `PATH` or `pytest` or `freezegun` is missing.
+
 ### Launch
 
 The launchers in `launchers/` take every machine-specific location from the environment, check the
