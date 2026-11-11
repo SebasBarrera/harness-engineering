@@ -20,7 +20,9 @@ as the output parsers report them. A baseline run is cached by baseline digest a
 
 Under ``verification.ratchet`` an optional validator (Ruff, Mypy) that fails is compared the
 same way: more problems than on the baseline is a ``ratchet.regressed`` finding; never worse
-than the baseline, without blocking on the debt the repository already had."""
+than the baseline, without blocking on the debt the repository already had. The problems in a
+frozen acceptance test still as approved are left out (#183): the file is the harness's, approved
+by a person and write-protected, so the agent cannot fix them."""
 
 from __future__ import annotations
 
@@ -461,10 +463,14 @@ class Differential:
     ) -> Finding | None:
         validator_id = output.result.validator_id
         known = set(baseline.keys)
+        # The frozen acceptance tests still as approved are the harness's files, approved by a
+        # person and write-protected (#81, #94): their problems are not the agent's to fix (#183).
+        harness_written = self.results.acceptance.untouched(execution)
+        own = [key for key in candidate if _key_path(key) not in harness_written]
         worse = (
-            [key for key in candidate if key not in known]
+            [key for key in own if key not in known]
             if baseline.status is ResultStatus.FAILED
-            else list(candidate) or ["(failed; the baseline passes)"]
+            else own or ([] if candidate else ["(failed; the baseline passes)"])
         )
         if baseline.status is ResultStatus.FAILED and not candidate:
             return None
@@ -502,6 +508,11 @@ def _describe(key: str) -> str:
     rule, path, message = (key.split("|", 2) + ["", ""])[:3]
     location = f" at {path}" if path else ""
     return f"[{rule}]{location}: {message}"
+
+
+def _key_path(key: str) -> str:
+    """The workspace-relative path of a problem key, with forward slashes."""
+    return (key.split("|", 2) + [""])[1].replace("\\", "/")
 
 
 def _shown(keys: list[str], limit: int = 5) -> list[str]:
