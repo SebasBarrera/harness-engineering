@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-from governed_harness.agents.contract import TASK_FIELDS
+from governed_harness.agents.contract import TASK_FIELDS, validate_response_contract
 from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import PhaseId, ResultStatus
 
@@ -248,6 +248,35 @@ def test_an_agent_that_used_its_cap_blocks_the_run_with_a_restructure_advice(
     assert "Restructure the input" in finding.message
 
 
+def test_an_agent_that_used_its_cap_gets_an_iterations_exhausted_response(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: the cap ends with the ITERATIONS_EXHAUSTED status of the response schema, recorded
+    # where the parent's answer is (the agent.iterations.exhausted event and its evidence).
+    configure(
+        python_workspace,
+        tmp_path,
+        mode="notes",
+        broken=9,
+        contract={"mode": "enforce", "maxIterations": 1},
+        retry=True,
+    )
+    application, run = start(python_workspace, tmp_path)
+    with application._services(python_workspace) as services:
+        [event] = [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "agent.iterations.exhausted"
+        ]
+        record = json.loads(services.artifacts.get(event["evidenceRef"]))
+    assert event["finalStatus"] == "ITERATIONS_EXHAUSTED"
+    response = validate_response_contract(event["response"])
+    assert response.final_status == "ITERATIONS_EXHAUSTED"
+    assert response.call_kind == "acceptance"
+    assert response.result is None
+    assert record["response"] == event["response"]
+
+
 # ----- item 6: the token budget and the time limit -------------------------------------------
 def test_a_call_over_its_token_budget_ends_with_a_structured_result(
     python_workspace: Path, tmp_path: Path
@@ -326,3 +355,18 @@ def test_an_implement_call_carries_the_contract_and_is_recorded(
     assert contract["resources"]["writePaths"][0] == "src/sample/pricing.py"
     shown = application.agent_calls(python_workspace, run, "implement", 1)
     assert shown["call"]["parentReceived"]["finalStatus"] == "PASSED"
+
+
+def test_an_implement_call_records_the_bytes_it_sent(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: the bytes of the implement request, measured as for the other kinds (JSON with
+    # sorted keys, UTF-8), are the size of exactly what the provider received.
+    log = configure(python_workspace, tmp_path, contract={"mode": "enforce"}, acceptance=False)
+    application, run = start(python_workspace, tmp_path)
+    [request] = requests_of(log, "implement")
+    sent = len(json.dumps(request, sort_keys=True).encode("utf-8"))
+    [call] = application.agent_calls(python_workspace, run, "implement")["calls"]
+    assert call["sentBytes"] == sent
+    shown = application.agent_calls(python_workspace, run, "implement", 1)
+    assert shown["call"]["record"]["sent"]["bytes"] == sent

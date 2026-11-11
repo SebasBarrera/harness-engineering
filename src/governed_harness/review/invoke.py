@@ -70,13 +70,16 @@ class InvokerHooks:
     """What the caller runs around a batch: ``cancelled`` is polled by the provider processes,
     ``before`` may block the whole batch with a reason, ``record_request`` records each request
     and returns its reference, ``after`` sees each answer and ``on_violation`` hears of a batch
-    that changed the workspace (the diff, restored and unrestorable counts)."""
+    that changed the workspace (the diff, restored and unrestorable counts). ``judge`` (since
+    #149, the agent contract) sees each answer with its recorded request reference and returns
+    the reason to discard it (a limit reached, a result outside the contract), else ``None``."""
 
     cancelled: Callable[[], bool] = _never_cancelled
     before: Callable[[Sequence[ReviewerCall]], str | None] | None = None
     record_request: Callable[[ReviewerCall], str | None] | None = None
     after: Callable[[ReviewerCall, AgentCallResult], None] | None = None
     on_violation: Callable[[WorkspaceDiff, int, int], None] | None = None
+    judge: Callable[[ReviewerCall, AgentCallResult, str | None], str | None] | None = None
 
 
 class ProviderInvoker:
@@ -113,6 +116,7 @@ class ProviderInvoker:
         self.record_request = hooks.record_request
         self.after = hooks.after
         self.on_violation = hooks.on_violation
+        self.judge = hooks.judge
         self.guard_workspace = guard_workspace
         self.mcp_servers = mcp_servers or {}
         self._built: dict[str, BuiltProvider | str] = {}
@@ -215,10 +219,15 @@ class ProviderInvoker:
         answered = result.execution.status is ResultStatus.PASSED and isinstance(
             result.response, dict
         )
+        summary = result.execution.summary
+        rejected = self.judge(call, result, request_ref) if self.judge is not None else None
+        if rejected is not None:
+            # The agent contract discarded the answer: no valid answer, as a protocol error.
+            answered, summary = False, rejected
         return ReviewerAnswer(
             "ANSWERED" if answered else "ERROR",
             result.response if answered else None,
-            result.execution.summary,
+            summary,
             call.provider,
             model=result.execution.invocation.model,
             tokens=usage_tokens(result),

@@ -26,6 +26,15 @@
     the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
     the documents. `harness architecture refresh` redoes it. Guides in Spanish:
     `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+- `harness verify` and the events after the anchored head (#149), behind the new key
+  `governance.unanchoredEvents` that `harness init` writes (`warn`). The chain anchor covers
+  the chain up to its head; before, the events appended after it passed verify (only counted
+  in `eventsAfterAnchor`), and a forged `retention.artifacts.pruned` event appended after the
+  anchor made a deleted blob pass. Under the key, verify lists those events
+  (`anchor.unanchoredEvents`, a `warnings` entry; `fail` makes the anchor status `unanchored`
+  and exits 6), and a prune event excuses a missing artifact only when it is within the
+  anchored part (retention re-anchors after it prunes). A project without the key keeps the
+  earlier report and exit codes.
 - A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
   `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
   `project.yaml` without it behaves, and digests, as before.
@@ -43,6 +52,9 @@
   - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
     corrections, contract retries, escalations and calls cut by a limit count; at the cap the
     phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+    The event and its `agent-iteration-cap` evidence carry the response the parent gets
+    instead of a call, with `finalStatus: ITERATIONS_EXHAUSTED` (#149; before, no code wrote
+    that status of the response schema).
   - Token budget and time limit per call from the router's S/M/L size (starting values, to be
     calibrated): the time limit stops the process, the token budget is checked on the usage the
     provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
@@ -57,6 +69,14 @@
     reasoning; cache reads are recorded with the usage, the response and the metrics
     (`tokens.cacheRead`) but not counted, and the limit message gives both numbers. A provider
     that reports no cache-read split counts its whole input, as before.
+  - The reviewers of the review panel go through the contract (#149): before, their answers
+    bypassed it and an ~80 kB answer was accepted, and with `harness init` the panel replaces
+    `agentReview`, so the `review` kind was never checked. Each reviewer answer is now judged
+    as a `review` call (token budget, time limit, result bytes and field caps, with the keys of
+    the panel's answer) and recorded in `agent.call.recorded` with its reviewer; an answer
+    outside the limits is discarded and retried as any answer without a valid result, and a
+    reviewer without a valid answer blocks under `review.panel.mode: enforce`. Only under
+    `agentContract: enforce`; without it the panel reads its answers as before.
   - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
     commands and the embedded MCP tools; the implement instructions tell the agent to use only
     that contract.

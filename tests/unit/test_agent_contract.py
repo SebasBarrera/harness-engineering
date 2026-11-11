@@ -11,6 +11,7 @@ import pytest
 from pydantic import ValidationError
 
 from governed_harness.agents.contract import (
+    PANEL_RESULT_KEYS,
     TASK_FIELDS,
     check_answer,
     limit_summary,
@@ -351,6 +352,19 @@ def test_acceptance_may_return_the_content_of_its_tests() -> None:
 def test_a_key_outside_the_contract_is_a_problem() -> None:
     problems = check_answer("plan", {"subtasks": [], "notes": "my reasoning"}, CONFIG)
     assert any("outside the plan contract" in item for item in problems)
+
+
+def test_a_panel_reviewer_answer_is_checked_with_the_panel_keys() -> None:
+    # #149: the verdict object of a panel reviewer, with the limits of a review call.
+    answer = {"verdict": "PASS", "summary": "ok", "findings": [], "model": "m"}
+    assert check_answer("review", answer, CONFIG, keys=PANEL_RESULT_KEYS) == []
+    assert any(
+        "outside the review contract: model, summary, verdict" in item
+        for item in check_answer("review", answer, CONFIG)
+    )
+    large = {**answer, "findings": [{"evidence": "x" * 90}] * 40}
+    problems = check_answer("review", large, CONFIG, keys=PANEL_RESULT_KEYS)
+    assert any("above the cap of 2000" in item for item in problems)
 
 
 def test_no_result_has_no_problem() -> None:
