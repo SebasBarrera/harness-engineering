@@ -1513,10 +1513,10 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 if primary
                 else "Prompt completo (comparación secundaria)"
             )
-            out += [f"# {title}", ""]
+            out += [f"## {title}", ""]
         runs = sorted(groups[key], key=_condition_rank)
         _, scenario, prompt, model, rep = key
-        out += [f"## {scenario} · prompt `{prompt}` · `{model}` · r{rep}", ""]
+        out += [f"### {scenario} · prompt `{prompt}` · `{model}` · r{rep}", ""]
         direct = next((r for r in runs if r["run"]["condition"] == "direct"), None)
         if direct is None:
             out += [
@@ -1524,9 +1524,9 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 "muestran solo las condiciones gobernadas.**",
                 "",
             ]
-        out += ["### Resultado, cambio y requisitos", "", *_table(runs, ROWS)]
-        out += ["### Buenas y malas prácticas", "", *_table(runs, PRACTICE_ROWS)]
-        out += ["### Diferencias", ""]
+        out += ["#### Resultado, cambio y requisitos", "", *_table(runs, ROWS)]
+        out += ["#### Buenas y malas prácticas", "", *_table(runs, PRACTICE_ROWS)]
+        out += ["#### Diferencias", ""]
         if direct is None:
             out += ["Sin par `direct`.", ""]
         for other in runs:
@@ -1543,7 +1543,7 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 "",
             ]
         out += [
-            "### Código",
+            "#### Código",
             "",
             "Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).",
             "",

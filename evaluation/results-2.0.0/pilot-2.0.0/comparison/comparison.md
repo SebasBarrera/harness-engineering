@@ -8,13 +8,13 @@ Los prompts pobres y casuales van primero (comparación principal); el prompt co
 menos es mejor); las métricas sin dirección declarada se listan sin lado. Los conteos de
 prácticas son lo que el cambio añadió (final menos base) y crecen con el tamaño del cambio.
 
-# Prompts pobres y casuales (comparación principal)
+## Prompts pobres y casuales (comparación principal)
 
-## brownfield · prompt `casual` · `claude-haiku-4-5-20251001` · r1
+### brownfield · prompt `casual` · `claude-haiku-4-5-20251001` · r1
 
 **Falta la corrida `direct` de este prompt y modelo: no hay par que comparar; se muestran solo las condiciones gobernadas.**
 
-### Resultado, cambio y requisitos
+#### Resultado, cambio y requisitos
 
 | Métrica | `harness` |
 |---|---|
@@ -64,7 +64,7 @@ prácticas son lo que el cambio añadió (final menos base) y crecen con el tama
 | Turnos del agente | 265 |
 | Costo del agente (USD) | 2.805 |
 
-### Buenas y malas prácticas
+#### Buenas y malas prácticas
 
 | Métrica | `harness` |
 |---|---|
@@ -98,11 +98,11 @@ prácticas son lo que el cambio añadió (final menos base) y crecen con el tama
 | Pruebas: pruebas que llaman a otras pruebas (nuevas) | 0 |
 | Pruebas: escrituras a estado mutable compartido (nuevas) | 0 |
 
-### Diferencias
+#### Diferencias
 
 Sin par `direct`.
 
-### Código
+#### Código
 
 Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 
@@ -171,11 +171,11 @@ Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 +            (48 <= char_code <= 57) or
 ```
 
-# Prompt completo (comparación secundaria)
+## Prompt completo (comparación secundaria)
 
-## brownfield · prompt `full` · `claude-haiku-4-5-20251001` · r1
+### brownfield · prompt `full` · `claude-haiku-4-5-20251001` · r1
 
-### Resultado, cambio y requisitos
+#### Resultado, cambio y requisitos
 
 | Métrica | `direct` | `harness-core` | `harness` | `harness-anchored` |
 |---|---|---|---|---|
@@ -225,7 +225,7 @@ Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 | Turnos del agente | 28 | 21 | 89 | 210 |
 | Costo del agente (USD) | 0.1882 | 0.1193 | 0.8384 | 1.583 |
 
-### Buenas y malas prácticas
+#### Buenas y malas prácticas
 
 | Métrica | `direct` | `harness-core` | `harness` | `harness-anchored` |
 |---|---|---|---|---|
@@ -259,7 +259,7 @@ Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 | Pruebas: pruebas que llaman a otras pruebas (nuevas) | 0 | 0 | 0 | 0 |
 | Pruebas: escrituras a estado mutable compartido (nuevas) | 0 | 0 | 0 | 0 |
 
-### Diferencias
+#### Diferencias
 
 **`harness-core` frente a `direct`**: 9 métricas a favor de `harness-core`, 2 a favor de `direct`, 9 distintas sin dirección declarada.
 
@@ -343,7 +343,7 @@ Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 - Pruebas: casos parametrizados (nuevos): `harness-anchored` 20 frente a 27 de `direct` (-7; a favor de `direct`).
 - Pruebas: literales de borde (vacío, None, negativos, no ASCII; nuevos): `harness-anchored` 34 frente a 19 de `direct` (+15; a favor de `harness-anchored`).
 
-### Código
+#### Código
 
 Diff de los archivos fuente contra la base (contexto de 1 línea, recortado).
 
