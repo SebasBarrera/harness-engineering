@@ -48,9 +48,8 @@ MALFORMED_RULE = "intake.agent-review-malformed"
 MAX_AGENT_QUESTIONS = 40
 _TEXT_LIMIT = 1000
 _DOC_SUFFIXES = (".md", ".txt", ".rst", ".pdf", ".doc", ".docx", ".yaml", ".yml", ".json")
-_DOC_REFERENCE = re.compile(
-    r"(?<![\w/.-])([\w-]++(?:/[\w-]++)*+\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
-)
+_PATH_RUN = re.compile(r"[\w/.-]+", re.I)
+_DOC_EXTENSION = re.compile(r"(?:md|txt|rst|pdf|docx?|ya?ml|json)(?!\w)", re.I)
 _ID_REFERENCE = re.compile(
     r"\b(?:per|see|as in|according to|following|by|from|under|in)\s+"
     r"(?:requirements?|rules?|sections?|criteri(?:on|a)|items?\s+)?\s*"
@@ -463,6 +462,25 @@ class IntentReview:
         return items
 
 
+def _doc_references(text: str) -> list[str]:
+    """The document paths ``text`` names, such as ``docs/spec.md``, in order.
+
+    A reference starts a run of path characters (word characters, ``/``, ``.``, ``-``): its
+    stem, the part before the run's first dot, is names of word characters and ``-`` joined by
+    single slashes, and a known extension follows the dot, not followed by a word character.
+    Each run is read once, so the time is linear in the length of ``text``.
+    """
+    found: list[str] = []
+    for run in _PATH_RUN.finditer(text):
+        stem, dot, rest = run.group().partition(".")
+        if not dot or not stem or stem[0] == "/" or stem[-1] == "/" or "//" in stem:
+            continue
+        extension = _DOC_EXTENSION.match(rest)
+        if extension is not None:
+            found.append(f"{stem}.{extension.group()}")
+    return found
+
+
 def _dangling_documents(
     workspace: Path,
     answer: dict[str, str],
@@ -471,7 +489,7 @@ def _dangling_documents(
     items: list[tuple[str, str, str]],
 ) -> None:
     """A question for every document the answer refers to that is not in the workspace."""
-    for document in _DOC_REFERENCE.findall(text):
+    for document in _doc_references(text):
         if document in seen or _document_exists(workspace, document):
             continue
         seen.add(document)
