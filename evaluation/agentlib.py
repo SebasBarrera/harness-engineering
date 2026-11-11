@@ -48,6 +48,12 @@ ALLOWED_TOOLS = [
     "Bash(ls:*)",
     "Bash(cd:*)",
 ]
+# The tools of a read-only call of the governed conditions (``clarify``, ``acceptance``, ``locate``,
+# ``architecture``, ``plan``, ``review``): the ones the built-in ``claude-code`` adapter gives it
+# (#92, ``governed_harness.agents.native.READ_ONLY_TOOLS``), without accepted edits; the tools that
+# write files and the shell are denied.
+READ_ONLY_TOOLS = ["Read", "Grep", "Glob"]
+READ_ONLY_DENIED = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]
 AGENT_TIMEOUT_SECONDS = 1500
 MAX_BUDGET_USD = "5"
 # A resumable call that stops on the account usage limit (or an overloaded API) waits and resumes the
@@ -304,8 +310,33 @@ def ensure_account() -> str:
 
 
 def _command(
-    prompt: str, model: str, max_budget_usd: str, session: list[str], effort: str | None = None
+    prompt: str,
+    model: str,
+    max_budget_usd: str,
+    session: list[str],
+    effort: str | None = None,
+    read_only: bool = False,
 ) -> list[str]:
+    if read_only:
+        tools = [
+            "--tools",
+            ",".join(READ_ONLY_TOOLS),
+            "--allowedTools",
+            *READ_ONLY_TOOLS,
+            "--disallowedTools",
+            *READ_ONLY_DENIED,
+            "--permission-mode",
+            "default",
+        ]
+    else:
+        tools = [
+            "--tools",
+            TOOLS,
+            "--allowedTools",
+            *ALLOWED_TOOLS,
+            "--permission-mode",
+            "acceptEdits",
+        ]
     return [
         CLAUDE_BIN,
         "-p",
@@ -320,12 +351,7 @@ def _command(
         "--safe-mode",
         "--strict-mcp-config",
         *session,
-        "--tools",
-        TOOLS,
-        "--allowedTools",
-        *ALLOWED_TOOLS,
-        "--permission-mode",
-        "acceptEdits",
+        *tools,
         "--max-budget-usd",
         max_budget_usd,
     ]
@@ -341,18 +367,31 @@ def run_claude(
     resumable: bool = False,
     resume_session: str | None = None,
     effort: str | None = None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     """Run Claude Code non-interactively and return the normalized usage record.
 
     The large-project scenario raises the time and budget limits and makes the call resumable; every
     other scenario uses the defaults (one call, no session kept). ``effort`` is passed only for the
-    calls the anchored router sends with an effort.
+    calls the anchored router sends with an effort. ``read_only`` (the read-only call kinds of the
+    governed conditions) runs Claude Code with the read-only tools instead of the direct
+    condition's.
     """
     if resumable:
         return _run_resumable(
-            prompt, cwd, model, log_path, timeout_seconds, max_budget_usd, resume_session, effort
+            prompt,
+            cwd,
+            model,
+            log_path,
+            timeout_seconds,
+            max_budget_usd,
+            resume_session,
+            effort,
+            read_only,
         )
-    command = _command(prompt, model, max_budget_usd, ["--no-session-persistence"], effort)
+    command = _command(
+        prompt, model, max_budget_usd, ["--no-session-persistence"], effort, read_only
+    )
     record, stderr, _ = _invoke(command, cwd, model, timeout_seconds)
     record["effort"] = effort
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -403,6 +442,7 @@ def _run_resumable(
     max_budget_usd: str,
     resume_session: str | None,
     effort: str | None = None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     """One call that survives usage limits and restarts of the runner.
 
@@ -426,13 +466,11 @@ def _run_resumable(
     while True:
         if not state["started"]:
             state["sessionId"] = str(uuid.uuid4())
-            command = _command(
-                prompt, model, max_budget_usd, ["--session-id", state["sessionId"]], effort
-            )
+            session = ["--session-id", state["sessionId"]]
+            command = _command(prompt, model, max_budget_usd, session, effort, read_only)
         else:
-            command = _command(
-                CONTINUE_PROMPT, model, max_budget_usd, ["--resume", state["sessionId"]], effort
-            )
+            session = ["--resume", state["sessionId"]]
+            command = _command(CONTINUE_PROMPT, model, max_budget_usd, session, effort, read_only)
         inflight.write_text(json.dumps(state, indent=1), encoding="utf-8")
         active = sum(seg["wallSeconds"] for seg in state["segments"])
         record, stderr, result = _invoke(

@@ -9,7 +9,8 @@ Claude Code prints (``result``, ``is_error``, ``subtype``, ``usage``, ``total_co
   acceptance, locate, architecture survey and advice) get a valid ``result`` object, chosen so that
   every wait of the simulated person is exercised once (one clarification question per task until
   it has been answered, acceptance tests, a plan, architecture options or layers);
-* the simulated product owner gets an answers file for every question id in its prompt;
+* the simulated product owner gets an answers file for every question id in its prompt, and
+  REVISE for a dispute of frozen acceptance tests;
 * anything else is an implementation: the reference solution of the scenario found in the working
   directory is copied in, with one test that names every requirement and criterion id.
 
@@ -109,7 +110,25 @@ def _implement(cwd: Path, prompt: str) -> str:
         (tests / "test_fake_broken.py").write_text(
             "def test_broken() -> None:\n    assert False\n", encoding="utf-8"
         )
-    return f"Applied the reference solution of {scenario} and one test per id ({len(names)})."
+    text = f"Applied the reference solution of {scenario} and one test per id ({len(names)})."
+    if _mode(cwd) == "dispute-acceptance" and "disputedAcceptanceTests" in prompt:
+        # The frozen tests of this mode cannot pass: the agent disputes them (#94).
+        frozen = sorted((cwd / "tests" / "acceptance").glob("test_acceptance_*.py"))
+        report = {
+            "assumptions": [],
+            "alternativesDiscarded": [],
+            "lowConfidenceAreas": [],
+            "unrequestedChanges": [],
+            "disputedAcceptanceTests": [
+                {
+                    "test": path.relative_to(cwd).as_posix(),
+                    "reason": "Dry run: the test expects the package to be missing.",
+                }
+                for path in frozen
+            ],
+        }
+        text += "\n\n```json\n" + json.dumps({"harnessSelfReport": report}) + "\n```\n"
+    return text
 
 
 def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
@@ -186,8 +205,11 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
         package = PACKAGE.get(_scenario(cwd) or "", "")
         directory = request.get("directory") or "tests/acceptance"
         criteria = [c.get("criterion_id") for c in task.get("acceptance_criteria") or []] or ["ac"]
+        # dispute-acceptance: the first proposal cannot pass, the one for a revision can.
+        wrong = _mode(cwd) == "dispute-acceptance" and not request.get("revision")
+        check = " is None" if wrong else ""
         content = "import importlib\n" + "".join(
-            f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r})\n"
+            f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r}){check}\n"
             for cid in criteria
         )
         name = f"{directory}/test_acceptance_{criteria[0]}.py"  # one file per task: no overwrite
@@ -252,6 +274,11 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
 def _product_owner(prompt: str) -> str | None:
     if not prompt.startswith("You are the product owner"):
         return None
+    if "it disputes the tests below" in prompt:
+        return (
+            "```yaml\ndecision: REVISE\nreason: |\n"
+            "  Dry run: the disputed test asserts a wrong value.\n```"
+        )
     ids = sorted(set(re.findall(r"^- (Q-\d+):", prompt, re.MULTILINE)))
     lines = ["```yaml", "answers:"]
     for qid in ids:
@@ -354,7 +381,9 @@ def main(argv: list[str]) -> int:
     if sys.platform == "win32" and prompt.startswith("--"):
         # agentlib gives the prompt on stdin on Windows (the command line is limited to 32767
         # characters), so "-p" is followed by the next option.
-        prompt = sys.stdin.buffer.read().decode("utf-8")
+        # The text mode of the pipe on Windows turns its newlines into CRLF: read them back as
+        # LF, or the ```json block of the request is not found.
+        prompt = sys.stdin.buffer.read().decode("utf-8").replace("\r\n", "\n")
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
     if "--mcp-config" in argv:

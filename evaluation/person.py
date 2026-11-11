@@ -28,6 +28,17 @@ any run:
                           ``assert True``), every Gherkin scenario has a Then step, and there is
                           at least one test case per acceptance criterion of the task; REJECT
                           otherwise, naming what falls short.
+  acceptance dispute      Added 2026-11-11 (after an apparatus precheck, before the pilot): the
+                          agent disputes frozen acceptance tests and only they fail. The person
+                          reads the dispute in ``acceptance show`` (the disputed tests, their
+                          source and the agent's reasons, never the hidden tests) and asks the
+                          product owner (``ProductOwner.judge_dispute``, one call, recorded in
+                          ``po-calls``) for UPHOLD or REVISE given the task's criteria; without a
+                          product owner the fixed fallback is UPHOLD (the approved tests stand).
+                          The answer is bound to the digest the inbox shows and is not sent
+                          when ``acceptance show`` shows another digest. After REVISE the run
+                          returns to SPECIFICATION and the acceptance rule above approves the
+                          rewritten tests.
   plan (decomposition)    APPROVE when every sub-task has a title and the proposal's digest is the
                           one ``plan show`` prints; REJECT otherwise.
   preflight UNAVAILABLE   ``harness verification decide --continue-uncertified``, citing the
@@ -84,6 +95,10 @@ PROJECT_SETUP = {
 APPROVE_RATIONALE = "Gate passed; verification and review evidence inspected."
 CHANGES_RATIONALE = "Gate did not pass; changes requested with the findings as feedback."
 REJECT_RATIONALE = "Gate did not pass after the allowed correction cycles."
+DISPUTE_FALLBACK = "UPHOLD"
+DISPUTE_FALLBACK_REASON = (
+    "No product owner to judge the dispute against the criteria: the approved tests stand."
+)
 
 _DECIDE = {
     "acceptance": re.compile(
@@ -97,6 +112,9 @@ _DECIDE = {
         r"harness architecture decide --run \S+ --decision APPROVE --digest (\S+)"
     ),
     "contract": re.compile(r"harness task confirm --task \S+ --digest (\S+)"),
+    "acceptance-dispute": re.compile(
+        r"harness acceptance dispute --run \S+ --decision <UPHOLD\|REVISE> --digest (\S+)"
+    ),
     "preflight": re.compile(r"harness verification decide --run \S+ --continue-uncertified"),
 }
 
@@ -114,6 +132,7 @@ INBOX_KINDS = {
     "contract": "contract",
     "architecture": "architecture",
     "acceptance": "acceptance",
+    "acceptance-dispute": "acceptance-dispute",
     "decomposition": "plan",
     "plan": "plan",
     "preflight": "preflight",
@@ -377,6 +396,8 @@ class SimulatedPerson:
             return self._plan(run_id, digest, entry)
         if handler == "acceptance":
             return self._acceptance(run_id, digest, entry)
+        if handler == "acceptance-dispute":
+            return self._acceptance_dispute(run_id, digest, item, entry)
         if handler == "contract":
             return self._contract(run_id, task_id, digest, entry)
         return self._preflight(run_id, entry)
@@ -487,6 +508,60 @@ class SimulatedPerson:
                 review["problems"]
             )
         return self._decide_proposal(run_id, "acceptance", digest, complete, entry, why, reject_why)
+
+    def _acceptance_dispute(
+        self, run_id: str, digest: str, item: dict[str, Any], entry: dict[str, Any]
+    ) -> int | None:
+        """UPHOLD or REVISE frozen acceptance tests the agent disputes, as the product owner
+        judges them from the criteria, the disputed tests' source and the agent's reasons."""
+        entry["wait"] = "acceptance-dispute"
+        shown = self.hj("acceptance", "show", "--run", run_id) or {}
+        dispute = shown.get("dispute") if isinstance(shown.get("dispute"), dict) else {}
+        disputed = list(dispute.get("disputed") or item.get("disputed") or [])
+        tests = _disputed_sources(shown.get("tests") or [], disputed)
+        entry["digestMatches"] = dispute.get("digest") == digest
+        entry["evidence"] = {"disputed": len(disputed), "testsShown": len(tests)}
+        entry["reasons"] = {"agent": [str(d.get("reason") or "") for d in disputed]}
+        if not entry["digestMatches"] or not disputed:
+            # What the inbox showed is not what acceptance show shows: the person does not act.
+            entry["action"] = "dispute-not-shown"
+            return None
+        judge = getattr(self.clarifier, "judge_dispute", None)
+        actor = REVIEWER_ACTOR
+        if judge is None:
+            decision, reason, entry["judge"] = DISPUTE_FALLBACK, DISPUTE_FALLBACK_REASON, "fallback"
+        else:
+            task = self.hj("task", "show", "--task", self.task_id) if self.task_id else {}
+            try:
+                verdict = judge(task or {}, {"disputed": disputed, "tests": tests})
+            except Exception as error:  # noqa: BLE001 - the product owner is an agent; its failure is a result
+                entry["action"] = "product-owner-failed"
+                entry["error"] = f"{type(error).__name__}: {str(error)[:300]}"
+                return None
+            decision, reason = str(verdict["decision"]), str(verdict["reason"])
+            entry["judge"] = "product-owner"
+            actor = getattr(self.clarifier, "actor", REVIEWER_ACTOR)
+        entry["decision"] = decision
+        entry["reasons"]["owner"] = reason
+        proc = self.h(
+            "acceptance",
+            "dispute",
+            "--path",
+            ".",
+            "--run",
+            run_id,
+            "--decision",
+            decision,
+            "--digest",
+            digest,
+            "--rationale",
+            reason,
+            "--actor",
+            actor,
+            "--no-continue",
+        )
+        entry["action"] = f"acceptance dispute {decision} ({actor}) -> {proc.returncode}"
+        return self.resume(run_id) if recorded(proc) else None
 
     def _criteria_count(self) -> int | None:
         """How many acceptance criteria the run's task has (``harness task show``); None when
@@ -715,6 +790,16 @@ class SimulatedPerson:
         if decision == "APPROVE":
             return code, "approved" if code == 0 else f"approved-closure-exit-{code}"
         return code, None
+
+
+def _disputed_sources(
+    tests: list[dict[str, Any]], disputed: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """The frozen test files a dispute names (``path`` or ``path::test``), with their source;
+    every file when the dispute names none of them by path."""
+    named = {str(d.get("test") or "").split("::", 1)[0] for d in disputed}
+    chosen = [t for t in tests if str(t.get("path") or "") in named]
+    return [{"path": t.get("path"), "content": t.get("content")} for t in (chosen or tests)]
 
 
 def _find_options(shown: Any) -> list[dict[str, Any]]:
