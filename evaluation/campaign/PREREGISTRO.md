@@ -727,3 +727,15 @@ plantilla × 2 nombrados × 2 cambios en H-differential y D\* (28 + 28 registros
 se evalúa también sobre *module-logic* y se reporta aparte, rotulado como de esta enmienda. Lo
 que el humo mostró (una importación de `services` atribuida a `presentation`) se registra como
 hallazgo sobre el producto, no como resultado de la prueba.
+
+### Enmienda 3 a la tercera congelación (2026-11-10, tras un humo local y antes de cualquier resultado)
+
+Un humo local del aparato de H32 (Windows, casos C0 y W3 en H-bdd; no es un resultado y no se
+cita como tal) mostró que la cláusula «o cualquier hallazgo con la ruta del archivo `.feature`»
+de la definición de *detectada* no distingue una reescritura de su ausencia: el control C0, que
+no reescribe nada, recibe un hallazgo `tests.change-not-exercised` (LOW) con la ruta del archivo
+congelado, que el harness escribió al aprobarlo. Se conserva la definición congelada (se calcula,
+se reporta y el criterio de registro se evalúa con ella) y se **añade** la definición estricta:
+*detectada (estricta)* = un hallazgo `acceptance.write-undone` o `acceptance.modified`; *prevenida*
+no cambia. El criterio se evalúa también con la definición estricta y se reporta aparte,
+rotulado como de esta enmienda, junto con los falsos del control en las dos definiciones.
