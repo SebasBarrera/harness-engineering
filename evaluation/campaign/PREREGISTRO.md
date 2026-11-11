@@ -385,7 +385,7 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
 
 ---
 
-# Segunda tanda: H02, H04, H09 y H15
+## Segunda tanda: H02, H04, H09 y H15
 
 Fecha de congelación: **2026-11-10**. Esta sección se añade en el primer commit de la rama que
 implementa las cuatro suites, **antes** de que exista cualquier resultado de ellas. Rigen las siete
@@ -563,8 +563,9 @@ y el registro dice dónde).
   corridas no existen todavía: el script `evaluation/trace_posthoc.py` lee los directorios de
   corrida del bloque A (`--runs`) cuando existan y evalúa el criterio entonces.
 - **Instrumento (`trace_posthoc.py`):** independiente del paquete del harness (no importa
-  `governed_harness`). Identificador de un requisito: el token inicial de su texto (`A1. `,
-  `[B12] `, `X8: `) o su `requirementId` explícito; de un criterio, su `criterionId`. *Prueba que
+  `governed_harness`). Identificador de un requisito: el token inicial de su texto (`A1.`,
+  `[B12]` o `X8:`, seguido de un espacio) o su `requirementId` explícito; de un criterio, su
+  `criterionId`. *Prueba que
   nombra el id*: una prueba (archivo, clase `Test*` o función `test*`) cuyo nombre contiene el id
   como tokens completos sin distinguir mayúsculas, o cuyo código (decoradores, docstring,
   comentarios, cadenas) contiene el id como palabra completa con mayúsculas exactas. *Decisión
