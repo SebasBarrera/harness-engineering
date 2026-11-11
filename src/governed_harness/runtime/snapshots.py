@@ -47,6 +47,7 @@ from governed_harness.runtime.workspace import (
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
     decode_text,
+    recorded_bytes,
 )
 
 MANIFEST_FORMAT = "manifest/1"
@@ -369,7 +370,13 @@ class SnapshotStore:
         if state is None:
             return None
         if state.text_loaded:
-            return state.text.encode("utf-8") if state.text is not None else None
+            if state.text is None:
+                return None
+            recorded = recorded_bytes(state)
+            if recorded is not None:
+                return recorded
+            # A text stored redacted is not the file's content (#178): Git may still give the
+            # recorded bytes back, the redacted text never is.
         if stored.git_head is None:
             return None
         data = git_blob(self.workspace, stored.git_head, path)

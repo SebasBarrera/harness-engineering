@@ -26,6 +26,7 @@ from governed_harness.runtime.workspace import (
     WorkspaceDiff,
     WorkspaceSnapshot,
     WorkspaceSnapshotter,
+    recorded_bytes,
 )
 
 LINKED_DIRECTORIES = frozenset({".venv", "venv", "node_modules"})
@@ -45,11 +46,13 @@ class Contents:
 
 
 def snapshot_contents(snapshot: WorkspaceSnapshot) -> Contents:
-    """The contents of a snapshot that holds the text of its files."""
+    """The contents of a snapshot that holds the text of its files; a text that is not the
+    recorded content of its file (read back from a redacted artifact, #178) cannot be given
+    back."""
 
     def content(path: str) -> bytes | None:
         state = snapshot.files.get(path)
-        return state.text.encode("utf-8") if state and state.text is not None else None
+        return recorded_bytes(state) if state else None
 
     return Contents(lambda path: path in snapshot.files, content)
 

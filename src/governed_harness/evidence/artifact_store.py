@@ -88,15 +88,22 @@ class LocalArtifactStore:
         )
 
     def put_json(self, value: Any, *, metadata: dict[str, Any] | None = None) -> ArtifactRef:
-        """Store ``value`` as JSON, redacted as text like any artifact. When that redaction
-        breaks the document (a rule cut the escape of a quote or spanned two strings, so the
-        stored JSON no longer parsed and reading it back failed), the strings are redacted one
-        by one instead; a document that redacts cleanly is stored exactly as before."""
+        """Store ``value`` as JSON, redacted as text like any artifact and on its decoded
+        strings. The serialized text escapes quotes, so a rule run over it misses a secret whose
+        value is quoted inside a JSON string (``password = \\"...\\"``, #178), and it can cut an
+        escape or span two strings and leave a document that no longer parses (#152). When any
+        decoded string redacts, or the text redaction breaks the document, the strings are
+        redacted one by one instead; a document whose strings have nothing to redact is stored
+        exactly as before, with the same bytes and digest.
+
+        A redacted JSON artifact is evidence, not data: a caller that reads one back to act on
+        it (a pinned task, a workspace snapshot) checks the ``redacted`` flag of its descriptor
+        and never applies a redacted value."""
         data = _json_bytes(value)
         redaction = self.redactor.redact(data)
-        if not redaction.redacted or _parses(redaction.data):
-            return self._store(redaction.data, "application/json", metadata, redaction.rule_ids)
         redacted, rule_ids = self.redactor.redact_json(value)
+        if not rule_ids and (not redaction.redacted or _parses(redaction.data)):
+            return self._store(redaction.data, "application/json", metadata, redaction.rule_ids)
         data = _json_bytes(redacted)
         # A private key whose lines are separate strings is caught only on the whole text: the
         # text redaction is kept when it parses, otherwise nothing of the document is kept.

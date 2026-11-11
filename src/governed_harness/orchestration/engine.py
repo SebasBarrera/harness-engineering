@@ -110,6 +110,7 @@ from governed_harness.intake import (
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
 from governed_harness.orchestration.corrections import EMPTY_RULE as EMPTY_CORRECTION_RULE
+from governed_harness.orchestration.engine_types import TASK_REVISION_DIGEST_FLAG
 from governed_harness.orchestration.engine_types import EngineServices as EngineServices
 from governed_harness.orchestration.engine_types import PhaseOutcome as PhaseOutcome
 from governed_harness.orchestration.exit_gates import ExitGateCheck, ExitGateEvaluator
@@ -884,7 +885,7 @@ class RunEngine:
         self.s.state.put("task", task_id, revision.task, project_id=task.project_id)
         if self._pins_task():
             # A revision through clarify is the one way the task of an open run may change.
-            self.s.state.set_flag(f"taskrev:{execution.execution_id}", revised_ref.uri)
+            self.s.pin_task_revision(execution.execution_id, revised_ref.uri, record.task_digest)
         self.s.state.put(
             "clarification",
             record.clarification_id,
@@ -4048,11 +4049,25 @@ class RunEngine:
     def run_task(self, execution: Execution) -> Task:
         """The task revision a run works on: the revision pinned when the run was created (or
         revised through ``task clarify``) under ``governance.pinTaskRevision``, otherwise the
-        stored task, re-read by every phase as in 1.0.0."""
+        stored task, re-read by every phase as in 1.0.0.
+
+        A pinned revision stored redacted (a secret in a patch's content, #178) is evidence,
+        not the task: the run works on the stored task while it has the digest pinned with the
+        revision, and stops with a policy error otherwise. A redacted value is never applied."""
         uri = self.s.state.get_flag(f"taskrev:{execution.execution_id}")
-        if uri:
+        if not uri:
+            return self.get_task(execution.task_id)
+        if not self.s.artifacts.describe(uri).redacted:
             return Task.model_validate_json(self.s.artifacts.get(uri))
-        return self.get_task(execution.task_id)
+        pinned = self.s.state.get_flag(f"{TASK_REVISION_DIGEST_FLAG}{execution.execution_id}")
+        task = self.get_task(execution.task_id)
+        if pinned and task_digest(task) == pinned:
+            return task
+        raise PolicyViolationError(
+            f"the task revision pinned to run {execution.execution_id} ({uri}) is stored "
+            "redacted and the stored task no longer has its digest "
+            f"({pinned or 'not recorded'}); the run cannot work on a redacted task"
+        )
 
     def _pins_task(self) -> bool:
         return bool(self.s.resolved.project.governance_settings.pin_task_revision)
@@ -4061,8 +4076,9 @@ class RunEngine:
         ref = self.s.artifacts.put_json(
             task.model_dump(mode="json"), metadata={"kind": "task-revision"}
         )
-        self.s.state.set_flag(f"taskrev:{execution_id}", ref.uri)
-        return {"taskDigest": task_digest(task), "taskRevisionRef": ref.uri}
+        digest = task_digest(task)
+        self.s.pin_task_revision(execution_id, ref.uri, digest)
+        return {"taskDigest": digest, "taskRevisionRef": ref.uri}
 
     def _current_contract_digest(self, execution: Execution) -> str | None:
         """Under ``governance.pinTaskRevision``, the digest of the acceptance contract frozen in
