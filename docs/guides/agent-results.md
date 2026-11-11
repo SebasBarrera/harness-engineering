@@ -399,6 +399,41 @@ command name decides); `tables` override the starting tables. Every decision is 
 (`agent.routing.decided`) with its inputs, rule and policy digest. `fixed` keeps the provider's
 own model.
 
+### Trivial implement tasks (#197)
+
+Implementation runs on Sonnet by default (`S` and `M` rungs of the starting claude-code table,
+`L` on Opus). Only a very easy task goes to Haiku: since #197 an `implement` call whose task is
+`trivial` uses the family's `trivial` rung (`claude-haiku-5-5` with `medium` effort in the
+claude-code table; the codex table has no cheaper model, so its `trivial` rung is its `S` rung;
+a table without a `trivial` entry uses its `S` rung). A task is trivial only when all of these
+hold:
+
+- it is `S` by the thresholds above;
+- it has at least one and at most `thresholds.trivial.requirements` requirements (default 1);
+- it owns at least one and at most `thresholds.trivial.files` files (default 1);
+- those files have at most `thresholds.trivial.loc` lines (default 150);
+- it has no risk flag (a public `interface`, security words, a path matching `riskPaths`) and
+  PLANNING did not decompose it.
+
+The defaults are deliberately conservative starting values to calibrate with
+`harness routing calibrate`, not a measured optimum; `thresholds.trivial.requirements: 0` turns
+the tier off. The other call kinds and the `S`/`M`/`L` size used by the agent contract, friction
+and metrics do not change. The decision records the size `trivial` and the rule
+`tier:implement:trivial`. When a trivial call fails verification or gets blocking review
+findings, its first escalation runs on the `S` rung (Sonnet, `medium`) and further escalations
+climb the ladder from there (`escalation:N:implement:trivial`), within `maxEscalations`. Under
+`anchored` the Haiku rung is kept when the invoking model is Sonnet or Opus, and escalation stops
+at the invoking model as for any other call.
+
+```yaml
+agentRouting:
+  thresholds:
+    trivial:
+      requirements: 1
+      files: 1
+      loc: 150
+```
+
 The starting tables come from a research note of 2026-10-04 (Claude Code `--model`/`--effort`,
 Codex `-m`/`model_reasoning_effort`); they are a starting point, and whether an account can use
 a model is not checked. `harness routing calibrate` reports the cost per approved task of the
@@ -422,7 +457,7 @@ Claude models are ranked by name (`haiku` below `sonnet` below `opus`); the mode
 family by their first rung in its ladder. A model whose tier cannot be told allows only itself.
 With the starting tables: invoked with `claude-haiku-4-5-20251001`, every call runs on it;
 with `claude-sonnet-5-5`, the `plan`, `review`, `architecture` and size-`L` rungs run on
-Sonnet with `high` effort; with `claude-opus-5-5`, the models and efforts are those of `tiered`.
+Sonnet with `high` effort and a trivial implement call stays on Haiku (#197); with `claude-opus-5-5`, the models and efforts are those of `tiered`.
 
 How the invoking model is determined, for the provider that answers the call:
 

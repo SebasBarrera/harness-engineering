@@ -1,0 +1,27 @@
+{
+ "blocks": {
+  "pilot": {
+   "agentSandbox": "off (no OS sandbox on Windows)",
+   "claudeCode": "2.1.322 (Claude Code)",
+   "codeDigest": "5d501c1554505d1d",
+   "harnessPackage": null,
+   "harnessVersion": "harness 1.0.0",
+   "os": "Windows 10 AMD64",
+   "python": "3.12.10",
+   "recordedAt": "2026-11-11T16:45:26+00:00",
+   "source": {
+    "commit": "e0798467abc8bd6d79b3ea338e413bb557b56903",
+    "dirty": false
+   },
+   "tools": {
+    "bandit": "1.9.4",
+    "coverage": "7.17.2",
+    "freezegun": "1.4.0",
+    "mypy": "2.4.1",
+    "pytest": "8.3.5",
+    "ruff": "0.17.4"
+   },
+   "wheel": null
+  }
+ }
+}

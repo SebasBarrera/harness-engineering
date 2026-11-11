@@ -206,3 +206,33 @@ def test_anchored_routing_escalates_up_to_the_invoking_model(
     assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
         PhaseId.DECISION
     )
+
+
+def test_trivial_task_starts_on_haiku_and_escalates_to_sonnet(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#197: a trivial implement call runs on Haiku; a failed verification moves the next call
+    to the S rung (Sonnet) and then up the ladder."""
+    routing = {**TIERED, "thresholds": {"trivial": {"files": 2}}}
+    log = configure(python_workspace, tmp_path, failures=2, routing=routing)
+    application, run = start(python_workspace, tmp_path)
+    calls = json.loads(log.read_text())
+    rungs = [(item["routing"]["model"], item["routing"]["effort"]) for item in calls]
+    assert rungs == [
+        ("claude-haiku-5-5", "medium"),
+        ("claude-sonnet-5-5", "medium"),
+        ("claude-sonnet-5-5", "high"),
+    ]
+    assert {item["routing"]["size"] for item in calls} == {"trivial"}
+    with application._services(python_workspace) as services:
+        decided = [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "agent.routing.decided"
+            and item.payload["callKind"] == "implement"
+        ]
+    assert [item["rule"] for item in decided] == [
+        "tier:implement:trivial",
+        "escalation:1:implement:trivial",
+        "escalation:2:implement:trivial",
+    ]

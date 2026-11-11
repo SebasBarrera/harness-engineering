@@ -14,6 +14,42 @@
   test functions and assertions, a docstring that names the requirements and the Ruff fixes); the
   unedited form still runs and is reported apart (`ref-*-as-is`, outside the criterion). No
   criterion and no harness behavior changes.
+- Implementation routes very easy tasks to Haiku and keeps Sonnet as the default (#197).
+  Under `agentRouting.mode: tiered` or `anchored` an `implement` call whose task is `trivial`
+  (size `S`, between 1 and `agentRouting.thresholds.trivial.requirements` requirements, between
+  1 and `files` owned files, at most `loc` lines in them, no risk flag, not decomposed; starting
+  values 1, 1 and 150, to be calibrated) runs on the family's new `trivial` rung:
+  `claude-haiku-5-5` with `medium` effort in the claude-code table, the `S` rung in the codex
+  table and in tables without the entry. Every other task stays on Sonnet (`S`, `M`) or Opus
+  (`L`). A trivial call that fails verification or review escalates to the `S` rung first and
+  then up the ladder (rule `escalation:N:implement:trivial`). The decision records the size
+  `trivial`; the `S`/`M`/`L` classification of the agent contract, friction and metrics does not
+  change. Neither 0.8.0 nor 1.0.0 had routing, so no evaluated behavior changes.
+- The evaluation compares how the implementations differ, not only whether they pass the hidden
+  tests (#70). `evaluation/analysis/compare_implementations.py` reads the run directories of the
+  pilot and the campaign and computes, without calling a model, the change against the baseline
+  (by file kind, out of scope), the tests added and their outcome, the coverage of the changed
+  lines, Ruff, Mypy and Bandit findings and secret patterns new against the baseline, the public
+  surface, coding practices of the source and the tests (`evaluation/analysis/practices.py`, `ast`
+  only), the hidden tests by criterion and what the harness recorded (questions, answers,
+  assumptions, decisions, disputes, correction cycles, blocking validators) or what the direct
+  agent's final text states. It writes one JSON per run and a Spanish `comparison.md` that pairs
+  `direct` with each governed condition, poor and casual prompts first. A stopped run is measured
+  on the baseline with its quarantined patch applied, because the apparatus copy did not get the
+  patch in the Haiku pilot. The metrics are declared in a dated amendment of
+  `evaluation/campaign/PREREGISTRO.md`; the exploratory output on the Haiku pilot is in
+  `evaluation/results-2.0.0/pilot-2.0.0/comparison/`.
+- The evaluation measures a stopped governed run on its own change again (#70, found by #201).
+  `evaluation/run_eval.py:measure_quarantine` applied the quarantined patch to the restored
+  workspace, where the kept acceptance tests already exist ("already exists in working
+  directory"), and wrote the patch in text mode, so on Windows its line ends became CRLF ("patch
+  does not apply"); when `git apply` failed, the unpatched baseline was measured. In the Haiku pilot
+  both stopped runs scored the baseline's 18/24 hidden tests this way. The patch is now written byte
+  for byte and applied to a copy returned to the baseline commit; a patch that does not apply is not
+  measured (`invalid: quarantine-patch-not-applied`, `<out>.invalid.jsonl`, exit code 3, no rerun).
+  `evaluation/remeasure_quarantine.py` measures the patch of earlier run directories again without
+  a model call. Amendment of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`.
+
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline

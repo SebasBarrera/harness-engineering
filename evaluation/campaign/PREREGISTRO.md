@@ -64,6 +64,155 @@ acceptance-dispute`, la decisión, las razones (del agente y del product owner) 
 Tras `REVISE` la corrida vuelve a SPECIFICATION y la regla ya registrada de las pruebas de
 aceptación aprueba o rechaza las pruebas reescritas.
 
+### Enmienda 2026-11-11: modelos y repeticiones de la campaña
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña** (ni el piloto ni los bloques
+con modelo tienen resultados 2.0.0; el piloto Haiku está en curso y no se cita aquí ninguna cifra
+suya), y se revisa el mismo día, también antes de cualquier resultado. Fija los modelos, la
+configuración de la condición anclada, el énfasis de la comparación y las repeticiones; no cambia
+hipótesis, métricas ni criterios de éxito de las suites de este registro.
+
+**Motivación.** El harness estandariza cómo se programa con IA entre personas con estilos de
+trabajo distintos: las mismas fases, los mismos controles y la misma evidencia, pida lo que pida
+quien lo usa y como lo pida. Por eso la comparación principal es la de un pedido pobre.
+
+1. **Modelos e identificadores.** El piloto Haiku (`evaluation/launchers/pilot.sh`) es una
+   **comprobación del aparato**: sirve para ver que el lanzador, la persona simulada, el product
+   owner y el registro funcionan, y sus corridas no son resultados de la campaña. Se añade un
+   **piloto Sonnet** con el mismo diseño (mismo escenario, las mismas cinco corridas y el mismo
+   lanzador, con su propio directorio de salida; la orden está en `evaluation/README.md`). Los
+   bloques con modelo corren con **Haiku y Sonnet**; Opus no es necesario y no se exige. Los
+   modelos de las celdas son, explícitamente:
+   - Haiku: `claude-haiku-4-5-20251001`, el mismo del piloto Haiku (valor por defecto de
+     `EVAL_PILOT_MODEL`);
+   - Sonnet: `claude-sonnet-5-5`.
+
+   El nivel `trivial` del router (#197) nombra `claude-haiku-5-5` en su tabla por defecto. Bajo
+   `anchored` ese peldaño se recorta al modelo de la celda: en las celdas Haiku una llamada trivial
+   corre con `claude-haiku-4-5-20251001` (mismo nivel que el ancla), y en las celdas Sonnet con
+   `claude-haiku-5-5` (nivel más barato que el ancla, se mantiene). Cada decisión registra el
+   modelo elegido (`agent.routing.decided`).
+2. **Condición anclada.** `harness-anchored` usa los valores por defecto del router de la versión
+   bajo prueba con el modelo de la celda como techo, incluido el nivel `trivial` de la llamada
+   `implement` (#197): una tarea trivial según `agentRouting.thresholds.trivial` (valores
+   iniciales: 1 requisito, 1 archivo propio, 150 líneas, sin banderas de riesgo) se implementa con
+   Haiku como dice el punto 1, y el resto con Sonnet (S, M) u Opus (L) recortado al modelo de la
+   celda. No se cambian ni se calibran los umbrales durante la campaña; cada corrida guarda su
+   `project.yaml` (regla 7). Lo mismo vale para H41, que usa las tablas y los umbrales por
+   defecto: sus señales «dentro de S» (1 requisito, 1 archivo, 10 líneas) son triviales con esos
+   valores, así que su malla y su proyección de costo incluyen el nivel `trivial` (tamaño
+   registrado `trivial`, presupuesto de tokens de S).
+3. **Comparación principal: el pedido pobre.** La comparación principal es **el pedido pobre o
+   débil sin harness frente a con harness**: el prompt `one_line` del escenario rides
+   (`evaluation/rides/PROMPTS.md`: «build an app like Uber with Uber Eats, rides and food
+   delivery, following INTERFACE.md») y el prompt casual (`--prompt casual`). Mide qué hace el
+   modelo cuando el pedido está subespecificado: si pregunta, qué aclara, qué supone, y qué tan
+   completo y coherente es el resultado. Los prompts completos con y sin harness son un **bloque
+   secundario**.
+4. **Repeticiones.** **2 repeticiones por celda** en todos los bloques con modelo (Haiku y Sonnet);
+   **1** en las suites deterministas. Con n = 2 la campaña es **descriptiva**: una comparación de
+   casos. Se reportan conteos y los valores de cada corrida (con mediana y rango cuando ayudan a
+   leer), y **no** se hacen generalizaciones ni afirmaciones de significación (regla 5). Esto
+   sustituye las repeticiones por celda de la primera versión de esta enmienda (5, 10 en el
+   contraste primario y 3 en rides) y las de cada bloque en `CATALOGO.md`.
+5. **Comparación en profundidad de las implementaciones.** Aunque las pruebas ocultas den el mismo
+   puntaje, las implementaciones se comparan en profundidad, y las diferencias se registran por
+   corrida: archivos y líneas cambiados, pruebas añadidas, hallazgos de lint, tipos y seguridad,
+   cobertura, requisitos cubiertos frente a supuestos, preguntas hechas y decisiones registradas.
+   La herramienta de ese análisis y sus definiciones se pre-registran a continuación, en una
+   enmienda propia, antes de cualquier resultado.
+6. **Costos y tiempos.** El costo y el tiempo de la campaña se estiman a partir de los dos pilotos
+   (Haiku y Sonnet), no se fijan de antemano; la estimación se escribe con sus fuentes antes de
+   lanzar los bloques y no cambia las repeticiones del punto 4.
+
+### Enmienda 2026-11-11: comparación de implementaciones
+
+Se añade antes de cualquier resultado de la campaña. Que dos condiciones pasen las mismas pruebas
+ocultas (24/24 en el piloto Haiku) no dice cómo difieren sus implementaciones. Por eso cada corrida
+de la campaña se analiza además con `evaluation/analysis/compare_implementations.py`, determinista
+y sin llamadas a modelos, sobre el árbol final de la corrida contra su commit `baseline`. Sobre el
+piloto Haiku de 2.0.0 (cuyas corridas ya existían cuando se escribió esta enmienda) el análisis es
+**exploratorio**: sirvió para fijar las métricas y no se cita como resultado de la campaña.
+
+**Árbol medido.** El espacio de trabajo final (`ws/`). Si la corrida se detuvo y el harness puso su
+cambio en cuarentena, el árbol es la exportación limpia de la base con `quarantined.patch`
+aplicado (fines de línea LF); sobre ese árbol se vuelven a correr las pruebas ocultas, la suite
+visible y la cobertura. La copia del aparato (`quarantine-ws/`) solo se usa si el parche no aplica,
+y la medida lo declara (`measuredOn`). Motivo: en el piloto el parche no aplicó a esa copia (las
+pruebas de aceptación conservadas ya existían y el parche guardado en Windows tenía CRLF), así que
+la copia medida tenía el código fuente de la base.
+
+**Métricas por corrida** (todas: final menos base, salvo donde se dice «final»):
+
+1. *Cambio*: archivos y líneas añadidas y eliminadas, por tipo (fuente bajo `src/`, prueba, docs,
+   otro) y archivos fuera del alcance de la tarea (`measure.SCOPE`).
+2. *Pruebas*: funciones de prueba nuevas (`ast`), resultado de los casos de los archivos de prueba
+   cambiados (junit de la suite visible) y cobertura de las líneas fuente cambiadas
+   (`coverage.json`; «no disponible» si no se guardó).
+3. *Calidad estática* de los archivos `.py` cambiados con las herramientas fijadas del venv de la
+   evaluación: Ruff (`--isolated`, por regla y por tipo de archivo), Mypy (configuración propia del
+   proyecto, versión de Python del intérprete), Bandit (fuente, por prueba y severidad); y patrones
+   de secretos en las líneas añadidas, aparte en fuente y en pruebas.
+4. *Superficie pública* (`ast`): nombres públicos añadidos, eliminados y con firma cambiada,
+   docstrings añadidas o modificadas, changelog y documentación cambiados.
+5. *Prácticas* (`evaluation/analysis/practices.py`, solo `ast`): en fuente, complejidad (la de
+   `rides/quality.py`; media y máxima final, funciones nuevas con más de 10), longitud de funciones
+   (máxima final, nuevas de más de 50 líneas), ventanas duplicadas de 6 líneas, `except:` desnudo,
+   `except Exception`, errores tragados, `raise` dentro de `except` con y sin `from`, cobertura de
+   anotaciones de tipo y de docstrings públicas (final), números mágicos, sentencias inalcanzables,
+   `raise` e `isinstance` (validación de entrada), nombres fuera de PEP 8 y de una letra; código
+   muerto e imports sin usar por Ruff (F401, F841). En pruebas: aserciones por prueba (final),
+   pruebas sin aserción, pruebas negativas (`raises`), casos parametrizados, literales de borde
+   (vacío, `None`, negativos, no ASCII o de control) e independencia (`global`, pruebas que llaman
+   a otras pruebas, escrituras a estado mutable de módulo).
+6. *Requisitos*: pruebas ocultas por criterio, con la tabla fija `HIDDEN_CRITERIA` del script
+   (brownfield; un caso sin criterio explícito queda «sin criterio») y `rides/hidden_cases.json`
+   (rides); criterios que dio el prompt. En las condiciones gobernadas, lo que registró el harness:
+   preguntas y respuestas de INTENT, criterios y requisitos formalizados, criterios con archivo de
+   aceptación congelado, supuestos del autorreporte del agente, decisiones humanas (eventos
+   `*.decided` salvo el ruteo), pruebas disputadas, ciclos de corrección, validadores que
+   bloquearon, afirmaciones no sustentadas, fase y estado finales. En `direct`, las líneas de su
+   texto final que declaran un supuesto o hacen una pregunta (`resultText`; «no disponible» si no
+   se guardó; el resto de la transcripción no se guarda).
+7. *Uso*: llamadas, turnos y costo del agente.
+
+**Comparación.** Por (escenario, prompt, modelo, repetición), la corrida `direct` frente a cada
+condición gobernada, en `comparison.md`. Los prompts pobres y casuales (incluido el `one_line` de
+rides) van primero: son la comparación principal; el prompt completo es secundaria. Si falta la
+corrida `direct` de un grupo, se dice y no se compara. La sección «Diferencias» se genera solo de
+los números: una línea por métrica distinta y, donde la métrica tiene dirección declarada en el
+script (`ROWS`, `PRACTICE_ROWS`: más es mejor o menos es mejor), a favor de qué lado queda, en
+ambos sentidos; las métricas sin dirección declarada se listan sin lado. La sección «Código» muestra
+el diff de los archivos fuente de cada corrida (contexto 1, 60 líneas como máximo). Los conteos
+absolutos crecen con el tamaño del cambio y se leen junto a él. Las direcciones y las métricas no
+se cambian después de ver resultados de la campaña.
+
+### Enmienda 2026-11-11: medición de corridas detenidas
+
+Se añade tras el piloto Haiku de 2.0.0 (PR #199) y antes de cualquier resultado de la campaña. Al
+reconstruir las implementaciones del piloto (PR #201, ref. #70) apareció un defecto del aparato, no
+del harness: `evaluation/run_eval.py:measure_quarantine` medía una corrida detenida sobre una copia
+del espacio de trabajo restaurado con el parche en cuarentena aplicado, pero en las dos corridas
+detenidas del piloto el parche no se aplicó (`measures.patchApply.exitCode: 1`) y las pruebas
+ocultas midieron la línea base, no el cambio del agente. Dos causas: (1) las pruebas de aceptación
+que el harness conserva tras la cuarentena (`workspace.quarantined.keptPaths`) ya existen en el
+espacio restaurado, así que `git apply` de un parche que las añade falla entero («already exists in
+working directory»); (2) el parche se escribía en modo texto y en Windows sus finales de línea
+pasaban a CRLF, así que las líneas de contexto no coincidían («patch does not apply»).
+
+**Regla.** El cambio de una corrida detenida se mide sobre una copia del espacio de trabajo devuelta
+al commit de la línea base (`git reset --hard` y `git clean -fd`, que quita los archivos no
+versionados y conserva los ignorados), con el parche escrito byte a byte tal como lo imprime
+`harness artifact show` (`measuredOn: quarantine-copy`, `patchApply.appliedTo: baseline` y la lista
+`patchApply.removedBeforeApply`). Si `harness artifact show` falla o `git apply` falla, la corrida
+**no se mide**: el registro lleva `invalid: quarantine-patch-not-applied` y el error de `git apply`,
+va a `<out>.invalid.jsonl` (registro aparte, regla 2) y el runner termina con código 3, sin volver a
+correr la celda; nunca se mide el árbol sin el parche. `measuresFinalTree` (lo que queda en el
+espacio restaurado) se sigue midiendo igual. Los registros escritos antes de esta enmienda se
+vuelven a medir desde su directorio con `evaluation/remeasure_quarantine.py` (sin llamada al
+modelo; deshace el CRLF del parche guardado, porque la escritura en modo texto convirtió cada LF en
+CRLF), y la cifra original y la nueva se muestran juntas. Ningún criterio cambia.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos

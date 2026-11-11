@@ -1,0 +1,313 @@
+{
+ "agent": {
+  "calls": 1,
+  "costUsd": 0.1882,
+  "permissionDenials": 3,
+  "productOwnerCalls": 0,
+  "resultTextStored": true,
+  "turns": 28
+ },
+ "change": {
+  "addedLines": 120,
+  "byKind": {
+   "source": {
+    "added": 35,
+    "files": 1,
+    "removed": 1
+   },
+   "test": {
+    "added": 85,
+    "files": 1,
+    "removed": 0
+   }
+  },
+  "files": 2,
+  "outOfScopeFiles": 0,
+  "outOfScopePaths": [],
+  "paths": [
+   "src/itsdangerous/encoding.py",
+   "tests/test_itsdangerous/test_encoding.py"
+  ],
+  "removedLines": 1
+ },
+ "code": {
+  "lines": 41,
+  "text": "--- a/src/itsdangerous/encoding.py\n+++ b/src/itsdangerous/encoding.py\n@@ -31,3 +31,37 @@ def base64_decode(string: str | bytes) -> bytes:\n     \"\"\"\n-    string = want_bytes(string, encoding=\"ascii\", errors=\"ignore\")\n+    # Convert string to bytes, verifying ASCII encoding\n+    if isinstance(string, str):\n+        try:\n+            string = string.encode(\"ascii\")\n+        except UnicodeEncodeError:\n+            raise BadData(\"Invalid base64-encoded data\") from None\n+\n+    # Valid characters for base64url data part: A-Za-z0-9-_\n+    valid_alphabet = frozenset(\n+        b\"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_\"\n+    )\n+    padding_char = ord(b\"=\")\n+\n+    # Find where padding starts\n+    padding_start = len(string)\n+    for i, byte in enumerate(string):\n+        if byte == padding_char:\n+            padding_start = i\n+            break\n+\n+    # Validate data part (before padding)\n+    for i in range(padding_start):\n+        if string[i] not in valid_alphabet:\n+            raise BadData(\"Invalid base64-encoded data\")\n+\n+    # Validate padding part - must contain only '='\n+    padding_count = len(string) - padding_start\n+    if padding_count > 2:\n+        raise BadData(\"Invalid base64-encoded data\")\n+\n+    for i in range(padding_start, len(string)):\n+        if string[i] != padding_char:\n+            raise BadData(\"Invalid base64-encoded data\")\n+\n+    # Add padding if needed to make length multiple of 4\n     string += b\"=\" * (-len(string) % 4)",
+  "truncated": false
+ },
+ "coverage": {
+  "available": true,
+  "coveredChanged": 20,
+  "executableChanged": 21,
+  "ratio": 0.9524
+ },
+ "practices": {
+  "source": {
+   "after": {
+    "annotatedParameters": 7,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 58,
+    "complexFunctions": 1,
+    "docstringCoverage": 0.4,
+    "documentedPublic": 2,
+    "duplicatedWindows": 0,
+    "functions": 5,
+    "isinstanceChecks": 2,
+    "longFunctions": 0,
+    "magicNumbers": 2,
+    "maxComplexity": 11,
+    "maxFunctionLength": 45,
+    "meanComplexity": 3.2,
+    "namingViolations": 0,
+    "parameters": 7,
+    "publicDefinitions": 5,
+    "raiseInExcept": 2,
+    "raiseInExceptWithFrom": 2,
+    "raiseInExceptWithoutFrom": 0,
+    "raiseStatements": 5,
+    "singleLetterNames": 1,
+    "swallowedErrors": 0,
+    "typeHintCoverage": 1.0,
+    "unreachableStatements": 0
+   },
+   "before": {
+    "annotatedParameters": 7,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 36,
+    "complexFunctions": 0,
+    "docstringCoverage": 0.4,
+    "documentedPublic": 2,
+    "duplicatedWindows": 0,
+    "functions": 5,
+    "isinstanceChecks": 1,
+    "longFunctions": 0,
+    "magicNumbers": 2,
+    "maxComplexity": 2,
+    "maxFunctionLength": 11,
+    "meanComplexity": 1.4,
+    "namingViolations": 0,
+    "parameters": 7,
+    "publicDefinitions": 5,
+    "raiseInExcept": 1,
+    "raiseInExceptWithFrom": 1,
+    "raiseInExceptWithoutFrom": 0,
+    "raiseStatements": 1,
+    "singleLetterNames": 1,
+    "swallowedErrors": 0,
+    "typeHintCoverage": 1.0,
+    "unreachableStatements": 0
+   },
+   "delta": {
+    "annotatedParameters": 0,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 22,
+    "complexFunctions": 1,
+    "documentedPublic": 0,
+    "duplicatedWindows": 0,
+    "functions": 0,
+    "isinstanceChecks": 1,
+    "longFunctions": 0,
+    "magicNumbers": 0,
+    "maxComplexity": 9,
+    "maxFunctionLength": 34,
+    "namingViolations": 0,
+    "parameters": 0,
+    "publicDefinitions": 0,
+    "raiseInExcept": 1,
+    "raiseInExceptWithFrom": 1,
+    "raiseInExceptWithoutFrom": 0,
+    "raiseStatements": 4,
+    "singleLetterNames": 0,
+    "swallowedErrors": 0,
+    "unreachableStatements": 0
+   },
+   "files": 1
+  },
+  "tests": {
+   "after": {
+    "assertions": 12,
+    "assertionsPerTest": 1.71,
+    "edgeCaseLiterals": 31,
+    "globalStatements": 0,
+    "negativeTests": 3,
+    "parametrizedCases": 34,
+    "sharedMutableStateWrites": 0,
+    "tests": 7,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "before": {
+    "assertions": 7,
+    "assertionsPerTest": 1.75,
+    "edgeCaseLiterals": 12,
+    "globalStatements": 0,
+    "negativeTests": 1,
+    "parametrizedCases": 7,
+    "sharedMutableStateWrites": 0,
+    "tests": 4,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "delta": {
+    "assertions": 5,
+    "edgeCaseLiterals": 19,
+    "globalStatements": 0,
+    "negativeTests": 2,
+    "parametrizedCases": 27,
+    "sharedMutableStateWrites": 0,
+    "tests": 3,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "files": 1
+  }
+ },
+ "requirements": {
+  "direct": {
+   "assumptionLines": 0,
+   "assumptionTexts": [],
+   "available": true,
+   "chars": 1327,
+   "questionLines": 0,
+   "questionTexts": [],
+   "source": "resultText of agent-calls (final message only; the transcript is not stored)"
+  },
+  "hidden": {
+   "available": true,
+   "byCriterion": {
+    "(sin criterio)": {
+     "passed": 1,
+     "tests": 1
+    },
+    "ac_existing": {
+     "passed": 1,
+     "tests": 1
+    },
+    "ac_reject": {
+     "passed": 12,
+     "tests": 12
+    },
+    "ac_signatures": {
+     "passed": 2,
+     "tests": 2
+    },
+    "req_alphabet": {
+     "passed": 1,
+     "tests": 1
+    },
+    "req_padding": {
+     "passed": 7,
+     "tests": 7
+    }
+   },
+   "criteriaFullyPassed": 5,
+   "criteriaMapped": 5,
+   "errors": 0,
+   "failed": 0,
+   "failing": [],
+   "mapping": true,
+   "passed": 24,
+   "skipped": 0,
+   "tests": 24
+  },
+  "prompt": {
+   "criteriaGiven": 3,
+   "criterionIds": [
+    "ac_reject",
+    "ac_signatures",
+    "ac_existing"
+   ],
+   "kind": "full",
+   "requirementsGiven": 2
+  }
+ },
+ "run": {
+  "condition": "direct",
+  "id": "brownfield-full-direct-claude-haiku-4-5-20251001-r1",
+  "measuredOn": "workspace",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt": "full",
+  "rep": 1,
+  "scenario": "brownfield",
+  "stamp": "20261111T152622Z"
+ },
+ "schema": "compare-implementations/1",
+ "secrets": {
+  "byPattern": {},
+  "files": [],
+  "newMatches": 0,
+  "newMatchesByKind": {}
+ },
+ "static": {
+  "bandit": {
+   "after": 0,
+   "available": true,
+   "before": 0,
+   "new": 0,
+   "newByTest": {}
+  },
+  "mypy": {
+   "after": 1,
+   "available": true,
+   "before": 1,
+   "new": 0,
+   "newByCode": {},
+   "newErrors": []
+  },
+  "ruff": {
+   "after": 1,
+   "available": true,
+   "before": 1,
+   "new": 0,
+   "newByKind": {},
+   "newByRule": {}
+  }
+ },
+ "surface": {
+  "changelogUpdated": false,
+  "docFilesChanged": [],
+  "docstringsAdded": 0,
+  "docstringsChanged": 0,
+  "documentedDefinitions": 2,
+  "publicDefinitionsInChangedModules": 5,
+  "publicNamesAdded": [],
+  "publicNamesRemoved": [],
+  "signaturesChanged": []
+ },
+ "tests": {
+  "casesInChangedFiles": {
+   "errors": 0,
+   "failed": 0,
+   "passed": 36,
+   "skipped": 0,
+   "tests": 36
+  },
+  "changedTestFiles": 1,
+  "newTestFiles": 0,
+  "perFile": [
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 36,
+     "skipped": 0,
+     "tests": 36
+    },
+    "functionsAfter": 7,
+    "functionsBefore": 4,
+    "new": false,
+    "path": "tests/test_itsdangerous/test_encoding.py"
+   }
+  ],
+  "testFunctionsAdded": 3,
+  "visibleJunitAvailable": true
+ },
+ "tools": {
+  "bandit": "__main__.py 1.9.4",
+  "mypy": "mypy 2.4.1 (compiled: yes)",
+  "ruff": "ruff 0.17.4"
+ }
+}

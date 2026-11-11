@@ -130,8 +130,12 @@ answered.
 ### Measures
 
 `measure.py` is applied identically to every condition; a stopped or rejected run whose changes the
-harness quarantined (stop the line) is measured on a copy of the workspace with the quarantined
-patch applied (`measuredOn: quarantine-copy`). `harness_state.py` reads the harness's own record as a
+harness quarantined (stop the line) is measured on a copy of the workspace returned to the baseline
+commit with the quarantined patch applied (`measuredOn: quarantine-copy`). A patch that does not
+apply is not measured: the record carries `invalid: quarantine-patch-not-applied`, goes to
+`<out>.invalid.jsonl` and the runner exits 3 (no rerun). `remeasure_quarantine.py <run-dir>...
+--cache <cache>` measures the quarantined patch of a stopped run again from its directory (no model
+call), for records written before that fix. `harness_state.py` reads the harness's own record as a
 second source: the eight trace relations of 0.9.0 unchanged and the 2.0.0 relations apart
 (clarification answered, acceptance decided, requirement traced, certification bound, review bound,
 routing recorded, `harness verify`), calls by kind and model, routing decisions, certification per
@@ -166,11 +170,16 @@ export EVAL_PYTHON=<venv with the v2.0.0 wheel and pytest 8.3.5, freezegun, cove
 export EVAL_WHEEL=<the v2.0.0 wheel>  EVAL_WORK=<work dir outside the repo>  EVAL_CACHE=<dir with itsdangerous-2.2.0.tar.gz>
 export EVAL_CORE_REFERENCE_SRC=<src of harness 1.0.0>      # optional: digest check of harness-core
 bash evaluation/launchers/pilot.sh            # 5 runs: direct, harness-core, harness, harness-anchored, casual x harness
+EVAL_PILOT_MODEL=claude-sonnet-5-5 EVAL_OUT=evaluation/results-2.0.0/pilot-2.0.0-sonnet bash evaluation/launchers/pilot.sh   # Sonnet pilot, same 5 runs
 bash evaluation/launchers/block-b.sh          # casual and minimal x {direct, harness-core, harness} x 3 x 3 x 3
 bash evaluation/launchers/block-a.sh          # complete x {direct, harness} x 3 x 3 x 3, then harness-anchored x 3 x 3 x 2
 bash evaluation/launchers/block-d.sh          # {casual direct, structured direct, harness} x 3 models x 3 sessions
 bash evaluation/launchers/block-embedded.sh   # host model x 3, brownfield, 2 repetitions
 ```
+
+The Sonnet pilot (amendment of 2026-11-11 in `campaign/PREREGISTRO.md`) needs its own `EVAL_OUT`:
+`pilot.sh` skips a run already recorded for the same prompt and condition in `pilot.jsonl`, whatever
+the model, and takes the same lock as the Haiku pilot, so it runs after it.
 
 Summaries: `report.py --v2 <results> <summary.json>` (blocks A and B: one cell per prompt,
 condition, model and scenario, every run listed next to the dispersion n/min/median/max),
