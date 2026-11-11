@@ -189,8 +189,9 @@ def test_posix_moves_with_replace_and_never_retries(
     monkeypatch.setattr(artifact_store.sys, "platform", "linux")
     monkeypatch.setattr(artifact_store.os, "replace", replace)
     monkeypatch.setattr(artifact_store.os, "rename", rename)
+    store = LocalArtifactStore(tmp_path)
     with pytest.raises(PermissionError):
-        LocalArtifactStore(tmp_path).put(b"evidence")
+        store.put(b"evidence")
     assert calls == ["replace"]
 
 
@@ -198,7 +199,8 @@ def test_posix_moves_with_replace_and_never_retries(
 def test_windows_concurrent_stores_of_the_same_blob_all_succeed(tmp_path: Path) -> None:
     rounds, writers = 100, 8
     barrier = threading.Barrier(writers)
-    errors: list[BaseException] = []
+    errors: list[Exception] = []
+    mismatches: list[int] = []
 
     def store_every_round() -> None:
         store = LocalArtifactStore(tmp_path)
@@ -206,9 +208,12 @@ def test_windows_concurrent_stores_of_the_same_blob_all_succeed(tmp_path: Path) 
             payload = f"the same evidence from every reviewer, round {index}".encode() * 64
             barrier.wait()  # every writer stores this round's blob at the same moment
             try:
-                assert store.get(store.put(payload)) == payload
-            except BaseException as error:  # noqa: BLE001 - collected and asserted below
+                read_back = store.get(store.put(payload))
+            except Exception as error:  # noqa: BLE001 - collected and asserted below
                 errors.append(error)
+                continue
+            if read_back != payload:
+                mismatches.append(index)
 
     threads = [threading.Thread(target=store_every_round) for _ in range(writers)]
     for thread in threads:
@@ -216,4 +221,5 @@ def test_windows_concurrent_stores_of_the_same_blob_all_succeed(tmp_path: Path) 
     for thread in threads:
         thread.join()
     assert errors == []
+    assert mismatches == []
     assert len(LocalArtifactStore(tmp_path).list()) == rounds
