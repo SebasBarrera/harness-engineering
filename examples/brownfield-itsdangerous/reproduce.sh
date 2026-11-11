@@ -31,7 +31,7 @@ tar -xzf itsdangerous-2.2.0.tar.gz
 
 "$PYTHON" -m venv venv
 BIN=venv/bin; [ -d venv/Scripts ] && BIN=venv/Scripts   # POSIX or Windows (Git Bash)
-# The harness's dependencies and pytest 8.1.1 come from hash-pinned files; the harness itself and
+# The harness's dependencies and pytest 9.0.3 come from hash-pinned files; the harness itself and
 # the project under test are installed without resolving anything.
 "$BIN/python" -m pip install -q --require-hashes -r "$REQ/runtime.txt"
 "$BIN/python" -m pip install -q --require-hashes -r "$REQ/example-pytest.txt"

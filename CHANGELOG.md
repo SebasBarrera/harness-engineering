@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
+  `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
+  (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
+  2.2.0 pins 8.1.1 in its own `requirements/tests.txt`; its 298 tests pass with 9.0.3. The thesis
+  evaluation does not install this file.
 - Evaluation: the simulated person answers a dispute of frozen acceptance tests (#70, amendment
   of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`). An apparatus precheck of the Haiku
   pilot showed the governed runs stopping at the `acceptance-dispute` wait, which
