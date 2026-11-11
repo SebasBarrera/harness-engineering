@@ -62,7 +62,7 @@ from resource_support import (  # noqa: E402
     saved_config,
     stamp_dir,
 )
-from suite_support import sample_change  # noqa: E402
+from suite_support import WINDOWS, bin_dir, sample_change  # noqa: E402
 
 EXIT_CODES_DOC = REPO / "docs" / "reference" / "exit-codes.md"
 CLI_DOC = REPO / "docs" / "reference" / "cli.md"
@@ -110,6 +110,7 @@ def state(
     exit_code: int = 6,
     mutate: Callable[[dict[str, Any]], None] | None = None,
     grant: bool = True,
+    outside_profile: bool = False,
     task: dict[str, Any] | None = None,
     answer: bool = True,
     action: str | None = None,
@@ -124,6 +125,7 @@ def state(
         "exitCode": exit_code,
         "mutate": mutate,
         "grant": grant,
+        "outsideProfile": outside_profile,
         "task": task,
         "answer": answer,
         "action": action,
@@ -281,9 +283,12 @@ CASES: list[dict[str, Any]] = [
     state(
         "B12",
         "run",
-        "the provider command has no grant",
+        "the provider command has no grant: the fixture is started by the absolute path of the "
+        "project's interpreter, which no profile rule names (the Python profile grants "
+        "process.execute: [python] by exact name), and the provider's own grant is removed",
         r"capabilities\.command-denied",
         grant=False,
+        outside_profile=True,
     ),
     state("B13", "run", "a task without acceptance criteria", r"\bC0\b", task=NO_CRITERIA),
     state(
@@ -586,7 +591,14 @@ def runner(
 ) -> dict[str, Any]:
     del rep
     run_dir = stamp_dir(args, "h44", case["id"], condition)
-    workspace = governed(run_dir, args, case["spec"], mutate=case["mutate"], grant=case["grant"])
+    launcher = "python"
+    if case["outsideProfile"]:
+        launcher = str(
+            bin_dir(args.project_venv.resolve()) / ("python.exe" if WINDOWS else "python")
+        )
+    workspace = governed(
+        run_dir, args, case["spec"], mutate=case["mutate"], grant=case["grant"], launcher=launcher
+    )
     recording = RecordingHarness(workspace.h.executable, workspace.h.env)
     recording.steps = workspace.h.steps
     workspace.h = recording
