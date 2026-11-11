@@ -13,15 +13,17 @@
   every test file the ChangeSet added or modified ran (`tests.changed-not-run`: `HIGH` and the
   failure stays; `INFO` when the output does not list the tests that ran), and a
   `PREEXISTING_ERROR` pass no longer gives L1 or L2 certification credit.
-- `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It still expected `run start`
-  6 and `run continue` 4, but the baseline comparison that `harness init` writes
-  (`environment.baseline: report`, `verification.differential: true`) marks the failures caused by
-  the missing `freezegun` as pre-existing, so the gate passes and `run start` exits 4. The script
-  now checks that flow (the `environment.baseline-failing` and `differential.preexisting`
-  findings, the project's suite after installing `freezegun`: 298 passed, `APPROVE` 0), keeps the
-  run registry in its work directory (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory
-  in Git Bash, which used to split `PATH` at the drive colon. The `docs-smoke` flows job runs it on
-  the built wheel; the brownfield guides and the README describe the current flow.
+- `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It expected `run start` 6
+  and, after installing `freezegun`, `run continue` 4. `run start` exited 4 until #190 fixed the
+  differential verification; with that fix it exits 6 again, but `governance.stopTheLine: restore`
+  (written by `harness init`) puts the failed run's changes in quarantine and restores the
+  baseline, so `run continue` verifies an empty ChangeSet and exits 6. The script now checks
+  `run start` 6 (pytest stops while collecting), the `environment.baseline-failing` and
+  `python.pytest.failed` findings, a new `run start` 4 after installing `freezegun` (298 passed,
+  gate `PASSED`) and `APPROVE` 0. It keeps the run registry in its work directory
+  (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory in Git Bash, which used to split
+  `PATH` at the drive colon. The `docs-smoke` flows job runs it on the built wheel; the brownfield
+  guides and the README describe the current flow.
 - The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
   They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
   regression, but the agent cannot change them (approved by a person, write-protected): in the

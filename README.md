@@ -199,13 +199,14 @@ project:
   stay out of the ChangeSet.
 - **Install the project's test dependencies where the harness runs.** In the case, `freezegun`
   (declared in `requirements/tests.txt`) was missing and two test modules fail to collect, outside
-  the ChangeSet. The baseline comparison that `harness init` writes finds the same failures on the
-  baseline, marks them pre-existing and the gate passes: `run start` exits with **4**.
-- **Check that the tests ran before deciding.** In the case no test ran; with `freezegun`
-  installed the project's suite passes (**298 tests**) and a plain `APPROVE` closes the run (137
-  events, chain valid). A failure the baseline does not share still blocks: fix it and
-  `harness run continue`, or close with `APPROVE_EXCEPTION` and a written rationale. Up to 1.0.0
-  `run start` exited with 6; in the evaluated 0.8.0 cut the case closed by exception.
+  the ChangeSet: `run start` exits with **6**. The baseline fails the same way, but pytest ran no
+  test, so the baseline comparison that `harness init` writes does not count it as pre-existing
+  (#190).
+- **Fix the environment and run the task again.** The failed run's changes are in quarantine
+  (`governance.stopTheLine: restore`), so a new `run start` applies the patch: **298 tests** pass,
+  the gate `PASSED` and a plain `APPROVE` closes the run (122 events, chain valid), or close with
+  `APPROVE_EXCEPTION` and a written rationale. In the evaluated 0.8.0 cut the case closed by
+  exception.
 - **Respect conventions.** Detection is read-only (the case: Python, confidence 1.0 from
   `pyproject.toml` and `tox.ini`). Several lock files raise the Node.js confidence, but the profile
   always runs `npm`.

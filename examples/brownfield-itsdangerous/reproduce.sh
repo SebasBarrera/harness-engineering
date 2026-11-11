@@ -4,10 +4,12 @@
 # Usage: examples/brownfield-itsdangerous/reproduce.sh <harness-wheel-or-requirement> [workdir]
 # Needs: Python >= 3.12 (set PYTHON=/path/to/python3.12 if python3 is older), Git, curl,
 # network access to github.com and to a Python package index.
-# Expected exit codes with the defaults `harness init` writes: run start 4 (the baseline already
-# fails without freezegun; environment.baseline: report records it and verification.differential
-# classifies the failures as pre-existing, so the gate PASSED), findings list 0, the project's
-# suite run by hand after installing freezegun 0, APPROVE 0.
+# Expected exit codes with the defaults `harness init` writes: run start 6 (freezegun is missing,
+# so pytest stops while collecting and no test runs; environment.baseline: report records that the
+# baseline fails too, and verification.differential does not treat a run without any test outcome
+# as pre-existing, #190; governance.stopTheLine: restore puts the change in quarantine and restores
+# the baseline), findings list 0, then, with freezegun installed, a new run start 4 (gate PASSED)
+# and APPROVE 0.
 # On Windows, Git Bash accepts the work directory as /c/... or C:/....
 set -euo pipefail
 
@@ -58,34 +60,40 @@ git init -q && git add . && git -c user.name=demo -c user.email=demo@example.inv
 expect 0 harness init --path .
 expect 0 harness inspect --path .
 expect 0 harness task create --path . --file "$HERE/task.yaml"
-expect 4 harness run start --path . --task task_itsdangerous_base64_non_ascii
+expect 6 harness run start --path . --task task_itsdangerous_base64_non_ascii
 cp "$WORKDIR/last.out" ../run.json
 RUN=$(python -c "import json;print(json.load(open('../run.json'))['executionId'])")
 expect 0 harness findings list --path . --run "$RUN"
 # freezegun, declared in requirements/tests.txt, is missing: pytest stops while collecting on the
-# baseline and on the change alike, so the failures are pre-existing and the gate PASSED.
+# baseline and on the change alike. No test ran, so the shared failure is not pre-existing: it blocks.
 python - "$WORKDIR/last.out" <<'PY'
 import json, sys
 data = json.load(open(sys.argv[1]))
 rules = {f["ruleId"] for f in (data if isinstance(data, list) else data["findings"])}
-want = {"environment.baseline-failing", "differential.preexisting", "python.pytest.failed"}
+want = {"environment.baseline-failing", "python.pytest.failed"}
 missing = want - rules
 print("findings", ", ".join(sorted(want & rules)), f"MISSING {sorted(missing)}" if missing else "")
-sys.exit(1 if missing else 0)
+unexpected = rules & {"differential.preexisting"}
+if unexpected:
+    print("UNEXPECTED", sorted(unexpected))
+sys.exit(1 if missing or unexpected else 0)
 PY
+
+
+# Fix the environment, not the ChangeSet, and run the task again: the failed run's changes are in
+# quarantine and the workspace is back at the baseline, so `run continue` would verify an empty
+# ChangeSet; a new run applies the same patch.
+python -m pip install -q --require-hashes -r "$REQ/example-freezegun.txt"
+expect 4 harness run start --path . --task task_itsdangerous_base64_non_ascii
+cp "$WORKDIR/last.out" ../run.json
+RUN=$(python -c "import json;print(json.load(open('../run.json'))['executionId'])")
 harness status --path . --run "$RUN" | python -c "
 import json,sys; g=json.load(sys.stdin)['gate']['status']; print('gate', g); sys.exit(g != 'PASSED')"
-
-# No test ran in that attempt, so the reviewer repairs the environment (not the ChangeSet) and runs
-# the project's suite on the change before deciding. `run continue` would not verify again: the
-# run already waits at DECISION.
-python -m pip install -q --require-hashes -r "$REQ/example-freezegun.txt"
-expect 0 python -m pytest -q -p no:cacheprovider
-tail -1 "$WORKDIR/last.out"
+grep -rhoE '^[0-9]+ passed in' "$WORKDIR/state" | sort -n | tail -1   # the project's suite, as stored evidence
 DIGEST=$(harness status --path . --run "$RUN" | python -c "import json,sys;print(json.load(sys.stdin)['execution']['changeSetDigest'])")
 expect 0 harness gate decide --path . --run "$RUN" --decision APPROVE --change-set-digest "$DIGEST" \
   --actor human.reviewer \
-  --rationale "The baseline failures (freezegun missing) are pre-existing; with freezegun installed the project's suite passes on the same ChangeSet"
+  --rationale "Baseline repaired by installing freezegun; the latest verification passes with the same ChangeSet"
 harness status --path . --run "$RUN" | python -c "
 import json,sys; d=json.load(sys.stdin); e=d['execution']
 print('status', e['status'], '| changeSet', e['changeSetDigest'], '| events', d['eventCount'], '| chain valid', d['eventChainValid'])"
