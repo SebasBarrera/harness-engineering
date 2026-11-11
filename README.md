@@ -198,13 +198,14 @@ project:
 - **Clean tree or known baseline.** Changes that exist before the run are part of the baseline and
   stay out of the ChangeSet.
 - **Install the project's test dependencies where the harness runs.** In the case, `freezegun`
-  (declared in `requirements/tests.txt`) was missing: `run start` exited with **6** and the stored
-  pytest output showed two test modules failing to collect, outside the ChangeSet.
-- **Two ways out of a broken baseline:** fix it and `harness run continue` (the case then ran
-  **298 tests**, all passing, with the same ChangeSet digest; the gate counts the latest attempt of
-  each validator, so it `PASSED` and a plain `APPROVE` closed the run: 46 events, chain valid), or
-  close with `APPROVE_EXCEPTION` and a written rationale. In the evaluated 0.8.0 cut the gate kept
-  the failure of the first attempt and the case closed by exception.
+  (declared in `requirements/tests.txt`) was missing and two test modules fail to collect, outside
+  the ChangeSet. The baseline comparison that `harness init` writes finds the same failures on the
+  baseline, marks them pre-existing and the gate passes: `run start` exits with **4**.
+- **Check that the tests ran before deciding.** In the case no test ran; with `freezegun`
+  installed the project's suite passes (**298 tests**) and a plain `APPROVE` closes the run (137
+  events, chain valid). A failure the baseline does not share still blocks: fix it and
+  `harness run continue`, or close with `APPROVE_EXCEPTION` and a written rationale. Up to 1.0.0
+  `run start` exited with 6; in the evaluated 0.8.0 cut the case closed by exception.
 - **Respect conventions.** Detection is read-only (the case: Python, confidence 1.0 from
   `pyproject.toml` and `tox.ini`). Several lock files raise the Node.js confidence, but the profile
   always runs `npm`.

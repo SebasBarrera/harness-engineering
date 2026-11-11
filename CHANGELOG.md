@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It still expected `run start`
+  6 and `run continue` 4, but the baseline comparison that `harness init` writes
+  (`environment.baseline: report`, `verification.differential: true`) marks the failures caused by
+  the missing `freezegun` as pre-existing, so the gate passes and `run start` exits 4. The script
+  now checks that flow (the `environment.baseline-failing` and `differential.preexisting`
+  findings, the project's suite after installing `freezegun`: 298 passed, `APPROVE` 0), keeps the
+  run registry in its work directory (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory
+  in Git Bash, which used to split `PATH` at the drive colon. The brownfield guides and the README
+  describe the current flow.
 - The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
   which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
   pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported

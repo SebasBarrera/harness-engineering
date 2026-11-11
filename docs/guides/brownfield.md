@@ -30,9 +30,11 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    project whose commands differ declares its own validators under `toolchain.validators` (see
    [project toolchain](../reference/configuration.md#project-toolchain)). A missing test
    dependency is not detected in advance: the tests fail to collect.
-3. **The baseline may already be broken.** The harness does not yet tell pre-existing failures from
-   introduced ones (the `PREEXISTING_ERROR` status exists but is never assigned, issue #7). The
-   evidence shows which files failed, so you can see that they are outside the ChangeSet.
+3. **The baseline may already be broken.** `harness init` writes `environment.baseline: report`
+   and `verification.differential: true`: the mandatory validators also run on the baseline, a
+   failure the change shares with it is pre-existing (`LOW` finding `differential.preexisting`)
+   and does not block, and only introduced failures do. A pre-existing failure can hide that the
+   tests never ran (below, pytest stops while collecting), so read the evidence before deciding.
 4. **Large repositories.** Since 1.1 `harness init` writes `workspace.snapshot: git`,
    `workspace.baseline: manifest` and `workspace.snapshotCache: true`: files that `.gitignore`
    excludes are never read or stored, the baseline is a manifest of digests, and unchanged files
@@ -107,13 +109,28 @@ so the ChangeSet owns exactly `src/itsdangerous/encoding.py` and
 ```console
 $ harness run start --path . --task task_itsdangerous_base64_non_ascii
 $ echo $?
-6
+4
 ```
 
-The run stopped in `VERIFICATION` with status `FAILED`. `harness findings list --path . --run <run>`
-returns one finding: severity `HIGH`, rule `python.pytest.failed`, message `python.pytest failed with
-exit code 2`. The pytest output stored as evidence shows
-why, and that the failing files are not part of the ChangeSet:
+The run waits in `DECISION` and the gate is **`PASSED`**, although `freezegun` is missing. Two keys
+that `harness init` writes compare the change with the baseline: `environment.baseline: report`
+runs the mandatory validators on a scratch copy of the baseline in `DISCOVERY`, and
+`verification.differential: true` marks the failures the change shares with the baseline as
+pre-existing, so they do not block (see the
+[configuration reference](../reference/configuration.md)). `harness findings list --path . --run
+<run>` returns:
+
+| Severity | Rule | Message (abridged) |
+|---|---|---|
+| `LOW` | `environment.baseline-failing` | The baseline already fails before the change: python.pytest FAILED |
+| `HIGH` | `python.pytest.failed` | python.pytest failed with exit code 2 |
+| `HIGH` | `python.pytest.test-error` | tests/test_itsdangerous/test_timed.py error |
+| `HIGH` | `python.pytest.test-error` | tests/test_itsdangerous/test_url_safe.py error |
+| `INFO` | `tests.coverage-unavailable` | Coverage of the changed lines could not be measured |
+| `LOW` | `differential.preexisting` | 2 problem(s) reported by python.pytest also fail on the baseline (pre-existing) |
+
+The pytest output stored as evidence shows why, and that the failing files are not part of the
+ChangeSet:
 
 ```text
 ____________ ERROR collecting tests/test_itsdangerous/test_timed.py ____________
@@ -123,61 +140,52 @@ E   ModuleNotFoundError: No module named 'freezegun'
 !!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
 ```
 
-ChangeSet digest at this point:
-`sha256:e775aa2dc82793fea6af88f63e6b01564e29398f7e0c0b563c416383e8723d46`.
+### Before deciding: repair the environment and run the suite
 
-### Two ways out
-
-**A. Fix the baseline and resume.** Install the declared dependency and continue the same run; the
-ChangeSet is untouched:
+The gate passed, but pytest stopped while collecting, so **no test ran**, the added one included;
+only the `INFO` coverage finding says so. Install the declared dependency (the environment, not the
+ChangeSet) and run the project's suite on the change:
 
 ```console
 $ python -m pip install "freezegun==1.4.0"
-$ harness run continue --path . --run <run>
-$ echo $?
-4
+$ python -m pytest -q -p no:cacheprovider
+298 passed in 0.98s
 ```
 
-The retry ran the project's suite: **`298 passed`**. The ChangeSet still has 2 files and the same
-digest (`sha256:e775aa2d…23d46`).
-
-The gate is **`PASSED`** with reason `ALL_MANDATORY_VALIDATIONS_PASSED`. For each validator, the
-gate counts the latest attempt on the current digest; the failed attempt 1 and its `HIGH` finding
-stay in the record (`validationSummary` shows 1 `FAILED`, `harness findings list` still returns the
-finding) but no longer block. Approve normally:
+`harness run continue` does not help here: the run already waits in `DECISION` and the ChangeSet
+did not change, so it exits 4 again without verifying again. Approve with the digest of the
+ChangeSet:
 
 ```console
 $ harness gate decide --path . --run <run> --decision APPROVE \
-    --change-set-digest sha256:e775aa2d…23d46 --actor human.reviewer \
-    --rationale "Baseline repaired by installing freezegun; the latest verification passes with the same ChangeSet"
+    --change-set-digest <digest> --actor human.reviewer \
+    --rationale "The baseline failures (freezegun missing) are pre-existing; with freezegun installed the project's suite passes on the same ChangeSet"
 $ echo $?
 0
 ```
 
-Final state: status `PASSED`, 46 events, event chain valid.
+Final state: status `PASSED`, 137 events, event chain valid, ChangeSet of 2 files with digest
+`sha256:5702c3865fad03eb8ba9c449a42269e03afd2b93794bac34be4625f252b70a07` (recorded on Windows with
+Git Bash and Python 3.12.10).
 
-**B. Decide with a justified exception.** If the baseline cannot be repaired, the gate stays
-`FAILED`; an ordinary approval is refused (exit 5) and `APPROVE_EXCEPTION` with a rationale closes
-the run with the exception visible in the trace.
+If a failure is not shared with the baseline, or `verification.differential` is off, the gate is
+`FAILED`: repair what fails and `run continue`, or decide `APPROVE_EXCEPTION` with a rationale (an
+ordinary `APPROVE` is refused with exit 5).
 
-### Difference with the thesis figures
+### Difference with earlier figures and the thesis
 
-The thesis evaluated version 0.8.0. There the gate consolidated every validation of the digest
-across attempts, so the failure of attempt 1 kept counting after the retry passed (issue #2): the
-plain `APPROVE` was refused with exit 5 and the run was closed with `APPROVE_EXCEPTION` (46 events).
-Since 0.9.0 the latest attempt of each validator counts. The rest of the case is unchanged: the same
-exit codes for `run start` (6) and `run continue` (4), 298 tests, the same ChangeSet digest and the
-same number of events. The tag `v0.8.0` keeps the evaluated behavior.
-
-The figures above were recorded before `harness init` enabled the requirement-traceability check
-(`verification.requirementTraceability: enforce`, see the
-[configuration reference](../reference/configuration.md#requirement-traceability)). With it,
-`VERIFICATION` also records a `traceability.requirements` result and its evidence on each attempt,
-so the number of events is higher than 46; that count has not been re-recorded (the case needs
-network access). The requirement of `task.yaml` is identified by its `requirementId`,
-`base64_decode_rejects_non_ascii`, which the added test names
-(`test_base64_decode_rejects_non_ascii`), so the requirement is traced, the gate is not affected
-and the patch, and therefore the ChangeSet digest, is unchanged.
+The thesis evaluated version 0.8.0. There the run stopped in `VERIFICATION` (`run start` exit 6,
+one `HIGH` finding `python.pytest.failed`), installing `freezegun` and `run continue` gave exit 4
+and `298 passed`, and the gate consolidated every validation of the digest across attempts, so the
+failure of attempt 1 kept counting (issue #2): the plain `APPROVE` was refused with exit 5 and the
+run was closed with `APPROVE_EXCEPTION` (46 events, ChangeSet digest
+`sha256:e775aa2dc82793fea6af88f63e6b01564e29398f7e0c0b563c416383e8723d46`). From 0.9.0 the latest
+attempt of each validator counted, and the same steps closed with a plain `APPROVE` (46 events). The
+baseline comparison that `harness init` now writes (#7, #52, #55) moves the decision before any
+repair, as above. The number of events is higher because `VERIFICATION` runs more checks (for
+example the requirement traceability of `base64_decode_rejects_non_ascii`). The ChangeSet digest
+recorded above differs from the earlier one; the cause has not been established. The tag `v0.8.0`
+keeps the evaluated behavior.
 
 ## Checklist for your own repository
 
@@ -186,5 +194,7 @@ and the patch, and therefore the ChangeSet digest, is unchanged.
       (`pip install -r requirements/tests.txt`, `npm ci`, …).
 - [ ] Run the project's test command once by hand to know whether the baseline passes.
 - [ ] Declare the files the task may change (`patch` paths or `metadata.ownedPaths`).
-- [ ] If the baseline is broken, fix it and `run continue`; if it cannot be fixed, decide knowingly
-      between `APPROVE_EXCEPTION` (with the reason) and `REJECT`.
+- [ ] If the gate passed over pre-existing failures, check in the evidence that the tests ran; if
+      they did not, repair the environment and run the suite before you approve.
+- [ ] If the gate failed, fix what fails and `run continue`; if it cannot be fixed, decide
+      knowingly between `APPROVE_EXCEPTION` (with the reason) and `REJECT`.
