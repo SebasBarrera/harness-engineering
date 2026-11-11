@@ -31,7 +31,7 @@ harness checked."""
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any
@@ -478,9 +478,13 @@ class Friction:
         )
 
     def affected_tests(
-        self, change_set: ChangeSet, definitions: Sequence[Any]
+        self,
+        change_set: ChangeSet,
+        definitions: Sequence[Any],
+        exclude: Collection[str] = (),
     ) -> tuple[Any, list[str]] | None:
-        """The pytest validator and the affected test files, when there are any."""
+        """The pytest validator and the affected test files, when there are any, without the
+        ``exclude`` files (the frozen acceptance tests a dispute can cover, #161)."""
         pytest_definition = next(
             (
                 item
@@ -494,6 +498,7 @@ class Friction:
         tests = affected_python_tests(
             self.s.paths.workspace, [item.path for item in change_set.files if item.after_digest]
         )
+        tests = [item for item in tests if item not in exclude]
         if not tests:
             return None
         return pytest_definition, tests
@@ -505,17 +510,21 @@ class Friction:
         definitions: Sequence[ValidatorDefinition],
         prepare: Callable[[ValidatorDefinition], Callable[[], ValidatorOutput]],
         save: Callable[[ValidatorOutput], None],
+        exclude: Collection[str] = (),
     ) -> list[ValidatorOutput]:
         """The profile validators of VERIFICATION. Outside the fast lane (or without
         ``fastLane.verification``) one after the other, as before. In the fast lane: the
         affected tests first (a failure stops the attempt; the full suite runs before the
         gate), then the validators side by side, reusing a PASSED result of the same validator
-        for the same ChangeSet, baseline and configuration."""
+        for the same ChangeSet, baseline and configuration. The ``exclude`` files are left out
+        of the affected tests: the frozen acceptance tests under ``disputes: person`` run in
+        ``harness.acceptance-tests`` and the full suite, where a failure confined to them can
+        open a dispute instead of stopping the attempt first (#161)."""
         config = self.fast_verification
         if config is None or not self.fast(execution):
             return self._run_in_order(definitions, prepare, save)
         outputs = (
-            self._affected_first(execution, change_set, definitions, prepare, save)
+            self._affected_first(execution, change_set, definitions, prepare, save, exclude)
             if config.affected_tests_first
             else []
         )
@@ -578,9 +587,10 @@ class Friction:
         definitions: Sequence[ValidatorDefinition],
         prepare: Callable[[ValidatorDefinition], Callable[[], ValidatorOutput]],
         save: Callable[[ValidatorOutput], None],
+        exclude: Collection[str] = (),
     ) -> list[ValidatorOutput]:
         """Run the pytest validator on the affected test files only, when there are any."""
-        selection = self.affected_tests(change_set, definitions)
+        selection = self.affected_tests(change_set, definitions, exclude)
         if selection is None:
             return []
         pytest_definition, tests = selection
