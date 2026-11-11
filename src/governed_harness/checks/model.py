@@ -102,8 +102,8 @@ def parse_unified_diff(text: str) -> list[DiffFile]:
 
 
 # One alternation per test-file convention; a public constant, kept as a single pattern.
-TEST_PATH = re.compile(  # NOSONAR(S5843)
-    r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*\.py$|_test\.py$|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(^|/)conftest\.py$"
+TEST_PATH = re.compile(
+    r"(^|/)(tests?|__tests__|spec)/|(^|/)test_[^/]*\.py$|_test\.py$|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|(^|/)conftest\.py$"  # NOSONAR(S5843)  # noqa: E501
 )
 
 
