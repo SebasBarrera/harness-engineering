@@ -36,13 +36,19 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from common import (  # noqa: E402
     EVALUATION,
+    WINDOWS,
     Harness,
     add_common_arguments,
     environment,
     init_repo,
     isolated_env,
+    platform_config,
+    platform_env,
+    search_path,
     simulated_person,
     stamp,
+    venv_bin,
+    venv_python,
     write_json,
     write_jsonl,
 )
@@ -167,9 +173,12 @@ def oracle(
         capture_output=True,
         text=True,
         env={
-            "PATH": str(Path(python).parent) + ":/usr/bin:/bin",
+            "PATH": search_path([Path(python).parent])
+            if WINDOWS
+            else str(Path(python).parent) + ":/usr/bin:/bin",
             "PYTHONPATH": str(directory / "src"),
             "HOME": str(directory),
+            **platform_env(),
         },
     )
     import xml.etree.ElementTree as ET
@@ -197,13 +206,15 @@ def run_case(
     ws = run_dir / "ws"
     copy_baseline(ws)
     init_repo(ws)
-    h = Harness(args.harness, isolated_env([args.project_venv / "bin"], run_dir / "harness-state"))
+    h = Harness(
+        args.harness, isolated_env([venv_bin(args.project_venv)], run_dir / "harness-state")
+    )
     h.run(ws, "init", "--path", ".", label="init")
     config_path = ws / ".harness" / "project.yaml"
-    config = yaml.safe_load(config_path.read_text())
+    config = platform_config(yaml.safe_load(config_path.read_text()))
     if args.mutation_mode:
         config["verification"]["mutation"]["mode"] = args.mutation_mode
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
     files = change_files(case, corpus, snippets)
     task = task_for(case, corpus, files)
     task_path = run_dir / "task.yaml"
@@ -274,7 +285,7 @@ def run_case(
         {f["ruleId"] for f in findings if f["ruleId"].startswith("certification.")}
     )
     record["oracle"] = oracle(
-        case, corpus, files, run_dir / "oracle", str(args.project_venv / "bin" / "python")
+        case, corpus, files, run_dir / "oracle", str(venv_python(args.project_venv))
     )
     record["defectiveObserved"] = record["oracle"]["failed"] > 0
     record["truthConsistent"] = record["defectiveObserved"] == bool(case["truth"]["defective"])

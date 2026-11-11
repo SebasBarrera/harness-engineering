@@ -32,7 +32,8 @@ request = json.load(sys.stdin)
 for patch in request["task"]["implementation"]["patches"]:
     Path(patch["path"]).write_text(patch["content"])
 print(json.dumps({"status": "PASSED", "summary": "done",
-                  "usage": {"inputTokens": 1000, "outputTokens": 200, "cacheTokens": 400}}))
+                  "usage": {"inputTokens": 1000, "outputTokens": 200, "cacheTokens": 400,
+                            "cacheReadTokens": 300}}))
 """
 
 
@@ -119,6 +120,7 @@ def test_costs_are_reported_or_estimated(python_workspace: Path, tmp_path: Path)
     # 600 input at 2, 400 cached at 0.5 and 200 output at 10, per million tokens.
     assert cost["estimatedUsd"] == pytest.approx((600 * 2 + 400 * 0.5 + 200 * 10) / 1_000_000)
     assert report["totals"]["tokens"]["cache"] == 400
+    assert report["totals"]["tokens"]["cacheRead"] == 300
     assert report["models"][0]["cost"] == "estimated"
     prices = tmp_path / "prices.json"
     prices.write_text(json.dumps({"usage": {"input": 0, "output": 0}}), encoding="utf-8")

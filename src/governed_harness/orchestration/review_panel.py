@@ -240,6 +240,7 @@ class PanelReview:
                 recommendation="Use a provider that honours readOnly requests.",
             )
 
+        judge, timeout = self._contract_judge(execution, phase)
         return ProviderInvoker(
             workspace=workspace,
             artifacts=results.s.artifacts,
@@ -251,7 +252,7 @@ class PanelReview:
             ),
             execution_id=execution.execution_id,
             phase_id=PhaseId.INDEPENDENT_REVIEW,
-            default_timeout=engine._bounded_timeout(runtime.command_timeout_seconds),
+            default_timeout=timeout(engine._bounded_timeout(runtime.command_timeout_seconds)),
             max_output_bytes=runtime.max_output_bytes,
             hooks=InvokerHooks(
                 cancelled=lambda: engine.is_cancelled(execution.execution_id),
@@ -259,9 +260,40 @@ class PanelReview:
                 record_request=record_request,
                 after=after,
                 on_violation=on_violation,
+                judge=judge,
             ),
             mcp_servers=servers,
         )
+
+    def _contract_judge(
+        self, execution: Execution, phase: PhaseExecution
+    ) -> tuple[
+        Callable[[ReviewerCall, AgentCallResult, str | None], str | None] | None,
+        Callable[[int], int],
+    ]:
+        """Under ``agentContract: enforce`` (#149) every reviewer answer is a ``review`` call of
+        the contract: judged against the token budget, the time limit (which also shortens the
+        reviewers' timeout) and the result limits, and recorded; ``(None, unchanged)`` without
+        it, so the panel behaves as before."""
+        flow = self.results.agent_contract
+        if not flow.enabled:
+            return None, lambda seconds: seconds
+        limits = flow.limits(execution, self.results.engine.run_task(execution))
+
+        def judge(
+            call: ReviewerCall, result: AgentCallResult, request_ref: str | None
+        ) -> str | None:
+            return flow.settle_reviewer(
+                execution,
+                phase,
+                call.reviewer,
+                result,
+                request=call.request,
+                request_ref=request_ref,
+                limits=limits,
+            )
+
+        return judge, lambda seconds: flow.timeout(seconds, limits)
 
     # ----- the review --------------------------------------------------------------------------
     def run(

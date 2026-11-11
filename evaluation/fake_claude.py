@@ -195,20 +195,39 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
     if "Find where the task below must be implemented" in prompt:
         return {"locations": [], "questions": []}
     if "Survey the architecture of the existing project" in prompt:
-        return {
+        survey: dict[str, Any] = {
             "style": "layered",
             "summary": "Dry run: one source layer.",
             "layers": [{"name": "source", "paths": ["src/**"], "modules": []}],
             "allow": {"source": []},
         }
+        if '"organization" (Markdown' in prompt:
+            # The reverse engineering fields of architecture.documentation: project (#97).
+            survey |= {
+                "organization": "Dry run: the package lives under src/.",
+                "components": [{"name": "source", "path": "src", "responsibility": "The code."}],
+                "conventions": [],
+                "guidance": ["Dry run: follow the existing structure."],
+            }
+        return survey
+    if "A person chose the" in prompt and "architecture for the new project" in prompt:
+        # The expert's organization plan under architecture.catalogue: experts (#97).
+        return {
+            "summary": "Dry run: one package.",
+            "structure": [{"path": "src", "purpose": "The package."}],
+            "practices": ["Dry run: keep the package small."],
+        }
     if "is new. From the task below" in prompt:
-        option = {
+        option: dict[str, Any] = {
             "benefits": ["simple"],
             "costs": ["none"],
             "fit": "small library",
             "layers": [{"name": "package", "paths": ["src/**"], "modules": []}],
             "allow": {"package": []},
         }
+        if "a 'supports' list" in prompt:
+            # Under architecture.catalogue: experts every option names what supports it (#97).
+            option["supports"] = ["a small library"]
         return {
             "options": [
                 {
@@ -332,6 +351,10 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
 
 def main(argv: list[str]) -> int:
     prompt = _arg(argv, "-p") or sys.stdin.read()
+    if sys.platform == "win32" and prompt.startswith("--"):
+        # agentlib gives the prompt on stdin on Windows (the command line is limited to 32767
+        # characters), so "-p" is followed by the next option.
+        prompt = sys.stdin.buffer.read().decode("utf-8")
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
     if "--mcp-config" in argv:

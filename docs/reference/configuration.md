@@ -215,6 +215,7 @@ governance:
   - ::1
   verifyRecords: true
   chainAnchor: file
+  unanchoredEvents: warn
   pinTaskRevision: true
   protectExcludedPaths: true
   workspaceLease: true
@@ -875,6 +876,7 @@ the reason in `eventChainError` (before, an edited event made it exit with 1).
 |---|---|---|---|
 | `verifyRecords` | `false` | `true` | `harness trace` (every format, and the API trace route) verifies the run first and refuses to export a run that does not verify (exit 6, API 409); `status` adds `recordsValid` and, when false, `verificationSummary`. |
 | `chainAnchor` | `off` | `file` | After every command that appends events to a run (`run start`, `run continue`, `gate decide`, `run cancel`, `task clarify`), the sequence and digest of the chain head are copied outside `.harness`. `file`: a JSON file per workspace under `$HARNESS_ANCHOR_DIR`, else `$XDG_DATA_HOME/governed-harness/anchors`, else `~/Library/Application Support/governed-harness/anchors` (macOS), `%LOCALAPPDATA%\governed-harness\anchors` (Windows) or `~/.local/share/governed-harness/anchors`. `git-note`: a Git note under `refs/notes/governed-harness` of the workspace repository, attached to a blob named after the run. `off`: no anchor. A chain that does not verify is never anchored, and a failed write does not stop the run (verify then reports `absent`). |
+| `unanchoredEvents` | 1.x behaviour | `warn` | Since 2.0 (#149), with `chainAnchor` set. The anchor covers the chain up to the anchored head; events appended after it (by a command that does not re-anchor, or by a forger) are not covered. `warn`: `harness verify` lists them in `anchor.unanchoredEvents` and adds a `warnings` entry, exit 0 if nothing else fails. `fail`: the anchor status is `unanchored` and verify fails (exit 6). Under either value a `retention.artifacts.pruned` event excuses a missing artifact only when it is within the anchored part; one after the head (or any, when the anchor is `absent`) leaves the artifact `missing`, with the reason in `detail` when the event is after the head. Absent: the events after the anchor are only counted (`eventsAfterAnchor`) and every prune event excuses its artifacts, so a forged prune event appended after the anchor hides a deleted blob. |
 
 Neither anchor is tamper-proof: a process with your permissions can rewrite the anchor as well as
 `state.db`. It turns a silent truncation into an edit of two places, and a deleted anchor shows up
@@ -1328,7 +1330,7 @@ the section behaves, and digests, as before. The guide in Spanish is
 |---|---|---|
 | `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
 | `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
-| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. |
+| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. The token budget counts the work of the call as the provider reports it: fresh input, cache creation, output and reasoning. Prompt-cache reads (`cacheReadTokens`) are recorded with the call's usage, its response and the metrics, but do not count; a provider that reports no cache-read split counts its whole input. The limit message gives both numbers. |
 | `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
 | `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
 | `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |

@@ -216,7 +216,7 @@ def main() -> int:
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         config.get("verification", {}).pop("acceptanceTests", None)
         config.setdefault("governance", {})["stopTheLine"] = "off"
-        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     shutil.copy2(workspace / ".harness" / "project.yaml", run_dir / "project.yaml")
     harness_exe = shutil.which(run_eval.HARNESS_CMD[0]) or run_eval.HARNESS_CMD[0]
     mcp = {
@@ -228,7 +228,7 @@ def main() -> int:
             }
         }
     }
-    (run_dir / "mcp.json").write_text(json.dumps(mcp, indent=1), encoding="utf-8")
+    (run_dir / "mcp.json").write_text(json.dumps(mcp, indent=1), encoding="utf-8", newline="\n")
     task_file = run_eval.SCENARIOS[args.scenario]["task"]
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     document = {**task, "implementation": {"mode": "none"}}
@@ -315,7 +315,7 @@ def main() -> int:
         record["measures"] = measure(args.scenario, workspace, baseline, run_dir, args.cache, HERE)
         record["measures"]["measuredOn"] = "workspace"
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )

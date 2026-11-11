@@ -81,12 +81,15 @@ def append(path: Path, text: str) -> None:
     an agent that keeps its faulty change would deliver, without duplicating it."""
     current = path.read_text(encoding="utf-8") if path.exists() else ""
     if text not in current:
-        with path.open("a", encoding="utf-8") as handle:
+        # LF on every platform: Windows text mode would write CRLF (PREREGISTRO.md, H46).
+        with path.open("a", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
 
 
 def apply_reference() -> None:
-    ENCODING.write_text((HERE / "reference" / "brownfield-itsdangerous-encoding.py").read_text())
+    ENCODING.write_text(
+        (HERE / "reference" / "brownfield-itsdangerous-encoding.py").read_text(), newline="\n"
+    )
     append(TESTS, NEW_TEST)
 
 
@@ -99,7 +102,7 @@ def try_write(path: Path, text: str) -> None:
     reports it (``[Errno 1] Operation not permitted: '/path'``) and raised as ``Denied``."""
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
+        path.write_text(text, encoding="utf-8", newline="\n")
     except OSError as error:
         sys.stderr.write(f"write failed: {error}\n")
         raise Denied(str(error)) from error
@@ -125,7 +128,8 @@ def fault_actions(args: argparse.Namespace) -> dict[str, Any]:
             ENCODING.read_text().replace(
                 'return base64.urlsafe_b64encode(string).rstrip(b"=")',
                 "return base64.urlsafe_b64encode(string)",
-            )
+            ),
+            newline="\n",
         ),
         "failing-test": lambda: append(
             TESTS, '\n\ndef test_probe_expectation():\n    assert base64_decode("YWJj") == b"abd"\n'
@@ -197,7 +201,20 @@ def read_only_answer(request: dict[str, Any], kind: str) -> dict[str, Any]:
     if kind == "architecture":
         if request.get("mode") == "advise":
             return {"options": []}
-        return {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
+        if request.get("mode") == "organize":
+            return {"summary": "No organization plan.", "structure": [], "practices": []}
+        # The survey answer carries the reverse engineering fields that `harness init` asks
+        # for (architecture.documentation: project); without them DISCOVERY blocks as malformed.
+        return {
+            "style": "custom",
+            "summary": "No layering.",
+            "layers": [],
+            "allow": {},
+            "organization": "None.",
+            "components": [{"name": "app", "path": ".", "responsibility": "The project."}],
+            "conventions": [],
+            "guidance": ["Follow the structure."],
+        }
     if kind == "review" and "outputContract" in request:
         return {"verdict": "PASS", "findings": [], "summary": "No finding."}
     return READ_ONLY_RESULTS.get(kind, {})

@@ -36,7 +36,7 @@ está en `schemas/v1/agent-call-request.schema.json` y se imprime con
 | `allowedContext` | El contexto permitido: todas las claves de primer nivel de la solicitud. Lo que no está aquí no se envió. |
 | `resources` | Archivos y recursos autorizados: `readPaths`, `writePaths`, `guidancePaths` (opcional, los archivos de contexto), `denyPaths` (opcional), `commands` (opcional) y `scripts` (opcional, ids del registro de scripts). |
 | `constraints` | Restricciones de ejecución: `readOnly`, `workspace`, `scriptsAreBlackBoxes` y `contextFilesAreGuidance`. |
-| `tokenBudget` | Presupuesto de tokens de la llamada. |
+| `tokenBudget` | Presupuesto de tokens de la llamada. Cuenta el trabajo de la llamada según lo que reporta el proveedor: entrada nueva, creación de caché, salida y razonamiento. Las lecturas de la caché de prompts (`cacheReadTokens`) se registran, pero no cuentan; un proveedor que no reporta esa división cuenta toda su entrada. |
 | `timeLimitSeconds` | Límite de tiempo de la llamada, en segundos. |
 | `sizeClass` | Tamaño de la tarea (`S`, `M` o `L`) del que salen los dos límites anteriores. |
 | `iteration` | Número de iteración (`number`) y tope del agente (`max`, entre 1 y 6). |
@@ -55,7 +55,7 @@ Lo que el padre recibe de una llamada es una respuesta con este contrato
 | Campo | Para qué sirve |
 |---|---|
 | `contractVersion`, `callKind`, `iteration` | Versión, tipo de llamada y número de iteración (obligatorios). |
-| `finalStatus` | Estado final de la ejecución (obligatorio): `PASSED`, `FAILED`, `BLOCKED`, `ERROR`, `CANCELLED`, `LIMIT_REACHED` (se alcanzó un límite), `CONTRACT_VIOLATION` (la respuesta rompió el contrato) o `ITERATIONS_EXHAUSTED`. |
+| `finalStatus` | Estado final de la ejecución (obligatorio): `PASSED`, `FAILED`, `BLOCKED`, `ERROR`, `CANCELLED`, `LIMIT_REACHED` (se alcanzó un límite), `CONTRACT_VIOLATION` (la respuesta rompió el contrato) o `ITERATIONS_EXHAUSTED` (el agente agotó su tope de iteraciones y no se hizo la llamada; lo escribe el harness en el evento `agent.iterations.exhausted`, ningún proveedor lo devuelve). |
 | `summary` | Resumen acotado (obligatorio). |
 | `status` | Estado que reportó el agente (`PASSED`, `FAILED` o `BLOCKED`), si reportó alguno. |
 | `result` | El resultado mínimo. Solo existe si la llamada terminó en `PASSED`. |
@@ -77,6 +77,15 @@ tabla anterior.
   llamada no define, tamaño del `result` en bytes, tamaño de cada campo de texto, y contenido de
   archivos donde solo se pide una conclusión (solo `acceptance` devuelve archivos, las pruebas que
   escribe).
+- Los revisores del panel de revisión (`review.panel`) también pasan por el contrato: cada respuesta
+  es una llamada `review`, con su presupuesto de tokens, su límite de tiempo (que acorta el tiempo
+  de los revisores) y los límites de `result`; las claves permitidas son las de la respuesta del
+  panel (`verdict`, `summary`, `findings`, `model`). Una respuesta fuera de los límites se descarta
+  (`agent.contract.violation` o `agent.limit.reached`), el panel la reenvía una vez al proveedor
+  alterno (o al mismo, si no hay uno) y, si vuelve a fallar, el revisor queda `UNKNOWN` y
+  bloquea bajo `review.panel.mode: enforce`. Cada respuesta queda en `agent.call.recorded` con el
+  revisor (`reviewer`). La solicitud del revisor no lleva el bloque `agentContract` (sigue siendo
+  la del panel, con su propio contrato de salida).
 - Un documento cualquiera se valida a mano con `harness agent-contract validate`:
 
 ```bash
@@ -142,7 +151,7 @@ Una respuesta válida de una llamada que alcanzó un límite:
   "iteration": 1,
   "finalStatus": "LIMIT_REACHED",
   "limitReached": "tokens",
-  "summary": "agent.limit.reached: the call used 5010 tokens of a budget of 1000"
+  "summary": "agent.limit.reached: the call used 5010 counted tokens (input, cache creation, output and reasoning) of a budget of 1000; 0 prompt-cache read tokens were recorded and not counted"
 }
 ```
 

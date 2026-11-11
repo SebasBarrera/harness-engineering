@@ -122,7 +122,7 @@ def main_v2(results: Path, out: Path) -> int:
         },
     }
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     print(json.dumps(data["promptLevels"], indent=1))
     return 0
 
@@ -167,7 +167,7 @@ def main() -> int:
             for (m, c), rows in sorted(codex.items())
         },
     }
-    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     if len(sys.argv) > 3:
         figure(data["promptLevels"], Path(sys.argv[3]))
     print(json.dumps(data["promptLevels"], indent=1))

@@ -198,6 +198,10 @@ The run waits for a person (`BLOCKED` in VERIFICATION, exit code 6) when all of 
 - the self-report of the implementation that produced the ChangeSet lists at least one disputed
   test with a reason.
 
+The same holds in the fast lane of `friction` (#161): its affected tests, which run first and
+stop the attempt on a failure, leave out the frozen files under `disputes: person`, so the frozen
+tests run in `harness.acceptance-tests` and the full suite before the outcome is decided.
+
 Otherwise the run fails as before. A waiting run is not stopped: `governance.stopTheLine` leaves
 its workspace alone. `harness inbox` shows an `acceptance-dispute` entry with the disputed tests,
 the reasons and the digest of the dispute (the ChangeSet, the approved tests and what was
