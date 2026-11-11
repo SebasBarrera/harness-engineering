@@ -1315,9 +1315,12 @@ class RunEngine:
         if ladder_block is not None and not (questions and policy == "enforce"):
             return PhaseOutcome(ResultStatus.BLOCKED, ladder_block, refs)
         if policy == "enforce":
+            # The rules that asked are the cause a person reads on status and in the inbox
+            # (H44): the count alone sent them to `harness task questions` to learn why.
+            rules = ", ".join(dict.fromkeys(question.rule_id for question in questions))
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
-                f"Intent needs clarification: {len(questions)} question(s)",
+                f"Intent needs clarification: {len(questions)} question(s) (rules {rules})",
                 refs,
             )
         for question in questions:

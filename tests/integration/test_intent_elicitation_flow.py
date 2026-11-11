@@ -118,7 +118,7 @@ def test_a_one_sentence_task_gets_its_criteria_elicited_in_intent(
     run_id = run["executionId"]
     assert open_questions(python_workspace, task_id) == C0_QUESTIONS
     code, status = invoke(python_workspace, "status", "--run", run_id)
-    assert status["phases"][0]["summary"] == "Intent needs clarification: 7 question(s)"
+    assert status["phases"][0]["summary"] == "Intent needs clarification: 7 question(s) (rules C0)"
 
     # Answers that give no criterion keep the task pending: INTENT asks the C0 questions again.
     clarified = clarify(python_workspace, task_id, write(tmp_path, "partial.yaml", PARTIAL_ANSWERS))
