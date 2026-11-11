@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- Governance profiles by risk (`governance.riskProfile`, `harness init` writes `auto`). `auto`
+  gives a task the router sizes `S` with no risk flag the light profile and every other task the
+  full one; `light` gives the light profile to every task without a risk flag, whatever its size;
+  `full` gives every task the full flow, with no fast lane. The light profile is the fast lane of
+  `friction.fastLane` (or its defaults when the section is absent or off) plus no `locate` call
+  and no `planApproval: risk` checkpoint; it keeps the nine phases, the mandatory validators, the
+  frozen acceptance tests, the fail-closed gate, the digest-bound human decision and the event
+  chain, and a ChangeSet with a risk factor still takes the run out of it. `lane.classified`
+  records `profile` and `governance`. With any value the `security` risk flag is read in context
+  (`agents/risk_terms.py`): strong terms (passwords, credentials, authentication, encryption,
+  access tokens, credit cards, and their Spanish forms) flag a task alone, while `token`,
+  `secret`, `card` and `payment` count only next to a word of their context or in a sensitive
+  file, so "discard", "tokenize" or "product card" no longer lift a small task to `M`. Without the
+  key the 1.x word list and fast lane are unchanged; `v0.8.0` has neither.
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
   INTENT blocked by clarification questions names the rules that asked
   (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the
