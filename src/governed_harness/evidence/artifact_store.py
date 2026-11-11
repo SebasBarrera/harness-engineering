@@ -242,27 +242,29 @@ def _move_into_place_on_windows(temporary: Path, path: Path, data: bytes) -> Non
     expected = sha256_bytes(data)
     delay = _WINDOWS_REPLACE_BACKOFF_SECONDS
     for attempt in range(_WINDOWS_REPLACE_ATTEMPTS):
-        last = attempt == _WINDOWS_REPLACE_ATTEMPTS - 1
         try:
-            os.rename(temporary, path)
+            _move_once_on_windows(temporary, path, expected)
             return
         except OSError:
-            existing = _digest_of(path)
-            if existing == expected:
-                temporary.unlink(missing_ok=True)
-                return
-            if existing is not None:
-                # Other bytes, read in full: overwrite them as POSIX does, never accept them.
-                try:
-                    os.replace(temporary, path)
-                    return
-                except OSError:
-                    if last:
-                        raise
-            elif last:
+            if attempt == _WINDOWS_REPLACE_ATTEMPTS - 1:
                 raise
         time.sleep(delay)
         delay *= 2
+
+
+def _move_once_on_windows(temporary: Path, path: Path, expected: str) -> None:
+    """One attempt of :func:`_move_into_place_on_windows`; raises ``OSError`` when it failed."""
+    try:
+        os.rename(temporary, path)
+    except OSError:
+        existing = _digest_of(path)
+        if existing == expected:
+            temporary.unlink(missing_ok=True)
+            return
+        if existing is None:
+            raise
+        # Other bytes, read in full: overwrite them as POSIX does, never accept them.
+        os.replace(temporary, path)
 
 
 def _digest_of(path: Path) -> str | None:
