@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
+  INTENT blocked by clarification questions names the rules that asked
+  (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the
+  questions, and `gate decide` refused for an `agent.*`, `validator.*` or `harness.*` actor now
+  has a `hint` (`harness review --run <run>`, then decide as a person with your own `--actor`).
+  Neither message exists in `v0.8.0`.
+- H44 reproduces the states it declares (second amendment of 2026-11-11 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). B06 expects exit 4, the code
+  `docs/reference/exit-codes.md` documents for a run that waits at DECISION for an exception of a
+  blocking risk factor; B13 leaves the `C0` questions unanswered, as B14 does, so the `C0` block
+  stays; R01 tries the `APPROVE` on B02's run in VERIFICATION, where it fails, instead of skipping
+  the case. The validators' tools of `evaluation/campaign/run_deterministic.py` are pinned to
+  exact versions (`pytest==8.3.5`, `pytest-cov==7.1.0`, `freezegun==1.4.0`, `ruff==0.17.4`,
+  `mypy==2.4.1`, `coverage==7.17.2`), so the ratchet sees the same Ruff defaults on every run. No
+  criterion changes.
 - Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
   `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
   provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so
