@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The differential verification no longer passes a test run that ran no test (#190). Under
+  `verification.differential` (written by `harness init`) a pytest run stopped at collection
+  (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
+  became a `PASSED` `PREEXISTING_ERROR`: its `HIGH` findings left the gate and the ladder
+  certified criteria from tests that never ran, so a real regression passed. A test run with no
+  test outcome (pytest exit codes 2 to 5, no passed or failed test, or another runner with no
+  parsed failed test) is now not comparable and keeps blocking, as in 1.0.0 (event
+  `verification.differential.inconclusive` with a `reason`). A shared failure passes only when
+  every test file the ChangeSet added or modified ran (`tests.changed-not-run`: `HIGH` and the
+  failure stays; `INFO` when the output does not list the tests that ran), and a
+  `PREEXISTING_ERROR` pass no longer gives L1 or L2 certification credit.
 - The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
   `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
   (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
