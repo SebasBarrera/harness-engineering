@@ -130,8 +130,12 @@ answered.
 ### Measures
 
 `measure.py` is applied identically to every condition; a stopped or rejected run whose changes the
-harness quarantined (stop the line) is measured on a copy of the workspace with the quarantined
-patch applied (`measuredOn: quarantine-copy`). `harness_state.py` reads the harness's own record as a
+harness quarantined (stop the line) is measured on a copy of the workspace returned to the baseline
+commit with the quarantined patch applied (`measuredOn: quarantine-copy`). A patch that does not
+apply is not measured: the record carries `invalid: quarantine-patch-not-applied`, goes to
+`<out>.invalid.jsonl` and the runner exits 3 (no rerun). `remeasure_quarantine.py <run-dir>...
+--cache <cache>` measures the quarantined patch of a stopped run again from its directory (no model
+call), for records written before that fix. `harness_state.py` reads the harness's own record as a
 second source: the eight trace relations of 0.9.0 unchanged and the 2.0.0 relations apart
 (clarification answered, acceptance decided, requirement traced, certification bound, review bound,
 routing recorded, `harness verify`), calls by kind and model, routing decisions, certification per
