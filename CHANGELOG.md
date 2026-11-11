@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
+  provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so
+  removing the provider's grant did not block the run; it now starts the fixture by the absolute
+  path of the project's interpreter, which no profile rule names, and blocks with
+  `capabilities.command-denied`. H45's reference solutions used the hidden tests unedited as
+  visible tests; they name none of the task's requirements and do not follow Ruff's defaults in
+  the project, so `traceability.requirement-untested` and `ratchet.regressed` (`HIGH`) blocked
+  them. Their visible tests are now `evaluation/deterministic/h45_reference_tests/` (the same
+  test functions and assertions, a docstring that names the requirements and the Ruff fixes); the
+  unedited form still runs and is reported apart (`ref-*-as-is`, outside the criterion). No
+  criterion and no harness behavior changes.
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline

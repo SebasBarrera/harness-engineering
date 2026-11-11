@@ -2,7 +2,8 @@
 """H45: false positives and review load on clean changes (``CATALOGO.md`` §2.8,
 ``PREREGISTRO.md``). No model is called.
 
-Thirty-two clean changes, each run on a fresh copy of its own baseline with the fixture provider
+Thirty-two clean changes (and, reported apart, the two reference solutions with the hidden tests
+as they are), each run on a fresh copy of its own baseline with the fixture provider
 of the interception suites (``interception_agent.py`` writes the change as it is), under ``H``
 (``harness init``) and ``H-core`` (the 1.0.0 key set):
 
@@ -10,7 +11,10 @@ of the interception suites (``interception_agent.py`` writes the change as it is
   baselines and tasks;
 * the 2 reference solutions of ``evaluation/reference/`` (greenfield-shipping and
   greenfield-alerts) on their fixtures, with the task of ``evaluation/tasks/`` as it is and, as
-  the change's visible tests, the tests of ``evaluation/hidden/`` of the scenario;
+  the change's visible tests, the tests of ``evaluation/hidden/`` of the scenario with the two
+  edits of the 2026-11-11 amendment (``h45_reference_tests/``: a docstring that names the task's
+  requirements and the Ruff defaults on the import block); the same solutions with the hidden
+  tests as they are (``ref-*-as-is``) are run and reported apart, outside the criterion;
 * the 7 clean cases of the review corpus of N02-a (``evaluation/corpus/review/cases.yaml``).
 
 For every run: findings by severity and rule, blocking findings (severity in
@@ -31,6 +35,7 @@ Writes ``DIR/h45-clean-changes.jsonl``, ``DIR/h45-clean-changes-summary.json``,
 from __future__ import annotations
 
 import argparse
+import ast
 import shutil
 import statistics
 import sys
@@ -54,6 +59,9 @@ REFERENCES = {
     "ref-shipping": ("greenfield-shipping", "shipping"),
     "ref-alerts": ("greenfield-alerts", "alerts"),
 }
+# The reference solutions with the hidden tests unedited: reported apart (amendment 2026-11-11).
+AS_IS = {f"{case_id}-as-is": case_id for case_id in REFERENCES}
+VISIBLE_TESTS = Path(__file__).resolve().parent / "h45_reference_tests"
 
 
 def brief(
@@ -122,27 +130,44 @@ def from_suite(source: Any, kinds: tuple[str, ...]) -> interception.Suite:
 
 
 # ----- the reference solutions -----------------------------------------------------------------
+def test_shape(source: str) -> tuple[list[str], int]:
+    """The test functions of a test file and its number of ``assert`` statements."""
+    tree = ast.parse(source)
+    names = [
+        node.name
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name.startswith("test")
+    ]
+    return names, sum(isinstance(node, ast.Assert) for node in ast.walk(tree))
+
+
 def reference_case(case_id: str) -> dict[str, Any]:
-    scenario, package = REFERENCES[case_id]
+    reference_id = AS_IS.get(case_id, case_id)
+    scenario, package = REFERENCES[reference_id]
     code = (EVALUATION / "reference" / scenario / package / "__init__.py").read_text(
         encoding="utf-8"
     )
-    hidden = next((EVALUATION / "hidden" / scenario).glob("test_*.py"))
+    hidden = next((EVALUATION / "hidden" / scenario).glob("test_*.py")).read_text(encoding="utf-8")
+    if case_id in AS_IS:
+        tests, source, how = hidden, "reference-as-is", "the hidden tests as they are"
+    else:
+        tests = (VISIBLE_TESTS / f"test_{package}.py").read_text(encoding="utf-8")
+        source, how = "reference", "the hidden tests with the two declared edits"
+        # The edits must not touch a test: same test functions, same number of assertions.
+        if test_shape(tests) != test_shape(hidden):
+            raise ValueError(f"{case_id}: the visible tests differ from the hidden tests")
     return {
         "id": case_id,
-        "source": "reference",
+        "source": source,
         "scenario": scenario,
         "kind": "clean",
-        "write": {
-            f"src/{package}/__init__.py": code,
-            f"tests/test_{package}.py": hidden.read_text(encoding="utf-8"),
-        },
-        "description": f"reference solution of {scenario} with the hidden tests as visible tests",
+        "write": {f"src/{package}/__init__.py": code, f"tests/test_{package}.py": tests},
+        "description": f"reference solution of {scenario} with {how} as visible tests",
     }
 
 
 def reference_suite(case_id: str) -> interception.Suite:
-    scenario, _ = REFERENCES[case_id]
+    scenario, _ = REFERENCES[AS_IS.get(case_id, case_id)]
     fixture = EVALUATION / "fixtures" / scenario
 
     def build(root: Path) -> None:
@@ -249,6 +274,8 @@ SUITES = [
     from_suite(h05_dependencies.SUITE, ("clean",)),
     reference_suite("ref-shipping"),
     reference_suite("ref-alerts"),
+    reference_suite("ref-shipping-as-is"),
+    reference_suite("ref-alerts-as-is"),
     review_suite(),
 ]
 SUITE_OF = {case["id"]: suite for suite in SUITES for case in suite.cases}
@@ -282,7 +309,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     ok = [r for r in records if "apparatusError" not in r and r["rep"] == 1]
     by_condition: dict[str, Any] = {}
     for condition in CONDITIONS:
-        rows = [r for r in ok if r["condition"] == condition]
+        rows = [r for r in ok if r["condition"] == condition and r["source"] != "reference-as-is"]
         if not rows:
             continue
         noise: dict[str, int] = {}
@@ -343,6 +370,17 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             for source in sorted({c["source"] for c in CASES})
         },
         "byCondition": by_condition,
+        # Outside the criterion and the per-condition counts (amendment 2026-11-11).
+        "referenceAsIs": {
+            f"{r['condition']}:{r['case']}": {
+                "gate": r.get("gate"),
+                "phase": r.get("phase"),
+                "blocking": r.get("blockingFindings"),
+                "blocked": r.get("blocked"),
+            }
+            for r in ok
+            if r["source"] == "reference-as-is"
+        },
     }
     summary["criteria"] = {
         "zeroBlocksOnReferenceSolutions": {
@@ -350,8 +388,10 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             f"under harness: {blocked_references}",
             "met": len(references) == len(REFERENCES) and not blocked_references,
         },
-        "note": "Pre-registered in PREREGISTRO.md (H45): reported as is; the threshold applies "
-        "to the reference solutions under harness.",
+        "note": "Pre-registered in PREREGISTRO.md (H45, amended 2026-11-11): reported as is; the "
+        "threshold applies to the reference solutions under harness with the visible tests of "
+        "h45_reference_tests/. The same solutions with the hidden tests as they are "
+        "(reference-as-is) are reported apart, outside the criterion.",
     }
     return summary
 

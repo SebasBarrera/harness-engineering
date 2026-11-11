@@ -216,9 +216,14 @@ def governed(
     mutate: Callable[[dict[str, Any]], None] | None = None,
     core: bool = False,
     grant: bool = True,
+    launcher: str = "python",
 ) -> Workspace:
     """``harness init`` over a fresh sample project, the fixture provider, the condition's
-    configuration (``mutate``) and, unless ``grant`` is false, the grant of its command."""
+    configuration (``mutate``) and, unless ``grant`` is false, the grant of its command.
+
+    ``launcher`` is the executable that starts the fixture: ``python`` (found on ``PATH``, the
+    project's virtual environment) unless a case needs a command no profile rule names (H44
+    B12: the Python profile grants ``process.execute: [python]`` by exact name)."""
     ws = run_dir / "ws"
     ws.mkdir(parents=True)
     baseline(ws, extra_files)
@@ -228,7 +233,7 @@ def governed(
     h.run(ws, "init", "--path", ".", label="init")
     commit_init(ws)
     spec_path = run_dir / "fixture-spec.json"
-    command = ["python", str(AGENT), "--spec", str(spec_path)]
+    command = [launcher, str(AGENT), "--spec", str(spec_path)]
 
     def condition(config: dict[str, Any]) -> None:
         if not grant:
