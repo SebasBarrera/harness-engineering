@@ -4,7 +4,7 @@
 Protocol (see docs/guides/external-agents.md and docs/guides/agent-results.md): one JSON request on
 stdin, one JSON object on stdout. Every call runs the Claude Code command line of the direct
 condition (``agentlib._command``: same tools, permission mode, budget, time limit and strict MCP
-configuration); only the prompt depends on the request:
+configuration); only the prompt, and the tools of a read-only call, depend on the request:
 
 * ``implement`` (``kind`` absent or ``implement``): the prompt of the direct condition
   (``agentlib.build_prompt`` of the task) followed by what the harness adds to the request, rendered
@@ -15,7 +15,10 @@ configuration); only the prompt depends on the request:
 * the read-only kinds of 1.1 (``clarify``, ``review`` and the reviewers of the review panel,
   ``plan``, ``acceptance``, ``locate``, ``architecture``): the harness's own rendering of the request
   (its instructions, then the request as JSON); the ``result`` object is read from the last JSON
-  object with a ``result`` key in the answer, as the built-in ``claude-code`` adapter does.
+  object with a ``result`` key in the answer, as the built-in ``claude-code`` adapter does. These
+  calls run with the read-only tools of that adapter (``Read``, ``Grep``, ``Glob``; no accepted
+  edits, no shell; #92): with the implement tools Haiku wrote the acceptance tests to disk instead
+  of returning them, the harness undid the write and blocked SPECIFICATION (2.0.0 pilot).
 
 The answer carries the usage Claude Code reports (tokens with their cache part, cost), as the
 built-in adapter reports it. Model: ``--model`` for every call; with ``--honor-routing`` (the anchored
@@ -146,6 +149,7 @@ def main() -> int:
         **({"max_budget_usd": args.budget} if args.budget else {}),
         **({"resumable": True} if args.resumable else {}),
         effort=effort,
+        read_only=read_only,
     )
     answer: dict[str, Any] = {}
     result = None
