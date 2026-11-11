@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
+  They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
+  regression, but the agent cannot change them (approved by a person, write-protected): in the
+  2.0.0 Haiku pilot a run whose tests all passed failed VERIFICATION after both automatic
+  corrections on four Ruff problems in the frozen files. `harness.ratchet` now leaves out the
+  problems of a frozen acceptance test still as approved; the validators still report them, and
+  a frozen file the agent changed is not exempt.
 - The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
   request target with its query, so a token sent by mistake as `?token=...` was refused with 401
   but written in clear to standard output. The access line now keeps the client, method, path,

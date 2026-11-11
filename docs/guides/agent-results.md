@@ -304,7 +304,7 @@ findings are `LOW`.
 | `invariants` | Commands (`id`, `command`) that must pass on every VERIFICATION, including each sub-task's. |
 | `riskFactors` | `newDependency`, `authentication`, `destructiveMigration`, `publicContract`, `network`, `floatMoney`, `sensitiveLogging`, `deletedWithoutTests`, each `block`, `acknowledge`, `inform` or `off`. |
 | `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. |
-| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. |
+| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. The problems in a frozen acceptance test still as approved are left out: the agent cannot change that file (#183). |
 
 A risk factor with `acknowledge` must be acknowledged in the decision; the decision brief lists
 the factors:
