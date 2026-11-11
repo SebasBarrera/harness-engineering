@@ -98,6 +98,10 @@ def usage_of(record: dict[str, Any]) -> dict[str, Any] | None:
     if any(isinstance(v, int) for v in parts):
         usage["inputTokens"] = sum(v for v in parts if isinstance(v, int))
         usage["cacheTokens"] = sum(v for v in parts[1:] if isinstance(v, int))
+    if isinstance(parts[2], int):
+        # Prompt-cache reads, reported apart so the per-call token budget does not count them
+        # (agent protocol `cacheReadTokens`, harness 2.0.0).
+        usage["cacheReadTokens"] = parts[2]
     if isinstance(record.get("outputTokens"), int):
         usage["outputTokens"] = record["outputTokens"]
     cost = record.get("costUsd")
