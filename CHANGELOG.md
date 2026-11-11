@@ -24,6 +24,34 @@
   (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory in Git Bash, which used to split
   `PATH` at the drive colon. The `docs-smoke` flows job runs it on the built wheel; the brownfield
   guides and the README describe the current flow.
+- The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
+  `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
+  (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
+  2.2.0 pins 8.1.1 in its own `requirements/tests.txt`; its 298 tests pass with 9.0.3. The thesis
+  evaluation does not install this file.
+- Evaluation: the simulated person answers a dispute of frozen acceptance tests (#70, amendment
+  of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`). An apparatus precheck of the Haiku
+  pilot showed the governed runs stopping at the `acceptance-dispute` wait, which
+  `evaluation/person.py` had no rule for. The product owner (`ProductOwner.judge_dispute`, in
+  `po-calls`) now answers UPHOLD or REVISE from the criteria, the disputed tests' source and the
+  agent's reasons, bound to the digest shown (fallback without a product owner: UPHOLD); a new
+  dry-run case `acceptance-dispute` covers REVISE and the approval of the rewritten tests.
+  `fake_claude.py` reads a prompt given on stdin on Windows with LF newlines again, so the dry
+  run finds the request there.
+
+- Security: a quoted secret inside a JSON string is no longer stored in clear (#178). The
+  `generic_secret_assignment` rule (unchanged since 0.8.0) runs on the serialized JSON of an
+  artifact, where `password = "..."` in a string is escaped as `password = \"...\"` and does not
+  match, and the string-by-string redaction of #152 ran only when the text redaction broke the
+  document. `put_json` now also runs the redactor on every decoded string and, when any of them
+  redacts, stores the document redacted string by string. A JSON artifact with nothing to redact
+  in its strings keeps its bytes and digest; the stored bytes of 1.0.0 change only where such a
+  secret was stored in clear. A redacted artifact is never applied as data: a pinned task revision
+  stored redacted is replaced by the stored task while it has the digest pinned with it (otherwise
+  the run stops with a policy error), and a snapshot text that no longer matches its file's digest
+  is never written back by a restore or a materialized copy (Git gives it back under
+  `baseline: manifest`, otherwise the path is reported as not restorable). The reproduce-first
+  check keeps the snapshot its correction started from in memory.
 - The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
   They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
   regression, but the agent cannot change them (approved by a person, write-protected): in the

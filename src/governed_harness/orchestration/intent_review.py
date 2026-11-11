@@ -381,9 +381,9 @@ class IntentReview:
         revision_ref = services.artifacts.put_json(
             revised.model_dump(mode="json"), metadata={"kind": "task-revision"}
         )
-        if results.project.governance_settings.pin_task_revision:
-            services.state.set_flag(f"taskrev:{execution.execution_id}", revision_ref.uri)
         current = task_digest(revised)
+        if results.project.governance_settings.pin_task_revision:
+            services.pin_task_revision(execution.execution_id, revision_ref.uri, current)
         record = {
             "previousTaskDigest": task_digest(task),
             "taskDigest": current,

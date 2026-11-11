@@ -69,6 +69,16 @@ class FileState:
     for the text of a changed file only."""
 
 
+def recorded_bytes(state: FileState) -> bytes | None:
+    """The bytes of a file as its state recorded them, from its text: ``None`` when no text was
+    recorded or when the text is not the recorded content (a snapshot read back from a redacted
+    artifact, #178), so that a caller writing it back never writes a redacted value."""
+    if not state.text_loaded or state.text is None:
+        return None
+    data = state.text.encode("utf-8", "surrogatepass")
+    return data if sha256_bytes(data) == state.digest else None
+
+
 TextResolver = Callable[[str, FileState], str | None]
 """(side, state) -> the text of a file whose text was not loaded; side is before or after."""
 

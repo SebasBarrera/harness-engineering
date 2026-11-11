@@ -129,6 +129,13 @@ def test_blocking_review_requires_exception_or_changes(
     status = app.status(python_workspace, pending.execution_id)
     assert status["gate"]["status"] == "FAILED"
     assert status["findings"]["bySeverity"]["CRITICAL"] >= 1
+    # #178: the patch is applied as the task gives it, while no stored artifact (the pinned
+    # task revision, the snapshots, the ChangeSet) keeps the quoted secret in clear.
+    pricing = python_workspace / "src" / "sample" / "pricing.py"
+    assert 'password = "supersecret123"' in pricing.read_text(encoding="utf-8")
+    blobs = [path for path in (python_workspace / ".harness").rglob("*") if "blobs" in path.parts]
+    assert any(path.is_file() for path in blobs)
+    assert not [path for path in blobs if path.is_file() and b"supersecret123" in path.read_bytes()]
     with pytest.raises(PolicyViolationError):
         app.decide_gate(
             python_workspace,

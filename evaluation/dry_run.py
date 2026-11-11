@@ -65,6 +65,28 @@ def inbox_answered(r: dict[str, Any]) -> bool:
     return bool(acted) and all(w.get("source") == "inbox" for w in acted)
 
 
+def dispute_revised(w: dict[str, Any]) -> bool:
+    """A dispute of frozen acceptance tests read from the inbox and revised by the product owner
+    under the digest ``acceptance show`` showed, with the agent's reasons recorded."""
+    return (
+        w.get("wait") == "acceptance-dispute"
+        and w.get("source") == "inbox"
+        and w.get("decision") == "REVISE"
+        and w.get("judge") == "product-owner"
+        and w.get("digestMatches") is True
+        and bool((w.get("reasons") or {}).get("agent"))
+        and str(w.get("action", "")).endswith("-> 0")
+    )
+
+
+def after_dispute(r: dict[str, Any]) -> list[dict[str, Any]]:
+    """The waits after the first dispute of frozen acceptance tests."""
+    names = [w.get("wait") for w in waits(r)]
+    if "acceptance-dispute" not in names:
+        return []
+    return waits(r)[names.index("acceptance-dispute") + 1 :]
+
+
 CASES: dict[str, tuple[str, list[str], list[Check]]] = {
     "direct": (
         "run_eval",
@@ -294,6 +316,47 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
                     )
                     == 1
                     and "failed-call" not in [w.get("wait") for w in waits(r)]
+                ),
+                True,
+            ),
+        ],
+    ),
+    "acceptance-dispute": (
+        "run_eval",
+        [
+            "--scenario",
+            "greenfield",
+            "--condition",
+            "harness",
+            "--fake-mode",
+            "dispute-acceptance",
+        ],
+        [
+            (
+                "approved: the frozen tests could not pass, the agent disputed them (#94)",
+                lambda r: outcome(r) == "approved",
+                True,
+            ),
+            (
+                "the dispute read from the inbox, REVISE by the product owner on the shown digest",
+                lambda r: any(dispute_revised(w) for w in waits(r)),
+                True,
+            ),
+            (
+                "after REVISE the rewritten tests wait in SPECIFICATION and are approved",
+                lambda r: any(
+                    w.get("wait") == "acceptance"
+                    and w.get("phase") == "SPECIFICATION"
+                    and str(w.get("action", "")).startswith("acceptance decide APPROVE")
+                    for w in after_dispute(r)
+                ),
+                True,
+            ),
+            (
+                "the product owner's judgement recorded in its rounds",
+                lambda r: any(
+                    p.get("kind") == "acceptance-dispute" and p.get("decision") == "REVISE"
+                    for p in r["productOwner"]
                 ),
                 True,
             ),
