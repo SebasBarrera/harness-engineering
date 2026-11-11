@@ -1155,6 +1155,14 @@ def run_id(meta: dict[str, Any]) -> str:
 
 # ----------------------------------------------------------------------------- comparison table
 
+
+def _secrets_outside_tests(record: dict[str, Any]) -> Any:
+    kinds = _get(record, "secrets.newMatchesByKind")
+    if kinds is None:
+        return None
+    return sum(n for kind, n in kinds.items() if kind != "test")
+
+
 # (label, getter, polarity): +1 more is better, -1 less is better, 0 no direction is claimed.
 Row = tuple[str, Callable[[dict[str, Any]], Any], int]
 ROWS: list[Row] = [
@@ -1204,7 +1212,7 @@ ROWS: list[Row] = [
     ),
     ("Mypy: errores nuevos", lambda r: _get(r, "static.mypy.new"), -1),
     ("Bandit: hallazgos nuevos (fuente)", lambda r: _get(r, "static.bandit.new"), -1),
-    ("Secretos nuevos en código no de prueba (patrones)", lambda r: _secrets_outside_tests(r), -1),
+    ("Secretos nuevos en código no de prueba (patrones)", _secrets_outside_tests, -1),
     (
         "Literales de credencial nuevos en pruebas (fixtures)",
         lambda r: _get(r, "secrets.newMatchesByKind.test") or 0 if _get(r, "secrets") else None,
@@ -1378,13 +1386,6 @@ def _len(record: dict[str, Any], dotted: str) -> Any:
     return len(value) if isinstance(value, list) else None
 
 
-def _secrets_outside_tests(record: dict[str, Any]) -> Any:
-    kinds = _get(record, "secrets.newMatchesByKind")
-    if kinds is None:
-        return None
-    return sum(n for kind, n in kinds.items() if kind != "test")
-
-
 def _first(record: dict[str, Any], *paths: str) -> Any:
     return next((v for v in (_get(record, p) for p in paths) if v is not None), None)
 
@@ -1520,8 +1521,10 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
         direct = next((r for r in runs if r["run"]["condition"] == "direct"), None)
         if direct is None:
             out += [
-                "**Falta la corrida `direct` de este prompt y modelo: no hay par que comparar; se "
-                "muestran solo las condiciones gobernadas.**",
+                (
+                    "**Falta la corrida `direct` de este prompt y modelo: no hay par que comparar; "
+                    "se muestran solo las condiciones gobernadas.**"
+                ),
                 "",
             ]
         out += ["#### Resultado, cambio y requisitos", "", *_table(runs, ROWS)]

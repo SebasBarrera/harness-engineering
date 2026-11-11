@@ -153,8 +153,6 @@ def recover(
     """``run continue`` until the lease is taken over, the simulated person, the approval (not in
     K10, approved before the kill: PREREGISTRO.md) and the closure. Returns what each step did."""
     busy = 0
-    code, payload = -1, None
-    accepted_at = time.monotonic()
     while True:
         accepted_at = time.monotonic()
         code, payload, _ = h.run(
@@ -250,7 +248,6 @@ def runner(
         "pointReached": reached,
     }
     landed = False
-    killed_at = time.monotonic()
     if reached:
         with driver_h.lock:
             process = driver_h.current
