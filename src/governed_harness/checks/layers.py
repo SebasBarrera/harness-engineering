@@ -22,8 +22,9 @@ from __future__ import annotations
 import ast
 import posixpath
 import re
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from governed_harness.checks.architecture import module_name
 from governed_harness.checks.model import Issue, is_test_path
@@ -173,12 +174,46 @@ _JS_SUFFIXES = frozenset({"js", "mjs", "cjs", "jsx", "ts", "tsx", "vue"})
 _Import = tuple[int, str, str]
 
 
-def imports(path: str, text: str) -> Iterator[_Import]:
+ModuleExists = Callable[[str], bool]
+"""Whether a dotted Python module is a module or package of the workspace."""
+
+
+def known_modules(files: Iterable[str], workspace: Path | None = None) -> ModuleExists:
+    """Whether a dotted module is one of ``files`` (``a/b.py``) or a directory that holds one
+    (``a/b/``), at the workspace root or under ``src/``; with ``workspace``, also a file or a
+    directory on disk. It decides what ``from a import b`` reaches (#166)."""
+    paths = {item.replace("\\", "/") for item in files}
+    directories = {
+        "/".join(parts[:depth])
+        for parts in (item.split("/") for item in paths)
+        for depth in range(1, len(parts))
+    }
+
+    def exists(module: str) -> bool:
+        parts = module.split(".")
+        if not all(part.isidentifier() for part in parts):
+            return False
+        base = "/".join(parts)
+        for candidate in (base, f"src/{base}"):
+            if f"{candidate}.py" in paths or candidate in directories:
+                return True
+            if workspace is not None and (
+                (workspace / f"{candidate}.py").is_file() or (workspace / candidate).is_dir()
+            ):
+                return True
+        return False
+
+    return exists
+
+
+def imports(path: str, text: str, module_exists: ModuleExists | None = None) -> Iterator[_Import]:
     """``(line, kind, target)`` of every import of a file; ``kind`` is ``path`` (a workspace
-    path) or ``module`` (a dotted or package name)."""
+    path) or ``module`` (a dotted or package name). For ``from pkg import name`` in Python,
+    ``pkg.name`` is a target only when ``module_exists`` says it is a module (always without
+    it)."""
     suffix = path.rsplit(".", 1)[-1].lower() if "." in path else ""
     if suffix == "py":
-        yield from _python_imports(path, text)
+        yield from _python_imports(path, text, module_exists)
         return
     directory = posixpath.dirname(path)
     lines = text.splitlines()
@@ -239,7 +274,9 @@ def _single_line_imports(
             yield number, "module", target.replace(separator, ".") if separator else target
 
 
-def _python_imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
+def _python_imports(
+    path: str, text: str, module_exists: ModuleExists | None
+) -> Iterator[tuple[int, str, str]]:
     from governed_harness.checks.architecture import _imported_modules
 
     try:
@@ -248,7 +285,7 @@ def _python_imports(path: str, text: str) -> Iterator[tuple[int, str, str]]:
         return
     module = module_name(path)
     is_package = path.replace("\\", "/").endswith("__init__.py")
-    for line, imported in _imported_modules(tree, module, is_package):
+    for line, imported in _imported_modules(tree, module, is_package, module_exists):
         yield line, "module", imported
 
 
@@ -301,6 +338,7 @@ def check_layers(
     *,
     severity: FindingSeverity,
     baseline: Callable[[str], str | None] | None = None,
+    module_exists: ModuleExists | None = None,
 ) -> list[Issue]:
     """Every import of a changed (non-test) file that crosses into a layer its layer may not
     depend on.
@@ -308,10 +346,15 @@ def check_layers(
     With ``baseline`` (the text of a path before the change, ``None`` for a new file) the
     check is differential (``architecture.layerCheck: differential``, #93): a layer the file
     already imported on the baseline is a dependency the change did not add, and is not
-    judged; only an import that reaches a layer the file did not depend on before is."""
+    judged; only an import that reaches a layer the file did not depend on before is.
+
+    ``from pkg import name`` reaches the module ``pkg.name`` only when ``module_exists`` (by
+    default ``known_modules(files)``) says it is one: a function or class ``name`` is not a
+    path that the pattern of another layer may match (#166)."""
     issues: list[Issue] = []
     if not rules.layers:
         return issues
+    exists = module_exists or known_modules(files)
     for path in sorted(files):
         if is_test_path(path):
             continue
@@ -319,16 +362,18 @@ def check_layers(
         if source is None:
             continue
         before = baseline(path) if baseline is not None else None
-        known = imported_layers(rules, path, before) if before is not None else frozenset()
-        issues.extend(_violations(rules, path, files[path], source, severity, known))
+        known = imported_layers(rules, path, before, exists) if before is not None else frozenset()
+        issues.extend(_violations(rules, path, files[path], source, severity, known, exists))
     return issues
 
 
-def imported_layers(rules: LayerRules, path: str, text: str) -> frozenset[str]:
+def imported_layers(
+    rules: LayerRules, path: str, text: str, module_exists: ModuleExists | None = None
+) -> frozenset[str]:
     """The layers the imports of one file reach."""
     return frozenset(
         layer
-        for _line, kind, target in imports(path, text)
+        for _line, kind, target in imports(path, text, module_exists)
         if (layer := _target_layer(rules, kind, target))
     )
 
@@ -349,22 +394,28 @@ class Crossing:
     layer: str
 
 
-def crossings(files: Mapping[str, str], rules: LayerRules) -> list[Crossing]:
+def crossings(
+    files: Mapping[str, str], rules: LayerRules, *, module_exists: ModuleExists | None = None
+) -> list[Crossing]:
     """Every forbidden dependency between layers in ``files`` (non-test files), one per line
-    and layer: what a set of rules forbids in the code as it is (#93)."""
+    and layer: what a set of rules forbids in the code as it is (#93). ``module_exists`` is
+    the one of :func:`check_layers`."""
     found: list[Crossing] = []
+    exists = module_exists or known_modules(files)
     for path in sorted(files):
         if is_test_path(path):
             continue
         source = source_layer(rules, path, files[path])
         if source is not None:
-            found.extend(_crossings(rules, path, files[path], source))
+            found.extend(_crossings(rules, path, files[path], source, exists))
     return found
 
 
-def _crossings(rules: LayerRules, path: str, text: str, source: str) -> Iterator[Crossing]:
+def _crossings(
+    rules: LayerRules, path: str, text: str, source: str, module_exists: ModuleExists
+) -> Iterator[Crossing]:
     reported: set[tuple[int, str]] = set()
-    for line, kind, target in imports(path, text):
+    for line, kind, target in imports(path, text, module_exists):
         layer = _target_layer(rules, kind, target)
         if layer is None or rules.allowed(source, layer) or (line, layer) in reported:
             continue
@@ -378,12 +429,13 @@ def _violations(
     text: str,
     source: str,
     severity: FindingSeverity,
-    known: frozenset[str] = frozenset(),
+    known: frozenset[str],
+    module_exists: ModuleExists,
 ) -> Iterator[Issue]:
     """The imports of one file that reach a layer ``source`` may not depend on, one issue per
     line and layer; a layer in ``known`` (the file's baseline already reached it) is skipped."""
     allowed = ", ".join(rules.allow.get(source, ())) or "no other layer"
-    for crossing in _crossings(rules, path, text, source):
+    for crossing in _crossings(rules, path, text, source, module_exists):
         if crossing.layer in known:
             continue
         line, target, layer = crossing.line, crossing.target, crossing.layer
@@ -409,9 +461,11 @@ __all__ = [
     "Crossing",
     "Layer",
     "LayerRules",
+    "ModuleExists",
     "check_layers",
     "crossings",
     "imported_layers",
     "imports",
+    "known_modules",
     "source_layer",
 ]
