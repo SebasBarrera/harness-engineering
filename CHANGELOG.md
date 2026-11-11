@@ -13,6 +13,17 @@
   every test file the ChangeSet added or modified ran (`tests.changed-not-run`: `HIGH` and the
   failure stays; `INFO` when the output does not list the tests that ran), and a
   `PREEXISTING_ERROR` pass no longer gives L1 or L2 certification credit.
+- `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It expected `run start` 6
+  and, after installing `freezegun`, `run continue` 4. `run start` exited 4 until #190 fixed the
+  differential verification; with that fix it exits 6 again, but `governance.stopTheLine: restore`
+  (written by `harness init`) puts the failed run's changes in quarantine and restores the
+  baseline, so `run continue` verifies an empty ChangeSet and exits 6. The script now checks
+  `run start` 6 (pytest stops while collecting), the `environment.baseline-failing` and
+  `python.pytest.failed` findings, a new `run start` 4 after installing `freezegun` (298 passed,
+  gate `PASSED`) and `APPROVE` 0. It keeps the run registry in its work directory
+  (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory in Git Bash, which used to split
+  `PATH` at the drive colon. The `docs-smoke` flows job runs it on the built wheel; the brownfield
+  guides and the README describe the current flow.
 - The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
   `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
   (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
