@@ -42,8 +42,8 @@ registros de runs, llamadas al agente) no se guardan en Git (`.gitignore`); los 
 | completo | directa | — | — | 24/24 | 0,19 | 177 |
 | completo | harness-core | CLOSURE / PASSED | aprobado | 24/24 | 0,12 | 162 |
 | completo | harness | CLOSURE / PASSED | aprobado | 24/24 | 0,84 | 775 |
-| completo | harness-anchored | VERIFICATION / FAILED | detenido | 18/24 | 1,58 | 1190 |
-| casual | harness | VERIFICATION / FAILED | detenido | 18/24 | 2,81 | 2157 |
+| completo | harness-anchored | VERIFICATION / FAILED | detenido | 18/24 registrado, no válido (ver abajo) | 1,58 | 1190 |
+| casual | harness | VERIFICATION / FAILED | detenido | 18/24 registrado, no válido (ver abajo) | 2,81 | 2157 |
 
 ## Lectura honesta de los resultados
 
@@ -51,13 +51,25 @@ registros de runs, llamadas al agente) no se guardan en Git (`.gitignore`); los 
   gobernadas que no llegaron a DECISION se detuvieron en VERIFICATION por validadores obligatorios
   que el agente no logró satisfacer tras sus ciclos de corrección, no por un defecto del harness ni
   del aparato.
-- **Las pruebas ocultas, que el harness nunca ve, confirman esas dos detenciones:** ambos cambios
-  pasan 18 de 24 pruebas ocultas, frente a 24 de 24 de los aprobados. El harness bloqueó dos
-  cambios que de verdad eran peores.
-  - *harness-anchored*: quedaron violaciones nuevas de ruff frente a la línea base
-    (`ratchet.regressed`) y errores de mypy después de tres intentos de implementación.
-  - *casual*: pruebas de aceptación que fallan, violaciones nuevas de ruff (`ratchet.regressed`) y
-    pruebas de archivos cambiados que no se ejecutaron (`tests.changed-file-not-executed`).
+- **Corrección: el 18/24 de las dos corridas detenidas no mide el cambio del agente.** Es un
+  defecto del aparato (`evaluation/run_eval.py`, `measure_quarantine`): el parche en cuarentena no
+  se aplicó a la copia medida (`measures.patchApply.exitCode: 1` en `pilot.jsonl`). Las pruebas de
+  aceptación conservadas ya estaban en el workspace («already exists») y, en Windows, el parche se
+  escribió con CRLF («patch does not apply»). La copia medida tenía el código de la línea base, y su
+  resultado (18/24) es el de la línea base. Reconstruidos desde sus parches (exportación limpia de la
+  base y parche con LF, `evaluation/analysis/compare_implementations.py`), **los dos cambios pasan
+  24/24 pruebas ocultas**. Una versión anterior de este README decía que el harness había bloqueado
+  dos cambios que eran peores; esa lectura era errónea y se retira.
+- **Por qué los detuvo el harness**, según sus propios validadores (no por el comportamiento que
+  miden las pruebas ocultas):
+  - *harness-anchored*: 8 violaciones nuevas de ruff frente a la línea base, todas en archivos de
+    prueba (F401 e I001; `ratchet.regressed`); la suite visible pasa.
+  - *casual*: fallan 2 pruebas de aceptación congeladas que esperan el rechazo de una cadena base64
+    válida; el agente las disputó en su autorreporte, pero la disputa no se abrió porque también
+    fallaban otros validadores (ruff), y la regla solo abre una disputa cuando las pruebas
+    disputadas son lo único que falla.
+  Son detenciones por calidad del código y por una prueba de aceptación errónea, no por un cambio
+  incorrecto: el costo de un gobierno estricto, que la campaña debe medir.
 - **Costo:** las condiciones gobernadas cuestan más que la directa (core 0,6×, harness completo
   4,5×, anchored 8,4×, casual 15×, en USD). Las corridas que fallan son las más caras porque los
   ciclos de corrección repiten las llamadas de implementación.

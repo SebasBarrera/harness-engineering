@@ -42,7 +42,8 @@ piloto Haiku (`pilot.jsonl`, `summary-blocks.json`, `environment.json`).
   cuesta unas 14 veces más y tarda unas 19 veces más. Ese es el precio del gobierno: aclaración,
   arquitectura, pruebas de aceptación, plan, verificación, revisión y decisión.
 - **Frente a Haiku:** con Sonnet ninguna corrida gobernada se bloqueó en VERIFICATION; con Haiku
-  dos sí (y las pruebas ocultas confirmaron que esos cambios eran peores). Con una repetición no
-  se generaliza.
+  dos sí, por hallazgos de ruff y por pruebas de aceptación erróneas (sus cambios, reconstruidos,
+  pasan 24/24; ver la corrección en `../pilot-2.0.0/README.md`). Con una repetición no se
+  generaliza.
 - **Falta en este piloto:** la condición directa con el prompt casual y las del prompt pobre; se
   corren aparte.
