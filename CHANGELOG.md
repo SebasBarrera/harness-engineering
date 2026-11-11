@@ -7,6 +7,16 @@
   (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
   2.2.0 pins 8.1.1 in its own `requirements/tests.txt`; its 298 tests pass with 9.0.3. The thesis
   evaluation does not install this file.
+- Evaluation: the simulated person answers a dispute of frozen acceptance tests (#70, amendment
+  of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`). An apparatus precheck of the Haiku
+  pilot showed the governed runs stopping at the `acceptance-dispute` wait, which
+  `evaluation/person.py` had no rule for. The product owner (`ProductOwner.judge_dispute`, in
+  `po-calls`) now answers UPHOLD or REVISE from the criteria, the disputed tests' source and the
+  agent's reasons, bound to the digest shown (fallback without a product owner: UPHOLD); a new
+  dry-run case `acceptance-dispute` covers REVISE and the approval of the rewritten tests.
+  `fake_claude.py` reads a prompt given on stdin on Windows with LF newlines again, so the dry
+  run finds the request there.
+
 - Security: a quoted secret inside a JSON string is no longer stored in clear (#178). The
   `generic_secret_assignment` rule (unchanged since 0.8.0) runs on the serialized JSON of an
   artifact, where `password = "..."` in a string is escaped as `password = \"...\"` and does not
