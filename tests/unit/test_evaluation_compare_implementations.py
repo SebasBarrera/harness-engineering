@@ -210,8 +210,10 @@ def test_run_names_are_parsed_with_the_prompt_and_condition() -> None:
     assert (casual["prompt"], casual["condition"], casual["rep"]) == ("casual", "harness", 2)
     anchored = cmp.parse_run_name("brownfield-harness-anchored-m-r1-20261111T154615Z")
     core = cmp.parse_run_name("brownfield-harness-core-m-r1-20261111T154615Z")
-    assert anchored is not None and anchored["condition"] == "harness-anchored"
-    assert core is not None and core["condition"] == "harness-core"
+    assert anchored is not None
+    assert anchored["condition"] == "harness-anchored"
+    assert core is not None
+    assert core["condition"] == "harness-core"
     assert cmp.parse_run_name("brownfield-casual-harness-claude-haiku-4-5-20261111T160625Z") is None
 
 
@@ -278,7 +280,8 @@ def test_hidden_tests_are_mapped_to_criteria(tmp_path: Path) -> None:
         ],
     )
     hidden = cmp.hidden_metrics("brownfield", path)
-    assert hidden["passed"] == 2 and hidden["tests"] == 3
+    assert hidden["passed"] == 2
+    assert hidden["tests"] == 3
     assert hidden["byCriterion"]["ac_reject"] == {"passed": 1, "tests": 2}
     assert hidden["byCriterion"]["(sin criterio)"] == {"passed": 1, "tests": 1}
     assert hidden["criteriaFullyPassed"] == 0
@@ -393,7 +396,8 @@ def test_the_cli_writes_depersonalized_outputs(runs: Path, tmp_path: Path) -> No
     files = sorted(p.name for p in (out / "per-run").iterdir())
     assert files == ["toy-full-direct-model-x-r1.json", "toy-full-harness-model-x-r1.json"]
     text = (out / "per-run" / files[0]).read_text(encoding="utf-8")
-    assert str(runs) not in text and str(tmp_path) not in text
+    assert str(runs) not in text
+    assert str(tmp_path) not in text
     assert "## Directorios omitidos" in (out / "comparison.md").read_text(encoding="utf-8")
 
 

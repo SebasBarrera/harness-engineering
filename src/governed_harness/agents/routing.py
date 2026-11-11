@@ -15,7 +15,7 @@ and the decision carries the digest of the policy it came from so it can be audi
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from pathlib import PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
 
@@ -467,14 +467,17 @@ def select(
     if mode == ANCHORED:
         return decision(*_anchored_values(table, base, call_kind, size, steps, anchor, family))
     if warning is not None:
-        return decision(
-            f"fallback:implement:{call_kind}:{size}",
-            base.model,
-            base.effort,
-            _ladder_index(table.ladder, base, by_model=False) if table.ladder else None,
-        )
+        return decision(*_fallback_values(table, base, call_kind, size))
     rule, chosen, index, escalations = _tier_choice(table, base, call_kind, size, steps)
     return decision(rule, chosen.model, chosen.effort, index, escalations)
+
+
+def _fallback_values(
+    table: FamilyTable, base: Rung, call_kind: CallKind, size: str
+) -> tuple[str, str | None, str | None, int | None]:
+    """The rule, model, effort and rung of a call kind that fell back to the implement rung."""
+    rung = _ladder_index(table.ladder, base, by_model=False) if table.ladder else None
+    return f"fallback:implement:{call_kind}:{size}", base.model, base.effort, rung
 
 
 def _trivial_decision(
@@ -507,7 +510,21 @@ def _trivial_decision(
     if steps > 0 and model is not None:
         rule = f"{prefix}escalation:{steps}:implement:{TRIVIAL}"
     result: RoutingDecision = decision(rule, model, effort, index, steps if model else 0)
-    return replace(result, size=TRIVIAL)
+    return RoutingDecision(
+        call_kind=result.call_kind,
+        mode=result.mode,
+        family=result.family,
+        size=TRIVIAL,
+        rule=result.rule,
+        model=result.model,
+        effort=result.effort,
+        rung=result.rung,
+        escalations=result.escalations,
+        policy_digest=result.policy_digest,
+        flags=result.flags,
+        warning=result.warning,
+        anchor=result.anchor,
+    )
 
 
 def _anchored_values(
