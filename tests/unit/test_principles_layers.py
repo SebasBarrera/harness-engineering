@@ -193,7 +193,8 @@ def test_an_imported_submodule_is_still_a_module(tmp_path: Path) -> None:
     assert check_layers(files, LAYERED, severity=FindingSeverity.HIGH) == []
     (tmp_path / "src" / "app" / "presentation").mkdir(parents=True)
     on_disk = known_modules(files, tmp_path)
-    assert on_disk("app.presentation") and not on_disk("app.presentation.value")
+    assert on_disk("app.presentation")
+    assert not on_disk("app.presentation.value")
     found = check_layers(files, LAYERED, severity=FindingSeverity.HIGH, module_exists=on_disk)
     assert ["layer presentation" in item.message for item in found] == [True]
     listed = {**files, "src/app/presentation/api.py": "VALUE = 1\n"}
