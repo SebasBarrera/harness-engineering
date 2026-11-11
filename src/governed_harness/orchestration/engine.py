@@ -1643,7 +1643,14 @@ class RunEngine:
         if isinstance(invoked, PhaseOutcome):
             return invoked
         return self._implementation_outcome(
-            execution, phase, invoked, request_extra, runtime, sandbox, sandbox_refs
+            execution,
+            phase,
+            invoked,
+            request_extra,
+            runtime,
+            sandbox,
+            sandbox_refs,
+            timeout_seconds=context.timeout_seconds,
         )
 
     def _implementation_outcome(
@@ -1655,11 +1662,16 @@ class RunEngine:
         runtime: RuntimeConfig,
         sandbox: SandboxPlan | None,
         sandbox_refs: tuple[str, ...],
+        *,
+        timeout_seconds: int,
     ) -> PhaseOutcome:
         """The outcome of IMPLEMENTATION after the implement call: the claim to check, the
-        self-report and the candidate ChangeSet."""
+        self-report and the candidate ChangeSet. ``timeout_seconds``: the time the call was
+        allowed to run (#179)."""
         if self.results.active:
-            limited = self._after_implement_call(execution, phase, result, request_extra)
+            limited = self._after_implement_call(
+                execution, phase, result, request_extra, timeout_seconds
+            )
             if limited is not None:
                 return limited
         self._record_claim(execution, result, runtime)
@@ -1818,11 +1830,12 @@ class RunEngine:
         phase: PhaseExecution,
         result: AgentExecutionResult,
         request_extra: dict[str, Any] | None,
+        timeout_seconds: int,
     ) -> PhaseOutcome | None:
         """Record the implement call for the agent results; an outcome when its contract
         limits end the phase."""
         self.results.after_agent_call(execution, phase, result)
-        limited = self._implement_limit(execution, phase, result, request_extra)
+        limited = self._implement_limit(execution, phase, result, request_extra, timeout_seconds)
         if limited is not None:
             return limited
         if result.status is ResultStatus.PASSED:
@@ -1844,13 +1857,17 @@ class RunEngine:
         phase: PhaseExecution,
         result: AgentExecutionResult,
         request_extra: dict[str, Any] | None,
+        timeout_seconds: int | None = None,
     ) -> PhaseOutcome | None:
         """Record an implement call under ``agentContract`` and end the phase in a controlled
-        way when the call reached its time limit or token budget (#97)."""
+        way when the call reached its time limit or token budget (#97). ``timeout_seconds``:
+        the time the call was allowed to run, which a stopped call names (#179)."""
         contract = (request_extra or {}).get("agentContract")
         if not isinstance(contract, dict):
             return None
-        return self.results.agent_contract.settle_implement(execution, phase, result, contract)
+        return self.results.agent_contract.settle_implement(
+            execution, phase, result, contract, timeout_seconds=timeout_seconds
+        )
 
     def _build_provider(
         self, execution: Execution, phase: PhaseExecution, provider_id: str
