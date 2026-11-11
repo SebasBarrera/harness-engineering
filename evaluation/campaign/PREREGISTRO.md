@@ -213,6 +213,77 @@ vuelven a medir desde su directorio con `evaluation/remeasure_quarantine.py` (si
 modelo; deshace el CRLF del parche guardado, porque la escritura en modo texto convirtió cada LF en
 CRLF), y la cifra original y la nueva se muestran juntas. Ningún criterio cambia.
 
+### Enmienda 2026-11-11: autoverificación del agente, caché de prompts y costo calculado
+
+Se añade el 2026-11-11, después de los pilotos Haiku y Sonnet de 2.0.0 (comprobaciones del aparato,
+no resultados) y **antes de cualquier resultado de la campaña**. Cambia el aparato de las llamadas
+al agente por igual en todas las condiciones; no cambia hipótesis, métricas ni criterios.
+
+1. **El agente puede verificarse dentro del espacio de trabajo.** En el piloto Haiku, Claude Code
+   negó al agente de implement los comandos con los que intentaba comprobar su cambio: registros de
+   uso con 27 denegaciones en `harness` con prompt casual, 23 en `harness-anchored`, 7 en `harness`,
+   3 en `direct` y 1 en `harness-core` (campo `permissionDenials` de los `call-N.json`). Eran sobre
+   todo `cd "<espacio de trabajo>" && …` y `python -m ruff check` / `python -m mypy`: la línea de
+   comandos de `evaluation/agentlib.py` solo permitía pytest, `ls` y `cd`, así que una cadena con
+   Ruff o Mypy se negaba entera, y el gate corre justamente Ruff y Mypy. El agente no podía saber si
+   su cambio pasaría el gate. Desde esta enmienda:
+   - las llamadas implement de **todas** las condiciones (`direct`, `harness-core`, `harness`,
+     `harness-anchored` y el anfitrión del modo embebido, que usa la misma lista) permiten además los
+     validadores del proyecto (`python -m ruff check`, `python -m ruff format --check`,
+     `python -m mypy`, con sus formas `python3` y sin `python -m`) y `harness check`
+     (`agentlib.ALLOWED_TOOLS`). No se abre nada más: ni `python` arbitrario (`python -c`, scripts
+     propios), ni instalaciones, ni comandos destructivos, ni lectura o escritura fuera del espacio
+     de trabajo más allá de lo que ya permitían las herramientas; las llamadas de solo lectura
+     siguen sin shell;
+   - el prompt base (`agentlib.build_prompt`, el mismo en todas las condiciones) dice que el agente
+     ya está en el directorio del repositorio, que no use `cd` ni rutas absolutas y que verifique su
+     cambio antes de terminar con los validadores del gate del perfil Python:
+     `python -m pytest -q`, `python -m ruff check --no-fix .` y `python -m mypy .`;
+   - en las condiciones con contrato del gate (`runtime.gateContract`: `harness` y
+     `harness-anchored`) la evaluación otorga `harness check` (regla `process.execute` con alcance
+     `harness check`, en `capabilities.extend`, guardada en el `project.yaml` de cada corrida), de
+     modo que el contrato lleva `gate.checkCommand` en vez de solo `gate.checkCommands` (#84), y el
+     adaptador `claude_provider.py` pide correr ese comando antes de terminar y corregir lo que
+     reporte. `harness check` corre los mismos validadores y comprobaciones del gate sin registrar
+     nada (#52); existe para esto. En `harness-core` (sin contrato) la verificación es la del prompt
+     base. Es una desviación declarada de lo que escribe `harness init`.
+
+   La comparación sigue siendo justa: todas las condiciones pueden correr los mismos validadores y
+   se les pide que lo hagan; lo que añade el harness (el contrato y `harness check`, que además
+   corre sus comprobaciones del diff) es parte de lo que se evalúa.
+2. **Caché de prompts con TTL de 5 minutos.** Con una sesión autenticada por suscripción, Claude
+   Code pide el TTL de 1 hora en la conversación principal, cuya escritura de caché la API cobra al
+   doble del precio de entrada (1,25× con 5 minutos). Toda llamada de Claude Code de la evaluación
+   (agente, product owner y anfitrión del modo embebido), en todas las condiciones, corre con
+   `FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` y
+   `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m` (`agentlib.PROMPT_CACHE_ENV`, en el entorno mínimo de
+   `agentlib.agent_environment`). Según la referencia de variables de entorno de Claude Code
+   (consultada el 2026-11-11), `FORCE_PROMPT_CACHING_5M` fuerza el TTL de 5 minutos por encima de
+   las otras dos variables y de los ajustes `promptCacheTtl`/`subagentPromptCacheTtl`; las otras
+   dos (Claude Code ≥ 2.1.242) dicen lo mismo por separado. Se registra en `environment.json`
+   (`agentCalls.promptCache`, junto con `agentCalls.allowedTools` y
+   `agentCalls.validatorCommands`).
+3. **El costo es calculado, no facturado.** Los pilotos y la campaña corren con Claude Code
+   autenticado con la suscripción de la evaluación (sin clave de API; `agentlib.ensure_account`).
+   El costo en USD que se reporta es el que Claude Code calcula a partir de los tokens de cada
+   llamada con precios de lista de la API (`total_cost_usd`, `costUsd` en los registros), no lo que
+   se pagó: la suscripción no se factura por token. Precios de lista de la API de Anthropic usados
+   como referencia, en USD por millón de tokens (tabla de modelos de la documentación de la API,
+   copia del 2026-11-03; escrituras de caché a 1,25× la entrada con TTL de 5 minutos y 2× con 1
+   hora; lecturas a 0,1× salvo donde se indica):
+
+   | Modelo | Entrada | Salida | Escritura de caché 5 min | Escritura de caché 1 h | Lectura de caché |
+   |---|---|---|---|---|---|
+   | `claude-haiku-4-5-20251001` | 1,00 | 5,00 | 1,25 | 2,00 | 0,10 |
+   | `claude-sonnet-5-5` | 2,00 | 10,00 | 2,50 | 4,00 | 0,10 (0,05×) |
+   | `claude-haiku-5-5` (prompt ≤ 100 000 tokens) | 0,10 | 0,50 | 0,125 | 0,20 | 0,01 |
+   | `claude-haiku-5-5` (prompt > 100 000 tokens) | 0,50 | 2,50 | 0,625 | 1,00 | 0,05 |
+
+   Las escrituras y lecturas de `claude-haiku-5-5` se derivan de los multiplicadores generales (no
+   verificado contra una tabla propia del modelo). La tabla interna con la que Claude Code calcula
+   `total_cost_usd` no se inspeccionó; si el análisis recalcula el costo desde los tokens con esta
+   tabla y difiere del de Claude Code, se reportan los dos.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos
