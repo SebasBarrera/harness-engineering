@@ -28,7 +28,7 @@
 Commands (worktree code; `static` ran first, then the other sections, with no other suite running):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 .venv/bin/python evaluation/deterministic/block0_technical.py --harness "$PWD/.venv/bin/harness" --repo . \
   --python $SCRATCH/venvs/eval-w9/bin/python --project-python $SCRATCH/venvs/eval-w9/bin/python --ruff "<venv>/bin/ruff" \
   --out evaluation/results-2.0.0/deterministic/block0 --work $SCRATCH/work/block0-w9 --only static

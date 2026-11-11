@@ -43,7 +43,7 @@ REQUEST_CHANGES. Waits before DECISION are answered by the simulated person of t
 Command (worktree code; the work directory and the write-probe targets outside the repository):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 $SCRATCH/venvs/eval-w9/bin/python evaluation/fault_probes.py --harness "$PWD/.venv/bin/harness" \
   --work $SCRATCH/work/probes-w9 --cache "<dir with itsdangerous-2.2.0.tar.gz>" \
   --out evaluation/results-2.0.0/deterministic/fault-probes/fault-probes.jsonl --reps 3 \

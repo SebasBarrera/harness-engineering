@@ -36,7 +36,7 @@ panel's output contract), optionally `--reviewer-model`, `--provider-env NAME` a
 Command (worktree code):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 $SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/review_corpus.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/review --work $SCRATCH/work/review-w9
 ```

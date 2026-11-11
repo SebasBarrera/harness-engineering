@@ -27,7 +27,7 @@ includes the harness's own process start and the commands' output handling.
 Command (worktree code, after the friction suite and block 0):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 .venv/bin/python evaluation/deterministic/metrics_validity.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/metrics-validity \
   --runs-glob "$SCRATCH/work/friction-w9/friction-*" \
