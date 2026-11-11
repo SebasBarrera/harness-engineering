@@ -171,6 +171,14 @@ celda como ancla, `plan decide --no-continue` saliendo con 0, una corrida rechaz
 cerrada, y el reintento propio del harness ante una respuesta de aceptación malformada
 (`agent.call.contract-retry`).
 
+Córrela con el python de un venv que tenga las herramientas de medición (`freezegun` entre ellas) y
+cuyo `harness` esté primero en el `PATH`. Para probar un árbol de fuentes en vez del paquete
+instalado, lístalo en un archivo `.pth` del site-packages de ese venv, como hace `EVAL_EXTRA_PATH`
+en `launchers/common.sh`, y no en `PYTHONPATH`: los procesos del agente y de la sesión anfitriona
+corren con un entorno mínimo sin esa variable, así que el servidor MCP del modo embebido importaría
+el paquete instalado. La corrida en seco sale con 2 antes de cualquier caso si `PYTHONPATH` está
+definido, si `harness` no está en el `PATH` o si falta `pytest` o `freezegun`.
+
 ### Lanzamiento
 
 Los lanzadores de `launchers/` toman del entorno toda ubicación propia de la máquina, comprueban la
