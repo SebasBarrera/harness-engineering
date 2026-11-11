@@ -64,13 +64,15 @@ scripts and network or subprocess calls in code and tests.
 
 ### Environment
 
-A virtual environment with the harness and `pytest==8.1.1` (the version pinned in
-`requirements/tests.txt`), the project installed in editable mode, and **without** `freezegun`,
-which the project also declares in `requirements/tests.txt`:
+A virtual environment with the harness and `pytest==9.0.3`, the project installed in editable
+mode, and **without** `freezegun`, which the project declares in `requirements/tests.txt`. The
+project pins `pytest==8.1.1` there; this reproduction uses 9.0.3, the first release with the fix
+for GHSA-6w46-j5rx-g56g (CVE-2025-71176, vulnerable tmpdir handling), and the 298 tests of
+itsdangerous 2.2.0 pass with it:
 
 ```bash
 python3.12 -m venv venv
-venv/bin/python -m pip install <harness wheel> "pytest==8.1.1"
+venv/bin/python -m pip install <harness wheel> "pytest==9.0.3"
 venv/bin/python -m pip install -e ./itsdangerous-2.2.0 --no-deps
 cd itsdangerous-2.2.0 && git init -q && git add . && git commit -qm "itsdangerous 2.2.0"
 ```

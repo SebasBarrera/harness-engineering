@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
+  `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
+  (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
+  2.2.0 pins 8.1.1 in its own `requirements/tests.txt`; its 298 tests pass with 9.0.3. The thesis
+  evaluation does not install this file.
 - The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
   which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
   pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported
