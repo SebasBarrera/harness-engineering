@@ -49,7 +49,7 @@ import conditions  # noqa: E402
 import harness_state  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
-from product_owner import ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 
 __all__ = [
     "MAX_CLARIFY_ROUNDS",
@@ -450,6 +450,12 @@ def main() -> int:
         action="store_true",
         help="governed conditions: no simulated product owner (task questions stop the run)",
     )
+    parser.add_argument(
+        "--po-model",
+        default=DEFAULT_PO_MODEL,
+        help="the simulated product owner's model, the same in every cell and condition "
+        f"(default {DEFAULT_PO_MODEL}; amendment of 2026-11-11)",
+    )
     args = parser.parse_args()
     condition = "direct" if args.condition == "baseline" else args.condition
     if args.provider == "simulated" and not args.dry_run:
@@ -491,6 +497,9 @@ def main() -> int:
         "prompt": args.prompt,
         "effort": args.effort or None,
         "rep": args.rep,
+        "productOwnerModel": None
+        if condition == "direct" or args.no_product_owner
+        else args.po_model,
         "dryRun": args.dry_run,
         "provider": args.provider if condition != "direct" else None,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -514,11 +523,11 @@ def main() -> int:
         # The simulated product owner knows the full task and the specification the prompt leaves out.
         full_task = SCENARIOS[args.scenario]["task"]
         spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
-        knowledge = "Full task description:\n" + full_task.read_text(encoding="utf-8")
+        knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
         if spec.is_file():
             knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
         if not args.no_product_owner:
-            owner = ProductOwner(knowledge, args.model, run_dir)
+            owner = ProductOwner(knowledge, args.po_model, run_dir)
         if condition == "clarify":
             global RESUMABLE_PROVIDER  # noqa: PLW0603
             RESUMABLE_PROVIDER = True

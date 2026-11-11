@@ -10,6 +10,13 @@ Since 2026-11-11 (an amendment of the pre-registration, after an apparatus prech
 product owner also judges a dispute of frozen acceptance tests (``judge_dispute``): given the task,
 the source of the disputed tests and the agent's reasons, it answers UPHOLD or REVISE with a
 reason. It sees neither the workspace nor the hidden tests.
+
+Since 2026-11-11 (a second amendment, before any campaign result) the prompts are in Spanish and the
+product owner answers as an experienced engineer who owns the product (concrete values, limits, error
+behavior, edge cases, security and privacy, a one-line rationale for a choice the description does not
+dictate, scope stated explicitly), and its model is fixed for every cell: ``DEFAULT_PO_MODEL`` unless a
+runner's ``--po-model`` says otherwise, whatever the model of the run. The YAML keys and the decisions
+(UPHOLD, REVISE) stay as they are, so the parsers below are unchanged.
 """
 
 from __future__ import annotations
@@ -24,75 +31,90 @@ from agentlib import allocate_call, run_claude
 PRODUCT_OWNER_ACTOR = "human.product-owner-simulated"
 PO_TIMEOUT_SECONDS = 1800
 PO_BUDGET_USD = "20"
+# The product owner's model in every cell and condition (amendment of 2026-11-11).
+DEFAULT_PO_MODEL = "claude-sonnet-5-5"
 
-PO_PROMPT = """You are the product owner of the product described at the end of this message. A developer
-wrote the task below for a coding agent, and the development process tool stopped it before any work because
-its acceptance criteria cannot be checked. The tool asks the questions below.
+PO_PROMPT = """Eres el product owner del producto que se describe al final de este mensaje, y además un
+ingeniero de software con experiencia que conoce ese producto a fondo. Un desarrollador escribió la tarea de
+abajo para un agente de programación, y la herramienta de proceso de desarrollo la detuvo antes de cualquier
+trabajo porque sus criterios de aceptación no se pueden comprobar. La herramienta hace las preguntas de abajo.
 
-Answer them as a product owner would in a short written clarification, in English:
-- answer every question, concisely and in your own words, from the product description;
-- answer only what each question asks; do not paste the product description;
-- then state the task changes your answers imply: acceptance criteria that can be checked (observable
-  results for given inputs or actions) and, if a question asks about scope, the requirements in scope.
+Respóndelas como lo haría un ingeniero que es dueño del producto y se toma un momento para pensar, en una
+aclaración escrita breve y en español:
+- responde cada pregunta con decisiones concretas: valores, límites, comportamiento ante errores, casos
+  borde, implicaciones de seguridad y privacidad, y coherencia con el resto del producto;
+- cuando una decisión no la dicta la descripción del producto, agrega una justificación de una línea;
+- nunca contradigas la descripción del producto; si algo está fuera del alcance, dilo de forma explícita;
+- responde solo lo que pregunta cada pregunta, con tus propias palabras; no pegues la descripción del
+  producto;
+- después, indica los cambios a la tarea que implican tus respuestas: criterios de aceptación que se puedan
+  comprobar (resultados observables para entradas o acciones dadas) y, si una pregunta trata del alcance,
+  los requisitos que están dentro del alcance.
 
-Reply with exactly one ```yaml block and nothing else, in this format. Write every text as a literal block
-scalar (a "|" followed by indented lines), so that no quoting is needed:
+Responde con exactamente un bloque ```yaml y nada más, en este formato. Las claves (answers,
+replaceCriteria, criterionId, text, addCriteria, addRequirements) y los ids de las preguntas se escriben tal
+cual; los textos van en español. Escribe cada texto como un bloque literal (un "|" seguido de líneas con
+sangría), para que no haga falta usar comillas:
 
 ```yaml
-answers:              # every question id below, mapped to your answer
+answers:              # cada id de pregunta de abajo, con tu respuesta
   Q-1: |
     ...
-replaceCriteria:      # optional: rewrite a criterion by its id
+replaceCriteria:      # opcional: reescribe un criterio por su id
   - criterionId: ...
     text: |
       ...
-addCriteria:          # optional: new checkable criteria
+addCriteria:          # opcional: criterios nuevos que se puedan comprobar
   - |
     ...
-addRequirements:      # optional: requirements in scope
+addRequirements:      # opcional: requisitos dentro del alcance
   - |
     ...
 ```
 
-Task:
+Tarea:
 {task}
 
-Questions:
+Preguntas:
 {questions}
 
-Product description:
+Descripción del producto:
 {knowledge}
 """
 
-DISPUTE_PROMPT = """You are the product owner of the product described at the end of this message. A coding
-agent implemented the task below. Acceptance tests for the task were written by another agent call and frozen
-after a person approved them. The coding agent did not change them: it disputes the tests below, saying they are
-wrong, and they are the only thing that fails.
+DISPUTE_PROMPT = """Eres el product owner del producto que se describe al final de este mensaje, y además un
+ingeniero de software con experiencia que conoce ese producto a fondo. Un agente de programación implementó
+la tarea de abajo. Otra llamada de agente escribió las pruebas de aceptación de la tarea, y quedaron
+congeladas después de que una persona las aprobó. El agente de programación no las cambió: disputa las
+pruebas de abajo, dice que están mal, y son lo único que falla.
 
-Decide as the product owner, from the task's acceptance criteria and the product description only:
-- UPHOLD when the disputed tests check what the criteria and the product description ask for (the code must
-  change to pass them);
-- REVISE when a disputed test is wrong: it contradicts the criteria or the product description, asserts a wrong
-  value, or cannot pass for any correct implementation (the tests are then written again).
+Decide como product owner, solo a partir de los criterios de aceptación de la tarea y de la descripción del
+producto:
+- UPHOLD cuando las pruebas disputadas comprueban lo que piden los criterios y la descripción del producto
+  (el código tiene que cambiar para pasarlas);
+- REVISE cuando una prueba disputada está mal: contradice los criterios o la descripción del producto,
+  afirma un valor equivocado o no puede pasar con ninguna implementación correcta (entonces las pruebas se
+  escriben de nuevo).
 
-Reply with exactly one ```yaml block and nothing else, in this format:
+Responde con exactamente un bloque ```yaml y nada más, en este formato. La decisión se escribe tal cual
+(UPHOLD o REVISE); la razón va en español:
 
 ```yaml
-decision: UPHOLD      # or REVISE
+decision: UPHOLD      # o REVISE
 reason: |
   ...
 ```
 
-Task:
+Tarea:
 {task}
 
-Disputed tests and the agent's reasons:
+Pruebas disputadas y las razones del agente:
 {disputed}
 
-Source of the disputed test files:
+Código de los archivos de prueba disputados:
 {tests}
 
-Product description:
+Descripción del producto:
 {knowledge}
 """
 
@@ -174,9 +196,9 @@ class ProductOwner:
             # One retry with the parse error, as a person would be asked to fix a malformed file.
             retry = (
                 prompt
-                + "\n\nYour previous reply could not be read as the answers file ("
+                + "\n\nTu respuesta anterior no se pudo leer como el archivo de respuestas ("
                 + str(error)[:300]
-                + "). Reply again with one valid ```yaml block, every text as a | block scalar."
+                + "). Responde de nuevo con un solo bloque ```yaml válido, con cada texto como un bloque |."
             )
             record = run_claude(
                 retry,
@@ -254,9 +276,9 @@ class ProductOwner:
         except (ValueError, yaml.YAMLError) as error:
             record = self._ask(
                 prompt
-                + "\n\nYour previous reply could not be read ("
+                + "\n\nTu respuesta anterior no se pudo leer ("
                 + str(error)[:300]
-                + "). Reply again with one valid ```yaml block with decision and reason."
+                + "). Responde de nuevo con un solo bloque ```yaml válido con decision y reason."
             )
             verdict = parse_dispute(record.get("resultText", ""))
         self._record(

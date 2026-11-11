@@ -1,1 +1,1 @@
-write the alerts client described in SPEC.md
+escribe el cliente de alertas que se describe en SPEC.md

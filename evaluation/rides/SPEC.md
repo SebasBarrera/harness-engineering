@@ -1,349 +1,372 @@
-# Ride-hailing and food delivery platform: requirements
+# Plataforma de viajes y domicilios de comida: requisitos
 
-The platform is the backend of a service like Uber and Uber Eats together: riders request rides from
-drivers and order food from restaurants, delivered by couriers. It is a Python package `rides` with one
-public class `Platform` whose methods are listed in INTERFACE.md. Each requirement has an identifier.
+La plataforma es el backend de un servicio como Uber y Uber Eats juntos: los pasajeros (riders) piden
+viajes a conductores (drivers) y piden comida a restaurantes, que entregan repartidores (couriers). Es un
+paquete de Python `rides` con una clase pública `Platform` cuyos métodos se listan en INTERFACE.md. Cada
+requisito tiene un identificador.
 
-## General rules (X)
+## Reglas generales (X)
 
-- **X1.** Identifiers are a prefix and a six-digit counter, starting at 000001 for each prefix: `ADM-`
-  admins, `RID-` riders, `DRV-` drivers, `CUR-` couriers, `RST-` restaurants, `VEH-` vehicles, `ZON-`
-  zones, `QTE-` quotes, `RDE-` rides, `ITM-` menu items, `GRP-` option groups, `OPT-` options, `ORD-` food
-  orders, `PM-` cards, `PAY-` payments, `TCK-` tickets. A failed call never consumes an identifier.
-- **X2.** Money is `Decimal` with two places, rounded half up only where a rule says so. Money arguments
-  accept `int`, `str` or `Decimal`; a `float` raises `ValueError`.
-- **X3.** Errors: invalid input or a broken rule raises `ValueError`; an unknown identifier raises
-  `KeyError`; an actor that is not allowed to do something raises `PermissionError`. A call that raises
-  changes nothing.
-- **X4.** The platform has a virtual clock. `Platform(start, db_path=None)` starts it at `start`;
-  `now()` returns it; `advance(minutes=0, seconds=0)` moves it forward and processes every timer that
-  falls due, in time order (offer expiries, scheduled dispatches, order acceptance expiries, courier
-  assignment retries). Nothing reads the system clock.
-- **X5.** Every list or dict returned by the platform is a new object; changing it changes nothing.
-- **X6.** Limits: a time limit written as "within N", "lasts N" or "for N" holds while the elapsed time is
-  strictly less than N (at exactly N it has passed); "until T" and "before T" mean strictly before T.
-  Distance, amount and count limits written as "at most", "at least" or "from a to b" include their ends;
-  distances are compared after rounding to 3 places (C1).
-- **X7.** Types: "an int" is an `int` that is not a `bool` (strings and floats raise `ValueError`).
-  Identifiers, codes, plates and license numbers are not normalized unless a rule says so. Times of day are strings `HH:MM` with two digits each, from 00:00 to 23:59. Names, reasons, comments
-  and texts are stripped before validation; a rule that requires them not empty rejects one made only of
-  spaces. Money arguments with more than 2 decimal places raise `ValueError`.
-- **X8.** Precedence of errors: an unknown identifier (`KeyError`) is reported before a permission problem
-  (`PermissionError`), which is reported before any other problem (`ValueError`). Acting on an account,
-  ride, order or payment method of someone else raises `PermissionError`. Using an account that is not
-  `active` where an active one is needed raises `ValueError`.
-
-## A. Accounts and security
-
-- **A1.** `register_rider`, `register_driver`, `register_courier`, `register_restaurant` and
-  `create_admin` validate: the name is stripped, not empty and at most 80 characters; the email is
-  stripped, lowercased, matches `^[^@\s]+@[^@\s]+\.[^@\s]+$` and is unique across all accounts; the phone is not stripped, matches `^\+[1-9]\d{7,14}$` and is unique across all accounts; the password
-  has at least 10 characters, at least one ASCII letter and at least one ASCII digit.
-- **A2.** Passwords are stored only as PBKDF2-HMAC-SHA256 hashes with a random 16-byte salt and at least
-  100 000 iterations. The plain password is never stored, logged or returned.
-- **A3.** `authenticate(email, password)` returns the account id (the email is stripped and matched
-  case-insensitively).
-  A wrong password or an unknown email raises `PermissionError`. After 5 consecutive failures for an
-  account it is locked for 15 minutes: during the lock even the right password raises `PermissionError`;
-  a success resets the count. Attempts during a lock do not count and do not extend it; when the lock ends the count starts again at 0. A suspended
-  account cannot authenticate.
-- **A4.** `get_account(id)` returns `id`, `role` (`admin`, `rider`, `driver`, `courier`, `restaurant`),
-  `name`, `email`, `phone` masked as its first 3 characters, then one `*` per hidden digit, then its last
-  4 characters (`+573001234567` → `+57******4567`), and `status`.
-- **A5.** Status: riders and admins start `active`; drivers, couriers and restaurants start `pending` and
-  become `active` with `approve(admin_id, account_id)`. `suspend(admin_id, account_id, reason)` sets
-  `suspended` (reason not empty) and forces a worker offline; `reactivate` sets `active`. Only admins may
-  approve, suspend or reactivate (`PermissionError` otherwise); an admin suspending itself raises `ValueError`.
-  A reason made only of spaces counts as empty.
-- **A6.** A driver's license number matches `^[A-Z0-9]{6,12}$` and `license_expires` must be after the current date. A license is valid while the current date is
-  before `license_expires` (it expires on that date). `birth_date` of a rider is optional; when given, the rider must be at least 16 years old.
-- **A7.** Courier vehicle is one of `bike`, `moto`, `car`.
-- **A8.** `referral_code(rider_id)` is `REF` followed by the six digits of the rider id
-  (`RID-000007` → `REF000007`). `register_rider(..., referral_code=...)` accepts an existing code of
-  another rider; an unknown code raises `ValueError`.
-
-## B. Drivers, couriers and vehicles
-
-- **B1.** `add_vehicle(driver_id, plate, make, model, year, seats, category)`: plate matches
-  `^[A-Z]{3}\d{3}$` and is unique; make and model are not empty; year is an int from 2012 to the current
-  year + 1; category is `economy`, `comfort`, `xl` or `moto`. Seats: `moto` exactly 1; `economy` and
-  `comfort` 4 to 6; `xl` 6 to 8. `comfort` requires year 2018 or later.
-- **B2.** `approve` of a driver requires at least one vehicle and a license not expired; otherwise
+- **X1.** Los identificadores son un prefijo y un contador de seis dígitos, que empieza en 000001 para cada
+  prefijo: `ADM-` administradores, `RID-` pasajeros, `DRV-` conductores, `CUR-` repartidores, `RST-`
+  restaurantes, `VEH-` vehículos, `ZON-` zonas, `QTE-` cotizaciones, `RDE-` viajes, `ITM-` ítems del menú,
+  `GRP-` grupos de opciones, `OPT-` opciones, `ORD-` pedidos de comida, `PM-` tarjetas, `PAY-` pagos,
+  `TCK-` tickets. Una llamada fallida nunca consume un identificador.
+- **X2.** El dinero es `Decimal` con dos decimales, redondeado half up (la mitad hacia arriba) solo donde
+  una regla lo indica. Los argumentos de dinero aceptan `int`, `str` o `Decimal`; un `float` lanza
   `ValueError`.
-- **B3.** `go_online(account_id, location, vehicle_id=None)`: drivers must be `active`, give one of their
-  own vehicles and hold a license not expired at the current time; couriers must be `active` and give no vehicle (`ValueError` if they give one). An unknown vehicle id
-  raises `KeyError`; a vehicle of another driver raises `PermissionError`. The worker becomes `available` at that location. Workers start `offline`.
-- **B4.** `go_offline` sets `offline`; a worker with an active ride or order raises `ValueError`.
-  `update_location` changes the location of an online worker (`ValueError` when offline).
-- **B5.** `worker_status(account_id)` returns `status` (`offline`, `available`, `busy`), `location`
-  (`None` when offline) and `vehicle_id`.
+- **X3.** Errores: una entrada inválida o una regla incumplida lanza `ValueError`; un identificador
+  desconocido lanza `KeyError`; un actor que no tiene permitido hacer algo lanza `PermissionError`. Una
+  llamada que lanza una excepción no cambia nada.
+- **X4.** La plataforma tiene un reloj virtual. `Platform(start, db_path=None)` lo inicia en `start`;
+  `now()` lo devuelve; `advance(minutes=0, seconds=0)` lo adelanta y procesa cada temporizador que vence,
+  en orden temporal (vencimientos de ofertas, despachos programados, vencimientos de la aceptación de
+  pedidos, reintentos de asignación de repartidores). Nada lee el reloj del sistema.
+- **X5.** Cada lista o dict que devuelve la plataforma es un objeto nuevo; modificarlo no cambia nada.
+- **X6.** Límites: un límite de tiempo escrito como "dentro de N" (within N), "dura N" (lasts N) o "durante
+  N" (for N) se cumple mientras el tiempo transcurrido sea estrictamente menor que N (exactamente en N ya
+  pasó); "hasta T" (until T) y "antes de T" (before T) significan estrictamente antes de T. Los límites de
+  distancia, monto y cantidad escritos como "como máximo" (at most), "al menos" (at least) o "de a a b"
+  (from a to b) incluyen sus extremos; las distancias se comparan después de redondear a 3 decimales (C1).
+- **X7.** Tipos: "un int" es un `int` que no es un `bool` (las cadenas y los floats lanzan `ValueError`).
+  Los identificadores, códigos, placas y números de licencia no se normalizan salvo que una regla lo diga. Las horas del día son cadenas `HH:MM` con dos dígitos cada una, de 00:00 a 23:59. A los nombres, motivos, comentarios
+  y textos se les quitan los espacios de los extremos (stripped) antes de validarlos; una regla que exige que
+  no estén vacíos rechaza uno hecho solo de espacios. Los argumentos de dinero con más de 2 decimales
+  lanzan `ValueError`.
+- **X8.** Precedencia de errores: un identificador desconocido (`KeyError`) se reporta antes que un problema
+  de permisos (`PermissionError`), que se reporta antes que cualquier otro problema (`ValueError`). Actuar
+  sobre una cuenta, viaje, pedido o medio de pago de otra persona lanza `PermissionError`. Usar una cuenta
+  que no está `active` donde se necesita una activa lanza `ValueError`.
 
-## C. Geography
+## A. Cuentas y seguridad
 
-- **C1.** `distance_km(a, b)` is the haversine distance with Earth radius 6371.0 km, as `Decimal`
-  rounded half up to 3 places.
-- **C2.** `add_zone(admin_id, name, center, radius_km, speed_kmh, airport=False)`: radius from 0.5 to 50,
-  speed from 5 to 120 (admins only). A location belongs to the first zone, in creation order, whose center
-  is at most `radius_km` away. A ride or order whose pickup, dropoff or restaurant is outside every zone
-  raises `ValueError`.
-- **C3.** `eta_minutes(a, b)` is `ceil(distance_km(a, b) / speed_kmh x 60)` using the zone of `a`, and at
-  least 1. If `a` is outside every zone the speed is 30.
+- **A1.** `register_rider`, `register_driver`, `register_courier`, `register_restaurant` y
+  `create_admin` validan: al nombre se le quitan los espacios de los extremos, no está vacío y tiene como
+  máximo 80 caracteres; al email se le quitan los espacios de los extremos, se pasa a minúsculas, coincide
+  con `^[^@\s]+@[^@\s]+\.[^@\s]+$` y es único entre todas las cuentas; al teléfono no se le quitan los espacios, coincide con `^\+[1-9]\d{7,14}$` y es único entre todas las cuentas; la contraseña
+  tiene al menos 10 caracteres, al menos una letra ASCII y al menos un dígito ASCII.
+- **A2.** Las contraseñas se guardan solo como hashes PBKDF2-HMAC-SHA256 con una sal aleatoria de 16 bytes
+  y al menos 100 000 iteraciones. La contraseña en texto plano nunca se guarda, se registra en logs ni se
+  devuelve.
+- **A3.** `authenticate(email, password)` devuelve el id de la cuenta (al email se le quitan los espacios de
+  los extremos y se compara sin distinguir mayúsculas de minúsculas).
+  Una contraseña incorrecta o un email desconocido lanza `PermissionError`. Después de 5 fallos consecutivos
+  de una cuenta, esta se bloquea durante 15 minutos: durante el bloqueo incluso la contraseña correcta lanza
+  `PermissionError`; un acierto reinicia el conteo. Los intentos durante un bloqueo no cuentan ni lo extienden; cuando el bloqueo termina el conteo vuelve a empezar en 0. Una cuenta
+  suspendida no puede autenticarse.
+- **A4.** `get_account(id)` devuelve `id`, `role` (`admin`, `rider`, `driver`, `courier`, `restaurant`),
+  `name`, `email`, `phone` enmascarado como sus primeros 3 caracteres, luego un `*` por cada dígito oculto y
+  luego sus últimos 4 caracteres (`+573001234567` → `+57******4567`), y `status`.
+- **A5.** Estado: los pasajeros y los administradores empiezan `active`; los conductores, repartidores y
+  restaurantes empiezan `pending` y pasan a `active` con `approve(admin_id, account_id)`.
+  `suspend(admin_id, account_id, reason)` pone `suspended` (motivo no vacío) y fuerza a un trabajador a
+  desconectarse (offline); `reactivate` pone `active`. Solo los administradores pueden aprobar, suspender o
+  reactivar (`PermissionError` en caso contrario); un administrador que se suspende a sí mismo lanza `ValueError`.
+  Un motivo hecho solo de espacios cuenta como vacío.
+- **A6.** El número de licencia de un conductor coincide con `^[A-Z0-9]{6,12}$` y `license_expires` debe ser posterior a la fecha actual. Una licencia es válida mientras la fecha actual sea
+  anterior a `license_expires` (vence en esa fecha). El `birth_date` de un pasajero es opcional; cuando se da, el pasajero debe tener al menos 16 años.
+- **A7.** El vehículo de un repartidor es uno de `bike`, `moto`, `car`.
+- **A8.** `referral_code(rider_id)` es `REF` seguido de los seis dígitos del id del pasajero
+  (`RID-000007` → `REF000007`). `register_rider(..., referral_code=...)` acepta un código existente de
+  otro pasajero; un código desconocido lanza `ValueError`.
 
-## D. Ride quotes and fares
+## B. Conductores, repartidores y vehículos
 
-- **D1.** `quote_ride(rider_id, pickup, dropoff, category)` returns `quote_id`, `category`,
+- **B1.** `add_vehicle(driver_id, plate, make, model, year, seats, category)`: la placa coincide con
+  `^[A-Z]{3}\d{3}$` y es única; la marca y el modelo no están vacíos; el año es un int de 2012 al año
+  actual + 1; la categoría es `economy`, `comfort`, `xl` o `moto`. Asientos: `moto` exactamente 1; `economy`
+  y `comfort` de 4 a 6; `xl` de 6 a 8. `comfort` exige año 2018 o posterior.
+- **B2.** `approve` de un conductor exige al menos un vehículo y una licencia no vencida; si no,
+  `ValueError`.
+- **B3.** `go_online(account_id, location, vehicle_id=None)`: los conductores deben estar `active`, dar uno
+  de sus propios vehículos y tener una licencia no vencida en el momento actual; los repartidores deben estar `active` y no dar ningún vehículo (`ValueError` si dan uno). Un id de vehículo desconocido
+  lanza `KeyError`; un vehículo de otro conductor lanza `PermissionError`. El trabajador pasa a `available` en esa ubicación. Los trabajadores empiezan `offline`.
+- **B4.** `go_offline` pone `offline`; un trabajador con un viaje o pedido activo lanza `ValueError`.
+  `update_location` cambia la ubicación de un trabajador conectado (`ValueError` cuando está offline).
+- **B5.** `worker_status(account_id)` devuelve `status` (`offline`, `available`, `busy`), `location`
+  (`None` cuando está offline) y `vehicle_id`.
+
+## C. Geografía
+
+- **C1.** `distance_km(a, b)` es la distancia haversine con radio de la Tierra 6371.0 km, como `Decimal`
+  redondeado half up a 3 decimales.
+- **C2.** `add_zone(admin_id, name, center, radius_km, speed_kmh, airport=False)`: radio de 0.5 a 50,
+  velocidad de 5 a 120 (solo administradores). Una ubicación pertenece a la primera zona, en orden de
+  creación, cuyo centro está como máximo a `radius_km` de distancia. Un viaje o pedido cuya recogida,
+  destino o restaurante está fuera de todas las zonas lanza `ValueError`.
+- **C3.** `eta_minutes(a, b)` es `ceil(distance_km(a, b) / speed_kmh x 60)` usando la zona de `a`, y al
+  menos 1. Si `a` está fuera de todas las zonas la velocidad es 30.
+
+## D. Cotizaciones y tarifas de viajes
+
+- **D1.** `quote_ride(rider_id, pickup, dropoff, category)` devuelve `quote_id`, `category`,
   `distance_km = distance_km(pickup, dropoff)`, `duration_min = eta_minutes(pickup, dropoff)`, `surge`,
-  `fare` and `expires_at = now + 5 minutes`. The distance must be from 0.2 to 150 km. The rider must be active (`ValueError` otherwise).
-- **D2.** Rates by category (base, per km, per minute, minimum, booking fee): economy 2.50, 1.10, 0.25,
-  6.00, 1.50; comfort 3.50, 1.50, 0.35, 9.00, 1.50; xl 4.00, 1.80, 0.40, 11.00, 2.00; moto 1.50, 0.70,
-  0.15, 4.00, 1.00.
-- **D3.** Fare: `metered = base + per_km x distance + per_min x minutes`; multiply by 1.2 when the quote
-  time is from 22:00 to 05:59 (night); multiply by the surge; take the maximum with the minimum fare; add
-  the booking fee; add 5.00 if the pickup or the dropoff is in an airport zone; round half up to 2 places.
-- **D4.** Requesting with a quote that expired, belongs to another rider or was already used raises
+  `fare` y `expires_at = now + 5 minutes`. La distancia debe ser de 0.2 a 150 km. El pasajero debe estar activo (`ValueError` en caso contrario).
+- **D2.** Tarifas por categoría (base, por km, por minuto, mínima, tarifa de reserva): economy 2.50, 1.10,
+  0.25, 6.00, 1.50; comfort 3.50, 1.50, 0.35, 9.00, 1.50; xl 4.00, 1.80, 0.40, 11.00, 2.00; moto 1.50,
+  0.70, 0.15, 4.00, 1.00.
+- **D3.** Tarifa: `metered = base + per_km x distance + per_min x minutes`; multiplicar por 1.2 cuando la
+  hora de la cotización es de 22:00 a 05:59 (nocturna); multiplicar por el surge; tomar el máximo con la
+  tarifa mínima; sumar la tarifa de reserva; sumar 5.00 si la recogida o el destino está en una zona de
+  aeropuerto; redondear half up a 2 decimales.
+- **D4.** Pedir un viaje con una cotización que venció, pertenece a otro pasajero o ya se usó lanza
   `ValueError`.
 
-## E. Surge pricing
+## E. Precio dinámico (surge pricing)
 
-- **E1.** The surge of a quote depends on the zone of the pickup: `demand` is the number of rides in
-  status `requested` whose pickup is in that zone, plus one; `supply` is the number of `available` drivers without a pending offer
-  in that zone whose vehicle has the quoted category; `ratio = demand / max(supply, 1)`.
-- **E2.** Multiplier: ratio up to 1.0 → 1.0; up to 1.5 → 1.2; up to 2.0 → 1.5; up to 3.0 → 1.8; above
-  3.0 → 2.0. The result is capped by the zone cap (default 2.0); `set_surge_cap` (admins only) takes a cap
-  from 1.0 to 3.0.
-- **E3.** The surge is fixed when quoting and used for the final fare.
+- **E1.** El surge de una cotización depende de la zona de la recogida: `demand` es el número de viajes en
+  estado `requested` cuya recogida está en esa zona, más uno; `supply` es el número de conductores `available` sin una oferta pendiente
+  en esa zona cuyo vehículo tiene la categoría cotizada; `ratio = demand / max(supply, 1)`.
+- **E2.** Multiplicador según el ratio, con cada límite incluido (up to): hasta 1.0 → 1.0; hasta 1.5 → 1.2;
+  hasta 2.0 → 1.5; hasta 3.0 → 1.8; por encima de 3.0 → 2.0. El resultado queda limitado por el tope de la
+  zona (por defecto 2.0); `set_surge_cap` (solo administradores) recibe un tope de 1.0 a 3.0.
+- **E3.** El surge se fija al cotizar y se usa para la tarifa final.
 
-## F. Dispatch
+## F. Despacho (dispatch)
 
-- **F1.** `request_ride` creates a ride in status `requested`, places a hold for the quoted fare on the
-  payment method (see O) and offers the ride to the best driver. A rider with another ride in `requested`,
-  `driver_assigned`, `arrived` or `in_progress` raises `ValueError` (scheduled rides do not count). A
-  rider may quote at any time.
-- **F2.** Eligible drivers: `available`, `active`, vehicle of the ride category, at most 8 km from the
-  pickup, rating at least 4.60 or no ratings yet, not offered this ride before, and without a pending offer for another ride. The best is the nearest; ties go to the higher rating (no rating counts as 5.00), then to the lower driver id.
-- **F3.** The offer lasts 15 seconds (`offered_to` holds the driver id). `accept_ride` by that driver
-  within the time moves the ride to `driver_assigned` and the driver to `busy`. A driver who was never offered the ride raises `PermissionError`; a driver whose offer expired or
-  was declined raises `ValueError`.
-- **F4.** `decline_ride`, or an offer that expires, offers the ride to the next best driver. After 5
-  drivers declined or let it expire, or when no driver is eligible, the ride becomes `no_driver`, the hold
-  is released and the rider is notified.
-- **F5.** `idempotency_key`: a second `request_ride` with the same key and rider returns the same ride id
-  and changes nothing.
+- **F1.** `request_ride` crea un viaje en estado `requested`, coloca una retención (hold) por la tarifa
+  cotizada en el medio de pago (ver O) y ofrece el viaje al mejor conductor. Un pasajero con otro viaje en
+  `requested`, `driver_assigned`, `arrived` o `in_progress` lanza `ValueError` (los viajes programados no
+  cuentan). Un pasajero puede cotizar en cualquier momento.
+- **F2.** Conductores elegibles: `available`, `active`, vehículo de la categoría del viaje, como máximo a 8
+  km de la recogida, calificación de al menos 4.60 o sin calificaciones aún, a los que no se les ofreció
+  este viaje antes, y sin una oferta pendiente de otro viaje. El mejor es el más cercano; los empates se resuelven a favor de la calificación más alta (sin calificación cuenta como 5.00), luego del id de conductor menor.
+- **F3.** La oferta dura 15 segundos (`offered_to` contiene el id del conductor). `accept_ride` por ese
+  conductor dentro del tiempo pasa el viaje a `driver_assigned` y al conductor a `busy`. Un conductor al que nunca se le ofreció el viaje lanza `PermissionError`; un conductor cuya oferta venció o
+  fue rechazada lanza `ValueError`.
+- **F4.** `decline_ride`, o una oferta que vence, ofrece el viaje al siguiente mejor conductor. Después de
+  que 5 conductores rechazaron o dejaron vencer la oferta, o cuando ningún conductor es elegible, el viaje
+  pasa a `no_driver`, la retención se libera y se notifica al pasajero.
+- **F5.** `idempotency_key`: un segundo `request_ride` con la misma clave y el mismo pasajero devuelve el
+  mismo id de viaje y no cambia nada.
 
-## G. Ride lifecycle and cancellations
+## G. Ciclo de vida del viaje y cancelaciones
 
-- **G1.** `driver_arrived` (assigned driver, status `driver_assigned`, driver within 0.2 km of the pickup)
-  → `arrived`. `start_ride` (from `arrived`) → `in_progress`. `complete_ride` (from `in_progress`) →
-  `completed`; the driver becomes `available`. Any other order raises `ValueError`; another driver raises
-  `PermissionError`.
-- **G2.** Wait fee: when the ride starts more than 5 minutes after the arrival, the rider pays 0.30 for
-  each full minute beyond 5.
-- **G3.** `cancel_ride(actor_id, ride_id, reason)` may be called by the rider, the assigned driver or an
-  admin. A rider cancelling in `requested` pays nothing; in `driver_assigned` or `arrived` pays nothing
-  within 2 minutes of the assignment and otherwise a fee of 3.00 (economy, moto) or 5.00 (comfort, xl).
-  The fee goes entirely to the driver. A driver cancelling sends the ride back to `requested` and offers it
-  again, never to that driver. An admin cancellation is free for everyone. A driver whose ride is cancelled becomes `available`. Every
-  cancellation notifies the rider and the assigned driver, if any, with `ride_cancelled`. Rides
-  `in_progress`, `completed`, `cancelled` or `no_driver` cannot be cancelled. A ride in `scheduled` follows
-  I3; once dispatched it follows these rules.
-- **G4.** A rider with 3 rides cancelled with a fee in the last 24 hours cannot request rides for 24 hours
-  after the third (`ValueError`). Quotes are still allowed. A driver with 3 cancellations in the last 24 hours is forced offline and
-  cannot go online for 12 hours (`ValueError`).
+- **G1.** `driver_arrived` (conductor asignado, estado `driver_assigned`, conductor como máximo a 0.2 km de
+  la recogida (within 0.2 km)) → `arrived`. `start_ride` (desde `arrived`) → `in_progress`. `complete_ride`
+  (desde `in_progress`) → `completed`; el conductor pasa a `available`. Cualquier otro orden lanza
+  `ValueError`; otro conductor lanza `PermissionError`.
+- **G2.** Tarifa de espera: cuando el viaje empieza más de 5 minutos después de la llegada, el pasajero paga
+  0.30 por cada minuto completo después de los 5.
+- **G3.** `cancel_ride(actor_id, ride_id, reason)` lo puede llamar el pasajero, el conductor asignado o un
+  administrador. Un pasajero que cancela en `requested` no paga nada; en `driver_assigned` o `arrived` no
+  paga nada dentro de los 2 minutos siguientes a la asignación y, si no, paga una tarifa de 3.00 (economy,
+  moto) o 5.00 (comfort, xl). La tarifa va completa al conductor. Un conductor que cancela devuelve el viaje
+  a `requested` y este se ofrece de nuevo, nunca a ese conductor. Una cancelación de un administrador es gratis para todos. Un conductor cuyo viaje se cancela pasa a `available`. Cada
+  cancelación notifica al pasajero y al conductor asignado, si lo hay, con `ride_cancelled`. Los viajes
+  `in_progress`, `completed`, `cancelled` o `no_driver` no se pueden cancelar. Un viaje en `scheduled` sigue
+  I3; una vez despachado sigue estas reglas.
+- **G4.** Un pasajero con 3 viajes cancelados con tarifa en las últimas 24 horas no puede pedir viajes durante
+  24 horas después del tercero (`ValueError`). Las cotizaciones siguen permitidas. Un conductor con 3 cancelaciones en las últimas 24 horas queda forzado a offline y
+  no puede conectarse durante 12 horas (`ValueError`).
 
-## H. Final fare and payment of a ride
+## H. Tarifa final y pago de un viaje
 
-- **H1.** `complete_ride(driver_id, ride_id, route)`: route is a list of at least 2 locations; the actual
-  distance is the sum of the haversine distances between consecutive points (not rounded per segment),
-  rounded half up to 3 places; the actual minutes are the minutes between start and completion rounded
-  up, at least 1.
-- **H2.** Upfront price: the rider pays the quoted fare, unless the actual distance is more than 20 %
-  above the quoted distance; then the fare is recomputed as in D3 with the actual distance and minutes,
-  the quote's night factor and surge and the quote's airport surcharge.
-- **H3.** `charged = fare + wait fee - discount`, never below 0. The payment is captured for `charged`
-  and the rest of the hold is released. `ride()` shows `quoted_fare`, `fare`, `distance_km` and
-  `duration_min` (actual after completion), `wait_fee`, `discount`, `tip` and `charged`. Before completion
-  `fare` equals `quoted_fare` and `charged` is 0.00; a cancellation with a fee sets `cancellation_fee`
-  and `charged` to the fee.
-- **H4.** `add_tip(rider_id, ride_id, amount)`: completed rides only, within 24 hours of completion, once,
-  amount from 1.00 to 100.00; charged to the ride's payment method; goes entirely to the driver.
+- **H1.** `complete_ride(driver_id, ride_id, route)`: route es una lista de al menos 2 ubicaciones; la
+  distancia real es la suma de las distancias haversine entre puntos consecutivos (sin redondear por
+  segmento), redondeada half up a 3 decimales; los minutos reales son los minutos entre el inicio y la
+  finalización redondeados hacia arriba, al menos 1.
+- **H2.** Precio por adelantado: el pasajero paga la tarifa cotizada, salvo que la distancia real sea más
+  de un 20 % mayor que la distancia cotizada; en ese caso la tarifa se recalcula como en D3 con la distancia
+  y los minutos reales, el factor nocturno y el surge de la cotización y el recargo de aeropuerto de la
+  cotización.
+- **H3.** `charged = fare + wait fee - discount`, nunca menor que 0. El pago se captura por `charged` y el
+  resto de la retención se libera. `ride()` muestra `quoted_fare`, `fare`, `distance_km` y
+  `duration_min` (los reales después de la finalización), `wait_fee`, `discount`, `tip` y `charged`. Antes de
+  la finalización `fare` es igual a `quoted_fare` y `charged` es 0.00; una cancelación con tarifa pone
+  `cancellation_fee` y `charged` en el valor de la tarifa.
+- **H4.** `add_tip(rider_id, ride_id, amount)`: solo viajes completados, dentro de las 24 horas siguientes a
+  la finalización, una vez, monto de 1.00 a 100.00; se cobra al medio de pago del viaje; va completa al
+  conductor.
 
-## I. Scheduled rides
+## I. Viajes programados
 
-- **I1.** `schedule_ride` takes a `pickup_at` from 30 minutes to 30 days after now. The ride is
-  `scheduled`, quoted without surge and with the night factor of `pickup_at`. No hold is placed yet.
-- **I2.** 10 minutes before `pickup_at` the ride is dispatched: the hold is placed and the ride is offered
-  as in F (status `requested`). If the hold fails, the ride becomes `cancelled` and the rider gets a `ride_cancelled` notification.
-- **I3.** The rider may cancel a scheduled ride for free until 60 minutes before `pickup_at`; later the
-  fee is 5.00, charged to the payment method and kept by the platform.
+- **I1.** `schedule_ride` recibe un `pickup_at` de 30 minutos a 30 días después de ahora. El viaje queda
+  `scheduled`, cotizado sin surge y con el factor nocturno de `pickup_at`. Todavía no se coloca ninguna
+  retención.
+- **I2.** 10 minutos antes de `pickup_at` el viaje se despacha: se coloca la retención y el viaje se ofrece
+  como en F (estado `requested`). Si la retención falla, el viaje pasa a `cancelled` y el pasajero recibe una notificación `ride_cancelled`.
+- **I3.** El pasajero puede cancelar un viaje programado gratis hasta 60 minutos antes de `pickup_at`;
+  después la tarifa es 5.00, se cobra al medio de pago y se la queda la plataforma.
 
-## J. Restaurants and menus
+## J. Restaurantes y menús
 
-- **J1.** `set_hours(restaurant_id, weekday, opens, closes)`: weekday 0 (Monday) to 6; times `HH:MM` with
-  opens before closes on the same day; one interval per weekday, replacing the previous one; a weekday without an interval is closed. `is_open` is
-  true when the restaurant is active and the current time is in `[opens, closes)` of the current weekday.
-- **J2.** `add_menu_item`: name not empty; price greater than 0; category `food` or `alcohol`; prep
-  minutes an int from 1 to 120. Items start available.
+- **J1.** `set_hours(restaurant_id, weekday, opens, closes)`: weekday de 0 (lunes) a 6; horas `HH:MM` con
+  la apertura antes del cierre el mismo día; un intervalo por día de la semana, que reemplaza el anterior; un día de la semana sin intervalo está cerrado. `is_open` es
+  verdadero cuando el restaurante está activo y la hora actual está en `[opens, closes)` del día de la
+  semana actual.
+- **J2.** `add_menu_item`: nombre no vacío; precio mayor que 0; categoría `food` o `alcohol`; minutos de
+  preparación un int de 1 a 120. Los ítems empiezan disponibles.
 - **J3.** `add_option_group(item_id, name, required, min_choices, max_choices)`: `0 <= min_choices <=
-  max_choices`, `max_choices >= 1`, and a required group has `min_choices >= 1`. `add_option(group_id,
-  name, price_delta)`: price delta from 0 to 100.
-- **J4.** `menu(restaurant_id)` lists the items in id order, each with `id`, `name`, `price`, `category`,
-  `available` and `groups` (in id order, each with `id`, `name`, `required`, `min_choices`, `max_choices` and
-  `options` in id order, each with `id`, `name`, `price_delta`).
+  max_choices`, `max_choices >= 1`, y un grupo obligatorio tiene `min_choices >= 1`. `add_option(group_id,
+  name, price_delta)`: diferencia de precio de 0 a 100.
+- **J4.** `menu(restaurant_id)` lista los ítems en orden de id, cada uno con `id`, `name`, `price`,
+  `category`, `available` y `groups` (en orden de id, cada uno con `id`, `name`, `required`, `min_choices`,
+  `max_choices` y `options` en orden de id, cada una con `id`, `name`, `price_delta`).
 
-## K. Food order pricing
+## K. Precio de los pedidos de comida
 
-- **K1.** `place_order(rider_id, restaurant_id, lines, dropoff, payment_method_id, ...)`: lines is a list
-  of dicts with `item_id`, `quantity` (int 1 to 20) and optional `options` (list of option ids). The
-  restaurant must be open; every item must belong to it and be available; options must belong to the
-  item; every required group has between min and max choices; an optional group at most max; no option
-  repeated. The dropoff must be at most 10 km from the restaurant. At least one line. Unknown item or option ids raise `KeyError`; an option of another item raises
-  `ValueError`. `order()["lines"]` lists the lines in the given order, each with `item_id`, `quantity`,
-  `options` (ids), `unit_price`, `amount` and `tax`.
-- **K2.** Alcohol items require a rider with a birth date and at least 18 years old.
-- **K3.** Unit price = item price + option deltas; line amount = unit x quantity; `subtotal` = sum.
-- **K4.** `service_fee` = 5 % of the subtotal rounded half up, at least 1.00 and at most 5.00.
-  `small_order_fee` = 2.00 when the subtotal is below 10.00. `delivery_fee` = 1.99 + 0.50 x (km beyond 2,
-  restaurant to dropoff), rounded half up; 0.00 when the subtotal is at least 35.00.
-- **K5.** `tax` = sum over lines of the line amount x rate (food 8 %, alcohol 19 %), each line rounded half
-  up. `tip` from 0 to 50 % of the subtotal. `total = subtotal + service_fee + delivery_fee +
+- **K1.** `place_order(rider_id, restaurant_id, lines, dropoff, payment_method_id, ...)`: lines es una lista
+  de dicts con `item_id`, `quantity` (int de 1 a 20) y `options` opcional (lista de ids de opciones). El
+  restaurante debe estar abierto; cada ítem debe pertenecerle y estar disponible; las opciones deben
+  pertenecer al ítem; cada grupo obligatorio tiene entre min y max elecciones; un grupo opcional como máximo
+  max; ninguna opción repetida. El destino debe estar como máximo a 10 km del restaurante. Al menos una línea. Los ids de ítem u opción desconocidos lanzan `KeyError`; una opción de otro ítem lanza
+  `ValueError`. `order()["lines"]` lista las líneas en el orden dado, cada una con `item_id`, `quantity`,
+  `options` (ids), `unit_price`, `amount` y `tax`.
+- **K2.** Los ítems de alcohol exigen un pasajero con fecha de nacimiento y de al menos 18 años.
+- **K3.** Precio unitario = precio del ítem + diferencias de las opciones; monto de la línea = unitario x
+  cantidad; `subtotal` = suma.
+- **K4.** `service_fee` = 5 % del subtotal redondeado half up, al menos 1.00 y como máximo 5.00.
+  `small_order_fee` = 2.00 cuando el subtotal es menor que 10.00. `delivery_fee` = 1.99 + 0.50 x (km
+  después de 2, del restaurante al destino), redondeado half up; 0.00 cuando el subtotal es al menos 35.00.
+- **K5.** `tax` = suma sobre las líneas del monto de la línea x tasa (comida 8 %, alcohol 19 %), cada línea
+  redondeada half up. `tip` de 0 a 50 % del subtotal. `total = subtotal + service_fee + delivery_fee +
   small_order_fee + tax - discount + tip`.
-- **K6.** A hold for the total is placed on the payment method. `idempotency_key` behaves as in F5.
+- **K6.** Se coloca una retención por el total en el medio de pago. `idempotency_key` se comporta como en F5.
 
-## L. Food order lifecycle
+## L. Ciclo de vida de los pedidos de comida
 
-- **L1.** Statuses: `placed` → `accepted` → `ready` → `picked_up` → `delivered`; also `rejected`,
-  `expired` and `cancelled`.
-- **L2.** The restaurant must accept within 5 minutes; otherwise the order becomes `expired` and the hold
-  is released. `accept_order` sets `ready_at = now + max prep minutes of its items`. `reject_order` →
-  `rejected`, hold released. `mark_ready` from `accepted`, at any time (it does not wait for `ready_at`).
-- **L3.** `pick_up` by the assigned courier when `ready` and within 0.2 km of the restaurant; `deliver` by that courier when `picked_up` and
-  within 0.2 km of the dropoff: the payment is captured for the total (`charged`, which is 0.00 until then), the courier becomes
-  available unless it carries another order.
-- **L4.** `cancel_order` by the rider: in `placed` free (hold released); in `accepted` or `ready` the rider pays subtotal + tax (captured,
-  payment kind `order`) and the fees, tip and the rest are released; after `picked_up` it
-  raises `ValueError`. An admin may cancel any order not delivered, with nothing charged.
+- **L1.** Estados: `placed` → `accepted` → `ready` → `picked_up` → `delivered`; además `rejected`,
+  `expired` y `cancelled`.
+- **L2.** El restaurante debe aceptar dentro de 5 minutos; si no, el pedido pasa a `expired` y la retención
+  se libera. `accept_order` pone `ready_at = now + max prep minutes of its items` (el máximo de los minutos
+  de preparación de sus ítems). `reject_order` → `rejected`, retención liberada. `mark_ready` desde
+  `accepted`, en cualquier momento (no espera a `ready_at`).
+- **L3.** `pick_up` por el repartidor asignado cuando está `ready` y como máximo a 0.2 km del restaurante (within 0.2 km); `deliver` por ese repartidor cuando está `picked_up` y
+  como máximo a 0.2 km del destino (within 0.2 km): el pago se captura por el total (`charged`, que es 0.00 hasta entonces), el repartidor pasa a
+  available salvo que lleve otro pedido.
+- **L4.** `cancel_order` por el pasajero: en `placed` gratis (retención liberada); en `accepted` o `ready` el pasajero paga subtotal + impuesto (capturado,
+  tipo de pago `order`) y las tarifas, la propina y el resto se liberan; después de `picked_up`
+  lanza `ValueError`. Un administrador puede cancelar cualquier pedido no entregado, sin cobrar nada.
 
-## M. Couriers and batching
+## M. Repartidores y agrupación de pedidos
 
-- **M1.** When an order is accepted it is assigned to the nearest `available` active courier at most 6 km
-  from the restaurant; ties go to the lower id. A `bike` courier only takes orders whose dropoff is at most
-  4 km from the restaurant. Without a courier the order keeps waiting and assignment is retried on every
-  `advance` and whenever a courier goes online or becomes available.
-- **M2.** Batching: a courier that carries exactly one undelivered order (assigned, not picked up) gets a
-  second order from the same restaurant before any available courier when both orders were accepted within
-  5 minutes of each other and their dropoffs are at most 2 km apart. Never more than 2 orders.
-- **M3.** A courier carrying orders is `busy`; `courier_id` is shown in `order()`.
-- **M4.** Courier pay per delivered order: 2.50 + 0.60 x distance restaurant to dropoff, rounded half up;
-  the second order of a batch earns 70 % of that amount (rounded half up); tips go entirely to the courier.
+- **M1.** Cuando un pedido se acepta se asigna al repartidor `available` y activo más cercano que esté como
+  máximo a 6 km del restaurante; los empates se resuelven a favor del id menor. Un repartidor `bike` solo
+  toma pedidos cuyo destino está como máximo a 4 km del restaurante. Sin repartidor el pedido sigue
+  esperando y la asignación se reintenta en cada `advance` y cada vez que un repartidor se conecta o pasa a
+  estar disponible.
+- **M2.** Agrupación (batching): un repartidor que lleva exactamente un pedido no entregado (asignado, no
+  recogido) recibe un segundo pedido del mismo restaurante antes que cualquier repartidor disponible cuando
+  ambos pedidos se aceptaron dentro de 5 minutos uno del otro y sus destinos están como máximo a 2 km uno del
+  otro. Nunca más de 2 pedidos.
+- **M3.** Un repartidor que lleva pedidos está `busy`; `courier_id` se muestra en `order()`.
+- **M4.** Pago al repartidor por pedido entregado: 2.50 + 0.60 x distancia del restaurante al destino,
+  redondeado half up; el segundo pedido de una agrupación gana el 70 % de ese monto (redondeado half up); las
+  propinas van completas al repartidor.
 
-## N. Promotions and referrals
+## N. Promociones y referidos
 
-- **N1.** `create_promo` (admins only): code stripped, uppercased, matches `^[A-Z0-9]{4,15}$`, unique;
-  service `rides`, `eats` or `both`; kind `percent` (value an int from 1 to 50) or `fixed` (value from
-  1.00 to 100.00); optional max discount, minimum spend, start and end, total and per-user limits, and
-  first-order-only.
-- **N2.** A promo is used through `request_ride(..., promo_code)` or `place_order(..., promo_code)`, one
-  per ride or order; codes match case-insensitively. It must exist, match the service, be inside its window (from `starts`, included, to `ends`, excluded), the amount (quoted fare or subtotal) must reach the minimum spend, the limits must not be
-  reached and, when first-order-only, the rider has no completed ride (rides) or delivered order (eats).
-  Otherwise `ValueError`.
-- **N3.** Discount: percent of the quoted fare or subtotal rounded half up, capped by max discount; fixed
-  = min(value, amount). Uses count when the ride completes or the order is delivered.
-- **N4.** Referral: when a rider registered with a referral code completes the first ride, both riders get
-  5.00 in their wallets, once.
+- **N1.** `create_promo` (solo administradores): al código se le quitan los espacios de los extremos, se pasa
+  a mayúsculas, coincide con `^[A-Z0-9]{4,15}$` y es único; servicio `rides`, `eats` o `both`; tipo
+  `percent` (valor un int de 1 a 50) o `fixed` (valor de 1.00 a 100.00); descuento máximo, gasto mínimo,
+  inicio y fin, límites totales y por usuario, y solo primer pedido, opcionales.
+- **N2.** Una promoción se usa mediante `request_ride(..., promo_code)` o `place_order(..., promo_code)`, una
+  por viaje o pedido; los códigos coinciden sin distinguir mayúsculas de minúsculas. Debe existir, coincidir con el servicio, estar dentro de su ventana (desde `starts`, incluido, hasta `ends`, excluido), el monto (tarifa cotizada o subtotal) debe alcanzar el gasto mínimo, los límites no
+  deben estar alcanzados y, cuando es solo para el primer pedido, el pasajero no tiene ningún viaje
+  completado (rides) ni pedido entregado (eats). En caso contrario `ValueError`.
+- **N3.** Descuento: porcentaje de la tarifa cotizada o del subtotal redondeado half up, limitado por el
+  descuento máximo; fixed = min(valor, monto). Los usos cuentan cuando el viaje se completa o el pedido se
+  entrega.
+- **N4.** Referido: cuando un pasajero registrado con un código de referido completa su primer viaje, ambos
+  pasajeros reciben 5.00 en sus billeteras, una vez.
 
-## O. Payments and wallet
+## O. Pagos y billetera
 
-- **O1.** `add_card(rider_id, number, exp_month, exp_year, cvc)`: the number is a string of 13 to 19 digits (no spaces) and
-  passes the Luhn check; the expiry month must not be before the current month; the cvc is 3 digits (4 for
-  amex). Brand: starts with 4 → visa; 51 to 55 → mastercard; 34 or 37 → amex; otherwise `ValueError`.
-  Only brand, last 4 digits and expiry are stored, never the number or the cvc.
-- **O2.** Every rider has a wallet with id `WAL-` plus the six digits of the rider id, listed first by `payment_methods` (kind `wallet`, brand and last4 `None`); cards have kind `card`.
-  `wallet_balance` is the balance minus active holds. `top_up_wallet(rider_id, card_id, amount)` from 5.00 to 500.00 charges the card.
-- **O3.** Holds: a card hold always succeeds except for the card number `4000000000000002`, whose holds
-  and charges fail (`ValueError`). A wallet hold requires balance minus active holds to cover the amount.
-  A payment method of another rider raises `PermissionError`.
-- **O4.** `payments(account_id)` lists the captured charges, refunds (negative), top-ups and tips of a
-  rider in time order, each with `id`, `kind` (`ride`, `order`, `cancellation_fee`, `tip`, `top_up`, `refund`), `ref` (the
-  ride or order id; the card id for a top-up), `method_id`, `amount` and `at`. Only these entries consume
-  `PAY-` identifiers; holds do not.
+- **O1.** `add_card(rider_id, number, exp_month, exp_year, cvc)`: el número es una cadena de 13 a 19 dígitos (sin espacios) y
+  pasa la verificación de Luhn; el mes de vencimiento no debe ser anterior al mes actual; el cvc tiene 3
+  dígitos (4 para amex). Marca: empieza con 4 → visa; de 51 a 55 → mastercard; 34 o 37 → amex; en otro caso
+  `ValueError`. Solo se guardan la marca, los últimos 4 dígitos y el vencimiento, nunca el número ni el cvc.
+- **O2.** Cada pasajero tiene una billetera con id `WAL-` más los seis dígitos del id del pasajero, listada primero por `payment_methods` (kind `wallet`, brand y last4 `None`); las tarjetas tienen kind `card`.
+  `wallet_balance` es el saldo menos las retenciones activas. `top_up_wallet(rider_id, card_id, amount)` de 5.00 a 500.00 cobra a la tarjeta.
+- **O3.** Retenciones (holds): una retención en tarjeta siempre funciona salvo para el número de tarjeta
+  `4000000000000002`, cuyas retenciones y cobros fallan (`ValueError`). Una retención en billetera exige que
+  el saldo menos las retenciones activas cubra el monto. Un medio de pago de otro pasajero lanza
+  `PermissionError`.
+- **O4.** `payments(account_id)` lista los cobros capturados, los reembolsos (negativos), las recargas y las
+  propinas de un pasajero en orden temporal, cada uno con `id`, `kind` (`ride`, `order`, `cancellation_fee`, `tip`, `top_up`, `refund`), `ref` (el
+  id del viaje o del pedido; el id de la tarjeta para una recarga), `method_id`, `amount` y `at`. Solo estas
+  entradas consumen identificadores `PAY-`; las retenciones no.
 
-## P. Earnings and payouts
+## P. Ganancias y liquidaciones
 
-- **P1.** Driver earnings for a completed ride: 75 % of (fare - booking fee - airport surcharge) rounded
-  half up, plus the airport surcharge, the wait fee and the tip; cancellation fees of G3 go entirely to the
-  driver. Courier earnings as in M4.
-- **P2.** `earnings(worker_id, start, end)`: counts the rides or orders completed in `[start, end)` and
-  returns `trips` (completed rides or delivered orders), `fares` (the driver's fare share including the
-  airport surcharge, or the courier pay of M4), `tips`, `fees` (wait fees and cancellation fees), `bonus`
-  and `total` (the sum of the four amounts).
-- **P3.** Weekly bonus: a driver who completes at least 20 rides in a week (Monday 00:00 to next Monday
-  00:00) earns 30.00 for that week.
-- **P4.** `run_payouts(admin_id, week_start)` (admins only; `week_start` a `date` that is a Monday and whose week
-  has ended, `now >= week_start + 7 days`, otherwise `ValueError`) pays each worker the
-  earnings of that week, bonus included, once per week (a second run for the same week raises
-  `ValueError`), and returns `{worker_id: amount}` for amounts above 0.
+- **P1.** Ganancias del conductor por un viaje completado: 75 % de (tarifa - tarifa de reserva - recargo de
+  aeropuerto) redondeado half up, más el recargo de aeropuerto, la tarifa de espera y la propina; las
+  tarifas de cancelación de G3 van completas al conductor. Ganancias del repartidor como en M4.
+- **P2.** `earnings(worker_id, start, end)`: cuenta los viajes o pedidos completados en `[start, end)` y
+  devuelve `trips` (viajes completados o pedidos entregados), `fares` (la parte de la tarifa del conductor,
+  incluido el recargo de aeropuerto, o el pago al repartidor de M4), `tips`, `fees` (tarifas de espera y
+  tarifas de cancelación), `bonus` y `total` (la suma de los cuatro montos).
+- **P3.** Bono semanal: un conductor que completa al menos 20 viajes en una semana (de lunes 00:00 al lunes
+  siguiente 00:00) gana 30.00 por esa semana.
+- **P4.** `run_payouts(admin_id, week_start)` (solo administradores; `week_start` es un `date` que es lunes y cuya semana
+  ya terminó, `now >= week_start + 7 days`, si no `ValueError`) le paga a cada trabajador las
+  ganancias de esa semana, bono incluido, una vez por semana (una segunda ejecución para la misma semana lanza
+  `ValueError`), y devuelve `{worker_id: amount}` para los montos mayores que 0.
 
-## Q. Ratings
+## Q. Calificaciones
 
-- **Q1.** `rate(actor_id, ref_id, stars, comment, target)`: stars an int from 1 to 5; comment at most 500
-  characters. For a completed ride the rider rates the driver (`target="driver"`) and the driver rates the rider
-  (`target="rider"`), within 7
-  days of completion, once each. For a delivered order the rider rates the `restaurant` and the `courier`
-  (target), once each, within 7 days.
-- **Q2.** `rating(account_id)` is the mean of the last 100 ratings received, rounded half up to 2 places,
-  or `None`.
-- **Q3.** A driver whose rating falls below 4.60 with at least 20 ratings becomes `under_review`: it is forced offline when it has no active ride (otherwise when the ride ends) and cannot go online
-  (`ValueError`) until an admin reactivates it. The threshold compares the rounded rating of Q2.
+- **Q1.** `rate(actor_id, ref_id, stars, comment, target)`: stars un int de 1 a 5; comment de como máximo
+  500 caracteres. En un viaje completado el pasajero califica al conductor (`target="driver"`) y el conductor califica al pasajero
+  (`target="rider"`), dentro de 7
+  días desde la finalización, una vez cada uno. En un pedido entregado el pasajero califica al `restaurant` y
+  al `courier` (target), una vez cada uno, dentro de 7 días.
+- **Q2.** `rating(account_id)` es la media de las últimas 100 calificaciones recibidas, redondeada half up a 2
+  decimales, o `None`.
+- **Q3.** Un conductor cuya calificación baja de 4.60 con al menos 20 calificaciones pasa a `under_review`: se le fuerza a offline cuando no tiene un viaje activo (si no, cuando el viaje termina) y no puede conectarse
+  (`ValueError`) hasta que un administrador lo reactive. El umbral compara la calificación redondeada de Q2.
 
-## R. Support, safety and sharing
+## R. Soporte, seguridad y compartir viaje
 
-- **R1.** `report_issue(actor_id, ref_id, kind, text)`: the actor is the rider, or the driver of a ride (`PermissionError` otherwise); any status;
-  kind `lost_item`, `overcharge`, `safety` or `missing_items` (orders only); text 10 to 1000 characters.
-  Returns a ticket id; a `safety` ticket notifies every admin with `safety_ticket` whose `ref` is the ticket id.
-- **R2.** `resolve_ticket(admin_id, ticket_id, refund_amount)`: once; the refund is 0 or more; the refund cannot exceed everything charged for that ride or order (tips
-  included) minus earlier refunds; it goes back to the original payment method.
-- **R3.** `share_trip(rider_id, ride_id)` returns a token for a ride in `driver_assigned`, `arrived` or `in_progress` (`ValueError` otherwise); `trip_status(token)` returns
-  `status`, `driver_name`, `vehicle_plate` and `eta_minutes` (driver to pickup before the start, to dropoff
-  after), and never phones or emails. After the ride ends the token raises `KeyError`.
+- **R1.** `report_issue(actor_id, ref_id, kind, text)`: el actor es el pasajero, o el conductor de un viaje (`PermissionError` en caso contrario); cualquier estado;
+  kind `lost_item`, `overcharge`, `safety` o `missing_items` (solo pedidos); texto de 10 a 1000 caracteres.
+  Devuelve un id de ticket; un ticket `safety` notifica a cada administrador con `safety_ticket` cuyo `ref` es el id del ticket.
+- **R2.** `resolve_ticket(admin_id, ticket_id, refund_amount)`: una vez; el reembolso es 0 o más; el reembolso no puede superar todo lo cobrado por ese viaje o pedido (propinas
+  incluidas) menos los reembolsos anteriores; vuelve al medio de pago original.
+- **R3.** `share_trip(rider_id, ride_id)` devuelve un token para un viaje en `driver_assigned`, `arrived` o `in_progress` (`ValueError` en caso contrario); `trip_status(token)` devuelve
+  `status`, `driver_name`, `vehicle_plate` y `eta_minutes` (del conductor a la recogida antes del inicio, al
+  destino después), y nunca teléfonos ni emails. Después de que el viaje termina el token lanza `KeyError`.
 
-## S. Notifications
+## S. Notificaciones
 
-- **S1.** `notifications(account_id)` lists the notifications of the account in order, each with `at`,
-  `kind` and `ref`. Kinds include `ride_offer` (driver), `ride_assigned`, `driver_arrived`,
-  `ride_completed`, `ride_cancelled`, `no_driver` (rider), `order_accepted`, `order_ready`,
-  `order_delivered`, `order_cancelled` (rider), `new_order` (restaurant), `order_assigned` (courier),
-  `payout` (worker) and `safety_ticket` (admin).
+- **S1.** `notifications(account_id)` lista las notificaciones de la cuenta en orden, cada una con `at`,
+  `kind` y `ref`. Los tipos incluyen `ride_offer` (conductor), `ride_assigned`, `driver_arrived`,
+  `ride_completed`, `ride_cancelled`, `no_driver` (pasajero), `order_accepted`, `order_ready`,
+  `order_delivered`, `order_cancelled` (pasajero), `new_order` (restaurante), `order_assigned` (repartidor),
+  `payout` (trabajador) y `safety_ticket` (administrador).
 
-## T. Reports and audit
+## T. Reportes y auditoría
 
-- **T1.** `daily_report(admin_id, day)`: `rides_completed`, `rides_cancelled`, `ride_revenue` (sum of `charged` of the rides completed that day), `orders_delivered`, `order_revenue` (sum of order charges), `platform_revenue` (every amount captured that day for rides, orders and cancellations, minus the
-  earnings that workers generated that day), `cancellation_rate` (cancelled / (completed +
-  cancelled) rounded half up to 4 places, 0 when none). Rides that ended `no_driver`
-  are neither completed nor cancelled. Restaurants are not paid by the platform in this model.
-- **T2.** `top_restaurants(admin_id, start, end, limit)`: restaurants by delivered orders in the period,
-  then by order revenue, then by id; each `restaurant_id`, `orders`, `revenue`. Restaurants without
-  delivered orders in the period are not listed.
-- **T3.** `audit_log(admin_id)` lists every admin action (approve, suspend, reactivate, add_zone,
-  set_surge_cap, create_promo, run_payouts, resolve_ticket, admin cancellation) with `at`, `admin_id`, `action` (the method name: `approve`, `suspend`, `reactivate`, `add_zone`,
-  `set_surge_cap`, `create_promo`, `run_payouts`, `resolve_ticket`, `cancel_ride`, `cancel_order`) and
-  `target` (the affected id; the promo code; the week start in ISO format).
-- **T4.** Reports and audit are admin-only (`PermissionError`).
+- **T1.** `daily_report(admin_id, day)`: `rides_completed`, `rides_cancelled`, `ride_revenue` (suma de `charged` de los viajes completados ese día), `orders_delivered`, `order_revenue` (suma de los cobros de pedidos), `platform_revenue` (todo monto capturado ese día por viajes, pedidos y cancelaciones, menos las
+  ganancias que los trabajadores generaron ese día), `cancellation_rate` (cancelados / (completados +
+  cancelados) redondeado half up a 4 decimales, 0 cuando no hay ninguno). Los viajes que terminaron en `no_driver`
+  no son ni completados ni cancelados. En este modelo la plataforma no les paga a los restaurantes.
+- **T2.** `top_restaurants(admin_id, start, end, limit)`: restaurantes por pedidos entregados en el periodo,
+  luego por ingresos de pedidos, luego por id; cada uno con `restaurant_id`, `orders`, `revenue`. Los
+  restaurantes sin pedidos entregados en el periodo no se listan.
+- **T3.** `audit_log(admin_id)` lista cada acción de administrador (approve, suspend, reactivate, add_zone,
+  set_surge_cap, create_promo, run_payouts, resolve_ticket, cancelación de administrador) con `at`, `admin_id`, `action` (el nombre del método: `approve`, `suspend`, `reactivate`, `add_zone`,
+  `set_surge_cap`, `create_promo`, `run_payouts`, `resolve_ticket`, `cancel_ride`, `cancel_order`) y
+  `target` (el id afectado; el código de la promoción; el inicio de la semana en formato ISO).
+- **T4.** Los reportes y la auditoría son solo para administradores (`PermissionError`).
 
-## U. Persistence
+## U. Persistencia
 
-- **U1.** With `db_path`, the state is stored in a SQLite database at that path. `save()` commits it;
-  `Platform.open(db_path)` restores the state as of the last `save()`, everything included, including the clock, the counters, holds, timers,
-  passwords' hashes and pending offers, so that the platform behaves as if it had never stopped.
-- **U2.** The database has a `schema_version` table with one row; opening a database with an unknown
-  version raises `ValueError`.
+- **U1.** Con `db_path`, el estado se guarda en una base de datos SQLite en esa ruta. `save()` lo confirma
+  (commit); `Platform.open(db_path)` restaura el estado tal como estaba en el último `save()`, todo incluido, también el reloj, los contadores, las retenciones, los temporizadores,
+  los hashes de las contraseñas y las ofertas pendientes, de modo que la plataforma se comporte como si nunca
+  se hubiera detenido.
+- **U2.** La base de datos tiene una tabla `schema_version` con una fila; abrir una base de datos con una
+  versión desconocida lanza `ValueError`.
 
-## V. Non-functional requirements
+## V. Requisitos no funcionales
 
-- **V1.** Security: no plain password, card number or cvc is ever stored in memory structures exposed by
-  the platform or written to the database.
-- **V2.** Privacy: phones are always masked in returned data (A4, R3).
-- **V3.** Performance: with 5 000 available drivers, `quote_ride` and `request_ride` each take less than
-  0.5 seconds.
-- **V4.** Determinism: given the same calls, the platform returns the same results; it never reads the
-  system clock or random numbers except the password salts.
-- **V5.** Code: standard library only, Python 3.12, type hints on public methods, tests under `tests/`.
+- **V1.** Seguridad: ninguna contraseña en texto plano, número de tarjeta ni cvc se guarda nunca en
+  estructuras en memoria expuestas por la plataforma ni se escribe en la base de datos.
+- **V2.** Privacidad: los teléfonos siempre se enmascaran en los datos devueltos (A4, R3).
+- **V3.** Rendimiento: con 5 000 conductores disponibles, `quote_ride` y `request_ride` tardan cada uno
+  menos de 0.5 segundos.
+- **V4.** Determinismo: con las mismas llamadas, la plataforma devuelve los mismos resultados; nunca lee el
+  reloj del sistema ni números aleatorios, salvo las sales de las contraseñas.
+- **V5.** Código: solo biblioteca estándar, Python 3.12, anotaciones de tipo en los métodos públicos,
+  pruebas en `tests/`.

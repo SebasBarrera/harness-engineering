@@ -47,7 +47,7 @@ def _scenario(cwd: Path) -> str | None:
     if (cwd / "src" / "itsdangerous").is_dir():
         return "brownfield"
     spec = (cwd / "SPEC.md").read_text(encoding="utf-8") if (cwd / "SPEC.md").is_file() else ""
-    if "Inventory library" in spec:
+    if "Biblioteca de inventario" in spec:
         return "inventory"
     if "`alerts`" in spec:
         return "security"
@@ -272,24 +272,24 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
 
 
 def _product_owner(prompt: str) -> str | None:
-    if not prompt.startswith("You are the product owner"):
+    if not prompt.startswith("Eres el product owner"):
         return None
-    if "it disputes the tests below" in prompt:
+    if "Pruebas disputadas y las razones del agente:" in prompt:
         return (
             "```yaml\ndecision: REVISE\nreason: |\n"
-            "  Dry run: the disputed test asserts a wrong value.\n```"
+            "  Corrida en seco: la prueba disputada afirma un valor equivocado.\n```"
         )
     ids = sorted(set(re.findall(r"^- (Q-\d+):", prompt, re.MULTILINE)))
     lines = ["```yaml", "answers:"]
     for qid in ids:
         lines += [
             f"  {qid}: |",
-            "    The smallest valid input returns the documented result; invalid input raises the documented error.",
+            "    La entrada válida más pequeña devuelve el resultado documentado; una entrada inválida lanza el error documentado.",
         ]
     lines += [
         "addCriteria:",
         "  - |",
-        "    Running python -m pytest -q exits with code 0.",
+        "    Ejecutar python -m pytest -q termina con código 0.",
         "```",
     ]
     return "\n".join(lines)
@@ -346,7 +346,7 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
     first = cwd.parent / "fake-host-prompt.txt"
     if not first.exists():
         first.write_text(prompt, encoding="utf-8")
-    starting = "harness_task_create, passing exactly" in prompt
+    starting = "harness_task_create, pasando exactamente" in prompt
     prompt = prompt + "\n" + first.read_text(encoding="utf-8")  # the task's ids for the tests
     try:
         match = re.search(r"```json\n(.*?)\n```", prompt, re.DOTALL)

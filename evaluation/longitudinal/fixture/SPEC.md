@@ -1,25 +1,25 @@
-# Inventory library
+# Biblioteca de inventario
 
-A Python package `inventory` (in `src/inventory/`) with a class `Inventory` to manage a small
-stock of items. Prices are `decimal.Decimal` (the API also accepts `int` and `str`); quantities are
-`int`.
+Un paquete de Python `inventory` (en `src/inventory/`) con una clase `Inventory` para gestionar un
+stock pequeño de artículos (items). Los precios son `decimal.Decimal` (la API también acepta `int` y
+`str`); las cantidades son `int`.
 
-## Part A: items
+## Parte A: artículos (items)
 
-- `add_item(sku, name, price, quantity=0)` adds an item.
-- `get_item(sku)` returns a dict with the keys `sku`, `name`, `price` and `quantity`.
-- `remove_item(sku)` removes an item.
-- `list_items()` returns the items as such dicts.
+- `add_item(sku, name, price, quantity=0)` agrega un artículo.
+- `get_item(sku)` devuelve un dict con las claves `sku`, `name`, `price` y `quantity`.
+- `remove_item(sku)` elimina un artículo.
+- `list_items()` devuelve los artículos como dicts de ese tipo.
 
-## Part B: stock movements
+## Parte B: movimientos de stock (stock movements)
 
-- `receive(sku, quantity)` and `ship(sku, quantity)` change the stock.
-- `history(sku)` returns the movements as tuples `(kind, quantity)` with kind `"receive"` or `"ship"`.
+- `receive(sku, quantity)` y `ship(sku, quantity)` cambian el stock.
+- `history(sku)` devuelve los movimientos como tuplas `(kind, quantity)` con kind `"receive"` o `"ship"`.
 
-## Part C: persistence
+## Parte C: persistencia
 
-- `save(path)` and the class method `Inventory.load(path)` store and restore the inventory as JSON.
+- `save(path)` y el método de clase `Inventory.load(path)` guardan y restauran el inventario como JSON.
 
-## Part D: reports
+## Parte D: reportes
 
-- `low_stock(threshold)` returns SKUs with low stock; `total_value()` returns the stock value.
+- `low_stock(threshold)` devuelve los SKU con stock bajo; `total_value()` devuelve el valor del stock.
