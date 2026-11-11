@@ -177,3 +177,34 @@ def test_warning_is_recorded_once(python_workspace: Path, tmp_path: Path) -> Non
     assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
         PhaseId.DECISION
     )
+
+
+def test_a_limit_crossed_by_the_last_call_stops_the_run_before_the_decision(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # The fixture's single implement call fixes nothing, so the run would need a correction;
+    # a fixed one (no feedback needed) is the last call of the run.
+    log = configure(python_workspace, tmp_path, {"perRun": {"costUsd": 0.4}})
+    agent = python_workspace / "agent.py"
+    agent.write_text(
+        agent.read_text(encoding="utf-8").replace('fixed = "feedback" in request', "fixed = True"),
+        encoding="utf-8",
+    )
+    application, run = start(python_workspace, tmp_path)
+    assert len(json.loads(log.read_text())) == 1
+    execution = application.status(python_workspace, run)["execution"]
+    assert execution["status"] == ResultStatus.BLOCKED
+    assert execution["currentPhase"] == PhaseId.INDEPENDENT_REVIEW  # not DECISION (exit 6)
+    assert execution["gateEvaluationId"] is None
+    application.raise_budget(
+        python_workspace,
+        execution_id=run,
+        scope="run",
+        metric="costUsd",
+        limit=5,
+        rationale="The change is worth it",
+        actor_id="human.reviewer",
+    )
+    continued = application.continue_run(python_workspace, run)
+    assert continued.current_phase is PhaseId.DECISION
+    assert len(json.loads(log.read_text())) == 1

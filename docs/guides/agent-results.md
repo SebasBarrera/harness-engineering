@@ -347,7 +347,10 @@ restored with the rest.
 and `wallSeconds`, with `warnAt` (default 0.8). Usage is what providers report and the wall time
 the harness measures. Crossing `warnAt` records a LOW `budget.warning` once; crossing a limit
 records a HIGH `budget.exceeded` finding and no further agent call is made until a person raises
-the limit:
+the limit. A limit crossed by the last agent call of a run, with no further call to refuse, stops
+the run before `INDEPENDENT_REVIEW` (`BLOCKED`, exit code 6), or before `DECISION` when a review
+call crossed it (exit code 4, no gate evaluated): the run never reaches the decision as if it were
+within its budget (#157):
 
 ```bash
 harness budget show --run <runId>

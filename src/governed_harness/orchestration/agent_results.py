@@ -523,6 +523,20 @@ class AgentResults:
         capped = self.agent_contract.begin(execution, phase, kind)
         if capped is not None:
             return capped
+        return self.budget_block(execution, kind=kind, stopped=f"no {kind} call was made")
+
+    def before_phase(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome | None:
+        """Fail closed before INDEPENDENT_REVIEW and DECISION when a limit is crossed: a limit
+        crossed by the last agent call of a run (no further call to refuse) stops the run there,
+        so it never reaches the decision as if it were within its budget (#157)."""
+        return self.budget_block(
+            execution, kind=None, stopped=f"the {phase.phase_id.value} phase was not started"
+        )
+
+    def budget_block(
+        self, execution: Execution, *, kind: CallKind | None, stopped: str
+    ) -> PhaseOutcome | None:
+        """The ``BLOCKED`` outcome while a limit is crossed and no person raised it since."""
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -545,7 +559,7 @@ class AgentResults:
         reasons = "; ".join(item.describe() for item in crossings)
         return PhaseOutcome(
             ResultStatus.BLOCKED,
-            f"{BUDGET_EXCEEDED_RULE}: {reasons}; no {kind} call was made. Raise the limit with "
+            f"{BUDGET_EXCEEDED_RULE}: {reasons}; {stopped}. Raise the limit with "
             "harness budget raise and continue the run.",
         )
 

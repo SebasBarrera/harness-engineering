@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
+  as if it were within its budget (#157, found by the H20 evaluation suite): with no further
+  agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before
+  `INDEPENDENT_REVIEW` (or before `DECISION` when a review call crossed it) until a person runs
+  `harness budget raise` and `harness run continue`.
 - A catalogue of ten architecture styles with an expert for each, and persistent reverse
   engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
   `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests
