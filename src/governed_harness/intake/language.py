@@ -337,12 +337,13 @@ RESULT_VERBS_ES = frozenset(
     }
 )
 RESULT_PHRASES_ES = ("como maximo", "como minimo", "a lo sumo", "al menos", "como mucho")
+_RAPIDO_ES = "rápido"
 QUALITY_WORDS_ES = {
-    "rapido": "rápido",
-    "rapida": "rápido",
-    "rapidos": "rápido",
-    "rapidas": "rápido",
-    "rapidamente": "rápido",
+    "rapido": _RAPIDO_ES,
+    "rapida": _RAPIDO_ES,
+    "rapidos": _RAPIDO_ES,
+    "rapidas": _RAPIDO_ES,
+    "rapidamente": _RAPIDO_ES,
     "veloz": "veloz",
     "eficiente": "eficiente",
     "eficientes": "eficiente",
