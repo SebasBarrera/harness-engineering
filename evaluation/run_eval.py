@@ -172,7 +172,7 @@ def configure_provider(
     # Wave 9 (#87): the provider command must be granted (extend under phaseCapabilities).
     phase_capabilities = bool((config.get("governance") or {}).get("phaseCapabilities"))
     conditions.grant_provider_command(config, command, core=not phase_capabilities)
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
 
 
 def feedback_from(workspace: Path, run_id: str, status: dict[str, Any]) -> str:
@@ -337,6 +337,7 @@ def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
             sort_keys=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
     return path
 
@@ -621,7 +622,7 @@ def main() -> int:
     out = (
         args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out
     )
-    with out.open("a", encoding="utf-8") as handle:
+    with out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )

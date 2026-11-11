@@ -243,6 +243,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "trustedHosts": list(DEFAULT_TRUSTED_HOSTS),
             "verifyRecords": True,
             "chainAnchor": "file",
+            # #149: events after the anchored head are a warning, and do not excuse a prune.
+            "unanchoredEvents": "warn",
             "pinTaskRevision": True,
             "protectExcludedPaths": True,
             "workspaceLease": True,

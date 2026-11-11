@@ -146,6 +146,7 @@ class _Call:
                 ("output", "output_tokens"),
                 ("reasoning", "reasoning_tokens"),
                 ("cache", "cache_tokens"),
+                ("cacheRead", "cache_read_tokens"),
             )
         }
 
@@ -410,6 +411,7 @@ def _token_row(key: str) -> dict[str, Any]:
         "output": 0,
         "reasoning": 0,
         "cache": 0,
+        "cacheRead": 0,
         "reportedCostUsd": 0.0,
         "estimatedCostUsd": 0.0,
         "unpricedCalls": 0,
@@ -987,6 +989,7 @@ def build_report(
                 "output": totals["output"],
                 "reasoning": totals["reasoning"],
                 "cache": totals["cache"],
+                "cacheRead": totals["cacheRead"],
                 "total": totals["tokens"],
             },
             "cost": {

@@ -183,6 +183,17 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
   bloqueados / correctos), por clase y por lenguaje; intervalo de Wilson al 95 %.
 - **Criterio de éxito:** «H reduce la escape al menos a la mitad de D\* en las clases cubiertas por
   reglas deterministas»; si no se cumple, se reporta qué clases no.
+- **Precisiones fijadas al implementar el agregador (2026-11-10, antes de cualquier resultado):**
+  - Repeticiones: H01, H03 y H05 corren 3 repeticiones; un caso defectuoso cuenta como escapado si
+    se entregó en **cualquier** repetición, y uno correcto como falsa alarma si se bloqueó en
+    cualquiera (el peor caso para el harness). Las filas cuyas repeticiones difieren se listan.
+  - «Cubierta por reglas deterministas»: en H01, H03 y H05 todos los casos salvo los que el catálogo
+    prevé que escapan (`kind: escape` de H05); en N01-a todos; en N02-a solo las reglas `tool:` y
+    `consistency:`.
+  - Lenguaje: H05 según el manifiesto (`package.json` → javascript, `go.mod` → go,
+    `Cargo.toml` → rust); N02-a según la extensión del archivo; el resto, python.
+  - N01-a y N02-a no tienen condición D\*: sus clases se reportan como «no evaluables» para el
+    criterio, con sus tasas de escape del harness.
 
 ## H14 Manipulación de eventos: 25 tipos
 
@@ -278,6 +289,310 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
   `sandbox.unavailable`.
 - **Criterio de éxito:** 0 diferencias inesperadas; las esperadas se documentan. La lista previa
   de diferencias esperadas debe versionarse aquí antes de la primera corrida comparada.
+- **Precisiones fijadas al implementar la suite (2026-11-10, antes de cualquier corrida en más de
+  una plataforma; la lista de diferencias esperadas se versiona en este commit, antes que el
+  código que la compara):**
+  - *Plataformas* (job `portability (report)` de `.github/workflows/evaluation.yml`, una imagen
+    fija por plataforma, sobre el wheel construido en el mismo job): `linux-bwrap`
+    (`ubuntu-24.04` con bubblewrap, el entorno de la regla 6 y **referencia** de la comparación),
+    `linux-nobwrap` (`ubuntu-24.04` sin bubblewrap; el job comprueba que `bwrap` no está),
+    `macos` (`macos-15`, arm64, con `sandbox-exec`) y `windows` (`windows-2025`). Cada suite
+    corre con los argumentos de `run_deterministic.py` (`fault-probes` con 3 repeticiones; las
+    demás con 1) y `demo_flows.py all` con el mismo entorno virtual.
+  - *Configuración por plataforma:* en Linux y macOS la que escribe `harness init`
+    (`runtime.agentSandbox: enforce`). En Windows, que no tiene mecanismo de sandbox
+    (`runtime/sandbox.py:159-203`), las suites escriben `runtime.agentSandbox: off`, como el
+    piloto (`evaluation/campaign/README.md`, «Entornos»), y cada `environment.json` lo declara
+    como desviación. En `linux-nobwrap` se deja `enforce` a propósito: es la condición que mide
+    `sandbox.unavailable`.
+  - *Adaptación del aparato (sin cambiar ninguna expectativa):* en Windows los scripts usan
+    `Scripts\` y `Lib\site-packages` del entorno virtual, `;` en `PATH` (con el directorio de
+    `git` y el de `sh` de Git for Windows, y `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`,
+    `USERPROFILE`, `LOCALAPPDATA` y `APPDATA` conservados), una búsqueda de procesos sin
+    `pgrep` y un directorio de trabajo corto (límite de 260 caracteres). Los archivos que las
+    suites escriben en los espacios de trabajo se escriben con fin de línea LF en todas las
+    plataformas (en Windows el modo texto de Python escribiría CRLF y cambiaría cada línea del
+    diff). Las rutas que las sondas meten dentro de un `sh -c` van en forma `C:/...`: la política
+    de comandos destructivos parte el script con `shlex` en modo POSIX
+    (`capabilities/repository.py:126-146`), que leería las barras invertidas como escapes; con
+    la forma `C:/...` la sonda prueba la misma regla que en POSIX. Si una de estas adaptaciones
+    no basta y una suite no corre en una plataforma, esa suite queda «no evaluada» en esa
+    plataforma (regla 2), no «coincide».
+  - *Unidad de comparación* («prueba»): cada sonda de `fault_probes.py` (29: `matchesExpectation`
+    de cada repetición, `identical` y el bloque `observed` del resumen), cada corrida de
+    `friction.py` (24: condición, tarea y riesgo), cada caso de `ladder_corpus.py` (16) y de
+    `review_corpus.py` (23) con los campos de su registro, y cada paso de `demo_flows.py all`
+    (código esperado, código obtenido y si coinciden, por flujo y posición). Una prueba
+    *coincide* con la referencia cuando todos sus campos comparados son iguales después de
+    normalizar identificadores, digests, instantes y rutas absolutas (que por diseño cambian en
+    cada corrida o máquina). Las rutas relativas al espacio de trabajo no se normalizan: una
+    barra invertida en una de ellas es una diferencia inesperada.
+  - *Medidas excluidas de la comparación* (se registran, no se comparan): segundos y medianas de
+    segundos (`seconds`, `commandSeconds`, `runWallSeconds`), tokens estimados
+    (`recordedTokens`, `tokens` de la revisión: se estiman con los caracteres de la petición,
+    que lleva rutas absolutas de longitud distinta en cada plataforma), tamaños de artefactos,
+    `environment.json` (versión de Python y de Git, plataforma) y los textos libres
+    `stdout`/`stderr`.
+- **Lista previa de diferencias esperadas** (leídas en el código antes de correr; «segura» = el
+  código la determina; «posible» = el código la permite, sin certeza). Se compara cada
+  plataforma con `linux-bwrap`. Una diferencia que no está en la lista es *inesperada*; una de la
+  lista que no aparece se reporta como «esperada, no observada».
+  - **E1, `linux-nobwrap`, `sandbox.unavailable` (segura):** con `enforce` y sin `bwrap`, cada
+    llamada a un proveedor de comando se rehúsa antes de lanzarlo con un hallazgo HIGH
+    `sandbox.unavailable` y la fase bloqueada (`orchestration/engine.py:1793-1817`); un revisor
+    de comando del panel queda `UNKNOWN` («the agent sandbox is enforced but unavailable»,
+    `review/providers.py:80-91`). Afecta a las sondas de `fault_probes.py` que llegan a llamar al
+    proveedor (se espera que casi todas dejen de cumplir su expectativa), a las 24 corridas de
+    `friction.py` y a los revisores de `review_corpus.py` (veredicto, revisores, caché, llamadas
+    del fixture y lo que detecta el revisor oráculo). Regla de la comparación: una prueba de
+    `linux-nobwrap` que difiere y cuyo registro contiene `sandbox.unavailable` (o el motivo
+    anterior) es esperada; si difiere sin esa marca, es inesperada. `ladder_corpus.py` usa el
+    proveedor `simulated`, que corre dentro del proceso del harness sin sandbox
+    (`engine.py:1772-1775`): ahí no se espera ninguna diferencia. `demo_flows.py` pone
+    `agentSandbox: off` en todos los flujos con proveedor de comando
+    (`scripts/demo_flows.py:840,1098,1782,1871,2044`): tampoco se espera diferencia.
+  - **E2, `windows`, escrituras fuera del espacio de trabajo (segura):** con `agentSandbox: off`
+    nada niega las escrituras de `write-outside`, `write-git-hooks` y `write-symlink`: no hay
+    hallazgo `sandbox.write-denied` y los archivos se escriben (`write-symlink` además necesita
+    permiso para crear enlaces simbólicos; sin él la escritura falla en el propio proveedor).
+    Las tres sondas dejan de cumplir su expectativa en Windows.
+  - **E3, `windows`, `lease-sigterm` (segura):** Windows no entrega `SIGTERM` a un proceso:
+    `Popen.send_signal(SIGTERM)` llama a `TerminateProcess`, el manejador de
+    `runtime/lease.py:213-228` no corre, el código de salida no es 143 y la corrida no queda
+    `INTERRUPTED`. La sonda deja de cumplir su expectativa; la recuperación con `run continue`
+    puede o no ocurrir.
+  - **E4, `windows`, `timeout` (posible):** en Windows el ejecutor termina el proceso lanzado
+    pero no sus descendientes (no hay grupos de procesos: `runtime/process_runner.py:177,280-291`
+    y el comentario de `.github/workflows/windows.yml`), y el `python.exe` de un entorno virtual
+    de Windows es un lanzador que arranca otro proceso. La sonda puede encontrar
+    `leftoverProcesses` mayor que 0 o terminar en otro estado.
+  - **E5, todas, rutas absolutas y directorio de estado (segura, sin efecto en la comparación):**
+    las rutas absolutas (espacio de trabajo, base de datos de estado, ejecutables, entornos
+    virtuales) cambian de forma (`C:\...` frente a `/home/...` o `/Users/...`); las suites fijan
+    `HARNESS_STATE_DIR` y `HARNESS_ANCHOR_DIR` bajo su directorio de trabajo, así que el
+    directorio por omisión de cada sistema (`runtime/state_location.py:47-62`) no interviene. Se
+    normalizan antes de comparar.
+  - **E6, todas, tiempo y tokens estimados (segura, excluida):** las medidas de la lista de
+    exclusión difieren entre plataformas y entre corridas; no cuentan como diferencia.
+  - Nada más se espera: en particular, ninguna diferencia en `macos` (fuera de E5 y E6), en
+    `ladder_corpus.py`, en `demo_flows.py all` ni en las sondas de integridad, decisiones y
+    alcance en ninguna plataforma.
+- **Salida:** `evaluation/deterministic/portability_compare.py` escribe, por plataforma y suite,
+  pruebas que coinciden / total, las diferencias esperadas (con su id E1–E4), las inesperadas
+  (campo, valor de referencia y valor observado), las esperadas no observadas y cuántas pruebas
+  registran `sandbox.unavailable`; sale con 1 si hay alguna diferencia inesperada o falta una
+  plataforma o una suite.
+
+---
+
+## Segunda tanda: H02, H04, H09 y H15
+
+Fecha de congelación: **2026-11-10**. Esta sección se añade en el primer commit de la rama que
+implementa las cuatro suites, **antes** de que exista cualquier resultado de ellas. Rigen las siete
+reglas de la sección «Reglas que rigen todas las pruebas de este registro» y, salvo donde se dice
+otra cosa, la «Operacionalización común de H01, H03 y H05» (aplicación del cambio por el proveedor
+fixture `interception_agent.py`, D\*, H, H-core, flujo `task create` → `run start` → persona
+simulada, definiciones de *detectado por la regla r*, *hallazgo bloqueante*, *bloqueado*,
+sensibilidad y especificidad, y la desviación `runtime.agentSandbox: off` en Windows). En
+particular: **un resultado contrario a un criterio se reporta tal cual, con su contexto**
+(configuración, plataforma, versión, casos afectados y causa observada si se conoce); no se ajusta
+el corpus ni el harness para cumplir un criterio; donde el harness no tiene un control para lo que
+la prueba siembra, el resultado honesto es «no detectado» y esos casos se conservan en el
+denominador.
+
+Las cuatro suites usan la biblioteca de inventario (`evaluation/corpus/ladder/baseline`) y la tarea
+común de H01 (añadir `Inventory.low_stock(threshold)` con su prueba), salvo donde se indica. Cada
+suite escribe un JSONL por caso, condición y repetición, un resumen JSON con el criterio
+pre-registrado evaluado tal cual (`criteria.met`, `criteria.evaluable`) e intervalos de Wilson al
+95 %, y termina con 0 siempre que la suite corrió (1 solo si su propio aparato falló en algún caso,
+y el registro dice dónde).
+
+## H02 Pruebas que mienten: aserción trivial, sin aserción, mock del sujeto, no ejercitada
+
+- **Hipótesis:** tests tautológicos (`assert True`, `assert x == x`), sin aserción o que no
+  ejercitan el cambio pasan la suite visible y el harness los detecta por `tests.assertion-free`,
+  `tests.change-not-exercised`, `tests.weak`, `tests.mock-of-subject`,
+  `tests.changed-lines-uncovered`.
+- **Condiciones:** D\*; H con `verification.mutation.mode` ∈ {`off`, `warn`, `enforce`}
+  (`harness-mutation-off`, `harness` = lo que escribe `init`, que es `warn`,
+  `harness-mutation-enforce`); H-core.
+- **Corpus (40 casos):** 30 sembrados, 6 por clase, en cinco clases: *trivial* (aserción que no
+  puede fallar: `assert True`, `assert x == x`, `assert len(r) >= 0`, `isinstance`, `r or not r`,
+  `self.assertTrue(True)`), *sin aserción* (llama a `low_stock` y no comprueba nada), *mock del
+  sujeto* (`mock.patch.object`, `monkeypatch.setattr`, `MagicMock(spec=...)`, `mock.patch` por
+  ruta, subclase que sobrescribe, fixture que parchea), *no ejercitada* (el cambio, o parte de él,
+  no lo ejecuta ninguna prueba: módulo nuevo no importado, rama nueva sin prueba, ayudante nuevo
+  sin llamar, prueba que solo cubre otro método, llamada dentro de una función que nadie invoca,
+  prueba en un archivo que pytest no recoge) y *débil* (la prueba pasa también sin el cambio:
+  `pytest.raises(Exception)` alrededor de la llamada, `getattr` con valor por defecto, excepción
+  tragada, `hasattr` que salta la comprobación, comprobación sobre comportamiento previo). Más 10
+  limpios con casos límite (parametrizada, fixture, `unittest.TestCase`, aserción dentro de un
+  ayudante, `pytest.raises` de una rama de error, clase de pruebas, tabla de casos con bucle,
+  fixture en `conftest.py`, varias aserciones, rama de error y rama normal cubiertas). Los limpios
+  ejecutan todas las líneas cambiadas y fallan sin el cambio.
+- **Señales:** `tests.assertion-free`, `tests.tautological-assertion` (comprobación determinista
+  del panel de revisión), `tests.mock-of-subject`, `tests.weak`, `tests.change-not-exercised`,
+  `tests.changed-lines-uncovered`, `tests.changed-file-not-executed`, `tests.broken`,
+  `tests.interface-untested`. *Detectado por la unión* = al menos un hallazgo de alguna señal, de
+  cualquier severidad.
+- **Métricas:** sensibilidad por señal y clase, especificidad por señal en los 10 limpios (como
+  `ladder-summary.json`), sensibilidad y especificidad de la unión, bloqueos, D\* entregado,
+  segundos de la validación `harness.mutation` (registro `validation`, `startedAt`→`finishedAt`) y
+  su tope `maxSeconds`.
+- **Criterio de éxito:** en `harness` (configuración de `init`) la unión de señales alcanza
+  sensibilidad ≥ 0.9 (≥ 27 de 30) con especificidad ≥ 0.9 (≥ 9 de 10 limpios sin ninguna señal).
+  N01-a dio 0.875/0.625 en «cualquier señal»; si no se mejora se reporta como límite. Las otras
+  condiciones se reportan con las mismas métricas, sin criterio.
+- **Expectativa leída en el código antes de correr** (no es criterio): `tests.mock-of-subject` solo
+  existe como regla del catálogo del revisor con modelo (`resources/review/rules.yaml`); no hay
+  comprobación determinista y el revisor fixture no devuelve hallazgos, así que esa regla no
+  debería aparecer; los mocks del sujeto solo pueden caer por otras señales (`tests.weak`,
+  cobertura). `tests.assertion-free` tiene la severidad de `testQuality` (`MEDIUM`, no
+  bloqueante); con `mutation: warn` los hallazgos de mutación son `LOW`.
+- **Desviaciones declaradas:** (1) el catálogo dice «corre el corpus de `ladder_corpus.py` con casos
+  nuevos»; se usa el motor de las suites de intercepción (proveedor fixture de comando) por la
+  misma razón que H01 (ver «Operacionalización común»); la línea base es la misma biblioteca de
+  inventario. (2) El método pide 30 casos en 6 por clase, lo que da cinco clases; el título nombra
+  cuatro: la quinta es *débil* (pasa sin el cambio), la que mide `tests.weak`. (3) Mitigación del
+  sesgo: las pruebas reales de los 90 workspaces de la matriz 0.9.0 no están en el repositorio:
+  **no disponible**.
+- **Enmienda 2026-11-10 (antes de cualquier resultado).** Al revisar el aparato con una corrida
+  de humo local (que no es un resultado, regla 6) se leyó que, con la configuración de `init`,
+  la tarea de tamaño S toma el carril rápido aunque se lance con `run start`
+  (`lane.classified: fast`), y `friction.fastLane.skip` incluye `mutation`: la validación
+  `harness.mutation` no corre (`lane.step.skipped`) y las tres condiciones de modo de mutación
+  serían indistinguibles. Se **añaden** tres condiciones: los mismos tres modos con el carril
+  rápido apagado (`friction.fastLane.mode: off`, la clave que acepta el harness:
+  `configuration/friction.py`, `docs/reference/configuration.md`): `harness-full-mutation-off`,
+  `harness-full` (`warn`, el modo de `init`) y `harness-full-mutation-enforce`. Las condiciones
+  originales se conservan y se reportan igual. El criterio de éxito se evalúa tal cual en los dos
+  conjuntos y se reporta por separado: en `harness` (carril de `init`) y en `harness-full`. Los
+  casos, las señales y las métricas no cambian.
+  En la misma revisión se leyó que el registro `validation` de `harness.mutation` lleva
+  `startedAt` igual a `finishedAt`; los segundos de mutación se toman de `elapsedSeconds` del
+  artefacto `mutation-report` de esa validación (tope `maxSeconds` del mismo artefacto).
+
+## H04 Scope creep (cambios fuera del alcance declarado)
+
+- **Hipótesis:** un cambio válido que además toca archivos fuera de `ownedPaths` o escribe fuera
+  del ChangeSet (archivo ignorado, enlace simbólico, hooks, venv) es entregado por D\* y detenido
+  por el harness.
+- **Condiciones:** D\*; H (`init`, la tarea declara `metadata.ownedPaths` = el módulo y el archivo
+  de prueba de la funcionalidad); H-core con los mismos `ownedPaths`; H sin `ownedPaths`
+  (`harness-no-owned`: la misma configuración, la tarea no los declara).
+- **Corpus (25 casos):** 20 sembrados, todos con la funcionalidad correcta más algo fuera del
+  alcance: 1, 2, 3 y 5 archivos fuera con 1 a 200 líneas, README, workflow de CI,
+  `pyproject.toml`, `tox.ini` nuevo, migración SQL nueva, prueba existente modificada, otra prueba
+  modificada, archivo de documentación borrado, archivo renombrado, módulo nuevo de 200 líneas,
+  archivo ignorado por Git (`.env` y `local/cache.json`), hook en `.git/hooks`, archivo en `.venv`,
+  `.harness/project.yaml` modificado, enlace simbólico nuevo; más 5 limpios con todo dentro de los
+  `ownedPaths`.
+- **Definiciones:** *detectado* = hallazgo `workspace.outside-owned-paths` o
+  `workspace.out-of-changeset-write`. *Detenido* = el run queda *bloqueado* (definición común)
+  **o** ningún efecto fuera del alcance quedó en el workspace al final (la escritura se impidió o
+  se restauró: se comprueba archivo por archivo contra el contenido sembrado). *Líneas fuera del
+  alcance entregadas* = líneas de los archivos fuera del alcance (escritos o borrados) de los casos
+  no detenidos (D\*: de los casos entregados).
+- **Métricas:** hallazgos por regla y severidad, detenidos, proporción de líneas fuera del alcance
+  entregadas por condición, falsos positivos en los 5 limpios (hallazgo bloqueante y bloqueo por
+  cualquier causa), D\* entregado.
+- **Criterio de éxito:** H detiene el 100 % (20 de 20) de los sembrados con `ownedPaths` declarado;
+  en `harness-no-owned` se reporta la tasa de entrega (se espera 100 % para los archivos dentro del
+  ChangeSet y se documenta como límite). Los falsos positivos en limpios se reportan sin umbral (el
+  catálogo no fija uno).
+- **Expectativa leída en el código antes de correr** (no es criterio):
+  `workspace.outside-owned-paths` solo existe con `governance.stopTheLine` distinto de `off` y fuera
+  del modo parche (`orchestration/stop_line.py`), compara rutas exactas, y con `ownedPaths` el
+  ChangeSet se limita a esas rutas (`engine._compute_owned_diff`); H-core no tiene `stopTheLine` ni
+  `protectExcludedPaths`, así que no debería detectar nada.
+- **Desviaciones declaradas:** (1) bajo `runtime.agentSandbox: enforce` (Linux con bubblewrap) el
+  sandbox niega escribir en `.git` y `.harness`; el agente fixture de esta suite tolera una
+  escritura negada (la registra en `deniedWrites` y sigue), como un agente que recibe «permiso
+  denegado», en vez de terminar con error. Es una opción del archivo de cambio (`tolerateDenied`),
+  apagada en las suites anteriores. (2) El caso del enlace simbólico necesita permiso para crear
+  enlaces; en Windows sin ese permiso falla el aparato y el caso queda como error de aparato del
+  humo, no como resultado.
+
+## H09 Cambio tras la aprobación: digest y `verify-approval` en CI
+
+- **Hipótesis:** cualquier modificación posterior a la aprobación (un byte, renombrar, cambio de
+  modo, archivo nuevo, rebase que altera el diff, squash) invalida la aprobación en la puerta y en
+  la verificación del PR.
+- **Condiciones:** D\* (el commit se integra sin vínculo con ninguna aprobación: «entregado» = las
+  pruebas visibles pasan en la revisión resultante); H con `reverifyOnChange` (la configuración de
+  `init`; etapa *puerta*); CI con `harness verify-approval --base --head --bundle --no-workspace`
+  (etapa *CI*, solo el paquete de evidencia, como en un runner sin el estado local).
+- **Montaje:** un run gobernado con un cambio limpio llega a DECISION con el gate `PASSED`; la
+  persona simulada (`human.reviewer-simulated`, declarada) aprueba con `APPROVE` y el digest; el
+  cierre crea la rama `harness/<run>` (`delivery.closureCommit: branch` de `init`) y se exporta el
+  paquete (`harness export`). Si el run no llega a DECISION con `PASSED`, la etapa se marca «no
+  evaluada» (el aparato no funcionó) y se registra la causa.
+- **12 mutaciones post-aprobación** (sobre la rama de cierre; base = la revisión de partida): un
+  byte que cambia el comportamiento sin romper las pruebas (`<` → `<=`), salto de línea final
+  añadido, archivo de prueba renombrado, cambio de modo (`+x`), archivo nuevo, archivo aprobado
+  borrado, commit posterior que toca otro archivo (README), `--amend` del commit de cierre, rebase
+  sobre una base que cambió el mismo archivo (altera el diff), squash del cierre con un commit
+  posterior, enlace simbólico añadido, finales de línea CRLF. **3 integraciones sin cambio**: merge
+  `--no-ff`, rebase sobre una base que solo avanzó en un archivo ajeno (`--base` = la base nueva),
+  merge `--squash`. Además un **control** (la rama de cierre tal cual), reportado aparte.
+- **Etapa puerta:** las mutaciones que se pueden hacer en el workspace antes de decidir (9: byte,
+  salto de línea, renombrar, modo, archivo nuevo, borrar, README, enlace, CRLF), cada una en un run
+  nuevo que llegó a DECISION; se aplica y la persona simulada envía `gate decide APPROVE` con el
+  digest evaluado; se registra el código (5 esperado) y luego `run continue`
+  (`verification.reverify.authorized`, gate nuevo). Más un control sin mutación (0 esperado).
+  `--amend`, rebase y squash solo existen en Git: no aplican a la puerta.
+- **Métricas:** código de salida por mutación e integración en cada etapa, razones de
+  `verify-approval`, `verification.reverify.authorized`, gate tras la re-verificación, D\*
+  entregado.
+- **Criterio de éxito:** 12/12 mutaciones rechazadas por `verify-approval` (código 5) y 0 falsos
+  rechazos en las 3 integraciones (código 0); en la puerta, las 9 mutaciones aplicables rechazadas
+  (código 5) y el control aceptado. El control de CI se reporta y no entra en el conteo.
+- **Expectativa leída en el código antes de correr** (no es criterio): `verify-approval` trata el
+  cambio de modo y el enlace simbólico como `special` (falla siempre); el ChangeSet del workspace
+  excluye los enlaces simbólicos, así que en la puerta el enlace puede no cambiar el digest y el
+  `APPROVE` aceptarse; si ocurre se reporta así.
+- **Sesgo y desviación:** `squash` y `rebase` dependen de la forja; aquí se reproducen con Git
+  local (`merge --squash`, `rebase`), y se documenta que no se probó la integración de ninguna
+  forja.
+
+## H15 Trazabilidad requisito→prueba→decisión, post-hoc en directo y harness
+
+- **Hipótesis:** con ids de requisitos en el prompt, la trazabilidad se completa en el harness y es
+  mucho menor en el directo medida con el mismo script.
+- **Condiciones del catálogo:** corridas `direct` y `harness` del bloque A (post-hoc). Esas
+  corridas no existen todavía: el script `evaluation/trace_posthoc.py` lee los directorios de
+  corrida del bloque A (`--runs`) cuando existan y evalúa el criterio entonces.
+- **Instrumento (`trace_posthoc.py`):** independiente del paquete del harness (no importa
+  `governed_harness`). Identificador de un requisito: el token inicial de su texto (`A1.`,
+  `[B12]` o `X8:`, seguido de un espacio) o su `requirementId` explícito; de un criterio, su
+  `criterionId`. *Prueba que
+  nombra el id*: una prueba (archivo, clase `Test*` o función `test*`) cuyo nombre contiene el id
+  como tokens completos sin distinguir mayúsculas, o cuyo código (decoradores, docstring,
+  comentarios, cadenas) contiene el id como palabra completa con mayúsculas exactas. *Decisión
+  ligada al digest* (solo harness): una decisión `APPROVE` o `APPROVE_EXCEPTION` cuyo
+  `changeSetDigest` es el del run. Además, para los runs gobernados, las relaciones de
+  `harness_state.trace_completeness` (8 de 0.9.0 y las de 2.0.0).
+- **Parte determinista (añadida, no sustituye al método del catálogo):** valida el instrumento y
+  mide qué deja pasar el harness con cambios idénticos. 10 casos con verdad conocida sobre la tarea
+  de `low_stock` con cuatro requisitos `A1`–`A4` y cuatro criterios: ids en nombres, en
+  docstrings, en `pytest.param(id=...)`, en comentarios, la mitad nombrada, ninguno, casi-ids
+  (`A12`, `A1x`) que no cuentan, ids de criterio en vez de requisito, ids en minúscula en el texto
+  (no cuentan por la regla), sin pruebas nuevas. Condiciones D\*, H y H-core; en H y H-core la
+  persona simulada **decide en DECISION** (declarado): `APPROVE` cuando el gate es `PASSED`; si no,
+  ninguna decisión. *Entregado*: D\* = pruebas visibles pasan; H = `APPROVE` aceptado.
+- **Métricas:** fracción de requisitos con prueba nombrada y de criterios con prueba nombrada, por
+  caso y condición, sobre el workspace final y sobre lo entregado; decisión ligada al digest;
+  relaciones de `trace_completeness`; exactitud del instrumento contra la verdad del caso y acuerdo
+  con el informe del propio harness (`traceability.requirement-untested`).
+- **Criterio de éxito (del catálogo):** se reporta la fracción por condición; la hipótesis se
+  cumple si harness ≥ directo en cada celda (escenario × modelo) del bloque A. **Solo es evaluable
+  con los registros del bloque A**; el resumen de la parte determinista lo marca
+  `evaluable: false` y reporta sus métricas sin umbral.
+- **Sesgo declarado:** el prompt del directo también muestra los ids (reduce la ventaja del
+  harness). En la parte determinista el cambio es idéntico en las condiciones: la fracción sobre el
+  workspace final es igual por construcción y solo puede diferir lo entregado.
+
+---
 
 ## Segunda congelación: H19, H20, H44 y H45
 

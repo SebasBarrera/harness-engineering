@@ -21,7 +21,7 @@ for MODEL in $EVAL_MODELS; do
       continue
     fi
     log "host $MODEL rep $REP ($SC, $VARIANT)"
-    PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$CODE/run_embedded.py" --scenario "$SC" --model "$MODEL" \
+    PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$CODE/run_embedded.py" --scenario "$SC" --model "$MODEL" \
       --rep "$REP" --variant "$VARIANT" --work "$EVAL_WORK/runs/block-embedded/$MODEL" --cache "$EVAL_CACHE" \
       --out "$EVAL_OUT/embedded-$VARIANT-$MODEL.jsonl" ${DRY_FLAG[@]+"${DRY_FLAG[@]}"} \
       >> "$EVAL_OUT/log-$MODEL.txt" 2>&1 || log "FAILED host $MODEL rep $REP"

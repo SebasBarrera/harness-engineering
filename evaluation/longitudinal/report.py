@@ -124,7 +124,7 @@ def main() -> int:
         "conditions": {c: summarize(rows) for c, rows in sorted(by_condition.items())},
         "cells": {f"{m}|{c}": summarize(rows) for (m, c), rows in sorted(cells.items())},
     }
-    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8")
+    out.write_text(json.dumps(data, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     if len(sys.argv) > 3:
         figure(good, Path(sys.argv[3]))
     print(json.dumps(data["conditions"], indent=1, sort_keys=True))

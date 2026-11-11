@@ -209,3 +209,96 @@ def test_no_anchor_mode_reports_off(python_workspace: Path, tmp_path: Path, mode
     report = json.loads(_cli("verify", "--run", run, "--path", str(python_workspace)).stdout)
     assert report["valid"] is True
     assert report["runs"][0]["anchor"] == {"mode": "off", "status": "off"}
+
+
+# ----- events after the anchored head (#149) -----------------------------------------------
+def _append_unanchored(
+    workspace: Path, run: str, event_type: str, payload: dict[str, object]
+) -> None:
+    """Append an event the way a forger with the harness's code would, without re-anchoring."""
+    with HarnessApplication()._services(workspace) as services:
+        services.events.append(run, event_type, payload)
+
+
+def _delete_blob(workspace: Path) -> str:
+    with _db(workspace) as connection:
+        payload = connection.execute(
+            "SELECT payload_json FROM records WHERE record_type='evidence' LIMIT 1"
+        ).fetchone()[0]
+    uri = json.loads(payload)["artifactRef"]
+    digest = uri.removeprefix("artifact://sha256/")
+    target = workspace / ".harness" / "artifacts" / "blobs" / "sha256" / digest[:2] / digest[2:]
+    target.chmod(0o600)
+    target.unlink()
+    return str(uri)
+
+
+def test_events_after_the_anchor_are_a_warning(python_workspace: Path, tmp_path: Path) -> None:
+    run = _closed_run(python_workspace, tmp_path)
+    _append_unanchored(python_workspace, run, "note.forged", {"text": "after the anchor"})
+    result = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert result.exit_code == 0, result.stdout
+    report = json.loads(result.stdout)["runs"][0]
+    assert report["anchor"]["status"] == "matched"
+    assert report["anchor"]["eventsAfterAnchor"] == 1
+    assert report["anchor"]["unanchoredEvents"][0]["eventType"] == "note.forged"
+    assert "not covered by the anchor" in report["warnings"][0]
+
+
+def test_events_after_the_anchor_fail_under_fail(python_workspace: Path, tmp_path: Path) -> None:
+    _set_governance(python_workspace, unanchoredEvents="fail")
+    run = _closed_run(python_workspace, tmp_path)
+    clean = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert clean.exit_code == 0, clean.stdout
+    assert "warnings" not in json.loads(clean.stdout)["runs"][0]
+    _append_unanchored(python_workspace, run, "note.forged", {"text": "after the anchor"})
+    result = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert result.exit_code == 6
+    assert json.loads(result.stdout)["runs"][0]["anchor"]["status"] == "unanchored"
+
+
+def test_a_forged_prune_after_the_anchor_does_not_excuse_a_deleted_blob(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    run = _closed_run(python_workspace, tmp_path)
+    uri = _delete_blob(python_workspace)
+    _append_unanchored(python_workspace, run, "retention.artifacts.pruned", {"artifactRefs": [uri]})
+    result = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert result.exit_code == 6
+    [problem] = json.loads(result.stdout)["runs"][0]["artifacts"]["problems"]
+    assert problem["uri"] == uri
+    assert problem["problem"] == "missing"
+    assert "after the anchored head" in problem["detail"]
+
+
+def test_an_anchored_prune_still_excuses_its_blob(python_workspace: Path, tmp_path: Path) -> None:
+    from governed_harness.orchestration.engine import RunEngine
+
+    run = _closed_run(python_workspace, tmp_path)
+    uri = _delete_blob(python_workspace)
+    with HarnessApplication()._services(python_workspace) as services:
+        # What retention does: the prune event, then a new anchor.
+        services.events.append(run, "retention.artifacts.pruned", {"artifactRefs": [uri]})
+        RunEngine(services).anchor_chain(run)
+    result = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert result.exit_code == 0, result.stdout
+
+
+def test_without_the_key_events_after_the_anchor_keep_the_1x_behaviour(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # The design limit of a project without governance.unanchoredEvents: the anchor covers the
+    # chain up to its head, and a prune event after it still excuses a missing artifact.
+    config = python_workspace / ".harness" / "project.yaml"
+    value = yaml.safe_load(config.read_text(encoding="utf-8"))
+    value["governance"].pop("unanchoredEvents")
+    config.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    run = _closed_run(python_workspace, tmp_path)
+    uri = _delete_blob(python_workspace)
+    _append_unanchored(python_workspace, run, "retention.artifacts.pruned", {"artifactRefs": [uri]})
+    result = _cli("verify", "--run", run, "--path", str(python_workspace))
+    assert result.exit_code == 0, result.stdout
+    report = json.loads(result.stdout)["runs"][0]
+    assert report["anchor"]["eventsAfterAnchor"] == 1
+    assert "unanchoredEvents" not in report["anchor"]
+    assert "warnings" not in report

@@ -4,12 +4,14 @@ limits and the registry of script contracts."""
 from __future__ import annotations
 
 import json
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from pydantic import ValidationError
 
 from governed_harness.agents.contract import (
+    PANEL_RESULT_KEYS,
     TASK_FIELDS,
     check_answer,
     limit_summary,
@@ -23,6 +25,10 @@ from governed_harness.configuration.agent_contract import (
     AgentContractConfig,
 )
 from governed_harness.configuration.models import ProjectConfiguration, ValidatorDefinition
+from governed_harness.domain.enums import MetricQuality, ResultStatus
+from governed_harness.domain.models import ResourceUsage
+from governed_harness.orchestration.agent_contract import AgentContractFlow, budgeted_tokens
+from governed_harness.orchestration.agent_contract_types import CallLimits
 
 RAW = {"configVersion": "1.0", "projectId": "p", "workspace": {"root": ".."}}
 SECTION = "agentContract"
@@ -214,6 +220,85 @@ def test_a_limit_response_names_the_limit() -> None:
     assert value.limit_reached == "tokens"
 
 
+# ----- the token budget of a call (#70) ------------------------------------------------------
+M_LIMITS = CallLimits(size="M", tokens=200_000, seconds=1800)
+
+
+def usage(**values: int) -> ResourceUsage:
+    return ResourceUsage(
+        usage_id="usage_1",
+        execution_id="exec_1",
+        wall_time_ms=1,
+        quality=MetricQuality.REPORTED,
+        **values,  # type: ignore[arg-type]
+    )
+
+
+def judge(value: ResourceUsage | None) -> tuple[str, str] | None:
+    answer = SimpleNamespace(status=ResultStatus.PASSED, tool_invocations=(), usage=value)
+    return AgentContractFlow(None).judge_limit(cast(Any, answer), M_LIMITS)
+
+
+def test_prompt_cache_reads_do_not_count_against_the_budget() -> None:
+    # The pilot's read-only clarify call: 350 160 tokens, almost all of them cache reads.
+    reported = usage(
+        input_tokens=349_000,
+        cache_tokens=346_500,
+        cache_read_tokens=340_000,
+        output_tokens=1_160,
+    )
+    assert budgeted_tokens(reported) == (10_160, 340_000)
+    assert judge(reported) is None
+
+
+def test_fresh_tokens_above_the_budget_still_reach_the_limit() -> None:
+    reported = usage(
+        input_tokens=500_000,
+        cache_tokens=300_000,
+        cache_read_tokens=100_000,
+        output_tokens=5_000,
+        reasoning_tokens=1_000,
+    )
+    limit = judge(reported)
+    assert limit is not None
+    name, description = limit
+    assert name == "tokens"
+    assert "406000 counted tokens" in description
+    assert "of a budget of 200000" in description
+    assert "100000 prompt-cache read tokens" in description
+
+
+def test_cache_creation_counts_against_the_budget() -> None:
+    reported = usage(input_tokens=250_000, cache_tokens=250_000, output_tokens=10)
+    assert budgeted_tokens(reported) == (250_010, 0)
+    assert judge(reported) is not None
+
+
+def test_a_provider_without_the_cache_split_counts_as_before() -> None:
+    reported = usage(input_tokens=199_000, output_tokens=900, reasoning_tokens=100)
+    assert budgeted_tokens(reported) == (200_000, 0)
+    assert judge(reported) is None
+    above = usage(input_tokens=199_000, output_tokens=900, reasoning_tokens=101)
+    assert judge(above) is not None
+    assert budgeted_tokens(None) == (0, 0)
+    assert judge(None) is None
+
+
+def test_cache_reads_are_never_subtracted_beyond_the_input() -> None:
+    reported = usage(input_tokens=1_000, cache_read_tokens=900_000, output_tokens=250_000)
+    assert budgeted_tokens(reported) == (250_000, 1_000)
+    assert judge(reported) is not None
+
+
+def test_usage_without_cache_reads_keeps_its_stored_form() -> None:
+    dumped = usage(input_tokens=10).model_dump(mode="json", by_alias=True)
+    assert "cacheReadTokens" not in dumped
+    assert (
+        usage(input_tokens=10, cache_read_tokens=4).model_dump(by_alias=True)["cacheReadTokens"]
+        == 4
+    )
+
+
 # ----- the limits of a response --------------------------------------------------------------
 CONFIG = AgentContractConfig.model_validate({"limits": {"resultBytes": 2000, "fieldChars": 100}})
 
@@ -237,6 +322,28 @@ def test_file_content_is_a_problem_when_a_conclusion_is_due() -> None:
     assert any("carries file content" in item for item in problems)
 
 
+def test_layer_names_of_an_allow_mapping_are_not_file_content() -> None:
+    # Regression: a layer called source, content or body was rejected as file content.
+    allow = {"source": ["domain"], "content": ["source"], "body": [], "domain": []}
+    result = {
+        "style": "layered",
+        "layers": [{"name": "source", "paths": ["src/**"]}],
+        "allow": allow,
+        "options": [{"id": "a", "allow": allow}],
+    }
+    assert check_answer("architecture", result, AgentContractConfig()) == []
+
+
+def test_file_content_elsewhere_in_an_architecture_result_is_still_a_problem() -> None:
+    result = {
+        "layers": [{"name": "core", "source": "def f(): ..."}],
+        "allow": {"core": {"content": "def g(): ..."}},
+    }
+    problems = check_answer("architecture", result, AgentContractConfig())
+    assert any("result.layers[0].source carries file content" in item for item in problems)
+    assert any("result.allow.core.content carries file content" in item for item in problems)
+
+
 def test_acceptance_may_return_the_content_of_its_tests() -> None:
     result = {"tests": [{"path": "tests/acceptance/test_a.py", "content": "x" * 500}]}
     assert check_answer("acceptance", result, AgentContractConfig()) == []
@@ -245,6 +352,19 @@ def test_acceptance_may_return_the_content_of_its_tests() -> None:
 def test_a_key_outside_the_contract_is_a_problem() -> None:
     problems = check_answer("plan", {"subtasks": [], "notes": "my reasoning"}, CONFIG)
     assert any("outside the plan contract" in item for item in problems)
+
+
+def test_a_panel_reviewer_answer_is_checked_with_the_panel_keys() -> None:
+    # #149: the verdict object of a panel reviewer, with the limits of a review call.
+    answer = {"verdict": "PASS", "summary": "ok", "findings": [], "model": "m"}
+    assert check_answer("review", answer, CONFIG, keys=PANEL_RESULT_KEYS) == []
+    assert any(
+        "outside the review contract: model, summary, verdict" in item
+        for item in check_answer("review", answer, CONFIG)
+    )
+    large = {**answer, "findings": [{"evidence": "x" * 90}] * 40}
+    problems = check_answer("review", large, CONFIG, keys=PANEL_RESULT_KEYS)
+    assert any("above the cap of 2000" in item for item in problems)
 
 
 def test_no_result_has_no_problem() -> None:

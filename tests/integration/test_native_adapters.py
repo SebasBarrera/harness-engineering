@@ -57,17 +57,42 @@ OUTPUTS = {
     'print(json.dumps({"type": "turn.completed", "usage": {"input_tokens": 300, '
     '"cached_input_tokens": 10, "output_tokens": 50}}))',
     "gemini-cli": 'print(json.dumps({"response": answer, "stats": {"models": {"gemini-x": '
-    '{"tokens": {"prompt": 210, "candidates": 33, "total": 250, "thoughts": 7}}}}}))',
+    '{"tokens": {"prompt": 210, "candidates": 33, "total": 250, "thoughts": 7, "cached": 60}}}}}))',
     "aider": 'print("Applied edit to src/sample/pricing.py")\n'
     'print("Tokens: 1.2k sent, 345 received. Cost: $0.0012 message, $0.0034 session.")\n'
     "print(answer)",
 }
 
 EXPECTED_USAGE = {
-    "claude-code": {"input_tokens": 125, "output_tokens": 40, "cost_usd": 0.0421},
-    "codex": {"input_tokens": 300, "output_tokens": 50, "cost_usd": None},
-    "gemini-cli": {"input_tokens": 210, "output_tokens": 33, "cost_usd": None},
-    "aider": {"input_tokens": 1200, "output_tokens": 345, "cost_usd": 0.0034},
+    # The cache tokens are part of the input; the cache reads are part of the cache tokens.
+    "claude-code": {
+        "input_tokens": 125,
+        "output_tokens": 40,
+        "cost_usd": 0.0421,
+        "cache_tokens": 25,
+        "cache_read_tokens": 5,
+    },
+    "codex": {
+        "input_tokens": 300,
+        "output_tokens": 50,
+        "cost_usd": None,
+        "cache_tokens": 10,
+        "cache_read_tokens": 10,
+    },
+    "gemini-cli": {
+        "input_tokens": 210,
+        "output_tokens": 33,
+        "cost_usd": None,
+        "cache_tokens": 60,
+        "cache_read_tokens": 60,
+    },
+    "aider": {
+        "input_tokens": 1200,
+        "output_tokens": 345,
+        "cost_usd": 0.0034,
+        "cache_tokens": None,
+        "cache_read_tokens": None,
+    },
 }
 
 # Any value of 8 or more characters is redacted; this one does not imitate a real key format.

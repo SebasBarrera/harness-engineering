@@ -50,7 +50,7 @@ OUT="$EVAL_OUT/rides.jsonl"
 
 # True when the run (model, condition, level, rep) already has a record in $OUT.
 recorded() {
-  [ -f "$OUT" ] && "$SLOT/bin/python" - "$OUT" "$@" << 'PY'
+  [ -f "$OUT" ] && "$SLOT/$VENV_BIN/python" - "$OUT" "$@" << 'PY'
 import json, sys
 model, condition, level, rep = sys.argv[2:]
 rows = [json.loads(line) for line in open(sys.argv[1], encoding="utf-8") if line.strip()]
@@ -72,7 +72,7 @@ for MODEL in $EVAL_MODELS; do
       for ATTEMPT in $(seq 1 "${EVAL_LIMIT_MAX_WAITS:-48}"); do
         log "start $RUN (attempt $ATTEMPT)"
         # A run whose runner died is resumed by the same command (run_rides.py reuses its directory).
-        PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$CODE/rides/run_rides.py" --level "$LEVEL" \
+        PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$CODE/rides/run_rides.py" --level "$LEVEL" \
           --condition "$CONDITION" --model "$MODEL" --rep "$REP" --work "$EVAL_WORK/runs/rides/$MODEL" \
           --out "$OUT" >> "$EVAL_OUT/log-$MODEL.txt" 2>&1
         CODE_RUN=$?
@@ -89,7 +89,7 @@ for MODEL in $EVAL_MODELS; do
 done
 # The hidden suite lives only in this checkout: score the kept workspaces with it.
 # rescore.py writes rides.scored.jsonl next to rides.jsonl; its per-run lines go to summary-rescore.txt.
-if [ -f "$OUT" ] && ! PATH="$(slot_path "$SLOT")" "$SLOT/bin/python" "$EVAL_DIR/rides/rescore.py" "$OUT" \
+if [ -f "$OUT" ] && ! PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$EVAL_DIR/rides/rescore.py" "$OUT" \
   > "$EVAL_OUT/summary-rescore.txt" 2>&1; then
   log "FAILED rescore (see summary-rescore.txt)"
   exit 1

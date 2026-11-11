@@ -68,6 +68,7 @@ def render_markdown(report: dict[str, Any]) -> str:
                 ["Input tokens", totals["tokens"]["input"]],
                 ["Output tokens", totals["tokens"]["output"]],
                 ["Cache tokens (in input)", totals["tokens"]["cache"]],
+                ["Cache-read tokens (in cache)", totals["tokens"]["cacheRead"]],
                 ["Reported cost (USD)", totals["cost"]["reportedUsd"]],
                 ["Estimated cost (USD, estimated)", totals["cost"]["estimatedUsd"]],
                 ["Calls without a price", totals["cost"]["unpricedCalls"]],

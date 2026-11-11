@@ -766,6 +766,7 @@ class RetrospectiveConfig(ConfigModel):
 DeciderIdentity = Literal["git", "default"]
 StopTheLine = Literal["restore", "block", "off"]
 ChainAnchorMode = Literal["file", "git-note", "off"]
+UnanchoredEvents = Literal["warn", "fail"]
 
 DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
 """Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
@@ -793,6 +794,12 @@ class GovernanceConfig(ConfigModel):
       ``status`` adds the result of the record check.
     * ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event
       chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.
+    * ``unanchoredEvents`` (#149): how ``harness verify`` treats the events after the anchored
+      head, which the anchor does not cover. ``warn`` lists them as a warning and ``fail`` also
+      fails the run; under either, a ``retention.artifacts.pruned`` event excuses a missing
+      artifact only when it is within the anchored part of the chain. Absent, the events after
+      the anchor are only counted (``eventsAfterAnchor``) and every prune event excuses, as in
+      1.x.
     * ``pinTaskRevision``: a run works on the task revision it was created with (or a revision
       made through ``task clarify``), ``task create`` refuses a task id that has an open run, and
       a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.
@@ -847,6 +854,7 @@ class GovernanceConfig(ConfigModel):
     trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
     verify_records: bool | None = Field(default=None, alias="verifyRecords")
     chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
+    unanchored_events: UnanchoredEvents | None = Field(default=None, alias="unanchoredEvents")
     pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
     protect_excluded_paths: bool | None = Field(default=None, alias="protectExcludedPaths")
     workspace_lease: bool | None = Field(default=None, alias="workspaceLease")
