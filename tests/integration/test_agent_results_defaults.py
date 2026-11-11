@@ -48,6 +48,8 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
         "maxRounds": 3,
         "maxQuestions": 8,
         "onExhausted": "assume",
+        # 2.0.1: no new review once a round settled.
+        "skipSettled": True,
     }
     assert config["review"]["agentReview"] == "enforce"
     assert config["governance"]["stopTheLine"] == "restore"
@@ -57,7 +59,11 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
     # #85: the invoking model is the ceiling of the routing tables.
     assert config["agentRouting"]["mode"] == "anchored"
     # #97: the contract of agent calls, one cap of five iterations per agent.
-    assert config["agentContract"] == {"mode": "enforce", "maxIterations": 5}
+    assert config["agentContract"] == {
+        "mode": "enforce",
+        "maxIterations": 5,
+        "budgetProfile": "by-kind",
+    }
     # #80: a broken read-only answer gets a second attempt.
     assert config["runtime"]["contractRetry"] == {"mode": "once"}
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
