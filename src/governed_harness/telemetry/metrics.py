@@ -18,6 +18,8 @@ from governed_harness.domain.models import (
 from governed_harness.events.sqlite_store import StoredEvent
 from governed_harness.storage.sqlite import SQLiteStateStore
 
+_EVENT_STORE = "event store"
+
 HUMAN_INTERACTION_EVENTS: dict[str, str] = {
     "human.decision.recorded": "decision",
     "intent.clarified": "clarification",
@@ -166,7 +168,7 @@ class MetricsProjector:
                 "ms",
                 MetricQuality.OBSERVED,
                 "Wall-clock time between the first and last persisted execution event.",
-                "event store",
+                _EVENT_STORE,
             ),
             "duration.phase_ms": MetricValue(
                 "duration.phase_ms",
@@ -224,7 +226,7 @@ class MetricsProjector:
                 "count",
                 MetricQuality.DERIVED,
                 "Count of IMPLEMENTATION phase-start events.",
-                "event store",
+                _EVENT_STORE,
             ),
             "correction.cycles": MetricValue(
                 "correction.cycles",
@@ -233,7 +235,7 @@ class MetricsProjector:
                 MetricQuality.OBSERVED,
                 "Count of authorized transitions back to IMPLEMENTATION: REQUEST_CHANGES "
                 "decisions and automatic corrections after a failed VERIFICATION.",
-                "event store",
+                _EVENT_STORE,
             ),
             "correction.verification_cycles": MetricValue(
                 "correction.verification_cycles",
@@ -241,7 +243,7 @@ class MetricsProjector:
                 "count",
                 MetricQuality.OBSERVED,
                 "Automatic corrections after a failed VERIFICATION (runtime.verificationCorrections).",
-                "event store",
+                _EVENT_STORE,
             ),
             "agent.transient_retries": MetricValue(
                 "agent.transient_retries",
@@ -249,7 +251,7 @@ class MetricsProjector:
                 "count",
                 MetricQuality.OBSERVED,
                 "Command-provider calls repeated after a transient failure (runtime.providerRetries).",
-                "event store",
+                _EVENT_STORE,
             ),
             "agent.unsupported_claims": MetricValue(
                 "agent.unsupported_claims",
@@ -265,7 +267,7 @@ class MetricsProjector:
                 "count",
                 MetricQuality.DERIVED,
                 "Count of INDEPENDENT_REVIEW phase-start events.",
-                "event store",
+                _EVENT_STORE,
             ),
             "replanning.count": MetricValue(
                 "replanning.count",
@@ -273,7 +275,7 @@ class MetricsProjector:
                 "count",
                 MetricQuality.OBSERVED,
                 "Count of plan replacement events after the first accepted plan.",
-                "event store",
+                _EVENT_STORE,
             ),
             "validation.non_passed": MetricValue(
                 "validation.non_passed",

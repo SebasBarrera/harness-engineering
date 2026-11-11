@@ -110,7 +110,8 @@ class ExcludedPathGuard:
     def _prune(self, prints: dict[str, str], current: Path, dirnames: list[str]) -> None:
         """Fingerprint the symbolic links among ``dirnames`` and leave them, and the pruned
         directories, out of the walk."""
-        for name in list(dirnames):
+        # A copy: the loop removes pruned names from dirnames, which os.walk reads.
+        for name in list(dirnames):  # NOSONAR(S7504)
             path = current / name
             if path.is_symlink():
                 self._add(prints, path)

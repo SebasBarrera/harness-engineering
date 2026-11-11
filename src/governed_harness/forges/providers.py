@@ -82,13 +82,14 @@ class BaseForge:
         return {"action": action, **result}
 
     # ----- reports, pull requests, statuses ----------------------------------------------------
+    # The parameters are those of the forge interface; a forge without the API ignores them.
     def upload_reports(
         self,
-        number: int,
+        number: int,  # NOSONAR(S1172) BaseForge interface
         *,
-        sarif: bytes | None,
-        code_quality: bytes | None,
-        commit_sha: str | None,
+        sarif: bytes | None,  # NOSONAR(S1172) BaseForge interface
+        code_quality: bytes | None,  # NOSONAR(S1172) BaseForge interface
+        commit_sha: str | None,  # NOSONAR(S1172) BaseForge interface
     ) -> dict[str, Any]:
         return {"status": "SKIPPED", "reason": f"{self.kind} has no report upload API"}
 

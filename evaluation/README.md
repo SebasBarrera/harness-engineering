@@ -1,88 +1,52 @@
 # Controlled evaluation
 
-Code, fixtures, hidden tests and results of the controlled evaluation of the Governed Agent Harness
-`v0.9.0` (thesis chapter 7). The same agent (Claude Code, non-interactive mode) implements the same
-tasks with and without the harness, and every run is measured in the same way afterwards.
+Code, fixtures, hidden tests and launchers of the controlled evaluation of the Governed Agent Harness
+(thesis chapter 7). The evaluation reports only version 2.0.0; the campaign is in progress (plan,
+catalogue and scripts in [`campaign/`](campaign/)). Results of earlier versions are not part of this
+analysis: they are in the git history and the `v0.8.0` tag. The same agent (Claude Code,
+non-interactive mode) implements the same tasks with and without the harness, and every run is
+measured in the same way afterwards.
 
 ## Design
 
 | Factor | Levels |
 |---|---|
 | Scenario | `greenfield` (shipping cost library from `SPEC.md`), `brownfield` (strict base64 decoding in `pallets/itsdangerous` 2.2.0), `security` (alerts client whose specification mentions a development password) |
-| Condition | `baseline` (the agent alone), `harness` (the agent as the command provider of `harness run start`) |
+| Condition | see [Conditions](#conditions-conditionspy) |
 | Model | `claude-haiku-4-5-20251001`, `claude-sonnet-5-5`, `claude-opus-5-5` |
-| Repetitions | 5 per cell, counterbalanced order with a fixed seed |
 
-Both conditions use the same prompt (`agentlib.build_prompt`), the same tool set and permission
-mode, the same time limit and a minimal environment. The harness condition applies a decision rule
+Every condition uses the same prompt (`agentlib.build_prompt`), the same tool set and permission
+mode, the same time limit and a minimal environment. The governed conditions apply a decision rule
 declared before the runs (`run_eval.py`): approve when the gate passes, request changes with the
 gate reasons and findings as feedback when it does not (at most two correction cycles), reject
 otherwise; a run that stops before `DECISION` is not delivered.
 
 `fault_probes.py` complements the comparison: a deterministic provider (`fault_provider.py`)
 applies the reference solution of the brownfield task plus one known fault, and the probe records
-which control reacts (regression, failing test, secret, dynamic evaluation, missing mandatory tool,
-change after the gate, tampered event log, change outside the declared paths, timeout, output flood,
-unauthorized command).
+which control reacts.
 
-Three further blocks reuse the same scenarios and measures:
-
-| Block | What changes | Runs |
-|---|---|---|
-| Instruction levels (`--prompt poor`, `--prompt casual`) | The task shrinks to a title, a one-sentence intent and the criterion `It works.` (`tasks/*-poor.yaml`), or to a one-line prompt (`tasks/*-casual.txt`, baseline only: the harness rejects a task without acceptance criteria) | 81, 3 per cell |
-| Second agent (`--agent codex`) | Codex CLI 0.159.2 with two models and the full task | 35 valid, 3 per cell |
-| Iterative development (`longitudinal/`) | Five increments of one library: one-line prompts without the harness, structured tasks with it; an oracle of 25 hidden checks sends the same bug reports to both conditions, at most two rounds per increment | 17 valid sessions, 3 per cell |
+Other blocks reuse the same scenarios and measures: instruction levels (`--prompt poor`,
+`--prompt casual`), a second agent (`--agent codex`) and iterative development (`longitudinal/`).
 
 ## Measures (`measure.py`)
 
 - Hidden acceptance tests (`hidden/`), never shown to the implementer.
-- The repository's own test suite and, for the brownfield scenario, the original 297 tests of the
+- The repository's own test suite and, for the brownfield scenario, the original tests of the
   project run against the final source (regressions).
 - Size and scope of the change, coverage of the changed source lines, Ruff and Bandit findings
   introduced in the changed files, and whether the development password appears in the change.
-- Agent usage reported by the CLI (tokens, cost, turns, duration) and, in the harness condition,
+- Agent usage reported by the CLI (tokens, cost, turns, duration) and, in the governed conditions,
   the gate history, decisions, events, event-chain validity and trace completeness.
-
-## Reproduce
-
-Requirements: Python 3.12, Git, an authenticated Claude Code CLI and the `v0.9.0` wheel.
-
-```bash
-python3.12 -m venv .venv
-.venv/bin/pip install governed_agent_harness-0.9.0-py3-none-any.whl pytest==8.3.5 freezegun==1.4.0 \
-  ruff==0.16.7 mypy==2.3.1 coverage==7.16.1 bandit==1.9.4 matplotlib
-mkdir -p cache && curl -sSfL -o cache/itsdangerous-2.2.0.tar.gz \
-  https://github.com/pallets/itsdangerous/archive/refs/tags/2.2.0.tar.gz   # SHA-256 7b0c6d41…37f2b
-PATH="$PWD/.venv/bin:$PATH" .venv/bin/python evaluation/run_matrix.py --model claude-sonnet-5-5 \
-  --scenarios greenfield,brownfield,security --work work --cache cache --out results/claude-sonnet-5-5.jsonl
-.venv/bin/python evaluation/report.py results results/summary.json figures
-```
-
-Use one virtual environment per concurrently running model: the brownfield project is made
-importable through a `.pth` file in the environment's `site-packages`.
 
 ## Results
 
-`results/` holds one JSON line per run or session; local paths and run identifiers are not recorded.
-
-| File | Content | Aggregated by |
-|---|---|---|
-| `claude-<model>.jsonl`, `claude-<model>-security.jsonl` | Full task, with and without the harness (90 runs) | `report.py` → `summary.json` |
-| `claude-minimal-<model>.jsonl`, `claude-casual-<model>.jsonl`, `casual-harness-rejection.json` | Instruction levels (81 runs) and the rejection of the one-line prompt | `report_prompts.py` → `summary-prompts.json` |
-| `codex-<model>.jsonl` | Second agent (35 runs) | `report_prompts.py` → `summary-prompts.json` |
-| `longitudinal-<model>.jsonl` | Iterative development (18 sessions, 17 valid) | `longitudinal/report.py` → `summary-longitudinal.json` |
-| `fault-probes.jsonl` | 13 probes, 3 repetitions each | `report.py` → `summary.json` |
-| `review-posthoc.jsonl` | Review rules applied to the final change of every run of the first block | `posthoc_review.py` |
-| `phases-retrospective.jsonl` | Seconds per phase, decisions, non-passed validations and retrospective recommendations of the 45 governed runs of the first block | `report_phases.py` → `summary-phases.json` |
-| `benchmark-*.json`, `environment.json` | Benchmarks of the prototype; versions, digests and excluded runs | — |
-
-`posthoc_review.py` and `report_phases.py` read the run directories left under `--work`, which keep
-the workspace and the harness state of each run.
+`results-2.0.0/<block>/` holds the records of the 2.0.0 evaluation; the deterministic suites are in
+`results-2.0.0/deterministic/`. Local paths and run identifiers are not recorded. No result of an
+earlier version is kept in the tree.
 
 ## The 2.0.0 evaluation
 
-Everything is measured again on the harness under test; no figure of the 0.9.0 to 1.1.0 runs is mixed
-with the new ones. Results go to `results-2.0.0/<block>/` (JSONL records, summaries,
+Everything is measured on the harness under test. Results go to `results-2.0.0/<block>/` (JSONL records, summaries,
 `environment.json`); the raw run directories stay in the launcher's work directory, outside the
 repository, and the records carry no local path or run id.
 
@@ -90,7 +54,7 @@ repository, and the records carry no local path or run id.
 
 | Condition | Configuration (`.harness/project.yaml`, kept in every run directory and in the record as `projectConfig`) |
 |---|---|
-| `direct` | None: Claude Code alone (`baseline` in the 0.9.0 records). |
+| `direct` | None: Claude Code alone (`baseline` in earlier records). |
 | `harness-core` | The file `harness init` wrote in 1.0.0, key by key: none of the keys added after 1.0.0 (`coreCheck.extraKeys` is empty). With `--core-reference-src <1.0.0 src>` the run checks that the 1.0.0 resolver computes the same configuration digest for it (`coreCheck.digestEqual`). |
 | `harness` | What `harness init` of the version under test writes (every 2.0.0 setting on), with `agentRouting.mode: fixed`: every call uses the cell's model. |
 | `harness-anchored` | What `harness init` writes, routing left as init writes it since wave 9 (`anchored`, #85), with `agentRouting.anchorModel` set to the cell's model: the router chooses the model and effort of each call from the default tables with the invoking model as the ceiling (`agent.routing.decided` with its `anchor`). The factor is the invoking model: Haiku, Sonnet or Opus. It replaces `harness-tiered` of the first pilot, where the default tables ignored the invoking model. |
@@ -179,7 +143,7 @@ apart from implementation calls.
 ### Dry run
 
 ```bash
-python evaluation/dry_run.py --work <dir> --cache <dir> --out evaluation/results-2.0.0/dry-run \
+python evaluation/dry_run.py --work <dir> --cache <dir> --out <dir outside the repo> \
   --core-reference-src <harness 1.0.0 src>      # every condition, fake CLI, 0 model calls
 ```
 
@@ -222,6 +186,5 @@ condition's command line. Before wave 9 the dry run with the `harness` configura
 DECISION: the session provider took the frozen acceptance tests the harness writes as the session's
 edits, verification failed, and stop the line quarantined the change together with those files.
 Since wave 9 (#81) those files are not the session's edits and stop the line keeps them, and the
-dry run of the `harness` configuration is approved (`results-2.0.0/dry-run/embedded-dry.jsonl`,
-case `embedded-init`). `--variant no-acceptance` (acceptance tests and stop the line off, declared
+dry run of the `harness` configuration is approved (`embedded-dry.jsonl`, case `embedded-init`). `--variant no-acceptance` (acceptance tests and stop the line off, declared
 as an ablation) is kept for comparison.
