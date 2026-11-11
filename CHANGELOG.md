@@ -2,12 +2,13 @@
 
 ## Unreleased
 
-- Security: the `generic_secret_assignment` redaction rule (unchanged since 0.8.0) now
-  treats a backslash escape as part of an unquoted value (#157, found by the H45 evaluation
-  suite). On a JSON artifact it used to cut `secret = os.environ.get(\"X\")` after the
-  backslash, leaving invalid JSON (the provider feedback of a correction could not be read and
-  IMPLEMENTATION ended in `ERROR`), and it did not redact a quoted value such as
-  `password=\"...\"` inside a JSON string at all.
+- The `generic_secret_assignment` redaction rule (unchanged since 0.8.0) no longer ends an
+  unquoted value on the backslash of an escaped quote (#157, found by the H45 evaluation suite).
+  On a JSON artifact it cut `secret = os.environ.get(\"X\")` after the backslash, leaving
+  invalid JSON: the provider feedback of a correction could not be read and IMPLEMENTATION ended
+  in `ERROR`. What the rule redacts is otherwise unchanged; a quoted value escaped inside a JSON
+  string (`password=\"...\"`) is still not redacted, as in 1.0.0 (a stored patch task carries
+  its code that way, and redacting it changes the code the run applies).
 - Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
   `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
   retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
