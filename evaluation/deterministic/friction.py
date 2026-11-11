@@ -10,7 +10,8 @@ configuration ``harness init`` writes.
 
 Conditions:
 
-* ``full``: ``harness init`` without the ``friction`` section (every task takes the full flow):
+* ``full``: ``harness init`` without the ``friction`` section and with
+  ``governance.riskProfile: full`` (every task takes the full flow):
   ``task create``, ``run start`` and ``gate decide``;
 * ``fast-lane``: ``harness init`` as written: ``harness do TEXT`` and ``gate decide``;
 * ``fast-lane+pre-approval``: ``harness do TEXT --pre-approve`` (and ``gate decide`` only when
@@ -188,6 +189,9 @@ def configure(root: Path, run_dir: Path, log: Path, change: Path, *, friction: b
     config = platform_config(yaml.safe_load(path.read_text()))
     if not friction:
         config.pop("friction", None)
+        # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+        # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+        config.setdefault("governance", {})["riskProfile"] = "full"
     agent = run_dir / "agent.py"
     agent.write_text(AGENT)
     config["agentProvider"] = "fixture"

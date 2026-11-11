@@ -623,7 +623,8 @@ def config_with_mutation(
     mode: str | None, *, full_lane: bool = False
 ) -> interception.ConfigBuilder:
     """``harness init`` with ``verification.mutation.mode`` set (``None`` keeps init's) and, for
-    the conditions of the amendment (PREREGISTRO.md, H02), ``friction.fastLane.mode: off``."""
+    the conditions of the amendment (PREREGISTRO.md, H02), ``friction.fastLane.mode: off`` and
+    ``governance.riskProfile: full``."""
 
     def build(config: dict[str, Any]) -> dict[str, Any]:
         if mode is not None:
@@ -633,6 +634,9 @@ def config_with_mutation(
             friction = config.setdefault("friction", {})
             lane = friction.get("fastLane")
             friction["fastLane"] = {**(lane if isinstance(lane, dict) else {}), "mode": "off"}
+            # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+            # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+            config.setdefault("governance", {})["riskProfile"] = "full"
         return config
 
     return build
@@ -666,7 +670,7 @@ SUITE = interception.Suite(
         "harness": "harness init as written (verification.mutation.mode: warn)",
         "harness-mutation-off": "harness init with verification.mutation.mode: off",
         "harness-mutation-enforce": "harness init with verification.mutation.mode: enforce",
-        "harness-full*": "the amendment: the three mutation modes with friction.fastLane.mode: off (init's fast lane skips mutation)",
+        "harness-full*": "the amendment: the three mutation modes with friction.fastLane.mode: off and governance.riskProfile: full (init's fast lane skips mutation)",
         "mockOfSubject": "tests.mock-of-subject is a rule of the model reviewer's catalogue only; the fixture reviewer returns no finding (PREREGISTRO.md, expectation)",
         "unavailable": "the tests of the 90 workspaces of the 0.9.0 matrix are not in the repository",
     },

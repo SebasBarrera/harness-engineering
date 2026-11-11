@@ -355,9 +355,16 @@ comportamiento y el digest de configuración de 2.0.0:
 - H38 / N03-a, condición «flujo completo» (`harness init` sin la sección `friction`): con
   `riskProfile: auto` quitar `friction` ya no deja el flujo completo, porque el perfil liviano
   existe sin esa sección. La condición se define desde esta enmienda como `harness init` sin la
-  sección `friction` y con `governance.riskProfile: full`. Al escribir esta enmienda
-  `evaluation/deterministic/friction.py:configure` solo quita `friction` y no escribe esa clave:
-  hasta que lo haga, sus corridas de esa condición no cuentan como flujo completo.
+  sección `friction` y con `governance.riskProfile: full`. El aparato ya la escribe:
+  `evaluation/deterministic/friction.py:configure` y `h38_false_fast_lane.py:configure` quitan
+  `friction` y fijan `governance.riskProfile: full` en esa condición. Las corridas de esa
+  condición hechas antes de este cambio, sin la clave, no cuentan como flujo completo.
+- H02, H10, H12 (`harness-full`) y H35 (`coverage-only`, `mutation-warn`, `mutation-enforce`):
+  apagan el carril rápido con `friction.fastLane.mode: off`, pero con `riskProfile: auto` el
+  perfil liviano conserva un carril aunque `mode` sea `off`. Por la misma razón esas condiciones
+  escriben además `governance.riskProfile: full` (`h02_lying_tests.py:config_with_mutation`,
+  `h10_uncovered_regressions.py:full_lane`, `h12_frozen_acceptance.py:full_lane`,
+  `h35_light_mutation.py:_full_lane`); su condición `init` tal cual no cambia.
 
 ## Operacionalización común de H01, H03 y H05
 

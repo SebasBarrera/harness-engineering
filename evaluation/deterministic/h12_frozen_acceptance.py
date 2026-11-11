@@ -216,13 +216,17 @@ def switched_off(config: dict[str, Any]) -> dict[str, Any]:
 
 
 def full_lane(builder: interception.ConfigBuilder) -> interception.ConfigBuilder:
-    """``builder`` with ``friction.fastLane.mode: off`` (the amendment, PREREGISTRO.md, H12)."""
+    """``builder`` with ``friction.fastLane.mode: off`` and ``governance.riskProfile: full`` (the
+    amendment, PREREGISTRO.md, H12)."""
 
     def build(config: dict[str, Any]) -> dict[str, Any]:
         config = builder(config)
         friction = config.setdefault("friction", {})
         lane = friction.get("fastLane")
         friction["fastLane"] = {**(lane if isinstance(lane, dict) else {}), "mode": "off"}
+        # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+        # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+        config.setdefault("governance", {})["riskProfile"] = "full"
         return config
 
     return build

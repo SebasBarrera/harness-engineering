@@ -21,6 +21,10 @@ Conditions (``maxHunks`` 10, ``maxSeconds`` 300, the values of ``harness init``)
 * ``init-as-written`` (context): init as it is; a size S task takes the fast lane, whose
   ``friction.fastLane.skip`` leaves the mutation out.
 
+The three conditions with ``fastLane.mode: off`` also write ``governance.riskProfile: full``:
+under the ``auto`` that ``harness init`` writes in 2.0.1 the light profile keeps a fast lane
+with ``mode: off``.
+
 Every record holds the findings, the mutation report of the run (``mutation-report`` artifact:
 hunks, hunks left out, test-file classes, elapsed seconds or the reason it did not run), the
 change coverage of the test-quality report and whether the fast lane skipped the mutation.
@@ -326,6 +330,9 @@ def detect(item: dict[str, Any], findings: list[dict[str, Any]]) -> bool:
 # ----- conditions ------------------------------------------------------------------------------
 def _full_lane(config: dict[str, Any]) -> dict[str, Any]:
     config.setdefault("friction", {}).setdefault("fastLane", {})["mode"] = "off"
+    # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+    # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+    config.setdefault("governance", {})["riskProfile"] = "full"
     return config
 
 
