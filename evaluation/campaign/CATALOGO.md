@@ -38,12 +38,12 @@ Huecos (cada uno afecta el diseño de la campaña):
 5. **Resultados deterministas previos a correcciones posteriores.** `later-change` no coincide con su expectativa
    (`fault-probes/README.md`: defecto #78 evitado tras una aprobación rechazada); el `CHANGELOG` («Unreleased»,
    #95) dice que se corrigió, pero la sonda no se re-corrió. Hay que re-correr todo sobre la rueda 2.0.0
-   (`results-2.0.0/deterministic/README.md`, «Re-running on the v2.0.0 wheel»).
+   (`results-2.0.0/deterministic/README.md`, «Volver a correr sobre el wheel v2.0.0»).
 6. **El comparador «directo» tiene topes propios.** `evaluation/agentlib.py:39-40` fija `AGENT_TIMEOUT_SECONDS = 1500`
    y `MAX_BUDGET_USD = "5"` y pasa `--max-budget-usd` (línea 251). Cualquier prueba de «agente sin tope» (H18, H21)
    debe declarar qué tope conserva el directo; no existe un directo «sin tope» en la evaluación actual.
 7. **La persona simulada no mide tiempo humano y aprueba sin leer el contenido de las pruebas.** El tiempo de la
-   persona se separa (P15, `evaluation/README.md`, «Measures») puede aprobar pruebas de aceptación
+   persona se separa (P15, `evaluation/README.md`, «Medidas») puede aprobar pruebas de aceptación
    erróneas. Es un sesgo a favor del harness en tiempo y en fricción, declarado en §4.
 8. **La contraseña real de desarrollo declarada en la especificación** (escenario `alerts`) es un caso de
    seguridad que debe medirse y reportarse tal como salga, favorable o no. H03 lo mide en 2.0.0
@@ -82,14 +82,14 @@ dice cómo se interpreta y qué configuración lo reduce. Resultados 2.0.0 deter
 
 ### 1.2 Con modelo real
 
-Todas las pruebas con modelo están pendientes en 2.0.0: no hay cifras de referencia en el árbol. La evaluación reporta solo la 2.0.0; los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
+Todas las pruebas con modelo están pendientes en 2.0.0: no hay cifras de referencia en el árbol. Los modelos y las repeticiones de esta tabla y de §3.0 siguen la enmienda del 2026-11-11 (enmienda «modelos y repeticiones de la campaña» del 2026-11-11 en `PREREGISTRO.md`, PR #198): Haiku (`claude-haiku-4-5-20251001`) y Sonnet (`claude-sonnet-5-5`), **2 repeticiones por celda** en los bloques con modelo y **1** en las suites deterministas; las repeticiones de cada prueba nueva de §2 quedan sustituidas igual. Los estímulos están en español (enmienda «idioma de los estímulos» del 2026-11-11). La evaluación reporta solo la 2.0.0; los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
 
 | Id | Qué mide | Script / launcher | Condiciones | Costo | Resultados | Lectura y cifra (fuente) |
 |---|---|---|---|---|---|---|
-| P09+P10+N10 (bloque A, «matriz principal») | Tarea completa × escenarios (greenfield, brownfield, security) × 3 modelos | `run_matrix.py`, `launchers/block-a.sh` | direct, harness ×3 reps; harness-anchored ×2 reps | **Sí**: 54 + 18 = 72 corridas | 2.0.0: `results-2.0.0/block-a/` (no existe aún) | Sin resultados 2.0.0 |
-| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («It works.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual\|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 3 modelos × 3 escenarios × 3 reps = 162 (27 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo) | 2.0.0: `block-b/` (no existe) | Sin resultados 2.0.0 |
-| P13+P20+N01-b (bloque D) | Desarrollo iterativo: 5 incrementos, oráculo de 25 pruebas ocultas, hasta 2 rondas de reportes de bug | `longitudinal/run_session.py`, `launchers/block-d.sh` | baseline casual, structured directo, harness | **Sí**: 3 condiciones × 3 modelos × 3 sesiones = 27 sesiones | 2.0.0: `block-d/` (no existe) | Sin resultados 2.0.0 |
-| N08 (embebido) | Claude Code como host de la sesión sobre `harness mcp serve` y la skill | `run_embedded.py`, `launchers/block-embedded.sh` | `harness` embebido; factor: modelo host | **Sí**: 3 modelos × 2 reps = 6 (brownfield) | `results-2.0.0/block-embedded/` (no existe) | Sin resultado con modelo |
+| P09+P10+N10 (bloque A, «matriz principal») | Tarea completa × escenarios (greenfield, brownfield, security) × 2 modelos | `run_matrix.py`, `launchers/block-a.sh` | direct, harness ×2 reps; harness-anchored ×2 reps | **Sí**: 24 + 12 = 36 corridas (calculado) | 2.0.0: `results-2.0.0/block-a/` (no existe aún) | Sin resultados 2.0.0 |
+| P11+N09+N11 (bloque B) | Niveles de instrucción: prompt casual y tarea mínima («Funciona.») | `launchers/block-b.sh`, `run_matrix.py --prompt casual\|poor` | direct, harness-core, harness; PO simulado | **Sí**: 2 prompts × 3 condiciones × 2 modelos × 3 escenarios × 2 reps = 72 (calculado; 12 de ellas, casual × harness-core, terminan en el rechazo de tarea, exit 2, sin llamada a modelo) | 2.0.0: `block-b/` (no existe) | Sin resultados 2.0.0 |
+| P13+P20+N01-b (bloque D) | Desarrollo iterativo: 5 incrementos, oráculo de 25 pruebas ocultas, hasta 2 rondas de reportes de bug | `longitudinal/run_session.py`, `launchers/block-d.sh` | baseline casual, structured directo, harness | **Sí**: 3 condiciones × 2 modelos × 2 sesiones = 12 sesiones (calculado) | 2.0.0: `block-d/` (no existe) | Sin resultados 2.0.0 |
+| N08 (embebido) | Claude Code como host de la sesión sobre `harness mcp serve` y la skill | `run_embedded.py`, `launchers/block-embedded.sh` | `harness` embebido; factor: modelo host | **Sí**: 2 modelos × 2 reps = 4 (brownfield, calculado) | `results-2.0.0/block-embedded/` (no existe) | Sin resultado con modelo |
 | P15 | Segundos por fase y recomendaciones retrospectivas de las corridas gobernadas | `report_phases.py` | solo gobernadas | No (post-hoc) | 2.0.0: sobre las corridas del bloque A | Sin resultados 2.0.0. Nota: no incluye tiempo humano |
 | (sin id) revisión post-hoc | Reglas deterministas de revisión sobre el cambio final de cada corrida de ambas condiciones | `posthoc_review.py` | corridas del bloque A | No (post-hoc) | 2.0.0: sobre las corridas del bloque A | Sin resultados 2.0.0 |
 | (sin id) segundo agente | Codex CLI, tarea completa | `run_matrix.py --agent codex`, `report_prompts.py` | baseline vs harness | **Sí** | ninguno | Sin resultados 2.0.0 (hueco 3) |
@@ -371,7 +371,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 **H15 Trazabilidad requisito→prueba→decisión, post-hoc en directo y harness** — Esfuerzo S · Modelo: 0 (reutiliza corridas del bloque A)
 
-- Hipótesis: con ids de requisitos en el prompt (`evaluation/README.md`, «The adapter»), la trazabilidad se completa
+- Hipótesis: con ids de requisitos en el prompt (`evaluation/README.md`, «El adaptador»), la trazabilidad se completa
   en el harness y es mucho menor en el directo medida con el mismo script.
 - Beneficio: auditabilidad sin costo extra de modelo.
 - Condiciones: corridas `direct` y `harness` del bloque A (post-hoc).
@@ -944,7 +944,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 ### 3.0 Orden y puertas
 
 1. **Fase 0, sin modelo (re-ejecución sobre la rueda 2.0.0).** Instalar la rueda, correr las suites de
-   `results-2.0.0/deterministic/README.md` («Re-running on the v2.0.0 wheel»): P03, P04, P06, P07, N16, P08/N13/N12,
+   `results-2.0.0/deterministic/README.md` («Volver a correr sobre el wheel v2.0.0»): P03, P04, P06, P07, N16, P08/N13/N12,
    N01-a, N02-a, N03-a, N04, P24, y el dry run (`evaluation/dry_run.py`). Compara contra los resultados deterministas de la ola 9
    y reporta cada diferencia (en particular `later-change`).
 2. **Fase 1, nuevas deterministas por orden de §3.2**, con corpus y criterios congelados antes (§4).
@@ -956,10 +956,10 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 | Orden | Bloque | Corridas | Comentario de costo |
 |---:|---|---|---|
-| 1 | A (P09+P10+N10) | 72 (54 + 18 anclado) | el costo por corrida se mide en esta campaña (sin referencia de versiones anteriores) |
-| 2 | D (P13+P20+N01-b) | 27 sesiones de 5 incrementos | el costo por sesión se mide en esta campaña |
-| 3 | B (P11+N09+N11) | 162, de las cuales 27 terminan en rechazo sin modelo | arrancar con un modelo y un escenario y decidir |
-| 4 | N08 embebido | 6 | brownfield |
+| 1 | A (P09+P10+N10) | 36 (24 + 12 anclado) | el costo por corrida se mide en esta campaña (sin referencia de versiones anteriores) |
+| 2 | D (P13+P20+N01-b) | 12 sesiones de 5 incrementos | el costo por sesión se mide en esta campaña |
+| 3 | B (P11+N09+N11) | 72, de las cuales 12 terminan en rechazo sin modelo | arrancar con un modelo y un escenario y decidir |
+| 4 | N08 embebido | 4 | brownfield |
 | 5 | Nuevos con modelo: H21 (6), H25 (6), H08-modelo (6), H29 (6), H30 (6), H26 (120 llamadas de solo lectura), H34 (69 invocaciones de panel + 69 autorrevisiones), H54 opcional (6) | ≈ 36 corridas + 120 llamadas + 138 invocaciones | solo Haiku, salvo H29 con Sonnet |
 
    Reducción posible si el presupuesto no alcanza: A solo con brownfield y security × 2 modelos, y D solo con Haiku
@@ -1004,17 +1004,17 @@ Siguientes: H04, H09, H15, H37, H43, H19, H02.
    `LIMIT_EXIT_CODE = 75`). Los resultados desfavorables se conservan en el mismo archivo y con el mismo
    formato; el capítulo cita las cifras de costo junto a las de beneficio (§1.3).
 3. **La persona simulada se declara como simulación** en toda tabla y párrafo que dependa de ella
-   (`human.product-owner-simulated` y `human.reviewer-simulated`, `evaluation/README.md`, «The simulated person»).
+   (`human.product-owner-simulated` y `human.reviewer-simulated`, `evaluation/README.md`, «La persona simulada»).
    Sesgos conocidos: conoce la tarea completa y la especificación (a favor del harness en la fase de aclaración);
    puede aprobar pruebas sin evaluar su contenido; no consume tiempo humano (el
    costo de las interacciones se reporta por conteo y con un análisis de sensibilidad de minutos por interacción
    etiquetado como supuesto).
 4. **El directo-equivalente (D\*) no es un agente.** Toda conclusión sobre «lo que entregaría el agente directo»
    obtenida con D\* se rotula como tal; la comparación con agentes reales es la de los bloques A, B y D.
-5. **Estadística descriptiva.** Con 3 a 5 repeticiones por celda no se hacen pruebas de significación; se
+5. **Estadística descriptiva.** Con 2 repeticiones por celda en los bloques con modelo y 1 en las suites deterministas (enmienda «modelos y repeticiones de la campaña» del 2026-11-11 en `PREREGISTRO.md`, PR #198) no se hacen pruebas de significación; se
    reportan n, mínimo, mediana y máximo (como `report.py --v2`) e intervalos de Wilson para proporciones.
 6. **Una versión, un entorno.** La evaluación reporta solo la 2.0.0: no se mezclan cifras de otras versiones
-   (`evaluation/README.md`, «The 2.0.0 evaluation»); cada resultado guarda `environment.json` con versión, SHA-256 de la rueda y plataforma; todo se
+   (`evaluation/README.md`, «La evaluación de la 2.0.0»); cada resultado guarda `environment.json` con versión, SHA-256 de la rueda y plataforma; todo se
    corre sobre la rueda 2.0.0 y se registra el commit.
 7. **Claves de configuración exactas.** Cada condición guarda su `project.yaml` y su resumen de configuración
    (`projectConfig`, `grantCheck`, `coreCheck`) como en `conditions.py`.

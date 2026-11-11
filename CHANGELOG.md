@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- The evaluation is in Spanish (#70): its documentation, the result READMEs and every stimulus the
+  evaluated model receives (casual, poor and full tasks, fixture specifications, `build_prompt`,
+  the embedded instructions, the rides and longitudinal scenarios and the simulated product owner),
+  with identifiers, values and hidden tests unchanged. The simulated product owner answers as an
+  engineer who owns the product and runs with one fixed model in every cell (`--po-model`, default
+  `claude-sonnet-5-5`, recorded as `productOwnerModel`). Two dated amendments in
+  `evaluation/campaign/PREREGISTRO.md` record both changes before any campaign result.
+
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
