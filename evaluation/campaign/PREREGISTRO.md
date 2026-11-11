@@ -840,6 +840,46 @@ Operacionalización común de las cuatro:
   oráculo; la mitigación del catálogo (cambios reales del historial) queda pendiente. La solución
   de referencia de itsdangerous no entra (necesita la descarga del proyecto): exclusión declarada.
 
+### Enmienda 2026-11-11 a H44 y H45 (tras los humos locales de #157 y antes de cualquier resultado de la campaña)
+
+Se añade por decisión del mantenedor (2026-11-11) de resolver antes de la campaña los puntos 3 y 4
+de #157, que salieron de humos locales en Windows (regla 6: no son resultados y no se cita aquí
+ninguna cifra). Ninguna corrida de la campaña de H44 o H45 se ha hecho. Los dos cambios corrigen
+el diseño del aparato; ninguno cambia un criterio, una rúbrica, un umbral ni el harness.
+
+**H44, B12 (comando del proveedor sin concesión).** El caso quitaba la concesión exacta del
+comando del proveedor, pero el proveedor se lanzaba como `python budget_agent.py ...` y el perfil
+de Python concede `process.execute: [python]` por nombre exacto del ejecutable
+(`capabilities/denial.py:command_in_scope`); el comando seguía concedido por el perfil y el run
+llegaba a DECISION, así que el caso no reproducía el estado que declara (#164 lo explicó como
+diseño, no como defecto). Desde esta enmienda B12 lanza el mismo fixture con la ruta absoluta del
+intérprete del entorno virtual del proyecto, que ninguna regla del perfil nombra, y quita la
+concesión del proveedor como antes. Causa esperada (`capabilities.command-denied`), salida (6),
+rúbrica y denominador no cambian; los otros 19 estados no cambian.
+
+**H45, soluciones de referencia.** Las dos soluciones de referencia usaban como pruebas visibles
+las pruebas de `evaluation/hidden/` sin cambios. Esas pruebas son anteriores al contrato de 2.0.0
+y, en el proyecto de la tarea, no lo cumplen por dos razones ajenas a la corrección del cambio:
+(1) no nombran los requisitos de la tarea (`req_spec`, `req_tests`), que la regla de trazabilidad
+del contrato del gate pide nombrar (`traceability.requirement-untested`, `HIGH` con
+`verification.requirementTraceability: enforce` de `harness init`); (2) el bloque de imports
+(`I001`, porque en el proyecto el paquete es de primera parte) y, en alerts, un
+`.encode("utf-8")` (`UP012`) no siguen los valores por defecto de Ruff, lo que el ratchet cuenta
+como empeoramiento (`ratchet.regressed`, `HIGH`). Un agente que cumple el contrato no entregaría
+esas pruebas así, de modo que la «solución de referencia» no era un cambio limpio para la
+condición H. Desde esta enmienda las pruebas visibles de las dos referencias son las de
+`evaluation/deterministic/h45_reference_tests/`: las pruebas ocultas con un docstring de módulo
+que nombra los dos requisitos y esas correcciones de Ruff; las funciones de prueba y sus
+aserciones son las mismas (la suite lo comprueba antes de correr: mismas funciones `test*` y
+mismo número de `assert`; si no, el caso es error del aparato). Las pruebas ocultas no cambian.
+Para no ocultar nada, las mismas referencias con las pruebas ocultas tal cual se corren también
+(`ref-shipping-as-is`, `ref-alerts-as-is`, fuente `reference-as-is`) y se reportan aparte
+(`referenceAsIs` del resumen), fuera del criterio y de las métricas por condición. El criterio
+(0 bloqueos sobre las 2 soluciones de referencia en la condición H) no cambia. El problema de
+`floatMoney` que se había asociado a ref-alerts no se reprodujo en el humo de esta enmienda (no
+aparece ningún hallazgo `floatMoney` ni `constraints.float-money` en ninguna de las dos
+referencias); no se cambia nada por él.
+
 ## Tercera congelación: H27, H28, H31 y H32
 
 Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
