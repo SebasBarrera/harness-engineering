@@ -100,7 +100,7 @@ def ws_rename(ws: Path) -> None:
 
 
 def ws_mode(ws: Path) -> None:
-    os.chmod(ws / SOURCE, 0o755)
+    os.chmod(ws / SOURCE, 0o700)
 
 
 def ws_new_file(ws: Path) -> None:
