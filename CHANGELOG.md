@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The evaluation measures a stopped governed run on its own change again (#70, found by #201).
+  `evaluation/run_eval.py:measure_quarantine` applied the quarantined patch to the restored
+  workspace, where the kept acceptance tests already exist ("already exists in working
+  directory"), and wrote the patch in text mode, so on Windows its line ends became CRLF ("patch
+  does not apply"); when `git apply` failed, the unpatched baseline was measured. In the Haiku pilot
+  both stopped runs scored the baseline's 18/24 hidden tests this way. The patch is now written byte
+  for byte and applied to a copy returned to the baseline commit; a patch that does not apply is not
+  measured (`invalid: quarantine-patch-not-applied`, `<out>.invalid.jsonl`, exit code 3, no rerun).
+  `evaluation/remeasure_quarantine.py` measures the patch of earlier run directories again without
+  a model call. Amendment of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`.
+
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline

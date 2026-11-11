@@ -64,6 +64,32 @@ acceptance-dispute`, la decisión, las razones (del agente y del product owner) 
 Tras `REVISE` la corrida vuelve a SPECIFICATION y la regla ya registrada de las pruebas de
 aceptación aprueba o rechaza las pruebas reescritas.
 
+### Enmienda 2026-11-11: medición de corridas detenidas
+
+Se añade tras el piloto Haiku de 2.0.0 (PR #199) y antes de cualquier resultado de la campaña. Al
+reconstruir las implementaciones del piloto (PR #201, ref. #70) apareció un defecto del aparato, no
+del harness: `evaluation/run_eval.py:measure_quarantine` medía una corrida detenida sobre una copia
+del espacio de trabajo restaurado con el parche en cuarentena aplicado, pero en las dos corridas
+detenidas del piloto el parche no se aplicó (`measures.patchApply.exitCode: 1`) y las pruebas
+ocultas midieron la línea base, no el cambio del agente. Dos causas: (1) las pruebas de aceptación
+que el harness conserva tras la cuarentena (`workspace.quarantined.keptPaths`) ya existen en el
+espacio restaurado, así que `git apply` de un parche que las añade falla entero («already exists in
+working directory»); (2) el parche se escribía en modo texto y en Windows sus finales de línea
+pasaban a CRLF, así que las líneas de contexto no coincidían («patch does not apply»).
+
+**Regla.** El cambio de una corrida detenida se mide sobre una copia del espacio de trabajo devuelta
+al commit de la línea base (`git reset --hard` y `git clean -fd`, que quita los archivos no
+versionados y conserva los ignorados), con el parche escrito byte a byte tal como lo imprime
+`harness artifact show` (`measuredOn: quarantine-copy`, `patchApply.appliedTo: baseline` y la lista
+`patchApply.removedBeforeApply`). Si `harness artifact show` falla o `git apply` falla, la corrida
+**no se mide**: el registro lleva `invalid: quarantine-patch-not-applied` y el error de `git apply`,
+va a `<out>.invalid.jsonl` (registro aparte, regla 2) y el runner termina con código 3, sin volver a
+correr la celda; nunca se mide el árbol sin el parche. `measuresFinalTree` (lo que queda en el
+espacio restaurado) se sigue midiendo igual. Los registros escritos antes de esta enmienda se
+vuelven a medir desde su directorio con `evaluation/remeasure_quarantine.py` (sin llamada al
+modelo; deshace el CRLF del parche guardado, porque la escritura en modo texto convirtió cada LF en
+CRLF), y la cifra original y la nueva se muestran juntas. Ningún criterio cambia.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos
