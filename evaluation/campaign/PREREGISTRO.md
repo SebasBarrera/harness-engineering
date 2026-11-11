@@ -748,3 +748,27 @@ declara el mismo apartado y el catálogo. Antes de implementar la suite se corri
 añadiendo 1 reciente rechazado: *recientes* (−1 día) = 5 aprobados, 1 rechazado, 1 abierto. El
 total es 20; las condiciones, el oráculo, las métricas y el criterio no cambian (un reciente
 rechazado es un run no vencido que debe seguir verificando).
+
+### Enmienda 3 a H13 y H16 (2026-11-10, tras el humo del aparato y antes de cualquier resultado)
+
+Un humo local del aparato (Windows, no es resultado ni se cita) mostró dos cosas que impiden que
+una condición distinga lo que debe:
+
+1. **`pickle.loads` no llega a DECISION.** El validador obligatorio `harness.security-patterns`
+   falla VERIFICATION, el fixture no corrige y el run termina `FAILED` en VERIFICATION tras las
+   dos correcciones (`agent.empty-correction`): no hay gate que decidir. Los 7 casos *con
+   excepción* de H13 y el run de A09–A13 de H16 no pueden producirse con ese cambio. Se sustituye
+   la causa del gate fallido por la que el humo sí llevó a DECISION con el gate `FAILED`: un
+   segundo requisito sin prueba que lo nombre (`traceability.requirement-untested`, HIGH; la de
+   la enmienda 1). La excepción (`APPROVE_EXCEPTION`, en H13 con `--expires-in 14d`,
+   `--alternative-evidence` y `--follow-up`) cubre ese hallazgo. Los intentos de H16 y lo que se
+   espera de cada uno no cambian.
+2. **El vencimiento solo existe en el reloj desplazado.** En los *vencidos* de H13 la decisión
+   vence a las 72 h reales; `harness verify --bundle` y `harness verify-approval`, corridos a la
+   hora real, la ven vigente (`expired: false`, salida 0), así que la expectativa «5 en los
+   vencidos» de lo reportado aparte no puede observarse así. Para esos casos se corren además
+   ambos comandos con el reloj adelantado 73 h (`timeshift.py`, el mismo desplazamiento que venció
+   la decisión) y se reportan las dos lecturas; la expectativa de 5 se compara con la
+   desplazada. Nada de esto entra en el criterio.
+
+Las condiciones, las preguntas, las métricas y los criterios de H13 y H16 no cambian.
