@@ -436,6 +436,10 @@ class RunEngine:
             blocked = self.recover_interrupted(execution_id)
             if blocked is not None:
                 return blocked
+        resumed = self._resume_recorded_decision(execution_id)
+        if resumed is not None and not run_is_open(resumed):
+            # A rejection recorded before the harness died ends the run here (#179).
+            return resumed
         if self._enforces_workflow:
             self._record_workflow_schedule(execution_id)
         while True:
@@ -595,7 +599,17 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
-        if self.ladder.active and decision in {
+        self._apply_decision(execution, record, gate, actor)
+        self.anchor_chain(execution_id)
+        return record
+
+    def _apply_decision(
+        self, execution: Execution, record: HumanDecision, gate: GateEvaluation, actor: Actor
+    ) -> Execution:
+        """Move the run on under a recorded decision: the part of ``decide`` after its
+        ``human.decision.recorded`` event, which a resume also runs for a decision whose
+        harness died before it (#179)."""
+        if self.ladder.active and record.decision in {
             DecisionKind.APPROVE,
             DecisionKind.APPROVE_EXCEPTION,
         }:
@@ -609,16 +623,82 @@ class RunEngine:
             record,
             gate,
             actor,
-            execution_id,
-            decision,
-            change_set_digest,
-            change_requests,
+            execution.execution_id,
+            record.decision,
+            record.change_set_digest,
+            record.change_requests,
         )
         self._save_execution(updated)
-        if decision is DecisionKind.REJECT and self.results.active:
+        if record.decision is DecisionKind.REJECT and self.results.active:
             self.results.stop_line.stop(updated, "rejected")
-        self.anchor_chain(execution_id)
-        return record
+        return updated
+
+    def _resume_recorded_decision(self, execution_id: str) -> Execution | None:
+        """Apply a decision whose ``human.decision.recorded`` event is stored but whose
+        harness died before the run moved on (#179, H47 K10), so the person is not asked
+        again and no second decision is recorded.
+
+        Fail closed: only the latest recorded decision of the run is considered, only while
+        the run waits in DECISION on the very gate the decision is bound to, and only when it
+        still holds (the current ChangeSet and acceptance contract, not expired, the
+        exception of an ``APPROVE_EXCEPTION`` recorded under ``review.exceptions``). A
+        pre-authorised approval is left to ``friction.preAuthorization``. Otherwise nothing is
+        applied and DECISION asks a person as before. Returns the run when a decision was
+        applied, ``None`` otherwise."""
+        execution = self.get_execution(execution_id)
+        if (
+            execution.current_phase is not PhaseId.DECISION
+            or execution.human_decision_id
+            or not execution.gate_evaluation_id
+        ):
+            return None
+        recorded = [
+            item
+            for item in self.s.events.list(execution_id)
+            if item.event_type == "human.decision.recorded"
+        ]
+        if not recorded:
+            return None
+        payload = recorded[-1].payload
+        decision_id = payload.get("decision_id") or payload.get("decisionId")
+        if not isinstance(decision_id, str):
+            return None
+        record = self.s.state.get("decision", decision_id, HumanDecision)
+        if (
+            record.execution_id != execution_id
+            or record.gate_evaluation_id != execution.gate_evaluation_id
+            or record.pre_authorization_id is not None
+            or record.actor.actor_type is not ActorType.HUMAN
+        ):
+            return None
+        gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
+        change_set = self._refresh_changeset(execution, record_on_run=False)
+        execution = self.get_execution(execution_id)
+        if gate.change_set_digest != record.change_set_digest:
+            return None
+        if self._stale_decision(execution, record, change_set) is not None:
+            return None
+        if (
+            record.decision is DecisionKind.APPROVE_EXCEPTION
+            and self.s.resolved.project.exceptions_enabled
+            and not any(
+                item.decision_id == record.decision_id
+                for item in self.s.state.list(
+                    "exception", ExceptionRecord, execution_id=execution_id
+                )
+            )
+        ):
+            return None
+        self.s.events.append(
+            execution_id,
+            "decision.resumed",
+            {
+                "decisionId": record.decision_id,
+                "decision": record.decision.value,
+                "changeSetDigest": record.change_set_digest,
+            },
+        )
+        return self._apply_decision(execution, record, gate, record.actor)
 
     def _decision_gate(
         self,
