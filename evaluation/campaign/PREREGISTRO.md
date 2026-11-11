@@ -183,6 +183,17 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
   bloqueados / correctos), por clase y por lenguaje; intervalo de Wilson al 95 %.
 - **Criterio de éxito:** «H reduce la escape al menos a la mitad de D\* en las clases cubiertas por
   reglas deterministas»; si no se cumple, se reporta qué clases no.
+- **Precisiones fijadas al implementar el agregador (2026-11-10, antes de cualquier resultado):**
+  - Repeticiones: H01, H03 y H05 corren 3 repeticiones; un caso defectuoso cuenta como escapado si
+    se entregó en **cualquier** repetición, y uno correcto como falsa alarma si se bloqueó en
+    cualquiera (el peor caso para el harness). Las filas cuyas repeticiones difieren se listan.
+  - «Cubierta por reglas deterministas»: en H01, H03 y H05 todos los casos salvo los que el catálogo
+    prevé que escapan (`kind: escape` de H05); en N01-a todos; en N02-a solo las reglas `tool:` y
+    `consistency:`.
+  - Lenguaje: H05 según el manifiesto (`package.json` → javascript, `go.mod` → go,
+    `Cargo.toml` → rust); N02-a según la extensión del archivo; el resto, python.
+  - N01-a y N02-a no tienen condición D\*: sus clases se reportan como «no evaluables» para el
+    criterio, con sus tasas de escape del harness.
 
 ## H14 Manipulación de eventos: 25 tipos
 

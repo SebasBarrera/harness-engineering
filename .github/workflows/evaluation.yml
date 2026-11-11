@@ -1,9 +1,11 @@
 # Deterministic suites of the 2.0.0 evaluation on Linux (no model is called): fault probes,
 # verification-ladder and review-panel corpora, friction, INTENT equivalence, block 0 and metrics
-# validity. Run by hand on the branch or tag to evaluate ("Use workflow from"): its own code is the
-# harness under test (its wheel, and the checkout block 0 verifies) and its evaluation code runs
-# the suites. The results are an artifact that a person reviews and commits under
-# evaluation/results-2.0.0. Informational: it never gates a merge.
+# validity in one job; the pre-registered interception suites H01, H03, H05 and H38 one job each
+# (together they exceed the 6 h limit of a job); then the H11 defect-escape corpus, which reads
+# the results of the others. Run by hand on the branch or tag to evaluate ("Use workflow from"):
+# its own code is the harness under test (its wheel, and the checkout block 0 verifies) and its
+# evaluation code runs the suites. The results are artifacts that a person reviews and commits
+# under evaluation/results-2.0.0. Informational: it never gates a merge.
 name: evaluation
 
 on:
@@ -22,8 +24,51 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: select the suites (report)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      earlier: ${{ steps.select.outputs.earlier }}
+      interception: ${{ steps.select.outputs.interception }}
+      corpus: ${{ steps.select.outputs.corpus }}
+    steps:
+      - name: Split the requested suites between the jobs
+        id: select
+        env:
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -f # the names are words, never file patterns
+          earlier="fault-probes ladder review friction intent-equivalence block0 metrics-validity"
+          interception="h01 h03 h05 h38"
+          wanted="${ONLY:-$earlier $interception defect-corpus}"
+          picked_earlier=""
+          picked_interception=""
+          corpus=false
+          for name in ${wanted//,/ }; do
+            case " $earlier " in
+              *" $name "*) picked_earlier="$picked_earlier${picked_earlier:+,}$name"; continue ;;
+            esac
+            case " $interception " in
+              *" $name "*) picked_interception="$picked_interception${picked_interception:+,}\"$name\""; continue ;;
+            esac
+            if [ "$name" = defect-corpus ]; then
+              corpus=true
+              continue
+            fi
+            echo "::error::unknown suite: $name"
+            exit 1
+          done
+          {
+            echo "earlier=$picked_earlier"
+            echo "interception=[$picked_interception]"
+            echo "corpus=$corpus"
+          } >> "$GITHUB_OUTPUT"
+
   deterministic:
     name: deterministic suites (report)
+    needs: plan
+    if: needs.plan.outputs.earlier != ''
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
@@ -53,13 +98,13 @@ jobs:
           git rev-parse HEAD | tee dist/commit.txt
       - name: Run the deterministic suites
         env:
-          ONLY: ${{ inputs.only }}
+          ONLY: ${{ needs.plan.outputs.earlier }}
         run: |
           git config --global user.name "evaluation"
           git config --global user.email "evaluation@localhost"
           wheel=$(ls dist/*.whl)
           python evaluation/campaign/run_deterministic.py --wheel "$wheel" \
-            --work "$RUNNER_TEMP/campaign" --out results/deterministic ${ONLY:+--only "$ONLY"}
+            --work "$RUNNER_TEMP/campaign" --out results/deterministic --only "$ONLY"
       - name: Upload the results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -68,4 +113,97 @@ jobs:
           path: |
             results/
             dist/
+          if-no-files-found: error
+
+  interception:
+    name: ${{ matrix.suite }} suite (report)
+    needs: plan
+    if: needs.plan.outputs.interception != '[]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.plan.outputs.interception) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: lts/*
+          package-manager-cache: false
+      - name: Install bubblewrap (the agent sandbox)
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces, which bwrap needs.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          bwrap --ro-bind / / true
+      - name: Build the wheel of this ref
+        run: |
+          python -m pip install -q --require-hashes -r requirements/tools-build.txt
+          python -m build --wheel --no-isolation --outdir dist
+          sha256sum dist/*.whl
+          git rev-parse HEAD | tee dist/commit.txt
+      - name: Run the suite
+        env:
+          SUITE: ${{ matrix.suite }}
+        run: |
+          git config --global user.name "evaluation"
+          git config --global user.email "evaluation@localhost"
+          wheel=$(ls dist/*.whl)
+          python evaluation/campaign/run_deterministic.py --wheel "$wheel" \
+            --work "$RUNNER_TEMP/campaign" --out results/deterministic --only "$SUITE"
+      - name: Upload the results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evaluation-deterministic-${{ matrix.suite }}
+          path: |
+            results/
+            dist/
+          if-no-files-found: error
+
+  defect-corpus:
+    name: defect-escape corpus H11 (report)
+    needs: [plan, deterministic, interception]
+    # It also runs when a suite failed or was not selected: the corpus then reports the absent
+    # input as such and exits 1.
+    if: always() && needs.plan.outputs.corpus == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Download the results of the suites
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          # One directory per artifact: artifacts/<artifact name>/results/deterministic/<suite>.
+          pattern: evaluation-deterministic*
+          path: artifacts
+      - name: Aggregate the defect-escape corpus
+        run: |
+          earlier=artifacts/evaluation-deterministic/results/deterministic
+          python evaluation/deterministic/defect_corpus.py --out results/deterministic/defect-corpus \
+            --inputs \
+              artifacts/evaluation-deterministic-h01/results/deterministic/h01 \
+              artifacts/evaluation-deterministic-h03/results/deterministic/h03 \
+              artifacts/evaluation-deterministic-h05/results/deterministic/h05 \
+              "$earlier/ladder" \
+              "$earlier/review"
+      - name: Upload the corpus
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: evaluation-defect-corpus
+          path: results/
           if-no-files-found: error
