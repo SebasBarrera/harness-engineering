@@ -29,7 +29,8 @@ TASK = (
 )
 
 # MODE: "good" answers well; "notes" adds a key outside the contract to the first BROKEN answers;
-# "usage" reports more tokens than any budget; "sleep" does not answer within the time limit.
+# "usage" reports more tokens than any budget; "cached" reports as many, almost all of them
+# prompt-cache reads; "sleep" does not answer within the time limit.
 AGENT = """\
 import json, sys, time
 from pathlib import Path
@@ -54,6 +55,10 @@ if kind == "acceptance":
     answer = {"status": "PASSED", "summary": "answered", "result": result}
     if MODE == "usage":
         answer["usage"] = {"inputTokens": 5000, "outputTokens": 10}
+    if MODE == "cached":
+        answer["usage"] = {
+            "inputTokens": 5000, "outputTokens": 10, "cacheTokens": 4600, "cacheReadTokens": 4500
+        }
     print(json.dumps(answer))
     sys.exit(0)
 Path("src/sample/pricing.py").write_text(
@@ -259,6 +264,24 @@ def test_a_call_over_its_token_budget_ends_with_a_structured_result(
     assert received["finalStatus"] == "LIMIT_REACHED"
     assert received["limitReached"] == "tokens"
     assert received["result"] is None
+
+
+def test_prompt_cache_reads_do_not_consume_the_token_budget(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # 5010 reported tokens, 4500 of them cache reads: 510 count against a budget of 1000.
+    configure(
+        python_workspace,
+        tmp_path,
+        mode="cached",
+        contract={"mode": "enforce", "budgets": {"S": {"tokens": 1000}}},
+    )
+    application, run = start(python_workspace, tmp_path)
+    shown = application.agent_calls(python_workspace, run, "acceptance", 1)
+    received = shown["call"]["parentReceived"]
+    assert received["finalStatus"] == "PASSED"
+    assert received["usage"]["cacheReadTokens"] == 4500
+    assert "agent.limit.reached" not in rules(application, python_workspace, run)
 
 
 def test_a_call_that_reached_a_limit_counts_as_an_iteration(

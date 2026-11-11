@@ -3,6 +3,19 @@
     "Usage": {
       "additionalProperties": false,
       "properties": {
+        "cacheReadTokens": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cachereadtokens"
+        },
         "inputTokens": {
           "anyOf": [
             {

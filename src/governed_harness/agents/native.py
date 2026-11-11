@@ -504,7 +504,8 @@ class ClaudeCodeProvider(NativeAgentProvider):
             usage=_claude_usage(value),
             usage_limitations=(
                 "Claude Code: inputTokens adds input, cache-creation and cache-read tokens "
-                "(cacheTokens is their cache part); costUsd is total_cost_usd.",
+                "(cacheTokens is their cache part, cacheReadTokens its cache-read part); "
+                "costUsd is total_cost_usd.",
             ),
             session_id=value.get("session_id")
             if isinstance(value.get("session_id"), str)
@@ -526,7 +527,8 @@ def _claude_result(value: Any) -> dict[str, Any]:
 
 
 def _claude_usage(value: dict[str, Any]) -> dict[str, int | float] | None:
-    """The usage of a Claude Code result: input adds the cache tokens, cost is the total."""
+    """The usage of a Claude Code result: input adds the cache tokens (creation and read),
+    the cache reads are also kept apart, cost is the total."""
     raw_usage = value.get("usage")
     usage: dict[str, Any] = raw_usage if isinstance(raw_usage, dict) else {}
     inputs = [
@@ -542,6 +544,7 @@ def _claude_usage(value: dict[str, Any]) -> dict[str, int | float] | None:
         cacheTokens=sum(item for item in inputs[1:] if item is not None)
         if any(item is not None for item in inputs[1:])
         else None,
+        cacheReadTokens=inputs[2],
         costUsd=cost
         if isinstance(cost, int | float) and not isinstance(cost, bool) and cost >= 0
         else None,
@@ -587,6 +590,8 @@ class CodexProvider(NativeAgentProvider):
                 outputTokens=totals["output"] if seen else None,
                 reasoningTokens=totals["reasoning"] if seen and totals["reasoning"] else None,
                 cacheTokens=totals["cache"] if seen and totals["cache"] else None,
+                # Codex's cached_input_tokens are prompt-cache reads, part of input_tokens.
+                cacheReadTokens=totals["cache"] if seen and totals["cache"] else None,
             ),
             usage_limitations=("Codex reports tokens per turn and no cost.",),
             session_id=run.session,
@@ -649,7 +654,7 @@ class _CodexRun:
 
 class GeminiCliProvider(NativeAgentProvider):
     """``gemini --output-format json``: ``response``, ``stats.models.<model>.tokens``
-    (``prompt``, ``candidates``, ``thoughts``) and ``error`` on failure."""
+    (``prompt``, ``candidates``, ``thoughts``, ``cached``) and ``error`` on failure."""
 
     kind = "gemini-cli"
 
@@ -682,6 +687,9 @@ class GeminiCliProvider(NativeAgentProvider):
                 inputTokens=totals["prompt"] if seen else None,
                 outputTokens=totals["candidates"] if seen else None,
                 reasoningTokens=totals["thoughts"] if seen and totals["thoughts"] else None,
+                # Gemini's cached tokens are prompt-cache reads, part of the prompt tokens.
+                cacheTokens=totals["cached"] if seen and totals["cached"] else None,
+                cacheReadTokens=totals["cached"] if seen and totals["cached"] else None,
             ),
             usage_limitations=("Gemini CLI reports tokens per model and no cost.",),
             self_report=self._self_report_from(response),
@@ -689,14 +697,14 @@ class GeminiCliProvider(NativeAgentProvider):
 
 
 def _gemini_tokens(value: dict[str, Any]) -> tuple[dict[str, int], bool]:
-    """The ``prompt``, ``candidates`` and ``thoughts`` tokens summed over the models, and
-    whether any model reported tokens."""
+    """The ``prompt``, ``candidates``, ``thoughts`` and ``cached`` tokens summed over the
+    models, and whether any model reported tokens."""
     models = (
         ((value.get("stats") or {}).get("models") or {})
         if isinstance(value.get("stats"), dict)
         else {}
     )
-    totals = {"prompt": 0, "candidates": 0, "thoughts": 0}
+    totals = {"prompt": 0, "candidates": 0, "thoughts": 0, "cached": 0}
     seen = False
     for stats in models.values() if isinstance(models, dict) else ():
         tokens = stats.get("tokens") if isinstance(stats, dict) else None

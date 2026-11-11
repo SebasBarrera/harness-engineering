@@ -1094,6 +1094,10 @@ class ResourceUsage(StrictModel):
     """Since #58: the input tokens served from or written to the provider's prompt cache, when
     the provider reports them (already included in ``input_tokens``). Left out when absent, so
     usage recorded before it keeps its stored form."""
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    """Since #70: the part of ``cache_tokens`` (and so of ``input_tokens``) read from the
+    provider's prompt cache, when the provider reports the split. The token budget of the agent
+    contract does not count it. Left out when absent, like ``cache_tokens``."""
 
     @model_serializer(mode="wrap")
     def _omit_absent_cache(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -1101,6 +1105,9 @@ class ResourceUsage(StrictModel):
         if self.cache_tokens is None:
             data.pop("cacheTokens", None)
             data.pop("cache_tokens", None)
+        if self.cache_read_tokens is None:
+            data.pop("cacheReadTokens", None)
+            data.pop("cache_read_tokens", None)
         return data
 
 

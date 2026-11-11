@@ -8,7 +8,8 @@ With ``agentContract`` in ``project.yaml`` every agent call of a run:
 * counts as one iteration of its agent against one cap (default 5, at most 6): the first
   attempt, corrections, contract retries, escalations and calls cut by a limit all count;
 * ends in a controlled way when it reaches the time limit (the process is stopped) or the token
-  budget (checked on the usage the provider reports), with a structured result;
+  budget (checked on the usage the provider reports: fresh input, cache creation, output and
+  reasoning; prompt-cache reads are recorded but not counted), with a structured result;
 * returns to the parent only the bounded response, and the harness records what was sent and
   what was received (``harness agent-contract calls``).
 
@@ -49,7 +50,7 @@ from governed_harness.agents.routing import classify_size
 from governed_harness.agents.script_contracts import BLACK_BOX_NOTICE, brief, registry
 from governed_harness.configuration.agent_contract import AgentContractConfig
 from governed_harness.domain.enums import FindingSeverity, ResultStatus
-from governed_harness.domain.models import Execution, PhaseExecution, Task
+from governed_harness.domain.models import Execution, PhaseExecution, ResourceUsage, Task
 from governed_harness.orchestration.agent_contract_types import CallLimits, SentInfo
 from governed_harness.orchestration.engine_types import AgentCallOutcome, PhaseOutcome
 
@@ -80,6 +81,21 @@ _FINAL = {
     ResultStatus.CANCELLED: "CANCELLED",
 }
 _REPORTED = frozenset({"PASSED", "FAILED", "BLOCKED"})
+
+
+def budgeted_tokens(usage: ResourceUsage | None) -> tuple[int, int]:
+    """The tokens of a call that count against its budget, and its prompt-cache reads.
+
+    The budget counts the work of the call: input (fresh and cache creation), output and
+    reasoning. Prompt-cache reads are part of the reported input but do not count; they are
+    returned apart, never more than the input they are part of. A provider that reports no
+    cache-read split counts its whole input, as before."""
+    if usage is None:
+        return 0, 0
+    inputs = usage.input_tokens or 0
+    reads = min(usage.cache_read_tokens or 0, inputs)
+    counted = inputs - reads + (usage.output_tokens or 0) + (usage.reasoning_tokens or 0)
+    return counted, reads
 
 
 class AgentContractFlow:
@@ -302,14 +318,13 @@ class AgentContractFlow:
         )
         if timed_out:
             return "time", f"the call was stopped at its time limit ({limits.seconds} s)"
-        usage = answer.usage
-        used = (
-            (usage.input_tokens or 0) + (usage.output_tokens or 0) + (usage.reasoning_tokens or 0)
-            if usage is not None
-            else 0
-        )
+        used, reads = budgeted_tokens(answer.usage)
         if used > limits.tokens:
-            return "tokens", f"the call used {used} tokens of a budget of {limits.tokens}"
+            return "tokens", (
+                f"the call used {used} counted tokens (input, cache creation, output and "
+                f"reasoning) of a budget of {limits.tokens}; {reads} prompt-cache read tokens "
+                "were recorded and not counted"
+            )
         return None
 
     def settle(
@@ -416,6 +431,7 @@ class AgentContractFlow:
                 input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens,
                 reasoning_tokens=usage.reasoning_tokens,
+                cache_read_tokens=usage.cache_read_tokens,
             )
             if usage is not None
             else None,
