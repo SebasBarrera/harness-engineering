@@ -64,6 +64,13 @@
   is never written back by a restore or a materialized copy (Git gives it back under
   `baseline: manifest`, otherwise the path is reported as not restorable). The reproduce-first
   check keeps the snapshot its correction started from in memory.
+- Releases are signed with Sigstore and carry their provenance as an asset (#90). OpenSSF
+  Scorecard scored Signed-Releases 0: it looks for signature or provenance files among the
+  release assets and does not see GitHub attestations. `release.yml` now signs the wheel and the
+  sdist keylessly (`sigstore/gh-action-sigstore-python`, checked against the workflow's own
+  identity), attaches each `<file>.sigstore.json` and the build-provenance attestation as
+  `governed-agent-harness-<version>.intoto.jsonl`; the GitHub attestation is unchanged.
+  `SECURITY.md` and the advanced installation guide show how to verify them.
 - The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
   They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
   regression, but the agent cannot change them (approved by a person, write-protected): in the
