@@ -1,0 +1,786 @@
+{
+ "agent": {
+  "calls": 10,
+  "costUsd": 2.8052,
+  "permissionDenials": 27,
+  "productOwnerCalls": 2,
+  "resultTextStored": true,
+  "turns": 265
+ },
+ "change": {
+  "addedLines": 1476,
+  "byKind": {
+   "other": {
+    "added": 356,
+    "files": 14,
+    "removed": 0
+   },
+   "source": {
+    "added": 70,
+    "files": 1,
+    "removed": 3
+   },
+   "test": {
+    "added": 1050,
+    "files": 19,
+    "removed": 0
+   }
+  },
+  "files": 34,
+  "outOfScopeFiles": 29,
+  "outOfScopePaths": [
+   "binary_check.py",
+   "check_bytes.py",
+   "check_input.py",
+   "check_python_import.py",
+   "check_test.py",
+   "check_test_file_encoding.py",
+   "debug_test.py",
+   "extract_test_string.py",
+   "final_plus_test.py",
+   "final_verification.py",
+   "import_and_check.py",
+   "import_test_and_check.py",
+   "inspect_bytes.py",
+   "inspect_test.py",
+   "my_test.py",
+   "run_extract.py",
+   "show_test_content.py",
+   "show_test_string.py",
+   "test_base64_module.py",
+   "test_both.py",
+   "test_debug.py",
+   "test_detailed.py",
+   "test_direct_bytes.py",
+   "test_plus_explicit.py",
+   "test_string_repr.py",
+   "test_validation.py",
+   "test_validation_direct.py",
+   "test_with_actual_file_string.py",
+   "verify_plus_rejection.py"
+  ],
+  "paths": [
+   "binary_check.py",
+   "check_bytes.py",
+   "check_input.py",
+   "check_python_import.py",
+   "check_test.py",
+   "check_test_file_encoding.py",
+   "debug_test.py",
+   "extract_test_string.py",
+   "final_plus_test.py",
+   "final_verification.py",
+   "import_and_check.py",
+   "import_test_and_check.py",
+   "inspect_bytes.py",
+   "inspect_test.py",
+   "my_test.py",
+   "run_extract.py",
+   "show_test_content.py",
+   "show_test_string.py",
+   "src/itsdangerous/encoding.py",
+   "test_base64_module.py",
+   "test_both.py",
+   "test_debug.py",
+   "test_detailed.py",
+   "test_direct_bytes.py",
+   "test_plus_explicit.py",
+   "test_string_repr.py",
+   "test_validation.py",
+   "test_validation_direct.py",
+   "test_with_actual_file_string.py",
+   "tests/acceptance/test_ac_04123afec6a14497b4483e2c31f905a9.py",
+   "tests/acceptance/test_ac_7279a96b5ec74759b2475ead4c158937.py",
+   "tests/acceptance/test_ac_85176ec8d874402488cc54f27590db74.py",
+   "tests/acceptance/test_end_to_end_base64_strict.py",
+   "verify_plus_rejection.py"
+  ],
+  "removedLines": 3
+ },
+ "code": {
+  "lines": 83,
+  "text": "--- a/src/itsdangerous/encoding.py\n+++ b/src/itsdangerous/encoding.py\n@@ -19,2 +19,64 @@ def want_bytes(\n \n+def _validate_base64_string(data: str | bytes) -> None:\n+    \"\"\"Validate that data contains only valid URL-safe base64 characters.\n+\n+    Raises BadData if invalid characters or misplaced padding are found.\n+    Valid characters: A-Z, a-z, 0-9, '-', '_', and '=' (only at end)\n+    \"\"\"\n+    if isinstance(data, str):\n+        try:\n+            data_bytes = data.encode(\"ascii\", errors=\"strict\")\n+        except UnicodeEncodeError:\n+            raise BadData(\"Invalid base64-encoded data: non-ASCII character found\")\n+    else:\n+        data_bytes = data\n+\n+    if not data_bytes:\n+        return\n+\n+    # Find the position of first '=' if any\n+    padding_start = data_bytes.find(b\"=\")\n+\n+    if padding_start != -1:\n+        # Check that all remaining characters are '='\n+        for idx in range(padding_start, len(data_bytes)):\n+            if data_bytes[idx:idx+1] != b\"=\":\n+                raise BadData(\"Invalid base64-encoded data: '=' padding found before end of string\")\n+\n+        # Check we don't have more than 2 '=' characters\n+        num_padding = len(data_bytes) - padding_start\n+        if num_padding > 2:\n+            raise BadData(\"Invalid base64-encoded data: too many '=' padding characters\")\n+\n+    # Validate all characters\n+    for byte in data_bytes:\n+        char_code = byte\n+\n+        # Control characters (0-31, 127)\n+        if char_code < 32 or char_code == 127:\n+            raise BadData(\"Invalid base64-encoded data: control character found\")\n+\n+        # Non-ASCII bytes\n+        if char_code > 127:\n+            raise BadData(\"Invalid base64-encoded data: non-ASCII character found\")\n+\n+        # Stop validation at padding characters (we already checked them)\n+        if char_code == 61:  # 61 is ASCII code for '='\n+            break\n+\n+        # Reject standard base64 characters '+' (43) and '/' (47)\n+        if char_code == 43 or char_code == 47:\n+            raise BadData(\"Invalid base64-encoded data: invalid character found\")\n+\n+        # Valid URL-safe base64 characters: A-Z (65-90), a-z (97-122), 0-9 (48-57), '-' (45), '_' (95)\n+        if not (\n+            (65 <= char_code <= 90) or\n+            (97 <= char_code <= 122) or\n+            (48 <= char_code <= 57) or",
+  "truncated": true
+ },
+ "coverage": {
+  "available": true,
+  "coveredChanged": 34,
+  "executableChanged": 35,
+  "ratio": 0.9714
+ },
+ "practices": {
+  "source": {
+   "after": {
+    "annotatedParameters": 8,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 79,
+    "complexFunctions": 1,
+    "docstringCoverage": 0.4,
+    "documentedPublic": 2,
+    "duplicatedWindows": 0,
+    "functions": 6,
+    "isinstanceChecks": 2,
+    "longFunctions": 1,
+    "magicNumbers": 16,
+    "maxComplexity": 20,
+    "maxFunctionLength": 60,
+    "meanComplexity": 4.67,
+    "namingViolations": 0,
+    "parameters": 8,
+    "publicDefinitions": 5,
+    "raiseInExcept": 2,
+    "raiseInExceptWithFrom": 1,
+    "raiseInExceptWithoutFrom": 1,
+    "raiseStatements": 8,
+    "singleLetterNames": 1,
+    "swallowedErrors": 0,
+    "typeHintCoverage": 1.0,
+    "unreachableStatements": 0
+   },
+   "before": {
+    "annotatedParameters": 7,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 36,
+    "complexFunctions": 0,
+    "docstringCoverage": 0.4,
+    "documentedPublic": 2,
+    "duplicatedWindows": 0,
+    "functions": 5,
+    "isinstanceChecks": 1,
+    "longFunctions": 0,
+    "magicNumbers": 2,
+    "maxComplexity": 2,
+    "maxFunctionLength": 11,
+    "meanComplexity": 1.4,
+    "namingViolations": 0,
+    "parameters": 7,
+    "publicDefinitions": 5,
+    "raiseInExcept": 1,
+    "raiseInExceptWithFrom": 1,
+    "raiseInExceptWithoutFrom": 0,
+    "raiseStatements": 1,
+    "singleLetterNames": 1,
+    "swallowedErrors": 0,
+    "typeHintCoverage": 1.0,
+    "unreachableStatements": 0
+   },
+   "delta": {
+    "annotatedParameters": 1,
+    "bareExcept": 0,
+    "broadExcept": 0,
+    "codeLines": 43,
+    "complexFunctions": 1,
+    "documentedPublic": 0,
+    "duplicatedWindows": 0,
+    "functions": 1,
+    "isinstanceChecks": 1,
+    "longFunctions": 1,
+    "magicNumbers": 14,
+    "maxComplexity": 18,
+    "maxFunctionLength": 49,
+    "namingViolations": 0,
+    "parameters": 1,
+    "publicDefinitions": 0,
+    "raiseInExcept": 1,
+    "raiseInExceptWithFrom": 0,
+    "raiseInExceptWithoutFrom": 1,
+    "raiseStatements": 7,
+    "singleLetterNames": 0,
+    "swallowedErrors": 0,
+    "unreachableStatements": 0
+   },
+   "files": 1
+  },
+  "tests": {
+   "after": {
+    "assertions": 144,
+    "assertionsPerTest": 1.95,
+    "edgeCaseLiterals": 53,
+    "globalStatements": 0,
+    "negativeTests": 50,
+    "parametrizedCases": 35,
+    "sharedMutableStateWrites": 0,
+    "tests": 74,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "before": {
+    "assertions": 0,
+    "assertionsPerTest": null,
+    "edgeCaseLiterals": 0,
+    "globalStatements": 0,
+    "negativeTests": 0,
+    "parametrizedCases": 0,
+    "sharedMutableStateWrites": 0,
+    "tests": 0,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "delta": {
+    "assertions": 144,
+    "edgeCaseLiterals": 53,
+    "globalStatements": 0,
+    "negativeTests": 50,
+    "parametrizedCases": 35,
+    "sharedMutableStateWrites": 0,
+    "tests": 74,
+    "testsCallingTests": 0,
+    "testsWithoutAssertion": 0
+   },
+   "files": 19
+  }
+ },
+ "quarantine": {
+  "apparatusCopy": {
+   "changedPaths": [
+    "tests/acceptance/test_ac_04123afec6a14497b4483e2c31f905a9.py",
+    "tests/acceptance/test_ac_7279a96b5ec74759b2475ead4c158937.py",
+    "tests/acceptance/test_ac_85176ec8d874402488cc54f27590db74.py",
+    "tests/acceptance/test_end_to_end_base64_strict.py"
+   ],
+   "hidden": {
+    "errors": 0,
+    "failed": 6,
+    "passed": 18,
+    "skipped": 0,
+    "tests": 24
+   }
+  },
+  "applyStderr": null,
+  "finalTreeHidden": {
+   "errors": 0,
+   "failed": 6,
+   "passed": 18,
+   "skipped": 0,
+   "tests": 24
+  },
+  "patchApplied": true,
+  "patchHadCrlf": true,
+  "visibleExit": 1
+ },
+ "requirements": {
+  "harness": {
+   "acceptanceTests": {
+    "cases": {
+     "errors": 0,
+     "failed": 2,
+     "passed": 95,
+     "skipped": 0,
+     "tests": 97
+    },
+    "criteria": 4,
+    "criteriaWithAcceptanceFile": 3,
+    "frozenFiles": 4,
+    "perFile": [
+     {
+      "cases": {
+       "errors": 0,
+       "failed": 0,
+       "passed": 8,
+       "skipped": 0,
+       "tests": 8
+      },
+      "path": "tests/acceptance/test_ac_04123afec6a14497b4483e2c31f905a9.py"
+     },
+     {
+      "cases": {
+       "errors": 0,
+       "failed": 2,
+       "passed": 35,
+       "skipped": 0,
+       "tests": 37
+      },
+      "path": "tests/acceptance/test_ac_7279a96b5ec74759b2475ead4c158937.py"
+     },
+     {
+      "cases": {
+       "errors": 0,
+       "failed": 0,
+       "passed": 43,
+       "skipped": 0,
+       "tests": 43
+      },
+      "path": "tests/acceptance/test_ac_85176ec8d874402488cc54f27590db74.py"
+     },
+     {
+      "cases": {
+       "errors": 0,
+       "failed": 0,
+       "passed": 9,
+       "skipped": 0,
+       "tests": 9
+      },
+      "path": "tests/acceptance/test_end_to_end_base64_strict.py"
+     }
+    ]
+   },
+   "assumptions": {
+    "count": 4,
+    "texts": [
+     "The test file test_ac_7279a96b5ec74759b2475ead4c158937.py contains 'r' (0x72) rather than '+' (0x2b) in the test strings, based on hex dump analysis",
+     "The test file test_ac_7279a96b5ec74759b2475ead4c158937.py contains incorrect test strings with 'r' characters instead of '+' characters",
+     "The character 0x72 ('r') appearing in the test strings was verified using hexdump/od tools",
+     "'r' is a valid URL-safe base64 character and should not be rejected per task requirements"
+    ]
+   },
+   "blockingValidators": [
+    "harness.acceptance-tests",
+    "harness.ratchet",
+    "python.pytest"
+   ],
+   "clarification": {
+    "answers": 11,
+    "criteriaAddedByAnswers": 4,
+    "questionTexts": [
+     "Task 'base64_decode in itsdangerous accepts garbage input, make it stricter' has no acceptance criteria. Which observable results show that it is done, and how is each one checked (input or action -> exact expected result)? One result per line.",
+     "What are the main inputs and outputs of task 'base64_decode in itsdangerous accepts garbage input, make it stricter', and in which formats (for example JSON fields, a CSV header or a function signature)?",
+     "Which limits and boundaries must task 'base64_decode in itsdangerous accepts garbage input, make it stricter' respect (numbers, sizes, times), and what happens exactly at each boundary?",
+     "Which errors or rejections should task 'base64_decode in itsdangerous accepts garbage input, make it stricter' produce for invalid input, and what exactly does each one return, raise or print?",
+     "Which behaviours are in scope for task 'base64_decode in itsdangerous accepts garbage input, make it stricter'? One behaviour per line.",
+     "What is explicitly out of scope for task 'base64_decode in itsdangerous accepts garbage input, make it stricter'? One item per line.",
+     "Which non-functional constraints apply to task 'base64_decode in itsdangerous accepts garbage input, make it stricter' (performance, security, persistence), and with which measure is each one checked?",
+     "When base64_decode receives input that already contains 1-2 trailing '=' padding characters (e.g., 'YWJj='), should the implementation strip the existing padding before adding the correct amount, or should it add additional padding on top?",
+     "Which characters should be rejected as 'control characters' - only ASCII control codes (0-31 and 127), or all Unicode characters in control categories?",
+     "Should 'whitespace characters' to be rejected include only ASCII whitespace (space, tab, LF, CR, FF, VT) or also Unicode whitespace like non-breaking space (U+00A0)?",
+     "Should base64_decode(b'') return b'' (accepting empty input), or raise BadData (rejecting empty input)?"
+    ],
+    "questions": 11,
+    "requirementsAddedByAnswers": 16,
+    "rounds": 2
+   },
+   "corrections": {
+    "cycles": 2,
+    "exhausted": true
+   },
+   "decisions": {
+    "events": {
+     "acceptance.tests.decided": 1,
+     "architecture.decided": 1,
+     "plan.approval.decided": 1,
+     "planning.decomposition.decided": 1
+    },
+    "gate": []
+   },
+   "disputes": {
+    "disputedTests": 2,
+    "events": 0
+   },
+   "finalPhase": "VERIFICATION",
+   "finalStatus": "FAILED",
+   "findings": {
+    "bySeverity": {
+     "HIGH": 27,
+     "MEDIUM": 628
+    },
+    "topRules": {
+     "python.mypy.error": 324,
+     "python.pytest.test-failed": 6,
+     "python.ruff.E402": 6,
+     "python.ruff.E501": 28,
+     "python.ruff.F401": 18,
+     "python.ruff.F541": 40,
+     "python.ruff.I001": 58,
+     "python.ruff.UP015": 12,
+     "python.ruff.W293": 75,
+     "tests.changed-file-not-executed": 38
+    },
+    "total": 655,
+    "unsupportedClaims": 3
+   },
+   "taskFormalized": {
+    "constraints": 4,
+    "criteria": 4,
+    "requirements": 16
+   },
+   "terminalReason": "VERIFICATION still fails after 2 correction cycle(s) (runtime.verificationCorrections): python.pytest, harness.acceptance-tests, harness.ratchet"
+  },
+  "hidden": {
+   "available": true,
+   "byCriterion": {
+    "(sin criterio)": {
+     "passed": 1,
+     "tests": 1
+    },
+    "ac_existing": {
+     "passed": 1,
+     "tests": 1
+    },
+    "ac_reject": {
+     "passed": 12,
+     "tests": 12
+    },
+    "ac_signatures": {
+     "passed": 2,
+     "tests": 2
+    },
+    "req_alphabet": {
+     "passed": 1,
+     "tests": 1
+    },
+    "req_padding": {
+     "passed": 7,
+     "tests": 7
+    }
+   },
+   "criteriaFullyPassed": 5,
+   "criteriaMapped": 5,
+   "errors": 0,
+   "failed": 0,
+   "failing": [],
+   "mapping": true,
+   "passed": 24,
+   "skipped": 0,
+   "tests": 24
+  },
+  "prompt": {
+   "criteriaGiven": 0,
+   "kind": "casual",
+   "requirementsGiven": 0,
+   "text": "base64_decode in itsdangerous accepts garbage input, make it stricter"
+  }
+ },
+ "run": {
+  "condition": "harness",
+  "id": "brownfield-casual-harness-claude-haiku-4-5-20251001-r1",
+  "measuredOn": "quarantine-reconstructed",
+  "model": "claude-haiku-4-5-20251001",
+  "prompt": "casual",
+  "rep": 1,
+  "scenario": "brownfield",
+  "stamp": "20261111T160625Z"
+ },
+ "schema": "compare-implementations/1",
+ "secrets": {
+  "byPattern": {
+   "assignedCredential": 1
+  },
+  "files": [
+   "tests/acceptance/test_ac_04123afec6a14497b4483e2c31f905a9.py"
+  ],
+  "newMatches": 1,
+  "newMatchesByKind": {
+   "test": 1
+  }
+ },
+ "static": {
+  "bandit": {
+   "after": 0,
+   "available": true,
+   "before": 0,
+   "new": 0,
+   "newByTest": {}
+  },
+  "mypy": {
+   "after": 1,
+   "available": true,
+   "before": 1,
+   "new": 0,
+   "newByCode": {},
+   "newErrors": []
+  },
+  "ruff": {
+   "after": 62,
+   "available": true,
+   "before": 0,
+   "new": 62,
+   "newByKind": {
+    "other": 32,
+    "test": 30
+   },
+   "newByRule": {
+    "BLE001": 6,
+    "E722": 1,
+    "F401": 6,
+    "F541": 16,
+    "F841": 1,
+    "I001": 23,
+    "PIE808": 1,
+    "RUF010": 3,
+    "RUF059": 1,
+    "S102": 1,
+    "SIM102": 2,
+    "SIM115": 1
+   }
+  }
+ },
+ "surface": {
+  "changelogUpdated": false,
+  "docFilesChanged": [],
+  "docstringsAdded": 0,
+  "docstringsChanged": 0,
+  "documentedDefinitions": 2,
+  "publicDefinitionsInChangedModules": 5,
+  "publicNamesAdded": [],
+  "publicNamesRemoved": [],
+  "signaturesChanged": []
+ },
+ "tests": {
+  "casesInChangedFiles": {
+   "errors": 0,
+   "failed": 2,
+   "passed": 95,
+   "skipped": 0,
+   "tests": 97
+  },
+  "changedTestFiles": 19,
+  "newTestFiles": 19,
+  "perFile": [
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "check_test.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "debug_test.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 4,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "final_plus_test.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "inspect_test.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "my_test.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_base64_module.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_both.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_debug.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_detailed.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_direct_bytes.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 1,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_plus_explicit.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_string_repr.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_validation.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_validation_direct.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 0,
+     "skipped": 0,
+     "tests": 0
+    },
+    "functionsAfter": 0,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "test_with_actual_file_string.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 8,
+     "skipped": 0,
+     "tests": 8
+    },
+    "functionsAfter": 8,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "tests/acceptance/test_ac_04123afec6a14497b4483e2c31f905a9.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 2,
+     "passed": 35,
+     "skipped": 0,
+     "tests": 37
+    },
+    "functionsAfter": 37,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "tests/acceptance/test_ac_7279a96b5ec74759b2475ead4c158937.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 43,
+     "skipped": 0,
+     "tests": 43
+    },
+    "functionsAfter": 15,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "tests/acceptance/test_ac_85176ec8d874402488cc54f27590db74.py"
+   },
+   {
+    "cases": {
+     "errors": 0,
+     "failed": 0,
+     "passed": 9,
+     "skipped": 0,
+     "tests": 9
+    },
+    "functionsAfter": 9,
+    "functionsBefore": 0,
+    "new": true,
+    "path": "tests/acceptance/test_end_to_end_base64_strict.py"
+   }
+  ],
+  "testFunctionsAdded": 74,
+  "visibleJunitAvailable": true
+ },
+ "tools": {
+  "bandit": "__main__.py 1.9.4",
+  "mypy": "mypy 2.4.1 (compiled: yes)",
+  "ruff": "ruff 0.17.4"
+ }
+}
