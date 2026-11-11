@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- The evaluation compares how the implementations differ, not only whether they pass the hidden
+  tests (#70). `evaluation/analysis/compare_implementations.py` reads the run directories of the
+  pilot and the campaign and computes, without calling a model, the change against the baseline
+  (by file kind, out of scope), the tests added and their outcome, the coverage of the changed
+  lines, Ruff, Mypy and Bandit findings and secret patterns new against the baseline, the public
+  surface, coding practices of the source and the tests (`evaluation/analysis/practices.py`, `ast`
+  only), the hidden tests by criterion and what the harness recorded (questions, answers,
+  assumptions, decisions, disputes, correction cycles, blocking validators) or what the direct
+  agent's final text states. It writes one JSON per run and a Spanish `comparison.md` that pairs
+  `direct` with each governed condition, poor and casual prompts first. A stopped run is measured
+  on the baseline with its quarantined patch applied, because the apparatus copy did not get the
+  patch in the Haiku pilot. The metrics are declared in a dated amendment of
+  `evaluation/campaign/PREREGISTRO.md`; the exploratory output on the Haiku pilot is in
+  `evaluation/results-2.0.0/pilot-2.0.0/comparison/`.
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection
   (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
