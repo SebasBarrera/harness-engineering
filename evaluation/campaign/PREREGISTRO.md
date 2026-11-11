@@ -740,3 +740,11 @@ llega a DECISION con el gate `FAILED` y registra el `REJECT`): la tarea declara 
 requisito y el fixture escribe pruebas solo para el primero y el criterio. Las condiciones (D\* y
 H), las preguntas, las métricas y el criterio no cambian; en la pregunta 8 la verdad sigue siendo
 el resultado de la corrida independiente de `pytest` (que en estos 4 casos pasa).
+
+### Enmienda 2 a H17 (2026-11-10, antes de cualquier resultado)
+
+La composición del corpus de H17 suma 19 runs (6 viejos, 7 medios, 6 recientes), no los 20 que
+declara el mismo apartado y el catálogo. Antes de implementar la suite se corrige la aritmética
+añadiendo 1 reciente rechazado: *recientes* (−1 día) = 5 aprobados, 1 rechazado, 1 abierto. El
+total es 20; las condiciones, el oráculo, las métricas y el criterio no cambian (un reciente
+rechazado es un run no vencido que debe seguir verificando).
