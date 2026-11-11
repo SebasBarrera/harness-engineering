@@ -15,10 +15,10 @@ under the 260-character limit). Usage::
     python evaluation/campaign/run_deterministic.py --wheel dist/governed_agent_harness-2.0.0-py3-none-any.whl \
         --work /tmp/campaign --out evaluation/results-2.0.0/deterministic [--only fault-probes,ladder]
 
-The suites of the pre-registered tests (``h01``, ``h03``, ``h05``, ``h38``, ``PREREGISTRO.md``)
-follow the earlier ones, and ``defect-corpus`` (H11) runs last: it aggregates the records of
-``h01``, ``h03``, ``h05``, ``ladder`` and ``review`` found under ``--out`` (from this run or an
-earlier one) and fails when one of them is absent.
+The suites of the pre-registered tests (``h01``–``h05``, ``h09``, ``h14``, ``h15``, ``h18``–``h23``,
+``h38``, ``h44``, ``h45``, ``PREREGISTRO.md``) follow the earlier ones, and ``defect-corpus`` (H11)
+runs last: it aggregates the records of ``h01``–``h05``, ``h09``, ``ladder`` and ``review`` found
+under ``--out`` (from this run or an earlier one) and fails when one of them is absent.
 """
 
 from __future__ import annotations
@@ -50,23 +50,47 @@ SUITES = (
     "block0",
     "metrics-validity",
     "h01",
+    "h02",
     "h03",
+    "h04",
     "h05",
+    "h09",
+    "h14",
+    "h15",
+    "h18",
+    "h19",
+    "h20",
+    "h22",
+    "h23",
     "h38",
+    "h44",
+    "h45",
     "defect-corpus",
 )
-# The suites of the pre-registered interception tests (PREREGISTRO.md): one script each, the same
-# arguments as the ladder.
-INTERCEPTION = {
+# The suites of the pre-registered tests (PREREGISTRO.md): one script each, the same arguments as
+# the ladder (--out, --work, --project-venv), plus PREREGISTERED_EXTRA where a suite needs more.
+PREREGISTERED = {
     "h01": "h01_weakened_tests.py",
+    "h02": "h02_lying_tests.py",
     "h03": "h03_secrets.py",
+    "h04": "h04_scope_creep.py",
     "h05": "h05_dependencies.py",
+    "h09": "h09_after_approval.py",
+    "h14": "event_tampering.py",
+    "h15": "h15_traceability.py",
+    "h18": "iteration_cap.py",
+    "h19": "h19_size_budgets.py",
+    "h20": "h20_cost_ceilings.py",
+    "h22": "context_bytes.py",
+    "h23": "contract_violations.py",
     "h38": "h38_false_fast_lane.py",
+    "h44": "h44_block_clarity.py",
+    "h45": "h45_clean_changes.py",
 }
 # On Windows the work directory must leave the suites' deepest paths under 260 characters.
 WINDOWS_MAX_WORK = 40
 # H11 reads the per-case records of these suites' output directories (defect_corpus.py).
-DEFECT_CORPUS_INPUTS = ("h01", "h03", "h05", "ladder", "review")
+DEFECT_CORPUS_INPUTS = ("h01", "h02", "h03", "h04", "h05", "h09", "ladder", "review")
 
 
 def sha256(path: Path) -> str:
@@ -108,7 +132,14 @@ def suite_commands(
 ) -> dict[str, list[str]]:
     d = EVAL_DIR / "deterministic"
     ruff = bin_dir(venv) / "ruff"
-    interception = {
+    extra = {
+        # H14's clock-shift kind runs timeshift.py with the harness's python; the fixture's call
+        # log stays under the work directory.
+        "h14": ["--harness-python", str(py), "--log-root", str(work / "h14-log")],
+        # H22's brownfield task reads the itsdangerous archive.
+        "h22": ["--cache", str(cache)],
+    }
+    preregistered = {
         name: [
             str(py),
             str(d / script),
@@ -120,8 +151,9 @@ def suite_commands(
             str(venv),
             # H11 (PREREGISTRO.md) aggregates three repetitions of the defect suites.
             *(["--reps", "3"] if name in DEFECT_CORPUS_INPUTS else []),
+            *extra.get(name, []),
         ]
-        for name, script in INTERCEPTION.items()
+        for name, script in PREREGISTERED.items()
     }
     return {
         "fault-probes": [
@@ -204,7 +236,7 @@ def suite_commands(
             "--demo-state",
             str(work / "block0" / "demo-state"),
         ],
-        **interception,
+        **preregistered,
         # Runs last: it reads the results of the suites above and re-runs nothing.
         "defect-corpus": [
             str(py),
