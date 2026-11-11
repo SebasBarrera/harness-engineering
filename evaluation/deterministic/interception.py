@@ -104,6 +104,8 @@ class Suite:
         Callable[[Harness, Path, str, dict[str, Any], dict[str, Any]], dict[str, Any]] | None
     ) = None
     notes: dict[str, Any] = field(default_factory=dict)
+    after_direct: Callable[[Path, dict[str, Any]], dict[str, Any]] | None = None
+    """D*'s counterpart of ``after_decision``: reads the workspace D* delivered (H15)."""
 
 
 # ----- environment ------------------------------------------------------------------------------
@@ -153,6 +155,28 @@ def apply_change(root: Path, case: dict[str, Any]) -> None:
     write_files(root, case.get("write") or {})
     for relative in case.get("delete") or []:
         (root / relative).unlink(missing_ok=True)
+    for relative, text in (case.get("append") or {}).items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        with (root / relative).open("ab") as handle:
+            handle.write(text.encode("utf-8"))
+    for relative, target in (case.get("symlink") or {}).items():
+        (root / relative).parent.mkdir(parents=True, exist_ok=True)
+        (root / relative).symlink_to(target)
+
+
+def change_document(case: dict[str, Any]) -> dict[str, Any]:
+    """The change file the fixture agent reads (``interception_agent.py``)."""
+    document: dict[str, Any] = {
+        "write": case.get("write") or {},
+        "delete": case.get("delete") or [],
+    }
+    # "results", "summary" and "selfReport" (H06, H07, H12): what the fixture agent answers.
+    for key in ("append", "symlink", "results", "summary", "selfReport"):
+        if case.get(key):
+            document[key] = case[key]
+    if case.get("tolerateDenied"):
+        document["tolerateDenied"] = True
+    return document
 
 
 def wilson(successes: int, total: int, z: float = 1.959964) -> list[float] | None:
@@ -233,7 +257,10 @@ def direct_equivalent(
         (line for line in reversed(tail.splitlines()) if " passed" in line or " failed" in line),
         "",
     )
-    return {"testsExitCode": code, "delivered": code == 0, "testsSummary": summary.strip()}
+    record = {"testsExitCode": code, "delivered": code == 0, "testsSummary": summary.strip()}
+    if suite.after_direct is not None:
+        record.update(suite.after_direct(ws, case))
+    return record
 
 
 def governed(
@@ -259,10 +286,7 @@ def governed(
     assert builder is not None
     config = builder(initial)
     change = run_dir / "change.json"
-    write_text(
-        change,
-        json.dumps({"write": case.get("write") or {}, "delete": case.get("delete") or []}),
-    )
+    write_text(change, json.dumps(change_document(case)))
     deviations = point_at_fixture(config, change, core=builder is core_condition)
     write_text(config_path, yaml.safe_dump(config, sort_keys=False))
     saved = args.out / "configs" / f"{condition}.yaml"

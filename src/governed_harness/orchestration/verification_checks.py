@@ -22,7 +22,7 @@ from governed_harness.checks import DiffFile, Issue, is_test_path, parse_unified
 from governed_harness.checks.architecture import ArchitectureLimits, check_architecture
 from governed_harness.checks.constraints import check_constraints, constraints_from_task
 from governed_harness.checks.interface import check_interface, declared_names
-from governed_harness.checks.layers import LayerRules, check_layers
+from governed_harness.checks.layers import LayerRules, check_layers, known_modules
 from governed_harness.checks.principles import (
     PrincipleLimits,
     check_principles,
@@ -852,6 +852,7 @@ def _planned_design_checks(
                         layers,
                         severity=layer_severity,
                         baseline=baseline_text if layer_differential else None,
+                        module_exists=known_modules(files, workspace),
                     ),
                     "architecture layer rules",
                 ),

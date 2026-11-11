@@ -138,6 +138,9 @@ def _diff_coverage(workspace: Path, files: list[dict[str, Any]], scratch: Path) 
     if not report.exists():
         return {"executableChanged": 0, "coveredChanged": 0, "ratio": None}
     measured = json.loads(report.read_text())["files"]
+    if sys.platform == "win32":
+        # coverage.py names the files with backslashes on Windows; git (the changed files) with /.
+        measured = {name.replace("\\", "/"): entry for name, entry in measured.items()}
     executable = covered = 0
     for item in source:
         entry = measured.get(item["path"])

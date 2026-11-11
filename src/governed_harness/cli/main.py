@@ -24,7 +24,7 @@ from governed_harness.domain.enums import (
     RecommendationDecision,
     ResultStatus,
 )
-from governed_harness.domain.errors import ConfigurationError, HarnessError
+from governed_harness.domain.errors import ConfigurationError, HarnessError, PolicyViolationError
 from governed_harness.orchestration.acceptance_dispute import DisputeDecision
 
 # Help texts and option names that several commands share.
@@ -913,7 +913,8 @@ def budget_raise(
 ) -> None:
     """Raise a budget limit of a run blocked with budget.exceeded; the raise is recorded on the
     run's event chain with the person and the rationale, then `harness run continue` resumes the
-    run. A non-human actor, a lower limit or a missing rationale exits 5."""
+    run. A non-human actor, a lower limit or a missing rationale exits 5, with a hint that names
+    `harness budget show` and the command to retry."""
     _emit(
         _call(
             lambda: _acting().raise_budget(
@@ -924,10 +925,27 @@ def budget_raise(
                 limit=limit,
                 rationale=rationale,
                 actor_id=actor,
-            )
+            ),
+            hint=_budget_raise_hint(run, scope, metric),
         ),
         kind="budget",
     )
+
+
+def _budget_raise_hint(run: str, scope: str, metric: str) -> Hint:
+    """The next step of a refused raise (#157): the limits to read and the command to retry."""
+
+    def hint(error: BaseException) -> str | None:
+        if not isinstance(error, PolicyViolationError):
+            return None
+        return (
+            f"`harness budget show --run {run}` shows the usage and the current limits. A person "
+            "raises a limit above the current one with a rationale: "
+            f"`harness budget raise --run {run} --scope {scope} --metric {metric} --to <limit> "
+            f'--rationale "..."`, then `harness run continue --run {run}`.'
+        )
+
+    return hint
 
 
 @acceptance_app.command("show")
@@ -1127,8 +1145,9 @@ def verify(
     event against that event, the execution's pointers and every referenced artifact against its
     digest. Prints a report and never repairs anything. With --bundle, verify an evidence bundle
     of `harness export` instead: its entries against the manifest, the event chain, the artifacts
-    and the decision records. Exit code 0 when everything verifies, 6 when any check fails, 3 for
-    an unknown run or bundle."""
+    and the decision records. Exit code 0 when everything verifies, 6 when any check fails (the
+    report's `hint` then names the next commands for each run that does not verify), 3 for an
+    unknown run or bundle."""
     if bundle is not None:
         if run is not None:
             _report_error({"status": "ERROR", "error": "use --run or --bundle, not both"})
@@ -1704,8 +1723,9 @@ def memory_invalidate(
 
 
 @gate_app.command("decide")
-def gate_decide(  # NOSONAR(S107) each parameter is an option of the gate decide command
-    run: str = RUN_OPTION,
+# Each parameter is an option of `harness gate decide` (Sonar S107 is suppressed on purpose).
+def gate_decide(
+    run: str = RUN_OPTION,  # NOSONAR(S107)
     decision: DecisionKind | None = typer.Option(
         None,
         "--decision",
@@ -1917,7 +1937,8 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         answer = typer.prompt(question, default="", show_default=False)
         return str(answer).strip() or None
 
-    answered: ExceptionOptions = replace(
+    # dataclasses.replace returns the type it receives; Sonar types it as DataclassInstance.
+    answered: ExceptionOptions = replace(  # NOSONAR(S5890)
         exception,
         expires_in=exception.expires_in
         if exception.expires_in or exception.expires_at
@@ -1926,7 +1947,7 @@ def _interactive_exception(exception: ExceptionOptions) -> ExceptionOptions:
         or ask("Alternative evidence (optional)"),
         follow_up=exception.follow_up or ask("Follow-up issue or task (optional)"),
     )
-    return answered
+    return answered  # NOSONAR(S5886)
 
 
 DIGEST_CONFIRM_CHARS = 12
@@ -2765,6 +2786,7 @@ def api_serve(
     import uvicorn
 
     from governed_harness.api import create_app
+    from governed_harness.api.access_log import log_config
     from governed_harness.api.auth import api_settings, start_token
 
     settings = _call(lambda: api_settings(path))
@@ -2799,7 +2821,8 @@ def api_serve(
     api = _call(lambda: create_app(path, start_token=token))
     for notice in api.state.auth_notices:
         typer.echo(f"warning: {notice}", err=True)
-    uvicorn.run(api, host=host, port=port, log_level="info")
+    # The access log never holds query strings, where a mistaken token would be written (#174).
+    uvicorn.run(api, host=host, port=port, log_level="info", log_config=log_config())
 
 
 def main() -> None:

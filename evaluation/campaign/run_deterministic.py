@@ -7,10 +7,19 @@ missing-tool probe), the brownfield archive checked against its SHA-256, then ea
 exit code. One suite failing does not stop the others; the summary records every exit code and the
 script exits 1 when any suite failed, so a caller cannot mistake a partial campaign for a full one.
 
-Linux and macOS (the suites and the agent sandbox are POSIX). Usage::
+Linux, macOS and Windows (H46, ``PREREGISTRO.md``). Windows has no agent sandbox, so the suites
+run the governed conditions there with ``runtime.agentSandbox: off`` and record it in each
+``environment.json``; its ``--work`` must be short (at most 40 characters: the suites' paths stay
+under the 260-character limit). Usage::
 
     python evaluation/campaign/run_deterministic.py --wheel dist/governed_agent_harness-2.0.0-py3-none-any.whl \
         --work /tmp/campaign --out evaluation/results-2.0.0/deterministic [--only fault-probes,ladder]
+
+The suites of the pre-registered tests (``h01``–``h07``, ``h09``, ``h10``, ``h12``–``h20``,
+``h22``–``h24``, ``h27``, ``h28``, ``h31``, ``h32``, ``h35``, ``h36``, ``h38``, ``h40``, ``h41``,
+``h44``, ``h45``, ``PREREGISTRO.md``) follow the earlier ones, and ``defect-corpus`` (H11) runs
+last: it aggregates the records of ``h01``–``h07``, ``h09``, ``h10``, ``ladder`` and ``review``
+found under ``--out`` (from this run or an earlier one) and fails when one of them is absent.
 """
 
 from __future__ import annotations
@@ -33,6 +42,47 @@ ITSDANGEROUS_URL = "https://github.com/pallets/itsdangerous/archive/refs/tags/2.
 ITSDANGEROUS_SHA256 = "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b"
 # The validators' tools of the deterministic suites (evaluation/results-2.0.0/deterministic).
 TOOLS = ["pytest", "pytest-cov", "freezegun==1.4.0", "ruff", "mypy", "coverage"]
+# The suites of the pre-registered tests (PREREGISTRO.md): one script each, the same arguments as
+# the ladder (--out, --work, --project-venv), plus the extras of suite_commands where a suite needs
+# more.
+PREREGISTERED = {
+    "h01": "h01_weakened_tests.py",
+    "h02": "h02_lying_tests.py",
+    "h03": "h03_secrets.py",
+    "h04": "h04_scope_creep.py",
+    "h05": "h05_dependencies.py",
+    "h06": "h06_layer_violations.py",
+    "h07": "h07_unsupported_claim.py",
+    "h09": "h09_after_approval.py",
+    "h10": "h10_uncovered_regressions.py",
+    "h12": "h12_frozen_acceptance.py",
+    "h13": "h13_bundle_audit.py",
+    "h14": "event_tampering.py",
+    "h15": "h15_traceability.py",
+    "h16": "h16_decider_identity.py",
+    "h17": "h17_retention.py",
+    "h18": "iteration_cap.py",
+    "h19": "h19_size_budgets.py",
+    "h20": "h20_cost_ceilings.py",
+    "h22": "context_bytes.py",
+    "h23": "contract_violations.py",
+    "h24": "h24_context_bounds.py",
+    "h27": "h27_layer_templates.py",
+    "h28": "h28_reverse_engineering.py",
+    "h31": "h31_tdd_red_green.py",
+    "h32": "h32_bdd_frozen.py",
+    "h35": "h35_light_mutation.py",
+    "h36": "h36_principles.py",
+    "h38": "h38_false_fast_lane.py",
+    "h40": "h40_embedded_mcp.py",
+    "h41": "h41_routing_invariants.py",
+    "h44": "h44_block_clarity.py",
+    "h45": "h45_clean_changes.py",
+    "h47": "h47_crash_resume.py",
+    "h48": "h48_concurrent_runs.py",
+    "h50": "h50_degraded_provider.py",
+    "h51": "h51_doctor.py",
+}
 SUITES = (
     "fault-probes",
     "ladder",
@@ -41,6 +91,25 @@ SUITES = (
     "intent-equivalence",
     "block0",
     "metrics-validity",
+    *PREREGISTERED,
+    "defect-corpus",
+)
+# On Windows the work directory must leave the suites' deepest paths under 260 characters.
+WINDOWS_MAX_WORK = 40
+# H11 reads the per-case records of these suites' output directories (defect_corpus.py).
+# H11's corpus is made of the defects of H01-H10 (PREREGISTRO.md) plus N01-a and N02-a.
+DEFECT_CORPUS_INPUTS = (
+    "h01",
+    "h02",
+    "h03",
+    "h04",
+    "h05",
+    "h06",
+    "h07",
+    "h09",
+    "h10",
+    "ladder",
+    "review",
 )
 
 
@@ -57,10 +126,11 @@ def bin_dir(venv: Path) -> Path:
 
 
 def make_venv(path: Path, *, with_pip: bool = True) -> Path:
-    if not (bin_dir(path) / "python").exists():
+    python = bin_dir(path) / ("python.exe" if os.name == "nt" else "python")
+    if not python.exists():
         flags = [] if with_pip else ["--without-pip"]
         subprocess.run([sys.executable, "-m", "venv", *flags, str(path)], check=True)
-    return bin_dir(path) / "python"
+    return python
 
 
 def cache_archive(cache: Path) -> Path:
@@ -82,6 +152,29 @@ def suite_commands(
 ) -> dict[str, list[str]]:
     d = EVAL_DIR / "deterministic"
     ruff = bin_dir(venv) / "ruff"
+    extra = {
+        # H14's clock-shift kind runs timeshift.py with the harness's python; the fixture's call
+        # log stays under the work directory.
+        "h14": ["--harness-python", str(py), "--log-root", str(work / "h14-log")],
+        # H22's brownfield task reads the itsdangerous archive.
+        "h22": ["--cache", str(cache)],
+    }
+    preregistered = {
+        name: [
+            str(py),
+            str(d / script),
+            "--out",
+            str(out / name),
+            "--work",
+            str(work / name),
+            "--project-venv",
+            str(venv),
+            # H11 (PREREGISTRO.md) aggregates three repetitions of the defect suites.
+            *(["--reps", "3"] if name in DEFECT_CORPUS_INPUTS else []),
+            *extra.get(name, []),
+        ]
+        for name, script in PREREGISTERED.items()
+    }
     return {
         "fault-probes": [
             str(py),
@@ -163,6 +256,16 @@ def suite_commands(
             "--demo-state",
             str(work / "block0" / "demo-state"),
         ],
+        **preregistered,
+        # Runs last: it reads the results of the suites above and re-runs nothing.
+        "defect-corpus": [
+            str(py),
+            str(d / "defect_corpus.py"),
+            "--out",
+            str(out / "defect-corpus"),
+            "--inputs",
+            *(str(out / name) for name in DEFECT_CORPUS_INPUTS),
+        ],
     }
 
 
@@ -174,13 +277,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, default=REPO, help="checkout block0 verifies")
     parser.add_argument("--only", default=",".join(SUITES))
     args = parser.parse_args(argv)
-    if os.name == "nt":
-        raise SystemExit("the deterministic suites need Linux or macOS (POSIX processes, sandbox)")
     wanted = [s for s in args.only.split(",") if s]
     unknown = sorted(set(wanted) - set(SUITES))
     if unknown:
         raise SystemExit(f"unknown suites: {', '.join(unknown)}")
     work = args.work.resolve()
+    if os.name == "nt" and len(str(work)) > WINDOWS_MAX_WORK:
+        raise SystemExit(
+            f"--work {work} is longer than {WINDOWS_MAX_WORK} characters: on Windows the suites' "
+            "paths would pass the 260-character limit"
+        )
     out = args.out.resolve()
     wheel = args.wheel.resolve()
     work.mkdir(parents=True, exist_ok=True)
@@ -198,6 +304,8 @@ def main(argv: list[str] | None = None) -> int:
         **os.environ,
         "HARNESS_BIN": str(bin_dir(venv) / "harness"),
         "HARNESS_WHEEL": str(wheel),
+        # H10's brownfield candidates come from the itsdangerous archive checked above.
+        "EVAL_CACHE": str(cache),
         "PATH": f"{bin_dir(venv)}{os.pathsep}{os.environ.get('PATH', '')}",
     }
     env.pop("PYTHONPATH", None)

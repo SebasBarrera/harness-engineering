@@ -56,10 +56,13 @@ if request.get("kind") == "acceptance":
     sys.exit(0)
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
-    "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n"
+    "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n",
+    newline="\\n",
 )
 if MODE == "broken":
-    Path("tests/test_pricing.py").write_text("def test_broken() -> None:\\n    assert 1 == 2\\n")
+    Path("tests/test_pricing.py").write_text(
+        "def test_broken() -> None:\\n    assert 1 == 2\\n", newline="\\n"
+    )
 if MODE == "tamper":
     Path(FROZEN).write_text("def test_ac_1() -> None:\\n    assert True\\n")
 report = {"assumptions": [], "alternativesDiscarded": [], "lowConfidenceAreas": [],
@@ -76,6 +79,7 @@ def configure(
     mode: str,
     acceptance: dict[str, Any],
     corrections: int = 0,
+    friction: dict[str, Any] | None = None,
 ) -> Path:
     log = tmp_path / "calls.json"
     script = (
@@ -100,6 +104,8 @@ def configure(
         "outputParsers": True,
         "acceptanceTests": {"mode": "agent", **acceptance},
     }
+    if friction is not None:
+        config["friction"] = friction
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
     return log
 
@@ -154,6 +160,13 @@ def events(application: HarnessApplication, workspace: Path, run: str) -> list[s
 
 
 DISPUTES = {"disputes": "person"}
+# The fast lane as ``harness init`` writes it: a size-S task runs its affected tests first.
+FAST_LANE: dict[str, Any] = {
+    "fastLane": {
+        "mode": "auto",
+        "verification": {"affectedTestsFirst": True, "parallel": True, "cache": True},
+    },
+}
 
 
 # ----- the dispute ----------------------------------------------------------------------------
@@ -295,6 +308,35 @@ def test_revise_returns_to_specification_and_verifies_the_same_change(
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "acceptance.passes-before"
     ]
+
+
+def test_a_disputed_frozen_test_waits_for_a_person_in_the_fast_lane(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#161: the affected tests include the frozen file; they do not stop the attempt before
+    ``harness.acceptance-tests`` runs, so the dispute opens as outside the fast lane."""
+    configure(python_workspace, tmp_path, "dispute", DISPUTES, friction=FAST_LANE)
+    application, run = start(python_workspace, tmp_path)
+    seen = events(application, python_workspace, run)
+    assert "verification.affected-tests" in seen
+    assert where(application, python_workspace, run) == ("VERIFICATION", "BLOCKED")
+    assert application.acceptance(python_workspace, run)["dispute"]["status"] == "OPEN"
+    assert seen.count("acceptance.dispute.opened") == 1
+
+
+def test_a_failing_ordinary_test_still_stops_the_fast_lane(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    configure(python_workspace, tmp_path, "broken", DISPUTES, friction=FAST_LANE)
+    application, run = start(python_workspace, tmp_path)
+    assert where(application, python_workspace, run) == ("VERIFICATION", "FAILED")
+    assert "dispute" not in application.acceptance(python_workspace, run)
+    lines = application.trace(python_workspace, run, "jsonl").decode().splitlines()
+    chain = [json.loads(line) for line in lines if line.strip()]
+    [affected] = [item for item in chain if item["eventType"] == "verification.affected-tests"]
+    assert affected["payload"]["status"] == "FAILED"
+    assert "tests/test_pricing.py" in affected["payload"]["tests"]
+    assert "acceptance.dispute.opened" not in [item["eventType"] for item in chain]
 
 
 # ----- write protection -----------------------------------------------------------------------

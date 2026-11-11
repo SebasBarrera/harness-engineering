@@ -171,6 +171,8 @@ CANCELLATION_REQUESTED = "Cancellation requested"
 _CORRECTION_AUTHORIZED = "correction.authorized"
 _FINDING_RECORDED = "finding.recorded"
 _FILESYSTEM_READ = "filesystem.read"
+# A limit crossed by the last agent call stops the run before these phases (#157).
+_BUDGET_CHECKED_PHASES = frozenset({PhaseId.INDEPENDENT_REVIEW, PhaseId.DECISION})
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -276,6 +278,8 @@ class _ProcessLedger:
 class RunEngine:
     _exit_gate_unmet: str | None = None
     """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
+    _budget_stopped: bool = False
+    """Whether an exceeded budget stopped the last phase before it started (#157)."""
 
     def __init__(self, services: EngineServices, sandbox_host: SandboxHost | None = None) -> None:
         self.s = services
@@ -432,6 +436,10 @@ class RunEngine:
             blocked = self.recover_interrupted(execution_id)
             if blocked is not None:
                 return blocked
+        resumed = self._resume_recorded_decision(execution_id)
+        if resumed is not None and not run_is_open(resumed):
+            # A rejection recorded before the harness died ends the run here (#179).
+            return resumed
         if self._enforces_workflow:
             self._record_workflow_schedule(execution_id)
         while True:
@@ -497,9 +505,9 @@ class RunEngine:
     ) -> Literal["stop", "next"]:
         """After a phase that did not pass: a correction cycle goes on to the next step,
         otherwise the loop stops on the run."""
-        if self._exit_gate_unmet is not None:
-            # The phase's own work passed but its exit gate did not (#3): no
-            # correction cycle starts on a record the phase failed to leave.
+        if self._exit_gate_unmet is not None or self._budget_stopped:
+            # The phase's own work passed but its exit gate did not (#3), or an exceeded
+            # budget stopped the phase before it started (#157): no correction cycle starts.
             return "stop"
         if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(execution, outcome):
             return "next"
@@ -591,7 +599,17 @@ class RunEngine:
             record.model_dump(mode="json"),
             actor=actor,
         )
-        if self.ladder.active and decision in {
+        self._apply_decision(execution, record, gate, actor)
+        self.anchor_chain(execution_id)
+        return record
+
+    def _apply_decision(
+        self, execution: Execution, record: HumanDecision, gate: GateEvaluation, actor: Actor
+    ) -> Execution:
+        """Move the run on under a recorded decision: the part of ``decide`` after its
+        ``human.decision.recorded`` event, which a resume also runs for a decision whose
+        harness died before it (#179)."""
+        if self.ladder.active and record.decision in {
             DecisionKind.APPROVE,
             DecisionKind.APPROVE_EXCEPTION,
         }:
@@ -605,16 +623,82 @@ class RunEngine:
             record,
             gate,
             actor,
-            execution_id,
-            decision,
-            change_set_digest,
-            change_requests,
+            execution.execution_id,
+            record.decision,
+            record.change_set_digest,
+            record.change_requests,
         )
         self._save_execution(updated)
-        if decision is DecisionKind.REJECT and self.results.active:
+        if record.decision is DecisionKind.REJECT and self.results.active:
             self.results.stop_line.stop(updated, "rejected")
-        self.anchor_chain(execution_id)
-        return record
+        return updated
+
+    def _resume_recorded_decision(self, execution_id: str) -> Execution | None:
+        """Apply a decision whose ``human.decision.recorded`` event is stored but whose
+        harness died before the run moved on (#179, H47 K10), so the person is not asked
+        again and no second decision is recorded.
+
+        Fail closed: only the latest recorded decision of the run is considered, only while
+        the run waits in DECISION on the very gate the decision is bound to, and only when it
+        still holds (the current ChangeSet and acceptance contract, not expired, the
+        exception of an ``APPROVE_EXCEPTION`` recorded under ``review.exceptions``). A
+        pre-authorised approval is left to ``friction.preAuthorization``. Otherwise nothing is
+        applied and DECISION asks a person as before. Returns the run when a decision was
+        applied, ``None`` otherwise."""
+        execution = self.get_execution(execution_id)
+        if (
+            execution.current_phase is not PhaseId.DECISION
+            or execution.human_decision_id
+            or not execution.gate_evaluation_id
+        ):
+            return None
+        recorded = [
+            item
+            for item in self.s.events.list(execution_id)
+            if item.event_type == "human.decision.recorded"
+        ]
+        if not recorded:
+            return None
+        payload = recorded[-1].payload
+        decision_id = payload.get("decision_id") or payload.get("decisionId")
+        if not isinstance(decision_id, str):
+            return None
+        record = self.s.state.get("decision", decision_id, HumanDecision)
+        if (
+            record.execution_id != execution_id
+            or record.gate_evaluation_id != execution.gate_evaluation_id
+            or record.pre_authorization_id is not None
+            or record.actor.actor_type is not ActorType.HUMAN
+        ):
+            return None
+        gate = self.s.state.get("gate", execution.gate_evaluation_id, GateEvaluation)
+        change_set = self._refresh_changeset(execution, record_on_run=False)
+        execution = self.get_execution(execution_id)
+        if gate.change_set_digest != record.change_set_digest:
+            return None
+        if self._stale_decision(execution, record, change_set) is not None:
+            return None
+        if (
+            record.decision is DecisionKind.APPROVE_EXCEPTION
+            and self.s.resolved.project.exceptions_enabled
+            and not any(
+                item.decision_id == record.decision_id
+                for item in self.s.state.list(
+                    "exception", ExceptionRecord, execution_id=execution_id
+                )
+            )
+        ):
+            return None
+        self.s.events.append(
+            execution_id,
+            "decision.resumed",
+            {
+                "decisionId": record.decision_id,
+                "decision": record.decision.value,
+                "changeSetDigest": record.change_set_digest,
+            },
+        )
+        return self._apply_decision(execution, record, gate, record.actor)
 
     def _decision_gate(
         self,
@@ -967,7 +1051,13 @@ class RunEngine:
             {"phaseId": phase_id, "attempt": attempt},
             phase_execution_id=phase.phase_execution_id,
         )
-        outcome = self._execute_handler(running, phase, handler)
+        stopped = (
+            self.results.before_phase(running, phase)
+            if self.results.active and phase_id in _BUDGET_CHECKED_PHASES
+            else None
+        )
+        self._budget_stopped = stopped is not None
+        outcome = stopped or self._execute_handler(running, phase, handler)
         if definition is not None:
             outcome = self._apply_phase_settings(definition, phase, outcome)
         exit_checks: list[ExitGateCheck] = []
@@ -1553,7 +1643,14 @@ class RunEngine:
         if isinstance(invoked, PhaseOutcome):
             return invoked
         return self._implementation_outcome(
-            execution, phase, invoked, request_extra, runtime, sandbox, sandbox_refs
+            execution,
+            phase,
+            invoked,
+            request_extra,
+            runtime,
+            sandbox,
+            sandbox_refs,
+            timeout_seconds=context.timeout_seconds,
         )
 
     def _implementation_outcome(
@@ -1565,11 +1662,16 @@ class RunEngine:
         runtime: RuntimeConfig,
         sandbox: SandboxPlan | None,
         sandbox_refs: tuple[str, ...],
+        *,
+        timeout_seconds: int,
     ) -> PhaseOutcome:
         """The outcome of IMPLEMENTATION after the implement call: the claim to check, the
-        self-report and the candidate ChangeSet."""
+        self-report and the candidate ChangeSet. ``timeout_seconds``: the time the call was
+        allowed to run (#179)."""
         if self.results.active:
-            limited = self._after_implement_call(execution, phase, result, request_extra)
+            limited = self._after_implement_call(
+                execution, phase, result, request_extra, timeout_seconds
+            )
             if limited is not None:
                 return limited
         self._record_claim(execution, result, runtime)
@@ -1728,11 +1830,12 @@ class RunEngine:
         phase: PhaseExecution,
         result: AgentExecutionResult,
         request_extra: dict[str, Any] | None,
+        timeout_seconds: int,
     ) -> PhaseOutcome | None:
         """Record the implement call for the agent results; an outcome when its contract
         limits end the phase."""
         self.results.after_agent_call(execution, phase, result)
-        limited = self._implement_limit(execution, phase, result, request_extra)
+        limited = self._implement_limit(execution, phase, result, request_extra, timeout_seconds)
         if limited is not None:
             return limited
         if result.status is ResultStatus.PASSED:
@@ -1754,13 +1857,17 @@ class RunEngine:
         phase: PhaseExecution,
         result: AgentExecutionResult,
         request_extra: dict[str, Any] | None,
+        timeout_seconds: int | None = None,
     ) -> PhaseOutcome | None:
         """Record an implement call under ``agentContract`` and end the phase in a controlled
-        way when the call reached its time limit or token budget (#97)."""
+        way when the call reached its time limit or token budget (#97). ``timeout_seconds``:
+        the time the call was allowed to run, which a stopped call names (#179)."""
         contract = (request_extra or {}).get("agentContract")
         if not isinstance(contract, dict):
             return None
-        return self.results.agent_contract.settle_implement(execution, phase, result, contract)
+        return self.results.agent_contract.settle_implement(
+            execution, phase, result, contract, timeout_seconds=timeout_seconds
+        )
 
     def _build_provider(
         self, execution: Execution, phase: PhaseExecution, provider_id: str
@@ -2823,7 +2930,9 @@ class RunEngine:
         )
 
     def _fast_validators(self, execution: Execution, change_set: ChangeSet) -> list[Any]:
-        """fastLane.verification (#58): affected tests first, side by side, reused by digest."""
+        """fastLane.verification (#58): affected tests first, side by side, reused by digest.
+        The frozen acceptance tests a dispute can cover are not among the affected tests
+        (#161)."""
         return self.friction.run_validators(
             execution,
             change_set,
@@ -2833,6 +2942,7 @@ class RunEngine:
                 self._validation_context(execution, change_set, definition),
             ),
             lambda output: self._save_validator_output(execution, output),
+            exclude=self.results.disputes.disputable(execution),
         )
 
     def _traceability_output(

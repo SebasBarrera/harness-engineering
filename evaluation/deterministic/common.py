@@ -16,6 +16,7 @@ import shutil
 import sqlite3
 import subprocess
 import sys
+import tempfile
 import time
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -29,6 +30,26 @@ EVALUATION = HERE.parent
 REPO = EVALUATION.parent
 RESULTS = EVALUATION / "results-2.0.0" / "deterministic"
 GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+# Windows has no agent sandbox mechanism (src/governed_harness/runtime/sandbox.py): the suites run
+# the governed conditions with runtime.agentSandbox: off there and record it as a deviation
+# (PREREGISTRO.md, H46). Every other platform keeps what harness init writes.
+WINDOWS = sys.platform == "win32"
+POSIX_SYSTEM_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
+# The variables a Windows process needs to start (SYSTEMROOT, COMSPEC, PATHEXT) or to find its
+# temporary and profile directories; kept from the caller's environment.
+WINDOWS_KEPT = (
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+)
 GIT = [
     "git",
     "-c",
@@ -38,6 +59,72 @@ GIT = [
     "-c",
     "commit.gpgsign=false",
 ]
+
+
+def venv_bin(venv: Path) -> Path:
+    """The executables directory of a virtual environment (``bin``, ``Scripts`` on Windows)."""
+    return venv / ("Scripts" if WINDOWS else "bin")
+
+
+def venv_python(venv: Path) -> Path:
+    return venv_bin(venv) / ("python.exe" if WINDOWS else "python")
+
+
+def venv_site_packages(venv: Path) -> Path:
+    if WINDOWS:
+        return venv / "Lib" / "site-packages"
+    return next((venv / "lib").glob("python3*/site-packages"))
+
+
+def system_path() -> list[str]:
+    """The system directories of the suites' minimal PATH. On Windows: the system directories,
+    and those of ``git`` and of Git for Windows' ``sh`` (POSIX has both in ``/usr/bin``)."""
+    if not WINDOWS:
+        return list(POSIX_SYSTEM_PATH)
+    root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+    dirs = [str(Path(root) / "System32"), root, str(Path(root) / "System32" / "Wbem")]
+    git_exe = shutil.which("git")
+    if git_exe:
+        dirs.append(str(Path(git_exe).parent))
+        # <Git>/cmd/git.exe: <Git>/bin holds sh.exe and bash.exe only.
+        dirs.append(str(Path(git_exe).parent.parent / "bin"))
+    sh = shutil.which("sh")
+    if sh:
+        dirs.append(str(Path(sh).parent))
+    return list(dict.fromkeys(dirs))
+
+
+def search_path(path_dirs: Sequence[Path | str]) -> str:
+    """A minimal PATH: ``path_dirs`` first, then the system directories (``:``, ``;`` on Windows)."""
+    return os.pathsep.join([*(str(p) for p in path_dirs), *system_path()])
+
+
+def platform_env() -> dict[str, str]:
+    """The variables a process of this platform needs besides PATH (none on POSIX)."""
+    if not WINDOWS:
+        return {}
+    return {name: os.environ[name] for name in WINDOWS_KEPT if name in os.environ}
+
+
+def platform_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a project configuration to the platform: on Windows, ``runtime.agentSandbox: off``
+    (no sandbox mechanism exists there); elsewhere the configuration is returned unchanged."""
+    if WINDOWS:
+        config.setdefault("runtime", {})["agentSandbox"] = "off"
+    return config
+
+
+def platform_deviations() -> list[str]:
+    """The deviations from ``harness init`` this platform imposes (recorded in environment.json)."""
+    if WINDOWS:
+        return ["runtime.agentSandbox: off (Windows has no agent sandbox mechanism)"]
+    return []
+
+
+def as_shell_path(path: Path | str) -> str:
+    """A path written inside a ``sh -c`` script: ``C:/...`` on Windows, where ``shlex`` (POSIX
+    mode) would read the backslashes as escapes; unchanged elsewhere."""
+    return Path(path).as_posix() if WINDOWS else str(path)
 
 
 def add_common_arguments(parser: Any) -> None:
@@ -147,19 +234,23 @@ def environment(
         "git": tool_version(["git", "--version"]),
         "modelCalls": 0,
     }
+    if WINDOWS:
+        record["platformDeviations"] = platform_deviations()
     record.update(extra or {})
     return record
 
 
 def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
     print(f"wrote {path}", flush=True)
 
 
 def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as handle:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
         for record in records:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
     print(f"wrote {path} ({len(records)} records)", flush=True)
@@ -230,10 +321,13 @@ def isolated_env(path_dirs: Sequence[Path | str], state_root: Path) -> dict[str,
     (state_root / "anchors").mkdir(exist_ok=True)
     (state_root / "state").mkdir(exist_ok=True)
     return {
-        "PATH": ":".join([*(str(p) for p in path_dirs), "/usr/bin", "/bin", "/usr/sbin", "/sbin"]),
-        "HOME": os.environ["HOME"],
+        "PATH": search_path(path_dirs),
+        "HOME": os.environ.get("HOME", str(Path.home())) if WINDOWS else os.environ["HOME"],
         "LANG": "en_US.UTF-8",
-        "TMPDIR": os.environ.get("TMPDIR", "/tmp"),
+        "TMPDIR": os.environ.get("TEMP", tempfile.gettempdir())
+        if WINDOWS
+        else os.environ.get("TMPDIR", "/tmp"),
+        **platform_env(),
         "HARNESS_ANCHOR_DIR": str(state_root / "anchors"),
         "HARNESS_STATE_DIR": str(state_root / "state"),
         **GIT_ENV,
@@ -261,7 +355,14 @@ def query(database: Path, sql: str, params: Sequence[Any] = ()) -> list[tuple[An
 
 SIMULATED_PERSON = "human.reviewer-simulated"
 # The inbox kinds (#73) the simulated person answers; any other stop is returned as it is.
-ANSWERED_KINDS = ("clarification", "acceptance", "plan", "decomposition", "preflight")
+ANSWERED_KINDS = (
+    "clarification",
+    "acceptance",
+    "plan",
+    "decomposition",
+    "preflight",
+    "architecture",
+)
 
 
 def simulated_person(
@@ -277,8 +378,9 @@ def simulated_person(
     """The declared simulated person (``human.reviewer-simulated``, a simulation stated in every
     README) answers the waits before DECISION when ``run start``/``run continue`` exits with 6:
     INTENT questions (answered "keep the behaviour the task describes"), acceptance tests, a plan
-    approval and an unavailable preflight (continued uncertified). Any other stop is returned as
-    it is. Each wait is appended to ``waits`` as ``PHASE:kind``."""
+    approval, an unavailable preflight (continued uncertified) and the layer rules a survey
+    inferred in DISCOVERY (approved with their digest, H06). Any other stop is returned as it
+    is. Each wait is appended to ``waits`` as ``PHASE:kind``."""
     for _ in range(max_rounds):
         if code != 6:
             return code
@@ -318,10 +420,30 @@ def simulated_person(
             open_request = listed.get("openRequest") if isinstance(listed, dict) else None
             questions = list((open_request or {}).get("questions") or [])
             kind = "clarification" if questions else ""
-        if not kind:
+        if not kind or (kind == "architecture" and phase != "DISCOVERY"):
+            # Architecture options of a new project (INTENT) need a chosen option: not answered.
             return code
         waits.append(f"{phase}:{kind}")
-        if kind == "clarification":
+        if kind == "architecture":
+            code, _, _ = h.run(
+                ws,
+                "architecture",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--decision",
+                "APPROVE",
+                "--digest",
+                plan_digest,
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated approval of the inferred layer rules",
+                label="architecture decide",
+            )
+        elif kind == "clarification":
             answers = {
                 "answers": {
                     q[
@@ -333,7 +455,7 @@ def simulated_person(
             }
             waits.append("questions:" + ",".join(str(q.get("ruleId")) for q in questions))
             answers_path = scratch / f"answers-{len(waits)}.yaml"
-            answers_path.write_text(yaml.safe_dump(answers))
+            answers_path.write_text(yaml.safe_dump(answers), newline="\n")
             h.run(
                 ws,
                 "task",

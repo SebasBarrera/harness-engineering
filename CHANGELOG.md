@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
+  request target with its query, so a token sent by mistake as `?token=...` was refused with 401
+  but written in clear to standard output. The access line now keeps the client, method, path,
+  HTTP version and status; authentication is unchanged.
+- Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
+  `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
+  retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
+  status, `harness run cancel` and a new `harness run start` of its task).
+- A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
+  as if it were within its budget (#157, found by the H20 evaluation suite): with no further
+  agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before
+  `INDEPENDENT_REVIEW` (or before `DECISION` when a review call crossed it) until a person runs
+  `harness budget raise` and `harness run continue`.
+- The fast lane no longer prevents disputing a frozen acceptance test (#161). Its affected tests
+  ran first and stopped the attempt on a failure, so when they included the frozen file
+  `harness.acceptance-tests` never ran and no dispute could open: `disputes: person` had no
+  effect on size-S tasks. Under `verification.acceptanceTests.disputes: person` the frozen files
+  are now left out of the affected tests (event `verification.affected-tests` lists the rest);
+  they still run in `harness.acceptance-tests` and in the full suite. A failing ordinary affected
+  test still stops the attempt, and without `disputes: person` nothing changes.
 - A catalogue of ten architecture styles with an expert for each, and persistent reverse
   engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
   `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests
@@ -26,6 +46,15 @@
     the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
     the documents. `harness architecture refresh` redoes it. Guides in Spanish:
     `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+- `harness verify` and the events after the anchored head (#149), behind the new key
+  `governance.unanchoredEvents` that `harness init` writes (`warn`). The chain anchor covers
+  the chain up to its head; before, the events appended after it passed verify (only counted
+  in `eventsAfterAnchor`), and a forged `retention.artifacts.pruned` event appended after the
+  anchor made a deleted blob pass. Under the key, verify lists those events
+  (`anchor.unanchoredEvents`, a `warnings` entry; `fail` makes the anchor status `unanchored`
+  and exits 6), and a prune event excuses a missing artifact only when it is within the
+  anchored part (retention re-anchors after it prunes). A project without the key keeps the
+  earlier report and exit codes.
 - A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
   `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
   `project.yaml` without it behaves, and digests, as before.
@@ -43,9 +72,31 @@
   - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
     corrections, contract retries, escalations and calls cut by a limit count; at the cap the
     phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+    The event and its `agent-iteration-cap` evidence carry the response the parent gets
+    instead of a call, with `finalStatus: ITERATIONS_EXHAUSTED` (#149; before, no code wrote
+    that status of the response schema).
   - Token budget and time limit per call from the router's S/M/L size (starting values, to be
     calibrated): the time limit stops the process, the token budget is checked on the usage the
     provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
+  - The token budget counts the work of a call, not its prompt-cache reads (#70). In a five-run
+    Haiku pilot every governed run blocked in INTENT: Claude Code re-reads its cached context on
+    each turn, the adapter folded those reads into `inputTokens`, and one read-only `clarify`
+    call reported 350160 tokens, almost all cache reads, against the M budget of 200000. Usage
+    gains `cacheReadTokens` (the part of `cacheTokens` read from the cache; protocol, the
+    `resource-usage` and `agent-call-response` schemas), reported by `claude-code`
+    (`cache_read_input_tokens`), `codex` (`cached_input_tokens`) and `gemini-cli` (`cached`, which
+    also fills `cacheTokens` now). The budget counts fresh input, cache creation, output and
+    reasoning; cache reads are recorded with the usage, the response and the metrics
+    (`tokens.cacheRead`) but not counted, and the limit message gives both numbers. A provider
+    that reports no cache-read split counts its whole input, as before.
+  - The reviewers of the review panel go through the contract (#149): before, their answers
+    bypassed it and an ~80 kB answer was accepted, and with `harness init` the panel replaces
+    `agentReview`, so the `review` kind was never checked. Each reviewer answer is now judged
+    as a `review` call (token budget, time limit, result bytes and field caps, with the keys of
+    the panel's answer) and recorded in `agent.call.recorded` with its reviewer; an answer
+    outside the limits is discarded and retried as any answer without a valid result, and a
+    reviewer without a valid answer blocks under `review.panel.mode: enforce`. Only under
+    `agentContract: enforce`; without it the panel reads its answers as before.
   - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
     commands and the embedded MCP tools; the implement instructions tell the agent to use only
     that contract.

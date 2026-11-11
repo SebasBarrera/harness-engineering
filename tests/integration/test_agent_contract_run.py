@@ -4,12 +4,13 @@ iterations, the response limits and the token budget and time limit of a call.""
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from governed_harness.agents.contract import TASK_FIELDS
+from governed_harness.agents.contract import TASK_FIELDS, validate_response_contract
 from governed_harness.application import HarnessApplication
 from governed_harness.domain.enums import PhaseId, ResultStatus
 
@@ -29,7 +30,9 @@ TASK = (
 )
 
 # MODE: "good" answers well; "notes" adds a key outside the contract to the first BROKEN answers;
-# "usage" reports more tokens than any budget; "sleep" does not answer within the time limit.
+# "usage" reports more tokens than any budget; "cached" reports as many, almost all of them
+# prompt-cache reads; "sleep" does not answer within the time limit; "implsleep" does not
+# answer an implement call within the command timeout.
 AGENT = """\
 import json, sys, time
 from pathlib import Path
@@ -54,8 +57,14 @@ if kind == "acceptance":
     answer = {"status": "PASSED", "summary": "answered", "result": result}
     if MODE == "usage":
         answer["usage"] = {"inputTokens": 5000, "outputTokens": 10}
+    if MODE == "cached":
+        answer["usage"] = {
+            "inputTokens": 5000, "outputTokens": 10, "cacheTokens": 4600, "cacheReadTokens": 4500
+        }
     print(json.dumps(answer))
     sys.exit(0)
+if MODE == "implsleep":
+    time.sleep(30)
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
     "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n"
@@ -243,6 +252,35 @@ def test_an_agent_that_used_its_cap_blocks_the_run_with_a_restructure_advice(
     assert "Restructure the input" in finding.message
 
 
+def test_an_agent_that_used_its_cap_gets_an_iterations_exhausted_response(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: the cap ends with the ITERATIONS_EXHAUSTED status of the response schema, recorded
+    # where the parent's answer is (the agent.iterations.exhausted event and its evidence).
+    configure(
+        python_workspace,
+        tmp_path,
+        mode="notes",
+        broken=9,
+        contract={"mode": "enforce", "maxIterations": 1},
+        retry=True,
+    )
+    application, run = start(python_workspace, tmp_path)
+    with application._services(python_workspace) as services:
+        [event] = [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "agent.iterations.exhausted"
+        ]
+        record = json.loads(services.artifacts.get(event["evidenceRef"]))
+    assert event["finalStatus"] == "ITERATIONS_EXHAUSTED"
+    response = validate_response_contract(event["response"])
+    assert response.final_status == "ITERATIONS_EXHAUSTED"
+    assert response.call_kind == "acceptance"
+    assert response.result is None
+    assert record["response"] == event["response"]
+
+
 # ----- item 6: the token budget and the time limit -------------------------------------------
 def test_a_call_over_its_token_budget_ends_with_a_structured_result(
     python_workspace: Path, tmp_path: Path
@@ -259,6 +297,24 @@ def test_a_call_over_its_token_budget_ends_with_a_structured_result(
     assert received["finalStatus"] == "LIMIT_REACHED"
     assert received["limitReached"] == "tokens"
     assert received["result"] is None
+
+
+def test_prompt_cache_reads_do_not_consume_the_token_budget(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # 5010 reported tokens, 4500 of them cache reads: 510 count against a budget of 1000.
+    configure(
+        python_workspace,
+        tmp_path,
+        mode="cached",
+        contract={"mode": "enforce", "budgets": {"S": {"tokens": 1000}}},
+    )
+    application, run = start(python_workspace, tmp_path)
+    shown = application.agent_calls(python_workspace, run, "acceptance", 1)
+    received = shown["call"]["parentReceived"]
+    assert received["finalStatus"] == "PASSED"
+    assert received["usage"]["cacheReadTokens"] == 4500
+    assert "agent.limit.reached" not in rules(application, python_workspace, run)
 
 
 def test_a_call_that_reached_a_limit_counts_as_an_iteration(
@@ -303,3 +359,43 @@ def test_an_implement_call_carries_the_contract_and_is_recorded(
     assert contract["resources"]["writePaths"][0] == "src/sample/pricing.py"
     shown = application.agent_calls(python_workspace, run, "implement", 1)
     assert shown["call"]["parentReceived"]["finalStatus"] == "PASSED"
+
+
+def test_an_implement_call_records_the_bytes_it_sent(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: the bytes of the implement request, measured as for the other kinds (JSON with
+    # sorted keys, UTF-8), are the size of exactly what the provider received.
+    log = configure(python_workspace, tmp_path, contract={"mode": "enforce"}, acceptance=False)
+    application, run = start(python_workspace, tmp_path)
+    [request] = requests_of(log, "implement")
+    sent = len(json.dumps(request, sort_keys=True).encode("utf-8"))
+    [call] = application.agent_calls(python_workspace, run, "implement")["calls"]
+    assert call["sentBytes"] == sent
+    shown = application.agent_calls(python_workspace, run, "implement", 1)
+    assert shown["call"]["record"]["sent"]["bytes"] == sent
+
+
+def test_an_implement_call_stopped_by_the_command_timeout_names_that_limit(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #179 (H50 M8): runtime.commandTimeoutSeconds is shorter than the time limit of the
+    # task's size (S, 600 s); the message names the limit that stopped the call.
+    configure(
+        python_workspace, tmp_path, mode="implsleep", contract={"mode": "enforce"}, acceptance=False
+    )
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["runtime"]["commandTimeoutSeconds"] = 3
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    began = time.monotonic()
+    application, run = start(python_workspace, tmp_path)
+    elapsed = time.monotonic() - began
+    # The 3 s command timeout acted, not the 600 s limit (nor the 30 s sleep of the agent).
+    assert 3 <= elapsed < 30
+    shown = application.agent_calls(python_workspace, run, "implement", 1)
+    received = shown["call"]["parentReceived"]
+    assert received["limitReached"] == "time"
+    assert "the command timeout (3 s), shorter than its time limit (600 s)" in received["summary"]
+    status = application.status(python_workspace, run)["execution"]
+    assert status["status"] == ResultStatus.BLOCKED

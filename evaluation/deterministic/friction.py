@@ -52,8 +52,10 @@ from common import (  # noqa: E402
     git,
     init_repo,
     isolated_env,
+    platform_config,
     stamp,
     state_database,
+    venv_bin,
     write_json,
     write_jsonl,
 )
@@ -77,17 +79,24 @@ results = {
     "plan": {"subtasks": []},
     "acceptance": {"tests": []},
     "locate": {"locations": [], "questions": []},
+    # The survey answer carries the reverse engineering fields that `harness init` asks for
+    # (architecture.documentation: project); without them DISCOVERY blocks as malformed.
     "architecture": (
         {"options": []}
         if request.get("mode") == "advise"
-        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {}}
+        else {"summary": "No organization plan.", "structure": [], "practices": []}
+        if request.get("mode") == "organize"
+        else {"style": "custom", "summary": "No layering.", "layers": [], "allow": {},
+              "organization": "None.",
+              "components": [{"name": "app", "path": ".", "responsibility": "The project."}],
+              "conventions": [], "guidance": ["Follow the structure."]}
     ),
 }
 if kind == "review" and "outputContract" in request:
     results["review"] = {"verdict": "PASS", "findings": [], "summary": "No finding."}
 if kind == "implement":
     for path, content in json.loads(Path(args.change).read_text()).items():
-        Path(path).write_text(content)
+        Path(path).write_text(content, newline="\\n")
     answer = {"status": "PASSED", "summary": "Change written"}
 else:
     answer = {"status": "PASSED", "summary": kind, "result": results.get(kind, {})}
@@ -139,18 +148,23 @@ OWNED = ["src/sample/pricing.py", "tests/test_pricing.py"]
 def python_project(root: Path) -> None:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
-    (root / "src" / "sample" / "__init__.py").write_text("from .pricing import apply_discount\n")
+    # LF on every platform: Windows text mode would write CRLF (PREREGISTRO.md, H46).
+    (root / "src" / "sample" / "__init__.py").write_text(
+        "from .pricing import apply_discount\n", newline="\n"
+    )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
-        "    return subtotal\n"
+        "    return subtotal\n",
+        newline="\n",
     )
-    (root / "tests" / "test_pricing.py").write_text(TEST_HEAD)
+    (root / "tests" / "test_pricing.py").write_text(TEST_HEAD, newline="\n")
     (root / "pyproject.toml").write_text(
         '[project]\nname = "sample"\nversion = "0.1.0"\n\n'
-        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\npythonpath = ["src"]\n'
+        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\npythonpath = ["src"]\n',
+        newline="\n",
     )
-    (root / "README.md").write_text("# Sample\n")
-    (root / ".gitignore").write_text(".harness/\n__pycache__/\n.pytest_cache/\n")
+    (root / "README.md").write_text("# Sample\n", newline="\n")
+    (root / ".gitignore").write_text(".harness/\n__pycache__/\n.pytest_cache/\n", newline="\n")
     init_repo(root)
 
 
@@ -171,7 +185,7 @@ def change_for(task: str, risk: str) -> dict[str, str]:
 
 def configure(root: Path, run_dir: Path, log: Path, change: Path, *, friction: bool) -> None:
     path = root / ".harness" / "project.yaml"
-    config = yaml.safe_load(path.read_text())
+    config = platform_config(yaml.safe_load(path.read_text()))
     if not friction:
         config.pop("friction", None)
     agent = run_dir / "agent.py"
@@ -183,7 +197,7 @@ def configure(root: Path, run_dir: Path, log: Path, change: Path, *, friction: b
             "command": ["python", str(agent), "--change", str(change), "--log", str(log)],
         }
     }
-    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
 
 
 def task_file(task: str, risk: str) -> str:
@@ -230,7 +244,9 @@ def measure(
     log = Path(tempfile.mkdtemp(prefix="friction-calls-")) / "calls.jsonl"
     change = run_dir / "change.json"
     change.write_text(json.dumps(change_for(task, risk)))
-    h = Harness(args.harness, isolated_env([args.project_venv / "bin"], run_dir / "harness-state"))
+    h = Harness(
+        args.harness, isolated_env([venv_bin(args.project_venv)], run_dir / "harness-state")
+    )
     h.run(root, "init", "--path", ".", label="init")
     if git(root, "status", "--porcelain").strip():
         git(root, "add", "-A")

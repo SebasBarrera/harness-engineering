@@ -51,7 +51,9 @@ the criteria that prove it, split it when it asks for more than one thing, then 
 
 Queda un hallazgo `HIGH` con la regla `agent.iterations.exhausted`, el evento
 `agent.iterations.exhausted` y el artefacto `agent-iteration-cap`, que lista cada iteración con su
-estado, las cuatro causas posibles y la recomendación:
+estado, las cuatro causas posibles y la recomendación. El evento y el artefacto llevan también la
+respuesta que recibe el padre en lugar de la llamada (`response`, con el contrato de respuesta y
+`finalStatus: ITERATIONS_EXHAUSTED`). Las causas posibles:
 
 - un prompt mal estructurado (la tarea es vaga, contradictoria o demasiado larga);
 - contexto incorrecto o insuficiente (al agente le faltan archivos o datos);

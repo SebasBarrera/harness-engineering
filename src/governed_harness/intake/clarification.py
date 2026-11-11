@@ -308,8 +308,9 @@ _CALL = re.compile(r"[A-Za-z_][\w.]*\(")
 _SNAKE = re.compile(r"\b[A-Za-z][A-Za-z0-9]*_[A-Za-z0-9_]+\b")  # NOSONAR(S6353)
 _PATH = re.compile(r"(?:^|[\s(])\.{0,2}/?[\w.-]+/[\w./-]+")
 _FILE = re.compile(rf"\b[\w-]+\.(?:{_FILE_EXTENSIONS})\b")
-_CAMEL = re.compile(r"\b[A-Z][a-z0-9]+(?:[A-Z][a-z0-9]*)+\b")
-_TRAILING = re.compile(r"(?<![\s.!?;:,])[\s.!?;:,]+$")
+_CAMEL = re.compile(r"\b[A-Z][a-z0-9]++(?:[A-Z][a-z0-9]*+)++\b")
+# What _normalise strips from the end once whitespace runs are single spaces.
+_TRAILING_CHARS = " .!?;:,"
 _SPACE = re.compile(r"\s+")
 
 
@@ -360,7 +361,7 @@ def _statement(criterion: AcceptanceCriterion) -> str:
 
 
 def _normalise(text: str) -> str:
-    return _TRAILING.sub("", _SPACE.sub(" ", text.casefold()).strip())
+    return _SPACE.sub(" ", text.casefold()).strip().rstrip(_TRAILING_CHARS)
 
 
 def _excerpt(text: str) -> str:

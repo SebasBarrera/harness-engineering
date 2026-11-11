@@ -198,6 +198,10 @@ The run waits for a person (`BLOCKED` in VERIFICATION, exit code 6) when all of 
 - the self-report of the implementation that produced the ChangeSet lists at least one disputed
   test with a reason.
 
+The same holds in the fast lane of `friction` (#161): its affected tests, which run first and
+stop the attempt on a failure, leave out the frozen files under `disputes: person`, so the frozen
+tests run in `harness.acceptance-tests` and the full suite before the outcome is decided.
+
 Otherwise the run fails as before. A waiting run is not stopped: `governance.stopTheLine` leaves
 its workspace alone. `harness inbox` shows an `acceptance-dispute` entry with the disputed tests,
 the reasons and the digest of the dispute (the ChangeSet, the approved tests and what was
@@ -347,7 +351,10 @@ restored with the rest.
 and `wallSeconds`, with `warnAt` (default 0.8). Usage is what providers report and the wall time
 the harness measures. Crossing `warnAt` records a LOW `budget.warning` once; crossing a limit
 records a HIGH `budget.exceeded` finding and no further agent call is made until a person raises
-the limit:
+the limit. A limit crossed by the last agent call of a run, with no further call to refuse, stops
+the run before `INDEPENDENT_REVIEW` (`BLOCKED`, exit code 6), or before `DECISION` when a review
+call crossed it (exit code 4, no gate evaluated): the run never reaches the decision as if it were
+within its budget (#157):
 
 ```bash
 harness budget show --run <runId>

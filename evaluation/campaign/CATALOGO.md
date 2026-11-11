@@ -3,7 +3,7 @@
 Insumo para la campaña de evaluación de la versión 2.0.0 y para el capítulo de evaluación de la tesis.
 Este documento es un diseño: **no se ejecutó ninguna prueba, suite ni llamada a modelo para escribirlo**.
 Todo lo que afirma sobre el código y sobre los resultados salió de leer archivos del worktree
-`C:\Users\famil\sebas\hw-eval` (rama `develop`, `pyproject.toml` declara `version = "1.0.0"`; 2.0.0 aún no está
+un worktree local (rama `develop`, `pyproject.toml` declara `version = "1.0.0"`; 2.0.0 aún no está
 etiquetada en este árbol). Cada cifra de resultados cita el archivo del que sale; «(calculado)» marca una
 división o resta hecha aquí sobre cifras citadas.
 

@@ -265,7 +265,14 @@ class CommandAgentProvider:
         )
         return (
             AgentExecutionResult(
-                status, summary, invocation, (tool,), stdout_ref.uri, usage, self_report
+                status,
+                summary,
+                invocation,
+                (tool,),
+                stdout_ref.uri,
+                usage,
+                self_report,
+                request_bytes=len(json.dumps(request, sort_keys=True).encode("utf-8")),
             ),
             structured,
         )
@@ -345,6 +352,7 @@ _USAGE_FIELDS = {
     "reasoningTokens": "reasoning_tokens",
     "costUsd": "cost_usd",
     "cacheTokens": "cache_tokens",
+    "cacheReadTokens": "cache_read_tokens",
 }
 
 

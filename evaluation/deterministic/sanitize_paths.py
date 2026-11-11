@@ -15,6 +15,8 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import sys
+import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -33,6 +35,16 @@ def main() -> int:
         (re.compile(r"/private/var/folders/[^\s\"'/]+/[^\s\"'/]+/T"), "<tmp>"),
         (re.compile(r"/var/folders/[^\s\"'/]+/[^\s\"'/]+/T"), "<tmp>"),
     ]
+    homes = [home]
+    if sys.platform == "win32":
+        # JSON writes a Windows path with doubled backslashes; some records use C:/... instead.
+        pairs.append((tempfile.gettempdir(), "<tmp>"))
+        pairs += [
+            (variant, placeholder)
+            for old, placeholder in list(pairs)
+            for variant in (old.replace("\\", "\\\\"), old.replace("\\", "/"))
+        ]
+        homes += [home.replace("\\", "\\\\"), home.replace("\\", "/")]
     for path in sorted(args.directory.rglob("*")):
         if not path.is_file() or path.suffix not in {".json", ".jsonl", ".txt", ".xml"}:
             continue
@@ -42,9 +54,10 @@ def main() -> int:
             new = new.replace(old, placeholder)
         for pattern, placeholder in temp:
             new = pattern.sub(placeholder, new)
-        new = new.replace(home, "~")
+        for variant in homes:
+            new = new.replace(variant, "~")
         if new != text:
-            path.write_text(new, encoding="utf-8")
+            path.write_text(new, encoding="utf-8", newline="\n")
             print(f"sanitized {path}")
     return 0
 

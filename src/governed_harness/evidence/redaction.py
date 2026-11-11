@@ -3,6 +3,14 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Any
+
+PRIVATE_KEY = re.compile(
+    rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?"
+    rb"-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    re.DOTALL,
+)
+PRIVATE_KEY_MARK = b"<REDACTED_PRIVATE_KEY>"
 
 
 @dataclass(frozen=True)
@@ -45,15 +53,7 @@ class SecretRedactor:
             re.compile(rb"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
             b"<REDACTED_AWS_KEY>",
         ),
-        (
-            "private_key",
-            re.compile(
-                rb"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?"
-                rb"-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
-                re.DOTALL,
-            ),
-            b"<REDACTED_PRIVATE_KEY>",
-        ),
+        ("private_key", PRIVATE_KEY, PRIVATE_KEY_MARK),
     )
 
     def __init__(self, *, literals: Iterable[bytes] = (), extended: bool = False) -> None:
@@ -88,6 +88,41 @@ class SecretRedactor:
                 result = result.replace(literal, b"<REDACTED_LITERAL>")
                 applied.append(f"literal_{index}")
         return RedactionResult(result, bool(applied), tuple(applied))
+
+    def redact_json(self, value: Any) -> tuple[Any, tuple[str, ...]]:
+        """``value`` with every string in it (object keys included) redacted on its own, and
+        the rules applied. The serialized form of a JSON document escapes quotes and
+        backslashes, so a rule run over it can cut an escape or span two strings and leave a
+        document that no longer parses; redacting the decoded strings cannot. A value of a type
+        JSON does not know is redacted in its ``str`` form, the form ``default=str`` stores."""
+        applied: list[str] = []
+        return self._redact_json_value(value, applied), tuple(applied)
+
+    def _redact_json_value(self, item: Any, applied: list[str]) -> Any:
+        if isinstance(item, str):
+            return self._redact_json_text(item, applied)
+        if isinstance(item, dict):
+            return {
+                (self._redact_json_text(key, applied) if isinstance(key, str) else key): (
+                    self._redact_json_value(entry, applied)
+                )
+                for key, entry in item.items()
+            }
+        if isinstance(item, list | tuple):
+            return [self._redact_json_value(entry, applied) for entry in item]
+        if item is None or isinstance(item, bool | int | float):
+            return item
+        return self._redact_json_text(str(item), applied)
+
+    def _redact_json_text(self, item: str, applied: list[str]) -> str:
+        result = self.redact(item.encode("utf-8", "surrogatepass"))
+        if not result.redacted:
+            return item
+        applied.extend(rule for rule in result.rule_ids if rule not in applied)
+        try:
+            return result.data.decode("utf-8", "surrogatepass")
+        except UnicodeDecodeError:
+            return result.data.decode("utf-8", "replace")
 
     def redact_configured_text(self, text: str) -> str:
         """Apply only the redaction configured for the store (provider environment values

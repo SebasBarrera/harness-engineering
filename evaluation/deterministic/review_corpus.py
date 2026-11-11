@@ -51,7 +51,9 @@ from common import (  # noqa: E402
     environment,
     git,
     isolated_env,
+    platform_config,
     stamp,
+    venv_bin,
     write_json,
     write_jsonl,
 )
@@ -77,16 +79,17 @@ def apply_edits(ws: Path, case: dict[str, Any]) -> list[str]:
         text = target.read_text()
         if item["old"] not in text:
             raise ValueError(f"{case['id']}: {item['old']!r} not in {item['path']}")
-        target.write_text(text.replace(item["old"], item["new"], 1))
+        # LF on every platform: Windows text mode would rewrite every line (PREREGISTRO.md, H46).
+        target.write_text(text.replace(item["old"], item["new"], 1), newline="\n")
         changed.append(workspace_path(item["path"]))
     for path, content in (case.get("append") or {}).items():
         target = ws / workspace_path(path)
-        target.write_text(target.read_text() + content)
+        target.write_text(target.read_text() + content, newline="\n")
         changed.append(workspace_path(path))
     for path, content in (case.get("write") or {}).items():
         target = ws / workspace_path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content)
+        target.write_text(content, newline="\n")
         changed.append(workspace_path(path))
     return sorted(set(changed))
 
@@ -102,7 +105,7 @@ def locate_truth(ws: Path, case: dict[str, Any]) -> list[dict[str, Any]]:
 
 def configure(ws: Path, run_dir: Path, args: argparse.Namespace, truth_file: Path) -> None:
     path = ws / ".harness" / "project.yaml"
-    config = yaml.safe_load(path.read_text())
+    config = platform_config(yaml.safe_load(path.read_text()))
     providers = config.setdefault("agentProviders", {}) or {}
     log = str(args.call_log_dir / f"{run_dir.name}.jsonl")
     providers["reviewer-silent"] = {
@@ -124,7 +127,7 @@ def configure(ws: Path, run_dir: Path, args: argparse.Namespace, truth_file: Pat
     config["review"]["panel"]["consistencyChecks"] = [
         {"id": "compile", "command": ["python", "-m", "compileall", "-q", "src"]}
     ]
-    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
 
 
 def review(h: Harness, ws: Path, label: str, provider: str, *extra: str) -> dict[str, Any]:
@@ -230,7 +233,9 @@ def run_case(
     git(ws, "init", "-q", "-b", "main")
     git(ws, "add", "-A")
     git(ws, "commit", "-qm", "baseline")
-    h = Harness(args.harness, isolated_env([args.project_venv / "bin"], run_dir / "harness-state"))
+    h = Harness(
+        args.harness, isolated_env([venv_bin(args.project_venv)], run_dir / "harness-state")
+    )
     h.run(ws, "init", "--path", ".", label="init")
     if git(ws, "status", "--porcelain").strip():
         git(ws, "add", "-A")
@@ -274,7 +279,7 @@ def run_case(
             digest_report(review(h, ws, f"review rep {rep}", provider, "--no-cache"), truth)
         )
     follow = corpus["testOnlyFollowUp"]
-    (ws / follow["path"]).write_text(follow["content"])
+    (ws / follow["path"]).write_text(follow["content"], newline="\n")
     git(ws, "add", "-A")
     git(ws, "commit", "-qm", "test-only follow-up")
     before = calls()

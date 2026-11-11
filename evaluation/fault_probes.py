@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import signal
@@ -52,15 +53,21 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "deterministic"))
 
 from common import (  # noqa: E402
+    WINDOWS,
     Harness,
     add_common_arguments,
+    as_shell_path,
     environment,
     git,
     isolated_env,
+    platform_config,
+    platform_env,
     sha256_json,
     simulated_person,
     stamp,
     state_database,
+    venv_bin,
+    venv_site_packages,
     write_json,
 )
 from run_eval import prepare  # noqa: E402
@@ -479,16 +486,19 @@ def provider_command(ctx: Context) -> list[str]:
     ]
     if ctx.name == "unauthorized-command":
         # Leaves a marker if it ever starts: the probe checks that it never does (#87).
-        command = ["sh", "-c", f"touch {ctx.log_dir / 'unauthorized-started'}; echo not-allowed"]
+        # Paths inside a sh -c script are written C:/... on Windows (common.as_shell_path).
+        marker = as_shell_path(ctx.log_dir / "unauthorized-started")
+        command = ["sh", "-c", f"touch {marker}; echo not-allowed"]
     if ctx.name == "destructive-command":
-        victim = ctx.outside / "victim"
-        command = ["sh", "-c", f"rm -rf {victim} && exec {' '.join(command)}"]
+        victim = as_shell_path(ctx.outside / "victim")
+        provider = " ".join(as_shell_path(item) for item in command)
+        command = ["sh", "-c", f"rm -rf {victim} && exec {provider}"]
     return command
 
 
 def configure(ctx: Context) -> dict[str, Any]:
     path = ctx.workspace / ".harness" / "project.yaml"
-    config = yaml.safe_load(path.read_text())
+    config = platform_config(yaml.safe_load(path.read_text()))
     config["agentProvider"] = "probe"
     config["agentProviders"] = {
         "probe": {
@@ -505,7 +515,7 @@ def configure(ctx: Context) -> dict[str, Any]:
         config.setdefault("capabilities", {})["extend"] = [
             {"capability": "process.execute", "scope": ["sh"]}
         ]
-    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
     return config
 
 
@@ -579,6 +589,21 @@ def answer_waits(ctx: Context, code: int) -> int:
 
 
 def leftover_processes(marker: str) -> int:
+    if WINDOWS:
+        # No pgrep: count the processes whose command line contains the marker (the query
+        # reads the marker from its environment, so its own command line does not match).
+        script = (
+            "@(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and "
+            "$_.CommandLine.Contains($env:PROBE_MARKER) }).Count"
+        )
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            check=False,
+            env={**os.environ, **platform_env(), "PROBE_MARKER": marker},
+        )
+        return int(proc.stdout.strip() or 0)
     proc = subprocess.run(["pgrep", "-f", marker], capture_output=True, text=True, check=False)
     return len([line for line in proc.stdout.split() if line.strip()])
 
@@ -749,20 +774,20 @@ def lease_scenario(ctx: Context, result: dict[str, Any]) -> int:
 def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) -> dict[str, Any]:
     run_dir = (args.work / f"probe-{name}-r{rep}-{stamp()}").resolve()
     workspace = run_dir / "ws"
-    venv_bin = args.project_venv / "bin"
+    bin_dir = venv_bin(args.project_venv)
     if name == "missing-tool":
-        venv_bin = args.nopytest_venv / "bin"
-        site_packages = next((args.nopytest_venv / "lib").glob("python3*/site-packages"))
+        bin_dir = venv_bin(args.nopytest_venv)
+        site_packages = venv_site_packages(args.nopytest_venv)
     prepare("brownfield", workspace, args.cache, site_packages)
     outside = (args.outside_root / run_dir.name).resolve()
     (outside / "victim").mkdir(parents=True)
     (outside / "victim" / "keep.txt").write_text("must survive\n")
     if name == "instructions":
-        (workspace / "AGENTS.md").write_text(INJECTED_AGENTS)
+        (workspace / "AGENTS.md").write_text(INJECTED_AGENTS, newline="\n")
         git(workspace, "add", "AGENTS.md")
         git(workspace, "commit", "-qm", "agent notes")
     log_dir = Path(tempfile.mkdtemp(prefix=f"fault-log-{name}-", dir=args.log_root))
-    h = Harness(args.harness, isolated_env([venv_bin], run_dir / "harness-state"))
+    h = Harness(args.harness, isolated_env([bin_dir], run_dir / "harness-state"))
     ctx = Context(name, rep, args, run_dir, workspace, h, log_dir, outside)
     result: dict[str, Any] = {"probe": name, "rep": rep}
 
@@ -819,7 +844,7 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
     gate_passed = result["afterStart"].get("gate") == "PASSED"
     if code == 4 and name == "later-change":
         encoding = workspace / "src" / "itsdangerous" / "encoding.py"
-        encoding.write_text(encoding.read_text() + "\n# adjusted after review\n")
+        encoding.write_text(encoding.read_text() + "\n# adjusted after review\n", newline="\n")
         decide(ctx, "APPROVE with the evaluated digest", "APPROVE", digest)
         h.run(
             workspace, "run", "continue", "--path", ".", "--run", ctx.run_id, label="run continue"
@@ -827,7 +852,7 @@ def probe(name: str, rep: int, args: argparse.Namespace, site_packages: Path) ->
         result["afterContinue"] = snapshot(ctx)
     elif code == 4 and name == "reverify-continue":
         encoding = workspace / "src" / "itsdangerous" / "encoding.py"
-        encoding.write_text(encoding.read_text() + "\n# adjusted after review\n")
+        encoding.write_text(encoding.read_text() + "\n# adjusted after review\n", newline="\n")
         h.run(
             workspace, "run", "continue", "--path", ".", "--run", ctx.run_id, label="run continue"
         )
@@ -1200,11 +1225,13 @@ def main() -> int:
         parser.error("--outside-root is under a path the agent sandbox lets agents write")
     args.work.mkdir(parents=True, exist_ok=True)
     if not args.harness_python:
-        args.harness_python = str(Path(args.harness).resolve().parent / "python")
+        args.harness_python = str(
+            Path(args.harness).resolve().parent / ("python.exe" if WINDOWS else "python")
+        )
     summary_path = args.summary or args.out.with_name(args.out.stem + "-summary.json")
     names = args.only.split(",") if args.only else PROBES
     if not args.summarize_only:
-        site_packages = next((args.project_venv / "lib").glob("python3*/site-packages"))
+        site_packages = venv_site_packages(args.project_venv)
         write_json(
             args.out.with_name("environment.json"),
             environment(
@@ -1220,7 +1247,7 @@ def main() -> int:
             ),
         )
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        with args.out.open("a", encoding="utf-8") as handle:
+        with args.out.open("a", encoding="utf-8", newline="\n") as handle:
             for rep in range(1, args.reps + 1):
                 for name in names:
                     record = probe(name, rep, args, site_packages)
