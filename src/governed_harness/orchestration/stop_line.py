@@ -5,9 +5,12 @@ next step of a plan started on top of code the harness never approved, and the e
 deliverable contained seven such steps. Under ``governance.stopTheLine``:
 
 * ``restore``: the changes since DISCOVERY are kept as a quarantined patch (an artifact on the
-  run's chain, with the list of paths) and the workspace is restored to the baseline; a file
-  whose baseline content was not recorded as text cannot be restored and the line is blocked
-  instead;
+  run's chain, with the list of paths and the content of every restored path) and the workspace
+  is restored to the baseline; a file whose baseline content was not recorded as text cannot be
+  restored and the line is blocked instead. A run that stopped after IMPLEMENTATION and is
+  continued gets its quarantined changes back before it is evaluated again, unless a new
+  attempt was written over a restored path (the quarantine is then superseded): the recorded
+  content must match its digest, otherwise nothing is written and the run is BLOCKED;
 * ``block``: the changes stay, and no new run starts in the workspace until a person
   quarantines them with ``harness run quarantine`` (which restores the baseline) or the run is
   approved.
@@ -18,8 +21,10 @@ every changed path outside them, so an out-of-scope write is no longer silent.""
 from __future__ import annotations
 
 import fnmatch
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.domain.enums import (
     FindingSeverity,
     PhaseId,
@@ -27,7 +32,8 @@ from governed_harness.domain.enums import (
     ValidationKind,
 )
 from governed_harness.domain.errors import PolicyViolationError
-from governed_harness.domain.models import ChangeSet, Execution
+from governed_harness.domain.models import ChangeSet, Execution, utc_now
+from governed_harness.evidence.hashing import sha256_bytes, sha256_file
 from governed_harness.orchestration.workspace_ops import restore_changes
 from governed_harness.runtime.guard import IGNORED_PATTERNS
 from governed_harness.runtime.workspace import WorkspaceDiff
@@ -39,6 +45,12 @@ if TYPE_CHECKING:
 OWNED_PATHS_ID = "harness.owned-paths"
 STOPPED_STATUSES = frozenset({ResultStatus.FAILED, ResultStatus.TIMED_OUT, ResultStatus.ERROR})
 _STOPPED_PHASES = frozenset({PhaseId.IMPLEMENTATION, PhaseId.VERIFICATION})
+REAPPLY_PHASES = frozenset(
+    {PhaseId.VERIFICATION, PhaseId.INDEPENDENT_REVIEW, PhaseId.DECISION, PhaseId.CLOSURE}
+)
+"""The phases that evaluate the run's ChangeSet: a run quarantined in one of them and continued
+gets its quarantined changes back. A run quarantined in IMPLEMENTATION implements again from the
+baseline."""
 
 
 class StopLine:
@@ -139,7 +151,9 @@ class StopLine:
         restored: list[str] = []
         unrestorable: list[str] = []
         kept = self._kept(execution)
+        captured: dict[str, dict[str, Any]] = {}
         if restore:
+            captured = self._capture(execution, diff, kept)
             restored, unrestorable = restore_changes(
                 workspace,
                 contents,
@@ -157,7 +171,12 @@ class StopLine:
             "patchRef": patch.uri,
             "restoredPaths": restored,
             "unrestorablePaths": unrestorable,
+            "phase": execution.current_phase.value,
         }
+        if restore:
+            record["quarantinedContents"] = [
+                captured[path] for path in restored if path in captured
+            ]
         if kept:
             record["keptPaths"] = sorted(kept)
         ref = results.record_json(
@@ -176,6 +195,192 @@ class StopLine:
             {**record, "evidenceRef": ref},
         )
         return record
+
+    def _capture(
+        self, execution: Execution, diff: WorkspaceDiff, kept: set[str]
+    ) -> dict[str, dict[str, Any]]:
+        """The content of every changed path about to be restored, stored as an artifact with
+        the digest it had, so that ``run continue`` can put it back intact."""
+        workspace = self.results.s.paths.workspace
+        captured: dict[str, dict[str, Any]] = {}
+        for item in diff.changes:
+            if item.path in kept:
+                continue
+            entry: dict[str, Any] = {"path": item.path, "digest": item.after_digest}
+            if item.after_digest is not None:
+                try:
+                    data: bytes | None = contained_path(workspace, Path(item.path)).read_bytes()
+                except OSError:
+                    data = None
+                if data is not None and sha256_bytes(data) == item.after_digest:
+                    entry["contentRef"] = self.results.s.artifacts.put(
+                        data,
+                        metadata={
+                            "kind": "quarantined-content",
+                            "executionId": execution.execution_id,
+                            "path": item.path,
+                        },
+                    ).uri
+            captured[item.path] = entry
+        return captured
+
+    # ----- run continue after a quarantine ---------------------------------------------------
+    def pending(self, execution: Execution) -> dict[str, Any] | None:
+        """The latest quarantine of the run that was not put back yet."""
+        pending: dict[str, Any] | None = None
+        for event in self.results.s.events.list(execution.execution_id):
+            if event.event_type == "workspace.quarantined":
+                pending = dict(event.payload)
+            elif event.event_type in {
+                "workspace.quarantine.reapplied",
+                "workspace.quarantine.superseded",
+            }:
+                pending = None
+        return pending
+
+    def _rewritten(self, execution: Execution, record: dict[str, Any]) -> list[str]:
+        """The restored paths that now hold neither their baseline nor their quarantined
+        content: a new attempt was written over the restored baseline (a person or an
+        embedded session correcting the run)."""
+        workspace = self.results.s.paths.workspace
+        baseline = self.results.baseline_snapshot(execution)
+        if baseline is None:
+            return []
+        digests = {
+            str(item["path"]): item.get("digest")
+            for item in record.get("quarantinedContents") or []
+        }
+        rewritten: list[str] = []
+        for path in record["restoredPaths"]:
+            target = contained_path(workspace, Path(path))
+            current = sha256_file(target) if target.is_file() else None
+            state = baseline.files.get(path)
+            if current != (state.digest if state else None) and (
+                path not in digests or current != digests[path]
+            ):
+                rewritten.append(path)
+        return rewritten
+
+    def reapply(self, execution: Execution) -> Execution | None:
+        """Put the quarantined changes of a run back into the workspace before ``run continue``
+        evaluates it again; the run BLOCKED when they cannot be put back intact, ``None``
+        otherwise. Nothing is left written unless every path is put back, and nothing is ever
+        written over a new attempt: when a restored path holds new content the quarantine is
+        superseded and the run is evaluated on the workspace as it is."""
+        execution = self.results.engine.get_execution(execution.execution_id)
+        if execution.current_phase not in REAPPLY_PHASES:
+            return None
+        record = self.pending(execution)
+        if record is None or not record.get("restoredPaths"):
+            return None
+        phase = record.get("phase")
+        if phase is None or PhaseId(phase) not in REAPPLY_PHASES:
+            return None
+        events = self.results.s.events
+        rewritten = self._rewritten(execution, record)
+        if rewritten:
+            events.append(
+                execution.execution_id,
+                "workspace.quarantine.superseded",
+                {"evidenceRef": record.get("evidenceRef"), "rewrittenPaths": rewritten},
+            )
+            return None
+        planned, problems = self._plan_reapply(execution, record)
+        if not problems:
+            problems = self._write(planned)
+        if problems:
+            events.append(
+                execution.execution_id,
+                "workspace.quarantine.reapply-refused",
+                {"evidenceRef": record.get("evidenceRef"), "problems": problems},
+            )
+            blocked = execution.model_copy(
+                update={
+                    "status": ResultStatus.BLOCKED,
+                    "terminal_reason": (
+                        "The quarantined changes of the run cannot be put back intact "
+                        "(governance.stopTheLine): "
+                        + "; ".join(problems[:10])
+                        + ". Write the change again (the quarantined patch is on the run's "
+                        "chain) and run continue, or cancel the run."
+                    ),
+                    "updated_at": utc_now(),
+                }
+            )
+            self.results.engine._save_execution(blocked)
+            return blocked
+        events.append(
+            execution.execution_id,
+            "workspace.quarantine.reapplied",
+            {
+                "evidenceRef": record.get("evidenceRef"),
+                "patchRef": record.get("patchRef"),
+                "paths": [path for path, _target, _data in planned],
+            },
+        )
+        return None
+
+    def _plan_reapply(
+        self, execution: Execution, record: dict[str, Any]
+    ) -> tuple[list[tuple[str, Path, bytes | None]], list[str]]:
+        """What to write for each restored path (``None`` deletes it) and why it cannot be."""
+        workspace = self.results.s.paths.workspace
+        baseline = self.results.baseline_snapshot(execution)
+        entries = {str(item["path"]): item for item in record.get("quarantinedContents") or []}
+        planned: list[tuple[str, Path, bytes | None]] = []
+        problems: list[str] = []
+        for path in record["restoredPaths"]:
+            entry = entries.get(path)
+            if entry is None or baseline is None:
+                problems.append(f"{path}: no recorded content")
+                continue
+            target = contained_path(workspace, Path(path))
+            digest = entry.get("digest")
+            current = sha256_file(target) if target.is_file() else None
+            state = baseline.files.get(path)
+            if current == digest:
+                continue  # already holds the quarantined content
+            if current != (state.digest if state else None):
+                problems.append(f"{path}: changed since the quarantine")
+                continue
+            if digest is None:
+                planned.append((path, target, None))
+                continue
+            data: bytes | None = None
+            if entry.get("contentRef"):
+                try:
+                    data = self.results.s.artifacts.get(str(entry["contentRef"]))
+                except (OSError, ValueError):
+                    data = None
+            if data is None or sha256_bytes(data) != digest:
+                problems.append(f"{path}: quarantined content missing or not matching its digest")
+                continue
+            planned.append((path, target, data))
+        return planned, problems
+
+    def _write(self, planned: list[tuple[str, Path, bytes | None]]) -> list[str]:
+        """Write the planned contents; on a failure undo what was written and report it."""
+        written: list[tuple[Path, bytes | None]] = []
+        try:
+            for path, target, data in planned:
+                previous = target.read_bytes() if target.is_file() else None
+                written.append((target, previous))
+                if data is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
+                expected = sha256_bytes(data) if data is not None else None
+                if (sha256_file(target) if target.is_file() else None) != expected:
+                    raise OSError(f"{path} does not hold the quarantined content after writing")
+        except OSError as error:
+            for target, previous in reversed(written):
+                if previous is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.write_bytes(previous)
+            return [f"writing the quarantined content failed: {error}"]
+        return []
 
     # ----- out-of-scope writes ---------------------------------------------------------------
     def owned_paths_output(
