@@ -28,7 +28,7 @@ _PYTEST_NO_OUTCOME = {
     4: "pytest was called wrongly (exit code 4)",
     5: "pytest collected no test (exit code 5)",
 }
-_SUMMARY_COUNT = re.compile(r"(\d+) (passed|failed|xfailed|xpassed|errors?|skipped|deselected)\b")
+_SUMMARY_NAME = re.compile(r" (passed|failed|xfailed|xpassed|errors?|skipped|deselected)\b")
 _SUMMARY_TIME = re.compile(r"\bin \d+(?:\.\d+)?s\b")
 _SHORT_NODE = re.compile(r"^(?:PASSED|FAILED|XFAIL|XPASS) (?P<node>[^\s:]+::\S+)")
 _VERBOSE_NODE = re.compile(r"^(?P<node>[^\s:]+::\S+) (?:PASSED|FAILED|XFAIL|XPASS)\b")
@@ -119,12 +119,29 @@ def not_run(changed: list[str], executed: frozenset[str]) -> list[str]:
     ]
 
 
+def _summary_items(line: str) -> list[tuple[str, str]]:
+    """The ``(number, name)`` pairs of a summary line, such as ``("2", "passed")``, in order.
+
+    A pair is a run of decimal digits, a space and a count name not followed by a word
+    character. Each name is found by an expression without a leading repetition and its number is
+    read backwards from it, so the time is linear in the length of ``line``.
+    """
+    found: list[tuple[str, str]] = []
+    for name in _SUMMARY_NAME.finditer(line):
+        end = start = name.start()
+        while start > 0 and line[start - 1].isdecimal():
+            start -= 1
+        if start < end:
+            found.append((line[start:end], name.group(1)))
+    return found
+
+
 def _summary_counts(lines: list[str]) -> dict[str, int] | None:
     """The counts of the last pytest summary line (``1 failed, 2 passed in 0.12s``)."""
     for line in reversed(lines):
         if not _SUMMARY_TIME.search(line):
             continue
-        found = _SUMMARY_COUNT.findall(line)
+        found = _summary_items(line)
         if found:
             counts: dict[str, int] = {}
             for number, name in found:
