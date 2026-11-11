@@ -498,3 +498,208 @@ Operacionalización común de las cuatro:
 - **Sesgos:** las soluciones de referencia son impecables y las pruebas de `hidden/` son el
   oráculo; la mitigación del catálogo (cambios reales del historial) queda pendiente. La solución
   de referencia de itsdangerous no entra (necesita la descarga del proyecto): exclusión declarada.
+
+## Tercera congelación: H47, H48, H50 y H51
+
+Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
+cuatro pruebas y es el primer commit de la rama que las implementa
+(`evaluation/deterministic/h47_crash_resume.py`, `h48_concurrent_runs.py`,
+`h50_degraded_provider.py`, `h51_doctor.py`; proveedor fixture `robust_agent.py`, que reutiliza las
+respuestas de `budget_agent.py`). Rigen las siete reglas del principio de este archivo: los
+criterios no se cambian después de ver resultados, un resultado contrario se reporta tal cual con
+su contexto (configuración, plataforma, versión, casos afectados y causa observada, si se conoce),
+no se ajustan casos ni harness, y una suite cuyo aparato no funciona se marca «no evaluada». Las
+cuatro son deterministas (modelo: 0). Las desviaciones respecto del catálogo se declaran en cada
+prueba.
+
+Operacionalización común de las cuatro:
+
+- **Proyecto, configuración y persona simulada** como en la segunda congelación: el proyecto de
+  muestra (`suite_support.sample_project`), la configuración de `harness init` con el proveedor
+  fixture y la concesión exacta de su comando (`conditions.grant_provider_command`), cada variante
+  con la única clave que cambia declarada, y `common.simulated_person` (declarada como simulación)
+  para las esperas antes de DECISION. Donde la prueba aprueba en DECISION, lo hace la persona
+  simulada con el digest evaluado; se declara en cada caso.
+- **Proveedor** `robust_agent.py` (protocolo 1.1): responde como `budget_agent.py` y además puede,
+  según su especificación, (a) **bloquearse** en la primera llamada de un tipo (escribe antes un
+  marcador con su pid y, si se pide, una parte del cambio) hasta un máximo de 600 s, tras el cual
+  sale con 1 sin responder; (b) **fallar** en las llamadas de un tipo de un modo declarado (abajo,
+  H50); (c) escribir un cambio distinto por tarea (H48). Registra cada llamada antes de actuar.
+- **Registros.** Un JSONL por caso y condición y un resumen JSON con el criterio evaluado tal cual
+  (campo `criteria`) e intervalos de Wilson al 95 % donde hay proporciones. La suite sale con 0
+  cuando corrió; un caso cuyo aparato falló queda con `apparatusError`, fuera de los denominadores
+  y listado aparte; un caso «no evaluado» (abajo) cuenta en contra del criterio cuando el criterio
+  es «n/n».
+- **Plataforma (declarada antes de correr).** En Windows no hay sandbox de escritura: las
+  condiciones gobernadas usan `runtime.agentSandbox: off`, declarado en cada registro. Las señales
+  difieren y se esperan estas diferencias, que no son resultados contrarios sino del producto en
+  esa plataforma (`runtime/lease.py`):
+  - POSIX: «matar» es `SIGKILL` al proceso del harness; Windows: `TerminateProcess`
+    (`Popen.kill()`), que tampoco deja correr ningún manejador. El «corte» mata el árbol completo
+    a la vez: POSIX, `SIGSTOP` y luego `SIGKILL` a todos los descendientes (`pgrep -P`
+    recursivo); Windows, `taskkill /F /T`.
+  - El harness se lanza como `python -m governed_harness` con el intérprete de su entorno virtual
+    (en Windows `harness.exe` es un lanzador con un proceso hijo; así se mata exactamente el
+    proceso del harness).
+  - En POSIX el candado de un proceso muerto se toma de inmediato (`process_alive`); en Windows
+    no se puede comprobar si el pid vive (`process_alive` devuelve `None`) y el candado se toma
+    cuando su latido tiene más de 60 s (`STALE_SECONDS`): se espera que el primer `run continue`
+    tras matar salga con 5 y que la recuperación tarde 60 s o más. La suite reintenta
+    `run continue` cada 5 s mientras salga con 5 por candado, hasta 180 s.
+  - En POSIX `run continue` termina los grupos de procesos que dejó un harness muerto
+    (`terminate_process_group`); en Windows esa función no hace nada, así que en el modo de
+    muerte del proceso se espera que el agente bloqueado siga vivo tras la recuperación
+    (`leftoverAgents`), lo que se reporta y no es criterio.
+  - `doctor`: en macOS el caso «sin mecanismo de sandbox» no se puede producir (`sandbox-exec` es
+    del sistema) y queda «no evaluado» allí; en Windows ese caso es el estado normal de la
+    plataforma.
+- **Humo local.** Las corridas en el Windows del autor (equipo lento) son humo del aparato: no se
+  versionan ni se citan. En H48 el humo limita el paralelismo a 2 (`--max-parallel 2`); el registro
+  lo declara (`parallelCap`) y un caso con tope no cuenta para el criterio.
+
+## H47 Caída y reanudación (SIGKILL y corte)
+
+- **Hipótesis:** tras matar el proceso del harness en cualquiera de 10 puntos del flujo,
+  `harness run continue` recupera la ejecución sin duplicar decisiones y con cadena válida.
+- **Condiciones (4):** `lease-kill` (H de `init`, `governance.workspaceLease: true`; se mata el
+  proceso del harness), `lease-power` (H; corte: se mata el árbol completo), `nolease-kill` y
+  `nolease-power` (H con `governance.workspaceLease: false`, la única clave que cambia).
+- **Puntos de muerte (10)**, sobre la tarea del descuento por umbral y el cambio correcto:
+  K01 la primera llamada `clarify`; K02 `locate`; K03 `architecture`; K04 `acceptance`; K05 `plan`;
+  K06 `implement` antes de escribir; K07 `implement` después de escribir solo
+  `src/sample/pricing.py` (cambio a medias); K08 VERIFICATION en curso (el evento `phase.started`
+  con `phaseId` VERIFICATION aparece en la base); K09 la primera llamada `review`; K10 DECISION a
+  CLOSURE: la persona simulada aprueba y se mata `gate decide` en cuanto aparece
+  `human.decision.recorded`. En K01 a K07 y K09 el fixture se bloquea en esa llamada y la suite
+  mata cuando ve su marcador (determinista); en K08 y K10 la suite consulta la base cada 20 ms
+  (carrera declarada).
+- **Procedimiento:** el run avanza con la persona simulada en un hilo; en el punto se mata el
+  comando del harness que esté corriendo; luego `run continue` (con los reintentos por candado de
+  arriba), la persona simulada para las esperas, la aprobación de la persona simulada en DECISION
+  (salvo K10, ya aprobado) y `run continue` si el run no cerró; al final `harness verify --run`.
+- **Definiciones:** *punto alcanzado* = el marcador del fixture o el evento apareció y el proceso
+  seguía vivo al matarlo (`killLanded`); si no, el caso es «no evaluado» (aparato), con su causa.
+  *Recuperado* = el run termina cerrado (`status` PASSED tras CLOSURE), los archivos finales
+  `src/sample/pricing.py` y `tests/test_pricing.py` son exactamente los del cambio correcto (sin
+  aplicar dos veces ni a medias), `harness verify --run` sale con 0 y `status` informa
+  `eventChainValid: true`. *Decisión duplicada* = más de un `human.decision.recorded` en el run.
+  *Evento duplicado* = dos `phase.completed` con el mismo `phaseExecutionId`, o dos
+  `human.decision.recorded`.
+- **Métricas:** recuperado, decisiones y eventos duplicados, cadena válida, `run.recovered`
+  presente (y sus `interruptedPhases`, `terminatedProcessGroups`, `restoredPaths`), intentos de
+  `run continue` rechazados por candado, segundos de toma del candado (de la muerte al primer
+  `run continue` aceptado) y de la muerte al cierre, agentes huérfanos vivos tras la recuperación,
+  fase en que cayó la muerte (último `phase.started` sin `phase.completed`).
+- **Criterio de éxito:** 10/10 recuperadas con cadena válida y sin decisiones duplicadas en cada
+  condición con candado (`lease-kill` y `lease-power`). Un punto «no evaluado» cuenta en contra.
+- **Reportado aparte, fuera del criterio:** las dos condiciones sin candado (contraste; el
+  catálogo no fija expectativa para ellas) y los agentes huérfanos.
+- **Desviaciones declaradas:** el «corte de energía» se opera como la muerte simultánea de todo
+  el árbol de procesos; no se simula la pérdida de escrituras no sincronizadas del sistema de
+  archivos (haría falta una máquina virtual). No hay comparador directo (catálogo). Se extiende la
+  sonda `lease-sigterm` de `fault_probes.py` (SIGTERM, itsdangerous, solo POSIX) sin duplicarla:
+  aquí no se usa SIGTERM.
+
+## H48 Concurrencia de corridas
+
+- **Hipótesis:** 3 y 10 corridas con `--isolate worktree` llegan a DECISION sin contaminarse; dos
+  corridas en el mismo directorio sin aislamiento se rechazan con exit 5.
+- **Condiciones y casos:**
+  - `worktree-parallel`: casos W03 y W10, 3 y 10 tareas distintas sobre un mismo proyecto
+    lanzadas a la vez con `run start --isolate worktree` (cada tarea añade
+    `src/sample/feature_<i>.py` y `tests/test_feature_<i>.py`, sus `ownedPaths`), con la persona
+    simulada para las esperas en el hilo de cada corrida;
+  - `worktree-sequential`: los mismos W03 y W10, una corrida tras otra (referencia de tiempo);
+  - `same-dir`: caso S05, 5 intentos, cada uno en un proyecto nuevo: dos `run start` de dos tareas
+    distintas lanzados a la vez en el mismo directorio, sin aislamiento; la primera llamada del
+    fixture duerme 5 s para que los dos procesos se solapen (declarado);
+  - `clones`: caso C02, dos clones de un mismo origen (repositorio desnudo), la misma tarea (mismo
+    `taskId`) lanzada a la vez en cada clon, sin aislamiento.
+- **Definiciones:** *llega a DECISION* = fase DECISION con gate PASSED. *Contaminación* = un
+  archivo de otra corrida (`feature_<j>`, j distinto de i) en el worktree o el ChangeSet de la
+  corrida i, un cambio en el árbol principal fuera de `.harness/` (`git status --porcelain`), o, en
+  `clones`, un archivo de la corrida de un clon en el otro. *Rechazo* (same-dir) = de los dos
+  `run start`, uno sale con 5 y el otro sigue.
+- **Métricas:** corridas a DECISION, archivos filtrados, `harness verify --run` por corrida,
+  segundos de reloj del lote paralelo frente al secuencial (razón), códigos de salida, y en
+  `clones` si cada clon ve solo sus corridas (`run list`).
+- **Criterio de éxito:** 0 contaminación (en `worktree-parallel`, `worktree-sequential` y `clones`)
+  y 100 % de rechazo en `same-dir` (5/5); además, todas las corridas aisladas llegan a DECISION
+  con cadena válida (hipótesis).
+- **Reportado aparte, fuera del criterio:** `same-dir-waiting`, caso S1W: el segundo `run start`
+  cuando el primero ya espera en DECISION (sin proceso). Expectativa leída en
+  `docs/es/trabajo-simultaneo.md`, no criterio: no se rechaza (el candado no cubre la espera) y el
+  segundo arranca sobre el árbol sucio (`environment.dirty-tree`). En `clones`, lo que la guía dice
+  (no hay coordinación: ambos corren).
+- **Sesgos y desviaciones:** misma máquina (declarado; la guía ya dice que entre máquinas no hay
+  coordinación). El humo local usa como máximo 2 corridas a la vez (arriba).
+
+## H50 Proveedor degradado: reintentos, respaldo y falla cerrada
+
+- **Hipótesis:** salida basura, timeouts y errores transitorios se reintentan hasta
+  `runtime.providerRetries`, se usa el proveedor de respaldo y nunca se corrompe el estado.
+- **Condiciones (3):** `R0` (`runtime.providerRetries: 0`), `R3` (`providerRetries: 3`, el valor de
+  `init`) y `R3-fallback` (R3 y `runtime.contractRetry.fallbackProvider: backup`, un segundo
+  proveedor fixture sano). En las tres `runtime.providerRetryDelaySeconds: 1` (init escribe 60;
+  desviación declarada para que la suite dure minutos; no cambia qué se reintenta) y
+  `contractRetry.mode: once` como lo escribe `init`.
+- **Modos de falla (8)** del proveedor principal; tras las fallas declaradas responde bien:
+  M1 `implement` falla una vez con un error transitorio (stderr `Error: 429 rate limit`, salida
+  1); M2 `implement` falla así siempre; M3 `plan` falla una vez con un transitorio (stderr
+  `overloaded`, salida 1); M4 `plan` responde una vez basura (texto no JSON, salida 0); M5 `plan`
+  responde basura siempre (el respaldo, sano); M6 `plan` responde una vez vacío (salida 0); M7
+  `implement` responde una vez basura sin escribir; M8 `implement` duerme 60 s una vez, con
+  `runtime.commandTimeoutSeconds: 20` en ese caso (en las tres condiciones).
+- **Expectativa leída en el código, reportada frente a lo observado, no criterio:** los
+  transitorios de `implement` y de las llamadas de solo lectura se repiten hasta
+  `providerRetries` (`engine._invoke_implement`, `agent_results._call_with_retries`; evento
+  `agent.invocation.retried`); una respuesta de solo lectura que rompe el contrato (basura, vacía)
+  se envía una vez más, al respaldo cuando existe (`agent.call.contract-retry`, `retryProvider`);
+  un timeout y la basura de `implement` no son transitorios y bloquean (falla cerrada). Así: M1
+  R0 bloquea, R3 y R3-fallback 1 reintento y DECISION; M2 R0 bloquea sin reintento, R3 3
+  reintentos y bloquea; M3 como M1; M4 y M6 un reintento de contrato (al principal en R0 y R3, al
+  respaldo en R3-fallback) y DECISION; M5 bloquea en R0 y R3 y llega a DECISION con el respaldo;
+  M7 y M8 bloquean en las tres.
+- **Definiciones:** *estado definido* = el run no queda RUNNING, PENDING ni INTERRUPTED, el último
+  comando de run sale con un código documentado de run (4 espera decisión, 6 bloqueado; 1 es error
+  del harness y no cuenta como definido) y el espacio de trabajo tiene los archivos propios de la
+  línea base o los del cambio completo (no a medias); *cadena válida* = `harness verify --run`
+  sale con 0.
+- **Métricas:** reintentos (`agent.invocation.retried`), reintentos de contrato y su proveedor,
+  `agent.routing.fallback`, llamadas por proveedor (registro del fixture), estado y fase finales,
+  código de salida, cadena válida, coincidencia con la expectativa.
+- **Criterio de éxito:** 8/8 terminan en estado definido con cadena válida, en cada condición.
+- **Desviación declarada:** el catálogo nombra `agent.routing.fallback` como evento del respaldo;
+  en el código ese evento es el aviso de enrutamiento de #59 (un tipo de llamada sin regla propia),
+  y el uso del proveedor de respaldo se registra como `agent.call.contract-retry` con
+  `retryProvider`. Se registran los dos y se cuenta el segundo.
+
+## H51 `harness doctor` y entorno incompleto
+
+- **Hipótesis:** `doctor` detecta los defectos de entorno más comunes y dice cómo arreglarlos.
+- **Condición:** H (`harness init` con el proveedor fixture) y un control sano (C00, fuera del
+  denominador: identidad de Git local, árbol limpio, todo instalado).
+- **Entornos defectuosos (10)**, cada uno con un solo defecto sobre el control; se corre
+  `harness doctor --path . --json`:
+  E01 sin `git` en `PATH`; E02 sin `pytest` (el `python` del `PATH` es un entorno virtual sin
+  pytest); E03 árbol sucio (un archivo propio modificado sin confirmar); E04 sin mecanismo de
+  sandbox con `runtime.agentSandbox: enforce` (Linux sin `bwrap` en `PATH`; Windows, el estado
+  normal; macOS «no evaluado»); E05 Python viejo (el `python` del `PATH` es un entorno virtual de
+  un intérprete anterior a 3.12 que la suite busque en el equipo; si no hay ninguno, «no evaluado»
+  con su causa); E06 `.harness/` sin ignorar (se quita del `.gitignore`); E07 CLI del agente
+  ausente (el comando del proveedor apunta a un ejecutable inexistente); E08 repositorio sin
+  commits; E09 `project.yaml` inválido (una clave desconocida en `runtime`); E10 sin identidad de
+  Git.
+- **Definiciones:** *detectado* = algún check con estado `WARNING` o `FAILED` que no lo está en el
+  control y cuyo nombre corresponde al defecto (tabla de checks esperados por caso en la suite,
+  leída en `application/onboarding.py` y `service.doctor`); *mencionado sin marcar* = el defecto
+  aparece en la salida (por ejemplo `dirtyTree.paths`) con el check en `PASSED`, reportado aparte
+  y no cuenta como detectado; *con arreglo* = ese check trae `hint`; *exit 2 cuando corresponde* =
+  sale con 2 si algún check quedó `FAILED` y con 0 si no (lo que documenta `harness doctor
+  --help`).
+- **Métricas:** detección, mensaje con arreglo, código de salida frente a lo documentado, checks
+  que cambian respecto del control.
+- **Criterio de éxito:** 10/10 detectados. Un caso «no evaluado» cuenta en contra.
+- **Expectativa leída en el código, no criterio:** E03 con `dirtyTree: warn` (init) aparece solo
+  como dato del check `environment` en `PASSED`, y E05 no tiene check de versión del intérprete
+  del proyecto: se espera que no se detecten; se reporta tal cual.
