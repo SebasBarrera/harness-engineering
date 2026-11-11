@@ -319,15 +319,28 @@ class AgentContractFlow:
 
     # ----- the response --------------------------------------------------------------------
     def judge_limit(
-        self, answer: AgentExecutionResult, limits: CallLimits
+        self,
+        answer: AgentExecutionResult,
+        limits: CallLimits,
+        timeout_seconds: int | None = None,
     ) -> tuple[str, str] | None:
         """The limit a finished call reached, as ``(name, description)``: its process was
         stopped at the time limit, or the usage the provider reported is above the token
-        budget. ``None``: neither."""
+        budget. ``None``: neither.
+
+        ``timeout_seconds`` is the time the call was allowed to run: the command timeout
+        (``runtime.commandTimeoutSeconds``, bounded by the run budget) when it is shorter than
+        the limit of the task's size. The description names the limit that stopped the call,
+        the smaller of the two (#179); without it, the size's limit as before."""
         timed_out = answer.status is ResultStatus.TIMED_OUT or any(
             item.timed_out for item in answer.tool_invocations
         )
         if timed_out:
+            if timeout_seconds is not None and timeout_seconds < limits.seconds:
+                return "time", (
+                    f"the call was stopped at the command timeout ({timeout_seconds} s), "
+                    f"shorter than its time limit ({limits.seconds} s)"
+                )
             return "time", f"the call was stopped at its time limit ({limits.seconds} s)"
         used, reads = budgeted_tokens(answer.usage)
         if used > limits.tokens:
@@ -350,12 +363,14 @@ class AgentContractFlow:
         request_ref: str,
         limits: CallLimits,
         sent: SentInfo,
+        timeout_seconds: int | None = None,
     ) -> AgentCallOutcome:
         """Judge a finished read-only call against the contract (limit reached, response out
-        of bounds), record what was sent and received, and return the outcome the parent sees."""
+        of bounds), record what was sent and received, and return the outcome the parent sees.
+        ``timeout_seconds``: the time the call was allowed to run (``judge_limit``)."""
         config = self.config or AgentContractConfig()
         final, limit, violations, outcome = self._judge(
-            kind, outcome, answer, limits, config, sent.iteration
+            kind, outcome, answer, limits, config, sent.iteration, timeout_seconds=timeout_seconds
         )
         summary, cut = limit_summary(outcome.summary, config.summary_chars)
         outcome = replace(outcome, summary=summary)
@@ -439,8 +454,9 @@ class AgentContractFlow:
         config: AgentContractConfig,
         iteration: int,
         keys: tuple[str, ...] | None = None,
+        timeout_seconds: int | None = None,
     ) -> tuple[str, str | None, tuple[str, ...], AgentCallOutcome]:
-        reached = self.judge_limit(answer.execution, limits)
+        reached = self.judge_limit(answer.execution, limits, timeout_seconds)
         if reached is not None:
             name, text = reached
             message = f"{LIMIT_RULE}: {text}; the call ended and counts as iteration {iteration}"
@@ -603,16 +619,19 @@ class AgentContractFlow:
         phase: PhaseExecution,
         answer: AgentExecutionResult,
         contract: dict[str, Any],
+        *,
+        timeout_seconds: int | None = None,
     ) -> PhaseOutcome | None:
         """Record an implement call and end it in a controlled way when it reached its time
-        limit or its token budget; ``None`` otherwise (the phase goes on as before)."""
+        limit or its token budget; ``None`` otherwise (the phase goes on as before).
+        ``timeout_seconds``: the time the call was allowed to run (``judge_limit``)."""
         config = self.config or AgentContractConfig()
         validated = validate_request_contract(contract)
         limits = CallLimits(
             validated.size_class, validated.token_budget, validated.time_limit_seconds
         )
         iteration = validated.iteration.number
-        reached = self.judge_limit(answer, limits)
+        reached = self.judge_limit(answer, limits, timeout_seconds)
         status = ResultStatus.BLOCKED if reached is not None else answer.status
         final = "LIMIT_REACHED" if reached is not None else _FINAL.get(status, "ERROR")
         message = (
