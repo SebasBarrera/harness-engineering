@@ -710,3 +710,20 @@ view); cqrs (domain, commands, queries, queries). Directorios del nombrado alter
 `api`; mvvm `models`, `viewmodels`, `views`; mvi `state`, `intents`, `ui`; cqrs `domain`,
 `write`, `read` (donde la plantilla tiene un solo patrón se repite el nombre bajo
 `src/shop/sales/`).
+
+### Enmienda 2 a la tercera congelación (2026-11-10, tras un humo local y antes de cualquier resultado)
+
+Un humo local del aparato de H27 (Windows, un caso: `layered`, nombrado primario, cambio
+`violations`; no es un resultado y no se cita como tal) mostró que el corpus congelado no puede
+distinguir N3 en `layered` ni en `ddd`: el módulo de cada capa se llama `api.py`, y el harness
+resuelve `from app.services.api import services_value` también como el módulo
+`app.services.api.services_value`, cuya ruta coincide con el patrón `**/api/**` de otra capa
+(`presentation` en layered, `interfaces` en ddd). Así la línea base de `B/pre.py` ya «importa» la
+capa de T2/U y el cambio diferencial no puede señalar N3 como nueva. Se conserva el corpus
+original tal cual (se corre y se reporta, y el criterio de registro se evalúa sobre él, como se
+congeló) y se **añade** un segundo conjunto, *module-logic*, idéntico salvo que el módulo de cada
+capa se llama `logic.py` (ningún patrón de las plantillas lo contiene): los siete estilos con
+plantilla × 2 nombrados × 2 cambios en H-differential y D\* (28 + 28 registros más). El criterio
+se evalúa también sobre *module-logic* y se reporta aparte, rotulado como de esta enmienda. Lo
+que el humo mostró (una importación de `services` atribuida a `presentation`) se registra como
+hallazgo sobre el producto, no como resultado de la prueba.
