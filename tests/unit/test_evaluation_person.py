@@ -94,8 +94,10 @@ def test_the_product_owner_revises_a_dispute_bound_to_the_shown_digest(tmp_path:
     harness, owner = FakeHarness(), Owner("REVISE")
     code, entry = _wait(tmp_path, harness, owner)
     assert code == 0
-    assert entry["wait"] == "acceptance-dispute" and entry["source"] == "inbox"
-    assert entry["decision"] == "REVISE" and entry["judge"] == "product-owner"
+    assert entry["wait"] == "acceptance-dispute"
+    assert entry["source"] == "inbox"
+    assert entry["decision"] == "REVISE"
+    assert entry["judge"] == "product-owner"
     assert entry["digestMatches"] is True
     assert entry["reasons"] == {
         "agent": [DISPUTED[0]["reason"]],
@@ -117,7 +119,8 @@ def test_without_a_product_owner_the_fallback_upholds(tmp_path: Path) -> None:
     harness = FakeHarness()
     code, entry = _wait(tmp_path, harness)
     assert code == 0
-    assert entry["decision"] == "UPHOLD" and entry["judge"] == "fallback"
+    assert entry["decision"] == "UPHOLD"
+    assert entry["judge"] == "fallback"
     assert entry["reasons"]["owner"] == person.DISPUTE_FALLBACK_REASON
     [command] = harness.dispute_commands()
     assert _option(command, "--decision") == "UPHOLD"
@@ -128,7 +131,8 @@ def test_a_digest_acceptance_show_does_not_show_is_not_answered(tmp_path: Path) 
     harness = FakeHarness(shown_digest="sha256:" + "b" * 64)
     code, entry = _wait(tmp_path, harness, Owner())
     assert code is None
-    assert entry["digestMatches"] is False and entry["action"] == "dispute-not-shown"
+    assert entry["digestMatches"] is False
+    assert entry["action"] == "dispute-not-shown"
     assert harness.dispute_commands() == []
 
 
@@ -136,7 +140,8 @@ def test_a_failed_product_owner_call_is_not_acted_on(tmp_path: Path) -> None:
     harness = FakeHarness()
     code, entry = _wait(tmp_path, harness, Owner(fail=True))
     assert code is None
-    assert entry["action"] == "product-owner-failed" and "unreadable reply" in entry["error"]
+    assert entry["action"] == "product-owner-failed"
+    assert "unreadable reply" in entry["error"]
     assert harness.dispute_commands() == []
 
 
@@ -146,7 +151,8 @@ def test_the_phase_summary_names_the_dispute_command() -> None:
         f"harness acceptance dispute --run run --decision <UPHOLD|REVISE> --digest {DIGEST}"
     )
     match = person._DECIDE["acceptance-dispute"].search(summary)
-    assert match is not None and match.group(1) == DIGEST
+    assert match is not None
+    assert match.group(1) == DIGEST
 
 
 def test_the_product_owner_reply_is_read_as_a_decision() -> None:
@@ -183,7 +189,8 @@ def test_the_product_owner_prompts_ask_for_an_engineer_answer_in_spanish() -> No
     for key in ("answers:", "replaceCriteria:", "addCriteria:", "addRequirements:"):
         assert key in prompt
     dispute = product_owner.DISPUTE_PROMPT.format(task="t", disputed="d", tests="s", knowledge="k")
-    assert "decision: UPHOLD" in dispute and "REVISE" in dispute
+    assert "decision: UPHOLD" in dispute
+    assert "REVISE" in dispute
 
 
 def test_the_product_owner_model_is_fixed_for_every_cell(tmp_path: Path) -> None:

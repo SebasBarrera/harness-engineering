@@ -29,7 +29,6 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 import resource_support  # noqa: E402
-from resource_support import Utf8Harness, Workspace  # noqa: E402
 
 WINDOWS = sys.platform == "win32"
 ROBUST_AGENT = HERE / "robust_agent.py"
@@ -50,7 +49,9 @@ def approvable_spec() -> dict[str, Any]:
     return spec
 
 
-def governed_robust(run_dir: Path, args: Any, spec: dict[str, Any], **kwargs: Any) -> Workspace:
+def governed_robust(
+    run_dir: Path, args: Any, spec: dict[str, Any], **kwargs: Any
+) -> resource_support.Workspace:
     """``resource_support.governed`` with ``robust_agent.py`` as the provider's script."""
     previous = resource_support.AGENT
     resource_support.AGENT = ROBUST_AGENT
@@ -96,7 +97,7 @@ def harness_python(executable: str) -> list[str]:
     return [executable]
 
 
-class ProcHarness(Utf8Harness):
+class ProcHarness(resource_support.Utf8Harness):
     """``Utf8Harness`` through ``Popen``: ``current`` is the running harness process."""
 
     def __init__(self, executable: str, env: dict[str, str]) -> None:
