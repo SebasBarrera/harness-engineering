@@ -477,6 +477,30 @@ def test_undeclared_criteria_report_the_default_level_without_blocking(
     assert criteria[0]["achieved"] == "L0"
 
 
+def test_a_preexisting_failure_gives_no_test_rung(python_workspace: Path, tmp_path: Path) -> None:
+    """A pytest that passes as PREEXISTING_ERROR means "no worse than the baseline", not "the
+    tests that name the criterion passed": no L1 from it (#190)."""
+    (python_workspace / "tests" / "test_legacy.py").write_text(
+        "def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n"
+    )
+    configure(python_workspace, verification={"differential": True})
+    value = task(
+        [
+            {
+                "criterionId": "ac_unit",
+                "text": "apply_discount(100, 100, 0.1) returns 90.",
+                "verification": {"level": "L1"},
+            }
+        ]
+    )
+    application, execution = start(python_workspace, tmp_path, value)
+    state = application.verification(python_workspace, execution.execution_id)
+    criterion = state["certification"]["criteria"][0]
+    assert criterion["status"] != "CERTIFIED"
+    assert criterion["achieved"] != "L1"
+    assert not any(item.get("source") == "python.pytest" for item in criterion["evidence"])
+
+
 def test_an_unavailable_probe_blocks_until_a_person_decides(
     python_workspace: Path, tmp_path: Path
 ) -> None:

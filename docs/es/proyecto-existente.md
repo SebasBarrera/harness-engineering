@@ -48,7 +48,7 @@ El flujo es el mismo que en [Proyecto nuevo](proyecto-nuevo.md). Lo que cambia e
 
 ## Si el estado base ya está roto
 
-`init` escribe `environment.baseline: report` y `verification.differential: true`: los validadores obligatorios también corren sobre el estado base, y un fallo que el cambio comparte con él es preexistente (hallazgo `LOW` `differential.preexisting`) y no bloquea; solo bloquean los fallos que introduce el cambio. En el caso de `itsdangerous`, sin `freezegun` el gate queda en `PASSED` y `run start` sale con código 4, aunque pytest se detuvo al recolectar y no corrió ninguna prueba. Antes de decidir, revisa la evidencia: si las pruebas no corrieron, repara el entorno y ejecuta la suite del proyecto tú mismo.
+Con `verification.differential` (lo escribe `harness init`), un validador obligatorio que falla también se ejecuta sobre el estado base: un fallo que el estado base comparte queda como `PREEXISTING_ERROR` y no bloquea; uno nuevo queda como `INTRODUCED_ERROR` y bloquea. Una ejecución de pruebas que no ejecutó ninguna prueba (por ejemplo, pytest detenido por un error de recolección porque falta una dependencia de pruebas) no es comparable y sigue bloqueando (issue 190 del repositorio). La evidencia muestra qué archivos fallaron. Hay dos salidas:
 
 Si el gate falla por algo que el estado base no comparte, hay dos salidas:
 

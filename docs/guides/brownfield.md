@@ -30,11 +30,13 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    project whose commands differ declares its own validators under `toolchain.validators` (see
    [project toolchain](../reference/configuration.md#project-toolchain)). A missing test
    dependency is not detected in advance: the tests fail to collect.
-3. **The baseline may already be broken.** `harness init` writes `environment.baseline: report`
-   and `verification.differential: true`: the mandatory validators also run on the baseline, a
-   failure the change shares with it is pre-existing (`LOW` finding `differential.preexisting`)
-   and does not block, and only introduced failures do. A pre-existing failure can hide that the
-   tests never ran (below, pytest stops while collecting), so read the evidence before deciding.
+3. **The baseline may already be broken.** Under `verification.differential` (written by
+   `harness init`) a failing mandatory validator also runs on the baseline: a failure the baseline
+   shares is `PREEXISTING_ERROR` and does not block, a new one is `INTRODUCED_ERROR` and blocks
+   (see [better agent results](agent-results.md#verification-deterministic-checks-40-52)). A test
+   run that ran no test, such as pytest stopped by a collection error from a missing test
+   dependency, is not comparable and still blocks (#190): fix the environment or close with
+   `APPROVE_EXCEPTION`. The evidence shows which files failed.
 4. **Large repositories.** Since 1.1 `harness init` writes `workspace.snapshot: git`,
    `workspace.baseline: manifest` and `workspace.snapshotCache: true`: files that `.gitignore`
    excludes are never read or stored, the baseline is a manifest of digests, and unchanged files

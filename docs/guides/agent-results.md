@@ -303,8 +303,8 @@ findings are `LOW`.
 | `sarif` | SARIF reports of external scanners (`path`, `tool`, `required`), with tool and rule versions. |
 | `invariants` | Commands (`id`, `command`) that must pass on every VERIFICATION, including each sub-task's. |
 | `riskFactors` | `newDependency`, `authentication`, `destructiveMigration`, `publicContract`, `network`, `floatMoney`, `sensitiveLogging`, `deletedWithoutTests`, each `block`, `acknowledge`, `inform` or `off`. |
-| `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. |
-| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. |
+| `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. A test run with no test outcome is not comparable and keeps blocking (#190): pytest exit codes 2 to 5 (interrupted, for example by a collection error, internal error, usage error, no test collected), a pytest output with no passed or failed test, or another runner with no parsed failed test. A shared test failure passes only when every test file the ChangeSet added or modified ran: otherwise `tests.changed-not-run` (`HIGH`, the failure stays), or `INFO` when the output does not list the tests that ran (pytest lists them with `-rA` or `-v`). A `PREEXISTING_ERROR` pass gives no L1 or L2 rung to the certification. |
+| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. The problems in a frozen acceptance test still as approved are left out: the agent cannot change that file (#183). |
 
 A risk factor with `acknowledge` must be acknowledged in the decision; the decision brief lists
 the factors:
@@ -434,7 +434,7 @@ same model once.
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
-| `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
+| `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_run_outcome.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
 | `verification.acceptanceTests.protect`, `disputes` (#94) | `tests/integration/test_acceptance_dispute.py` |
 | `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |

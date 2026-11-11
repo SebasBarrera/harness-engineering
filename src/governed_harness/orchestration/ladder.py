@@ -878,7 +878,14 @@ class VerificationLadder:
         mandatory = [
             item for item in validations if item.mandatory and item.validator_id not in own
         ]
-        passed = {item.validator_id for item in validations if item.status is ResultStatus.PASSED}
+        # A pre-existing failure passes as "no worse than the baseline", not as "the tests that
+        # name the criterion passed": it gives no rung credit (#190).
+        passed = {
+            item.validator_id
+            for item in validations
+            if item.status is ResultStatus.PASSED
+            and item.kind is not ValidationKind.PREEXISTING_ERROR
+        }
         definitions = {probe.probe_id: probe for probe in self.probes(task)}
         if evaluations is None:
             evaluations = _recorded_evaluations(validations, definitions)

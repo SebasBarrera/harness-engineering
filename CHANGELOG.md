@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- The differential verification no longer passes a test run that ran no test (#190). Under
+  `verification.differential` (written by `harness init`) a pytest run stopped at collection
+  (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
+  became a `PASSED` `PREEXISTING_ERROR`: its `HIGH` findings left the gate and the ladder
+  certified criteria from tests that never ran, so a real regression passed. A test run with no
+  test outcome (pytest exit codes 2 to 5, no passed or failed test, or another runner with no
+  parsed failed test) is now not comparable and keeps blocking, as in 1.0.0 (event
+  `verification.differential.inconclusive` with a `reason`). A shared failure passes only when
+  every test file the ChangeSet added or modified ran (`tests.changed-not-run`: `HIGH` and the
+  failure stays; `INFO` when the output does not list the tests that ran), and a
+  `PREEXISTING_ERROR` pass no longer gives L1 or L2 certification credit.
 - `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It still expected `run start`
   6 and `run continue` 4, but the baseline comparison that `harness init` writes
   (`environment.baseline: report`, `verification.differential: true`) marks the failures caused by
@@ -11,6 +22,13 @@
   run registry in its work directory (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory
   in Git Bash, which used to split `PATH` at the drive colon. The `docs-smoke` flows job runs it on
   the built wheel; the brownfield guides and the README describe the current flow.
+- The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
+  They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
+  regression, but the agent cannot change them (approved by a person, write-protected): in the
+  2.0.0 Haiku pilot a run whose tests all passed failed VERIFICATION after both automatic
+  corrections on four Ruff problems in the frozen files. `harness.ratchet` now leaves out the
+  problems of a frozen acceptance test still as approved; the validators still report them, and
+  a frozen file the agent changed is not exempt.
 - The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
   which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
   pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported
