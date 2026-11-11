@@ -16,7 +16,7 @@ tools:
   - id: ruff
     title: Ruff
     configFiles: [ruff.toml, .ruff.toml, "pyproject.toml#[tool.ruff"]
-    command: [python, -m, ruff, check, --output-format, json, .]
+    command: [python, -m, ruff, check, --no-fix, --output-format, json, .]
     parser: ruff
     coveredBy: [python.ruff]
     principles: [kiss, least-astonishment]

@@ -1389,7 +1389,7 @@ read-only and reports a confidence with the marker files it found.
 
 | Profile | Detection markers (weight) | Mandatory validator | Optional validators (when available) |
 |---|---|---|---|
-| `python_default` | `pyproject.toml` (0.80), `requirements.txt` (0.45), `pytest.ini` (0.35) | `python.pytest`: `python -m pytest -q` | `python.ruff`: `python -m ruff check .`, `python.mypy`: `python -m mypy .` |
+| `python_default` | `pyproject.toml` (0.80), `requirements.txt` (0.45), `pytest.ini` (0.35) | `python.pytest`: `python -m pytest -q` | `python.ruff`: `python -m ruff check --no-fix .`, `python.mypy`: `python -m mypy .` |
 | `node_default` | `package.json` (0.80), `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` (0.35 each) | `node.test`: `npm test --silent` (requires a `test` script) | `node.lint`: `npm run lint --silent`, `node.typecheck`: `npm run typecheck --silent` (only if the scripts exist) |
 | `go_default` (`extendedProfiles`) | `go.mod` (0.80), `go.sum` (0.20) | `go.test`: `go test ./...` | `go.vet`: `go vet ./...` |
 | `rust_default` (`extendedProfiles`) | `Cargo.toml` (0.80), `Cargo.lock` (0.20) | `rust.test`: `cargo test --quiet` | `rust.check`, `rust.clippy` |

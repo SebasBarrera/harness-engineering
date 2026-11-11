@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -7,6 +9,7 @@ import yaml
 
 from governed_harness.application import HarnessApplication
 from governed_harness.configuration import ConfigurationResolver
+from governed_harness.configuration.loader import load_builtin_profile
 from governed_harness.domain.errors import ConfigurationError
 
 
@@ -14,6 +17,28 @@ def test_python_profile_is_auto_detected(python_workspace: Path) -> None:
     resolved = ConfigurationResolver().resolve(python_workspace)
     assert [item.profile_id for item in resolved.profiles] == ["python_default"]
     assert "python.pytest" in [item.validator_id for item in resolved.effective_validators]
+
+
+def test_python_ruff_validator_does_not_apply_the_project_fixes(tmp_path: Path) -> None:
+    """#182: with ``fix = true`` in the project's Ruff configuration, ``ruff check .`` rewrote the
+    frozen acceptance tests and the agent's code during VERIFICATION. A validator reports; it
+    never changes the workspace it verifies."""
+    (tmp_path / "pyproject.toml").write_text("[tool.ruff]\nfix = true\n", encoding="utf-8")
+    source = tmp_path / "module.py"
+    source.write_bytes(b"import os\n")
+    profile = load_builtin_profile("python_default")
+    ruff = next(item for item in profile.validators if item.validator_id == "python.ruff")
+    assert ruff.command[:2] == ("python", "-m")
+    proc = subprocess.run(
+        [sys.executable, *ruff.command[1:]],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode == 1, proc.stdout + proc.stderr
+    assert "F401" in proc.stdout
+    assert source.read_bytes() == b"import os\n"
 
 
 def test_node_profile_is_auto_detected(node_workspace: Path) -> None:
