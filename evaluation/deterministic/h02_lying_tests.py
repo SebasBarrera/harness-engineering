@@ -599,14 +599,40 @@ def mutation_seconds(
             started = datetime.fromisoformat(str(record["startedAt"]).replace("Z", "+00:00"))
             finished = datetime.fromisoformat(str(record["finishedAt"]).replace("Z", "+00:00"))
             seconds = round((finished - started).total_seconds(), 3)
-        found.append({"status": record.get("status"), "seconds": seconds})
+        # The record stamps startedAt and finishedAt together; the time the mutation took is
+        # elapsedSeconds of its mutation-report artifact.
+        report: Any = {}
+        for ref in record.get("evidenceRefs") or []:
+            _, shown, _ = h.run(ws, "artifact", "show", "--path", ".", str(ref), label="artifact")
+            if isinstance(shown, dict) and ("elapsedSeconds" in shown or "skipped" in shown):
+                report = shown
+                break
+        found.append(
+            {
+                "status": record.get("status"),
+                "seconds": seconds,
+                "elapsedSeconds": report.get("elapsedSeconds"),
+                "maxSeconds": report.get("maxSeconds"),
+                "skipped": report.get("skipped"),
+            }
+        )
     return {"mutation": found}
 
 
-def config_with_mutation(mode: str) -> interception.ConfigBuilder:
+def config_with_mutation(
+    mode: str | None, *, full_lane: bool = False
+) -> interception.ConfigBuilder:
+    """``harness init`` with ``verification.mutation.mode`` set (``None`` keeps init's) and, for
+    the conditions of the amendment (PREREGISTRO.md, H02), ``friction.fastLane.mode: off``."""
+
     def build(config: dict[str, Any]) -> dict[str, Any]:
-        mutation = config.setdefault("verification", {}).setdefault("mutation", {})
-        mutation["mode"] = mode
+        if mode is not None:
+            mutation = config.setdefault("verification", {}).setdefault("mutation", {})
+            mutation["mode"] = mode
+        if full_lane:
+            friction = config.setdefault("friction", {})
+            lane = friction.get("fastLane")
+            friction["fastLane"] = {**(lane if isinstance(lane, dict) else {}), "mode": "off"}
         return config
 
     return build
@@ -623,6 +649,10 @@ SUITE = interception.Suite(
         "harness": interception.init_config,
         "harness-mutation-enforce": config_with_mutation("enforce"),
         "harness-core": interception.core_condition,
+        # The amendment of 2026-11-10 (PREREGISTRO.md, H02): the same modes, fast lane off.
+        "harness-full-mutation-off": config_with_mutation("off", full_lane=True),
+        "harness-full": config_with_mutation(None, full_lane=True),
+        "harness-full-mutation-enforce": config_with_mutation("enforce", full_lane=True),
     },
     task_for=task_for,
     detect=detect,
@@ -636,6 +666,7 @@ SUITE = interception.Suite(
         "harness": "harness init as written (verification.mutation.mode: warn)",
         "harness-mutation-off": "harness init with verification.mutation.mode: off",
         "harness-mutation-enforce": "harness init with verification.mutation.mode: enforce",
+        "harness-full*": "the amendment: the three mutation modes with friction.fastLane.mode: off (init's fast lane skips mutation)",
         "mockOfSubject": "tests.mock-of-subject is a rule of the model reviewer's catalogue only; the fixture reviewer returns no finding (PREREGISTRO.md, expectation)",
         "unavailable": "the tests of the 90 workspaces of the 0.9.0 matrix are not in the repository",
     },
@@ -695,10 +726,10 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
             "seededMissed": sorted(r["case"] for r in seeded if not r["detected"]),
         }
         values = [
-            item["seconds"]
+            item["elapsedSeconds"]
             for r in rows
             for item in (r.get("mutation") or [])
-            if item.get("seconds") is not None
+            if item.get("elapsedSeconds") is not None
         ]
         seconds[condition] = {
             "validations": len(values),
@@ -716,16 +747,14 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     return summary
 
 
-def criteria(summary: dict[str, Any]) -> dict[str, Any]:
-    """The pre-registered criterion (PREREGISTRO.md, H02), evaluated as it is."""
-    union = (summary.get("union") or {}).get("harness") or {}
+def union_criterion(summary: dict[str, Any], condition: str) -> dict[str, Any]:
+    union = (summary.get("union") or {}).get(condition) or {}
     sensitivity = union.get("sensitivity") or {}
     specificity = union.get("specificity") or {}
     return {
-        "statement": "under harness (init, mutation warn) the union of signals reaches sensitivity >= 0.9 (>= 27 of 30) with specificity >= 0.9 (>= 9 of 10 clean without any signal)",
+        "condition": condition,
         "harnessUnionSensitivity": sensitivity,
         "harnessUnionSpecificity": specificity,
-        "reference": "N01-a: 0.875 / 0.625 for any signal (ladder-summary.json)",
         "met": bool(
             sensitivity.get("n") == 30
             and sensitivity.get("k", 0) >= 27
@@ -733,6 +762,17 @@ def criteria(summary: dict[str, Any]) -> dict[str, Any]:
             and specificity.get("k", 0) >= 9
         ),
         "evaluable": sensitivity.get("n") == 30 and specificity.get("n") == 10,
+    }
+
+
+def criteria(summary: dict[str, Any]) -> dict[str, Any]:
+    """The pre-registered criterion (PREREGISTRO.md, H02), evaluated as it is on ``harness``
+    (top level, the original registration) and, apart, on ``harness-full`` (the amendment)."""
+    return {
+        "statement": "the union of signals reaches sensitivity >= 0.9 (>= 27 of 30) with specificity >= 0.9 (>= 9 of 10 clean without any signal); evaluated on harness (init, mutation warn) and, per the amendment of 2026-11-10, on harness-full (the same with friction.fastLane.mode: off), reported apart",
+        "reference": "N01-a: 0.875 / 0.625 for any signal (ladder-summary.json)",
+        **union_criterion(summary, "harness"),
+        "fullLane": union_criterion(summary, "harness-full"),
     }
 
 

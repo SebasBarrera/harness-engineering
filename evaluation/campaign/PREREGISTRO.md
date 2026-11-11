@@ -364,6 +364,9 @@ y el registro dice dónde).
   originales se conservan y se reportan igual. El criterio de éxito se evalúa tal cual en los dos
   conjuntos y se reporta por separado: en `harness` (carril de `init`) y en `harness-full`. Los
   casos, las señales y las métricas no cambian.
+  En la misma revisión se leyó que el registro `validation` de `harness.mutation` lleva
+  `startedAt` igual a `finishedAt`; los segundos de mutación se toman de `elapsedSeconds` del
+  artefacto `mutation-report` de esa validación (tope `maxSeconds` del mismo artefacto).
 
 ## H04 Scope creep (cambios fuera del alcance declarado)
 
