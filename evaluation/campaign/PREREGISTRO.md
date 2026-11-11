@@ -352,6 +352,18 @@ y el registro dice dónde).
   cuatro: la quinta es *débil* (pasa sin el cambio), la que mide `tests.weak`. (3) Mitigación del
   sesgo: las pruebas reales de los 90 workspaces de la matriz 0.9.0 no están en el repositorio:
   **no disponible**.
+- **Enmienda 2026-11-10 (antes de cualquier resultado).** Al revisar el aparato con una corrida
+  de humo local (que no es un resultado, regla 6) se leyó que, con la configuración de `init`,
+  la tarea de tamaño S toma el carril rápido aunque se lance con `run start`
+  (`lane.classified: fast`), y `friction.fastLane.skip` incluye `mutation`: la validación
+  `harness.mutation` no corre (`lane.step.skipped`) y las tres condiciones de modo de mutación
+  serían indistinguibles. Se **añaden** tres condiciones: los mismos tres modos con el carril
+  rápido apagado (`friction.fastLane.mode: off`, la clave que acepta el harness:
+  `configuration/friction.py`, `docs/reference/configuration.md`): `harness-full-mutation-off`,
+  `harness-full` (`warn`, el modo de `init`) y `harness-full-mutation-enforce`. Las condiciones
+  originales se conservan y se reportan igual. El criterio de éxito se evalúa tal cual en los dos
+  conjuntos y se reporta por separado: en `harness` (carril de `init`) y en `harness-full`. Los
+  casos, las señales y las métricas no cambian.
 
 ## H04 Scope creep (cambios fuera del alcance declarado)
 
