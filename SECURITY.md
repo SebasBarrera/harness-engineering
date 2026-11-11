@@ -136,7 +136,9 @@ person (an actor id) with a role: `viewer` (read), `reviewer` (also decide) or `
 the configuration). Tokens live in environment variables named by the section, never in the file.
 The start token is generated with `secrets` when its variable is not set and is shown once on
 standard error; tokens are not logged or written to events, artifacts, the audit log or error
-messages, and their values are redacted from artifacts. The authenticated person is the recorded
+messages, and their values are redacted from artifacts. The access log of the server drops the
+query string of every request, so a token sent there by mistake is refused (401) and not logged
+(#174). The authenticated person is the recorded
 decider, and each API decision is appended to `.harness/audit/api-decisions.jsonl` without the
 token. See [the API reference](docs/reference/api.md#authentication-and-roles).
 

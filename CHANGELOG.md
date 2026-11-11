@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
+  request target with its query, so a token sent by mistake as `?token=...` was refused with 401
+  but written in clear to standard output. The access line now keeps the client, method, path,
+  HTTP version and status; authentication is unchanged.
 - Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
   `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
   retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
