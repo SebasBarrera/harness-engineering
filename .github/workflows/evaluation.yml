@@ -1,8 +1,8 @@
 # Deterministic suites of the 2.0.0 evaluation on Linux (no model is called): fault probes,
 # verification-ladder and review-panel corpora, friction, INTENT equivalence, block 0 and metrics
-# validity in one job; the pre-registered suites (H01-H05, H09, H14, H15, H18-H20, H22, H23, H38,
-# H44, H45) one job each (together they exceed the 6 h limit of a job); then the H11 defect-escape
-# corpus, which reads the results of the others. H46 (portability) runs fault probes, friction, ladder, review and the
+# validity in one job; the pre-registered suites (H01-H07, H09, H10, H12-H20, H22-H24, H27, H28,
+# H31, H32, H35, H36, H38, H40, H41, H44, H45) one job each (together they exceed the 6 h limit of
+# a job); then the H11 defect-escape corpus, which reads the results of the others. H46 (portability) runs fault probes, friction, ladder, review and the
 # documented flows from one wheel on Linux with and without bubblewrap, macOS and Windows, then
 # compares the results with the pre-registered expected differences. Run by hand on the branch or tag to evaluate ("Use workflow from"):
 # its own code is the harness under test (its wheel, and the checkout block 0 verifies) and its
@@ -44,7 +44,8 @@ jobs:
           set -f # the names are words, never file patterns
           earlier="fault-probes ladder review friction intent-equivalence block0 metrics-validity"
           # One job per pre-registered suite, each within the 6 h limit of a job.
-          interception="h01 h02 h03 h04 h05 h09 h14 h15 h18 h19 h20 h22 h23 h38 h44 h45"
+          interception="h01 h02 h03 h04 h05 h06 h07 h09 h10 h12 h13 h14 h15 h16 h17 h18 h19 h20"
+          interception="$interception h22 h23 h24 h27 h28 h31 h32 h35 h36 h38 h40 h41 h44 h45"
           wanted="${ONLY:-$earlier $interception defect-corpus portability}"
           picked_earlier=""
           picked_interception=""
@@ -210,7 +211,10 @@ jobs:
               artifacts/evaluation-deterministic-h03/results/deterministic/h03 \
               artifacts/evaluation-deterministic-h04/results/deterministic/h04 \
               artifacts/evaluation-deterministic-h05/results/deterministic/h05 \
+              artifacts/evaluation-deterministic-h06/results/deterministic/h06 \
+              artifacts/evaluation-deterministic-h07/results/deterministic/h07 \
               artifacts/evaluation-deterministic-h09/results/deterministic/h09 \
+              artifacts/evaluation-deterministic-h10/results/deterministic/h10 \
               "$earlier/ladder" \
               "$earlier/review"
       - name: Upload the corpus
