@@ -4,6 +4,7 @@ import builtins
 import json
 import sqlite3
 import threading
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 from types import TracebackType
@@ -59,31 +60,54 @@ class SQLiteStateStore:
         execution_id: str | None = None,
         project_id: str | None = None,
     ) -> None:
+        with self._lock, self.connection:
+            self._upsert(record_type, record_id, value, execution_id, project_id)
+
+    def put_many(
+        self,
+        records: Iterable[tuple[str, str, BaseModel | dict[str, Any]]],
+        *,
+        execution_id: str | None = None,
+        project_id: str | None = None,
+    ) -> None:
+        """Store ``(record_type, record_id, value)`` records as :meth:`put` would, in one
+        transaction (one commit instead of one per record; since 2.0.1)."""
+        with self._lock, self.connection:
+            for record_type, record_id, value in records:
+                self._upsert(record_type, record_id, value, execution_id, project_id)
+
+    def _upsert(
+        self,
+        record_type: str,
+        record_id: str,
+        value: BaseModel | dict[str, Any],
+        execution_id: str | None,
+        project_id: str | None,
+    ) -> None:
         payload = (
             value.model_dump(mode="json", by_alias=True) if isinstance(value, BaseModel) else value
         )
         now = datetime.now(UTC).isoformat()
-        with self._lock, self.connection:
-            self.connection.execute(
-                """
-                INSERT INTO records(record_type,record_id,execution_id,project_id,created_at,updated_at,payload_json)
-                VALUES(?,?,?,?,?,?,?)
-                ON CONFLICT(record_type,record_id) DO UPDATE SET
-                    execution_id=excluded.execution_id,
-                    project_id=excluded.project_id,
-                    updated_at=excluded.updated_at,
-                    payload_json=excluded.payload_json
-                """,
-                (
-                    record_type,
-                    record_id,
-                    execution_id,
-                    project_id,
-                    now,
-                    now,
-                    json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str),
-                ),
-            )
+        self.connection.execute(
+            """
+            INSERT INTO records(record_type,record_id,execution_id,project_id,created_at,updated_at,payload_json)
+            VALUES(?,?,?,?,?,?,?)
+            ON CONFLICT(record_type,record_id) DO UPDATE SET
+                execution_id=excluded.execution_id,
+                project_id=excluded.project_id,
+                updated_at=excluded.updated_at,
+                payload_json=excluded.payload_json
+            """,
+            (
+                record_type,
+                record_id,
+                execution_id,
+                project_id,
+                now,
+                now,
+                json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str),
+            ),
+        )
 
     def get_dict(self, record_type: str, record_id: str) -> dict[str, Any]:
         with self._lock:
