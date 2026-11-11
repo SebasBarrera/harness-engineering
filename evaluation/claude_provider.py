@@ -162,6 +162,11 @@ def main() -> int:
     workspace = Path.cwd()
     run_dir = workspace.parent
     calls = args.calls_dir or run_dir / "agent-calls"
+    state = run_dir / "state"
+    if state.is_dir():
+        # The run's state directory (run_eval sets HARNESS_STATE_DIR for the harness, which does
+        # not pass it to the provider): ``harness check`` in the agent's shell needs it.
+        agentlib.EXTRA_AGENT_ENV["HARNESS_STATE_DIR"] = str(state.resolve())
     log = agentlib.allocate_call(calls)
     stem = log.stem
     kind = str(request.get("kind") or "implement")

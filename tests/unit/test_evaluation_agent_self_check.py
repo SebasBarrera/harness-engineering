@@ -80,6 +80,13 @@ def test_prompt_cache_ttl_is_five_minutes_in_the_agent_environment() -> None:
     assert env["CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL"] == "5m"
 
 
+def test_the_callers_state_directory_reaches_the_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agentlib, "EXTRA_AGENT_ENV", {"HARNESS_STATE_DIR": "/run/state"})
+    env = agentlib.agent_environment()
+    assert env["HARNESS_STATE_DIR"] == "/run/state"
+    assert env["FORCE_PROMPT_CACHING_5M"] == "1"
+
+
 def test_the_governed_prompt_asks_for_harness_check() -> None:
     command = ["harness", "check", "--path", "/ws", "--run", "run_1"]
     request = {"task": TASK, "gate": {"checkCommand": command, "validators": []}}

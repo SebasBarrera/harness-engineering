@@ -79,6 +79,11 @@ PROMPT_CACHE_ENV = {
     "CLAUDE_CODE_PROMPT_CACHE_TTL": "5m",
     "CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL": "5m",
 }
+# What a caller adds to the agent's environment: the run's harness state directory
+# (``HARNESS_STATE_DIR``, ``runtime.stateDir: auto``), without which ``harness check`` in the agent's
+# shell looks for the run in the user's data directory and fails (``claude_provider.main``,
+# ``run_embedded``).
+EXTRA_AGENT_ENV: dict[str, str] = {}
 # The tools of a read-only call of the governed conditions (``clarify``, ``acceptance``, ``locate``,
 # ``architecture``, ``plan``, ``review``): the ones the built-in ``claude-code`` adapter gives it
 # (#92, ``governed_harness.agents.native.READ_ONLY_TOOLS``), without accepted edits; the tools that
@@ -158,8 +163,8 @@ def build_prompt(task: dict[str, Any], feedback: str | None = None) -> str:
         "",
         "Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales",
         "paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin",
-        "`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del",
-        "proyecto: " + ", ".join(f"`{command}`" for command in VALIDATOR_COMMANDS) + ".",
+        "`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:",
+        ", ".join(f"`{command}`" for command in VALIDATOR_COMMANDS) + ".",
         "Cuando termines, responde con un resumen breve del cambio.",
     ]
     if feedback:
@@ -213,7 +218,12 @@ def _windows_environment() -> dict[str, str]:
 
 
 def agent_environment() -> dict[str, str]:
-    """Minimal environment for the agent CLI: identity, locale and the evaluation PATH."""
+    """Minimal environment for the agent CLI: identity, locale, the evaluation PATH, the prompt-cache
+    TTL and what the caller put in ``EXTRA_AGENT_ENV``."""
+    return {**_base_environment(), **EXTRA_AGENT_ENV}
+
+
+def _base_environment() -> dict[str, str]:
     if WINDOWS:
         return _windows_environment()
     user = pwd.getpwuid(os.getuid()).pw_name

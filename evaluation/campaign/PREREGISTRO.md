@@ -236,7 +236,7 @@ al agente por igual en todas las condiciones; no cambia hipótesis, métricas ni
      de trabajo más allá de lo que ya permitían las herramientas; las llamadas de solo lectura
      siguen sin shell;
    - el prompt base (`agentlib.build_prompt`, el mismo en todas las condiciones) dice que el agente
-     ya está en el directorio del repositorio, que no use `cd` ni rutas absolutas y que verifique su
+     ya está en el directorio del repositorio, que no use `cd` y que verifique su
      cambio antes de terminar con los validadores del gate del perfil Python:
      `python -m pytest -q`, `python -m ruff check --no-fix .` y `python -m mypy .`;
    - en las condiciones con contrato del gate (`runtime.gateContract`: `harness` y
@@ -245,7 +245,10 @@ al agente por igual en todas las condiciones; no cambia hipótesis, métricas ni
      modo que el contrato lleva `gate.checkCommand` en vez de solo `gate.checkCommands` (#84), y el
      adaptador `claude_provider.py` pide correr ese comando antes de terminar y corregir lo que
      reporte. `harness check` corre los mismos validadores y comprobaciones del gate sin registrar
-     nada (#52); existe para esto. En `harness-core` (sin contrato) la verificación es la del prompt
+     nada (#52); existe para esto. El adaptador pasa al agente el directorio de estado de la
+     corrida (`HARNESS_STATE_DIR`, que el harness no le pasa al proveedor): sin él, `harness check`
+     busca la corrida en el directorio de datos del usuario y falla (comprobado en la corrida en
+     seco de esta enmienda). En `harness-core` (sin contrato) la verificación es la del prompt
      base. Es una desviación declarada de lo que escribe `harness init`.
 
    La comparación sigue siendo justa: todas las condiciones pueden correr los mismos validadores y

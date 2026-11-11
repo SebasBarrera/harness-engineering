@@ -200,6 +200,8 @@ def main() -> int:
     baseline = run_eval.prepare(args.scenario, workspace, args.cache, site_packages)
     state_dir = (run_dir / "state").resolve()
     run_eval.HARNESS_ENV["HARNESS_STATE_DIR"] = str(state_dir)
+    # The host session's shell runs ``harness check`` too (amendment of 2026-11-11).
+    agentlib.EXTRA_AGENT_ENV["HARNESS_STATE_DIR"] = str(state_dir)
     started = time.monotonic()
     # The skill, then the harness condition's configuration (init's file, routing fixed, the
     # evaluation adapter with the host model for the read-only calls).

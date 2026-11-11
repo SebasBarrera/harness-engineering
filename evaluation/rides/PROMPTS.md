@@ -118,8 +118,8 @@ Criterios de aceptación:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -164,8 +164,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -220,8 +220,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -263,8 +263,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -304,8 +304,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -349,8 +349,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -391,8 +391,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -438,8 +438,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -483,8 +483,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -525,8 +525,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -573,8 +573,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -615,8 +615,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -657,8 +657,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -702,8 +702,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -744,8 +744,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -786,8 +786,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -826,8 +826,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 
@@ -869,8 +869,8 @@ Restricciones:
 
 Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales
 paquetes. Ya estás en el directorio del repositorio: ejecuta los comandos desde aquí, sin
-`cd` y sin rutas absolutas. Antes de terminar verifica tu cambio con los validadores del
-proyecto: `python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
+`cd`. Antes de terminar verifica tu cambio con los validadores del proyecto:
+`python -m pytest -q`, `python -m ruff check --no-fix .`, `python -m mypy .`.
 Cuando termines, responde con un resumen breve del cambio.
 ```
 

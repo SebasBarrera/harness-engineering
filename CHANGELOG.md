@@ -9,7 +9,8 @@
   `harness check` (no other shell command), the base prompt says the agent is already in the
   repository (no `cd`) and names the gate's validator commands, and the `harness` and
   `harness-anchored` conditions grant `harness check` so the adapter can ask for
-  `gate.checkCommand` before the agent finishes. Every Claude Code call of the evaluation runs with
+  `gate.checkCommand` before the agent finishes; the adapter passes the run's `HARNESS_STATE_DIR`
+  to the agent, without which `harness check` cannot find the run. Every Claude Code call of the evaluation runs with
   the 5-minute prompt-cache TTL (`FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`,
   `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), recorded in `environment.json` (`agentCalls`). The
   amendment also states that the reported cost is computed from tokens at API list prices (the
