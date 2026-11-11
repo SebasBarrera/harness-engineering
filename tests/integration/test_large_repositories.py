@@ -172,7 +172,10 @@ def test_an_edit_that_restores_the_modification_time_is_seen(python_workspace: P
         stat = os.stat(target)
         before = store.take().files["src/sample/pricing.py"].digest
         time.sleep(0.01)
-        target.write_text(target.read_text().replace("subtotal", "SUBTOTAL"), encoding="utf-8")
+        # LF like the fixture: a CRLF rewrite on Windows would change the size the test holds.
+        target.write_text(
+            target.read_text().replace("subtotal", "SUBTOTAL"), encoding="utf-8", newline="\n"
+        )
         os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
         assert os.stat(target).st_size == stat.st_size
         assert store.take().files["src/sample/pricing.py"].digest != before
