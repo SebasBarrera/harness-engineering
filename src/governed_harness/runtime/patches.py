@@ -26,18 +26,9 @@ class PatchApplier:
             grants=grants,
         )
         path = contained_path(self.workspace, Path(patch.path))
-        if patch.expected_sha256 is not None and (
-            not path.exists() or sha256_file(path) != patch.expected_sha256
-        ):
-            raise CapabilityDenied(f"precondition digest mismatch for {patch.path}")
+        self._check_precondition(patch, path)
         if patch.operation == "delete":
-            if not any(
-                grant.conditions.get("allowDelete")
-                for grant in grants
-                if grant.capability == "filesystem.write"
-            ):
-                raise CapabilityDenied("delete requires an explicit allowDelete grant condition")
-            path.unlink(missing_ok=False)
+            self._delete(path, grants)
             return path
         if patch.operation == "create" and path.exists():
             existing = path.read_text(encoding="utf-8")
@@ -47,15 +38,36 @@ class PatchApplier:
         if patch.operation == "replace" and not path.exists():
             raise FileNotFoundError(path)
         if patch.operation == "append":
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8", newline="") as handle:
-                handle.write(patch.content or "")
-                handle.flush()
-                os.fsync(handle.fileno())
+            self._append(path, patch.content or "")
             return path
         path.parent.mkdir(parents=True, exist_ok=True)
         self._atomic_write(path, (patch.content or "").encode("utf-8"))
         return path
+
+    @staticmethod
+    def _check_precondition(patch: FilePatch, path: Path) -> None:
+        if patch.expected_sha256 is not None and (
+            not path.exists() or sha256_file(path) != patch.expected_sha256
+        ):
+            raise CapabilityDenied(f"precondition digest mismatch for {patch.path}")
+
+    @staticmethod
+    def _delete(path: Path, grants: list[CapabilityGrant]) -> None:
+        if not any(
+            grant.conditions.get("allowDelete")
+            for grant in grants
+            if grant.capability == "filesystem.write"
+        ):
+            raise CapabilityDenied("delete requires an explicit allowDelete grant condition")
+        path.unlink(missing_ok=False)
+
+    @staticmethod
+    def _append(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8", newline="") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
 
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:

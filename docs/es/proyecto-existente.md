@@ -31,7 +31,7 @@ El flujo es el mismo que en [Proyecto nuevo](proyecto-nuevo.md). Lo que cambia e
 
    `doctor` comprueba Python, Git, la configuración, los validadores que el proyecto ejecutará, el commit base y si `.harness/` está ignorado por Git. Cada punto que no pasa trae su remedio.
 
-4. Instala las dependencias de prueba del proyecto en el entorno donde corre el harness. Los validadores ejecutan los comandos del proyecto (`python -m pytest`, `npm test`) con el intérprete o las herramientas del `PATH`. Con `toolchain.interpreter: auto` (lo que escribe `init`), los validadores de Python usan el `.venv` o `venv` del proyecto, `uv run --no-sync` o `poetry run`. Una dependencia que falta no se detecta de antemano: las pruebas fallan al recolectarse y la ejecución sale con código 6. Los proyectos con comandos distintos declaran sus propios validadores en `toolchain.validators` (ver la [referencia de configuración](../reference/configuration.md#project-toolchain)).
+4. Instala las dependencias de prueba del proyecto en el entorno donde corre el harness. Los validadores ejecutan los comandos del proyecto (`python -m pytest`, `npm test`) con el intérprete o las herramientas del `PATH`. Con `toolchain.interpreter: auto` (lo que escribe `init`), los validadores de Python usan el `.venv` o `venv` del proyecto, `uv run --no-sync` o `poetry run`. Una dependencia que falta no se detecta de antemano: las pruebas fallan al recolectarse y la ejecución sale con código 6, aunque el estado base falle igual, porque no se ejecutó ninguna prueba (ver más abajo). Los proyectos con comandos distintos declaran sus propios validadores en `toolchain.validators` (ver la [referencia de configuración](../reference/configuration.md#project-toolchain)).
 
 5. Crea la tarea y ejecútala, igual que en un proyecto nuevo. Para un cambio en código existente declara en `metadata.ownedPaths` los directorios que el agente puede modificar: el ChangeSet solo contiene esas rutas.
 
@@ -48,9 +48,9 @@ El flujo es el mismo que en [Proyecto nuevo](proyecto-nuevo.md). Lo que cambia e
 
 ## Si el estado base ya está roto
 
-El harness todavía no distingue fallos que ya existían de los que introduce el cambio (el estado `PREEXISTING_ERROR` existe pero no se asigna, issue 7 del repositorio). La evidencia muestra qué archivos fallaron para que veas que están fuera del ChangeSet. Hay dos salidas:
+Con `verification.differential` (lo escribe `harness init`), un validador obligatorio que falla también se ejecuta sobre el estado base: un fallo que el estado base comparte queda como `PREEXISTING_ERROR` y no bloquea; uno nuevo queda como `INTRODUCED_ERROR` y bloquea. Una ejecución de pruebas que no ejecutó ninguna prueba (por ejemplo, pytest detenido por un error de recolección porque falta una dependencia de pruebas) no es comparable y sigue bloqueando (issue 190 del repositorio). La evidencia muestra qué archivos fallaron. Si la ejecución falla, hay dos salidas:
 
-- Corrige el entorno o el estado base y ejecuta `harness run continue --run <run-id>`. El gate cuenta el último intento de cada validador, así que puede quedar en `PASSED` y bastar un `APPROVE` normal.
+- Corrige lo que falla (en el caso de `itsdangerous`, instala `freezegun`) y vuelve a ejecutar la tarea con `harness run start`. Con `governance.stopTheLine: restore` (lo que escribe `init`), los cambios de la ejecución fallida quedan en cuarentena y el árbol vuelve al estado base, así que `harness run continue` verificaría un ChangeSet vacío. Si la nueva ejecución pasa, basta un `APPROVE` normal.
 - Cierra con `APPROVE_EXCEPTION` y una justificación escrita; queda auditada aparte.
 
 ## Trabajar sin tocar tu árbol

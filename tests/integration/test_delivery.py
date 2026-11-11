@@ -97,7 +97,8 @@ def test_branch_closure_commit_carries_trailers_and_verifies(python_workspace: P
     message = git(python_workspace, "log", "-1", "--format=%B", commit)
     assert f"Harness-Run: {run}" in message
     assert f"Harness-ChangeSet: {digest}" in message
-    assert "Harness-Decision: decision_" in message and " APPROVE" in message
+    assert "Harness-Decision: decision_" in message
+    assert " APPROVE" in message
     assert "Harness-Exception" not in message
     # The current branch, the index and the working tree are untouched.
     assert git(python_workspace, "rev-parse", "HEAD") == head_before
@@ -174,10 +175,11 @@ def test_closure_blocks_when_the_approved_content_changed(python_workspace: Path
         task = services.state.get("task", execution.task_id, Task)
     (python_workspace / "tests" / "test_pricing.py").write_text("# changed\n", encoding="utf-8")
     decision = approve_record(run, digest)
+    delivery_config = DeliveryConfig(closureCommit="branch")
     with pytest.raises(VcsError, match="no longer holds the approved content"):
         create_closure_commit(
             python_workspace,
-            DeliveryConfig(closureCommit="branch"),
+            delivery_config,
             execution_id=run,
             task=task,
             change_set=change_set,
@@ -326,9 +328,10 @@ def test_publisher_posts_then_updates_one_comment(python_workspace: Path) -> Non
 
 def test_publisher_needs_a_repository(python_workspace: Path) -> None:
     application, run, _ = run_to_decision(python_workspace)
+    transport_override = FakeTransport()
     with pytest.raises(ConfigurationError, match="no repository"):
         application.publish_pull_request(
-            python_workspace, run, pull_request=1, transport_override=FakeTransport()
+            python_workspace, run, pull_request=1, transport_override=transport_override
         )
 
 

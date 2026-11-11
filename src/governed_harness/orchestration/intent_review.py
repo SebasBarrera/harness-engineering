@@ -48,9 +48,8 @@ MALFORMED_RULE = "intake.agent-review-malformed"
 MAX_AGENT_QUESTIONS = 40
 _TEXT_LIMIT = 1000
 _DOC_SUFFIXES = (".md", ".txt", ".rst", ".pdf", ".doc", ".docx", ".yaml", ".yml", ".json")
-_DOC_REFERENCE = re.compile(
-    r"(?<![\w/.-])((?:[\w-]+/)*[\w-]+\.(?:md|txt|rst|pdf|docx?|ya?ml|json))(?![\w])", re.I
-)
+_PATH_RUN = re.compile(r"[\w/.-]+", re.I)
+_DOC_EXTENSION = re.compile(r"(?:md|txt|rst|pdf|docx?|ya?ml|json)(?!\w)", re.I)
 _ID_REFERENCE = re.compile(
     r"\b(?:per|see|as in|according to|following|by|from|under|in)\s+"
     r"(?:requirements?|rules?|sections?|criteri(?:on|a)|items?\s+)?\s*"
@@ -381,9 +380,9 @@ class IntentReview:
         revision_ref = services.artifacts.put_json(
             revised.model_dump(mode="json"), metadata={"kind": "task-revision"}
         )
-        if results.project.governance_settings.pin_task_revision:
-            services.state.set_flag(f"taskrev:{execution.execution_id}", revision_ref.uri)
         current = task_digest(revised)
+        if results.project.governance_settings.pin_task_revision:
+            services.pin_task_revision(execution.execution_id, revision_ref.uri, current)
         record = {
             "previousTaskDigest": task_digest(task),
             "taskDigest": current,
@@ -458,40 +457,83 @@ class IntentReview:
         seen: set[str] = set()
         for answer in answers:
             text = answer["answer"]
-            for document in _DOC_REFERENCE.findall(text):
-                if document in seen or _document_exists(workspace, document):
-                    continue
-                seen.add(document)
-                items.append(
-                    (
-                        "consistency",
-                        "task",
-                        f"The answer to {answer['questionId']} refers to {document}, which is "
-                        "not in the workspace: attach the document or transcribe the part "
-                        "the answer relies on.",
-                    )
-                )
-            identifiers = set(_ID_REFERENCE.findall(text)) | set(_LIST_REFERENCE.findall(text))
-            for identifier in sorted(identifiers):
-                if identifier in seen or re.search(
-                    rf"(?<!\w){re.escape(identifier)}(?!\w)", task_text
-                ):
-                    continue
-                if corpus is None:
-                    corpus = _workspace_text(workspace)
-                if re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", corpus):
-                    continue
-                seen.add(identifier)
-                items.append(
-                    (
-                        "consistency",
-                        "task",
-                        f"The answer to {answer['questionId']} cites {identifier!r}, which "
-                        "appears neither in the task nor in the workspace: transcribe what "
-                        f"{identifier} says, or attach the document that defines it.",
-                    )
-                )
+            _dangling_documents(workspace, answer, text, seen, items)
+            corpus = _dangling_identifiers(workspace, answer, text, task_text, corpus, seen, items)
         return items
+
+
+def _doc_references(text: str) -> list[str]:
+    """The document paths ``text`` names, such as ``docs/spec.md``, in order.
+
+    A reference starts a run of path characters (word characters, ``/``, ``.``, ``-``): its
+    stem, the part before the run's first dot, is names of word characters and ``-`` joined by
+    single slashes, and a known extension follows the dot, not followed by a word character.
+    Each run is read once, so the time is linear in the length of ``text``.
+    """
+    found: list[str] = []
+    for run in _PATH_RUN.finditer(text):
+        stem, dot, rest = run.group().partition(".")
+        if not dot or not stem or stem[0] == "/" or stem[-1] == "/" or "//" in stem:
+            continue
+        extension = _DOC_EXTENSION.match(rest)
+        if extension is not None:
+            found.append(f"{stem}.{extension.group()}")
+    return found
+
+
+def _dangling_documents(
+    workspace: Path,
+    answer: dict[str, str],
+    text: str,
+    seen: set[str],
+    items: list[tuple[str, str, str]],
+) -> None:
+    """A question for every document the answer refers to that is not in the workspace."""
+    for document in _doc_references(text):
+        if document in seen or _document_exists(workspace, document):
+            continue
+        seen.add(document)
+        items.append(
+            (
+                "consistency",
+                "task",
+                f"The answer to {answer['questionId']} refers to {document}, which is "
+                "not in the workspace: attach the document or transcribe the part "
+                "the answer relies on.",
+            )
+        )
+
+
+def _dangling_identifiers(
+    workspace: Path,
+    answer: dict[str, str],
+    text: str,
+    task_text: str,
+    corpus: str | None,
+    seen: set[str],
+    items: list[tuple[str, str, str]],
+) -> str | None:
+    """A question for every identifier the answer cites that appears neither in the task nor
+    in the workspace; returns the workspace text once it was read, so it is read only once."""
+    identifiers = set(_ID_REFERENCE.findall(text)) | set(_LIST_REFERENCE.findall(text))
+    for identifier in sorted(identifiers):
+        if identifier in seen or re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", task_text):
+            continue
+        if corpus is None:
+            corpus = _workspace_text(workspace)
+        if re.search(rf"(?<!\w){re.escape(identifier)}(?!\w)", corpus):
+            continue
+        seen.add(identifier)
+        items.append(
+            (
+                "consistency",
+                "task",
+                f"The answer to {answer['questionId']} cites {identifier!r}, which "
+                "appears neither in the task nor in the workspace: transcribe what "
+                f"{identifier} says, or attach the document that defines it.",
+            )
+        )
+    return corpus
 
 
 def _document_exists(workspace: Path, document: str) -> bool:

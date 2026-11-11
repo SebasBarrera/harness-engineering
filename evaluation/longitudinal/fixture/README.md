@@ -1,3 +1,3 @@
 # inventory
 
-Inventory library. The behavior is specified in [SPEC.md](SPEC.md).
+Biblioteca de inventario. El comportamiento está especificado en [SPEC.md](SPEC.md).

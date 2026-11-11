@@ -34,10 +34,8 @@ sys.path.insert(0, str(HERE.parent))
 
 import agentlib  # noqa: E402
 import run_eval  # noqa: E402
-from agentlib import build_prompt, call_records, load_calls, run_claude  # noqa: E402
 from measure import _bandit, _ruff  # noqa: E402
-from product_owner import ProductOwner  # noqa: E402
-from run_eval import git, run_harness  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 
 INCREMENTS = yaml.safe_load((HERE / "increments.yaml").read_text(encoding="utf-8"))
 HIDDEN = HERE / "hidden" / "test_hidden_inventory.py"
@@ -54,9 +52,9 @@ def prepare(workspace: Path, site_packages: Path) -> None:
     (site_packages / "zz_eval_workspace.pth").write_text(
         str(workspace / "src") + "\n", encoding="utf-8"
     )
-    git(workspace, "init", "-q")
-    git(workspace, "add", "-A")
-    git(workspace, "commit", "-qm", "baseline")
+    run_eval.git(workspace, "init", "-q")
+    run_eval.git(workspace, "add", "-A")
+    run_eval.git(workspace, "commit", "-qm", "baseline")
 
 
 def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
@@ -119,7 +117,7 @@ def failing(result: dict[str, Any], parts: list[str]) -> list[str]:
 
 
 def calls_since(calls_dir: Path, start: int) -> list[dict[str, Any]]:
-    return load_calls(calls_dir)[start:]
+    return agentlib.load_calls(calls_dir)[start:]
 
 
 def usage(calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -230,6 +228,11 @@ def main() -> int:
     parser.add_argument(
         "--dry-run", action="store_true", help="fake_claude.py instead of Claude Code"
     )
+    parser.add_argument(
+        "--po-model",
+        default=DEFAULT_PO_MODEL,
+        help="the simulated product owner's model, the same in every cell (amendment of 2026-11-11)",
+    )
     args = parser.parse_args()
     claude_bin = None
     if args.dry_run:
@@ -256,16 +259,16 @@ def main() -> int:
         kind: str, increment: dict[str, Any], text: str | None, task: dict[str, Any] | None
     ) -> dict[str, Any]:
         (run_dir / "feedback.md").unlink(missing_ok=True)
-        before = len(call_records(calls_dir))
+        before = len(agentlib.call_records(calls_dir))
         t0 = time.monotonic()
         step: dict[str, Any] = {"increment": increment["id"], "kind": kind}
         if args.condition == "baseline":
-            run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
+            agentlib.run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
         elif args.condition == "structured":
-            prompt = build_prompt(
+            prompt = agentlib.build_prompt(
                 {"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})}
             )
-            run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
+            agentlib.run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
         else:
             task_file = run_dir / f"task-{increment['id']}-{kind}.yaml"
             task_file.write_text(
@@ -274,20 +277,21 @@ def main() -> int:
                     sort_keys=False,
                 ),
                 encoding="utf-8",
+                newline="\n",
             )
             if args.condition == "harness-legacy":
-                outcome = run_harness(workspace, run_dir, task_file, args.model)
+                outcome = run_eval.run_harness(workspace, run_dir, task_file, args.model)
             else:
                 # The simulated product owner knows the increment's structured task and SPEC.md.
                 owner = ProductOwner(
-                    "Structured task:\n"
-                    + yaml.safe_dump(task or {}, sort_keys=False)
+                    "Tarea estructurada:\n"
+                    + yaml.safe_dump(task or {}, sort_keys=False, allow_unicode=True)
                     + "\nSPEC.md:\n"
                     + spec_text,
-                    args.model,
+                    args.po_model,
                     run_dir,
                 )
-                outcome = run_harness(
+                outcome = run_eval.run_harness(
                     workspace,
                     run_dir,
                     task_file,
@@ -297,7 +301,9 @@ def main() -> int:
                     claude_bin=claude_bin,
                 )
                 (run_dir / f"project-{increment['id']}-{kind}.yaml").write_text(
-                    (run_dir / "project.yaml").read_text(encoding="utf-8"), encoding="utf-8"
+                    (run_dir / "project.yaml").read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                    newline="\n",
                 )
                 step["productOwner"] = owner.rounds
             keys = (
@@ -347,17 +353,22 @@ def main() -> int:
         for round_number in range(1, MAX_FIX_ROUNDS + 1):
             if not bad:
                 break
-            reports = [BUG_REPORTS.get(name, f"{name} fails") for name in bad]
+            # The texts the model receives are in Spanish (maintainer decision of 2026-11-11).
+            reports = [BUG_REPORTS.get(name, f"{name} falla") for name in bad]
             fix_text = (
-                "some things are broken:\n" + "\n".join(f"- {r}" for r in reports) + "\nfix them"
+                "algunas cosas están rotas:\n"
+                + "\n".join(f"- {r}" for r in reports)
+                + "\narréglalas"
             )
             fix_task = {
-                "title": f"Fix reported defects after {increment['id']} (round {round_number})",
-                "intent": "Fix the reported defects without breaking other behavior, and add tests for them.",
+                "title": f"Corregir los defectos reportados después de {increment['id']} "
+                f"(ronda {round_number})",
+                "intent": "Corregir los defectos reportados sin romper otro comportamiento, y agregar "
+                "pruebas para ellos.",
                 "requirements": reports,
-                "acceptanceCriteria": [f"Fixed: {r}" for r in reports]
-                + ["All tests in tests/ pass."],
-                "constraints": ["Use only the Python standard library."],
+                "acceptanceCriteria": [f"Corregido: {r}" for r in reports]
+                + ["Todas las pruebas de tests/ pasan."],
+                "constraints": ["Usar solo la biblioteca estándar de Python."],
             }
             fix = act(f"fix{round_number}", increment, fix_text, fix_task)
             check = oracle(workspace, scratch, f"{increment['id']}-fix{round_number}")
@@ -372,6 +383,7 @@ def main() -> int:
         "condition": args.condition,
         "model": args.model,
         "rep": args.rep,
+        "productOwnerModel": args.po_model if args.condition.startswith("harness") else None,
         "dryRun": args.dry_run,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "wallSeconds": round(time.monotonic() - started, 3),
@@ -387,7 +399,7 @@ def main() -> int:
         },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE.parent, args.work)
             + "\n"

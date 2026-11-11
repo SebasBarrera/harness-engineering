@@ -34,7 +34,7 @@ from typing import Any
 from governed_harness.configuration.models import DeliveryConfig
 from governed_harness.delivery.vcs import Git, VcsError, revision_diff
 from governed_harness.domain.enums import DecisionKind
-from governed_harness.domain.models import ChangeSet, HumanDecision, Task
+from governed_harness.domain.models import ChangedFile, ChangeSet, HumanDecision, Task
 from governed_harness.evidence.hashing import sha256_bytes
 
 TRAILER_RUN = "Harness-Run"
@@ -122,6 +122,77 @@ def _mode(git: Git, head: str, relative: str, path: Path) -> str:
     return "100755" if os.name != "nt" and os.access(path, os.X_OK) else "100644"
 
 
+def _reused_branch(
+    git: Git,
+    mode: str,
+    branch: str,
+    execution_id: str,
+    change_set: ChangeSet,
+    trailers: dict[str, str],
+) -> ClosureCommit | None:
+    """``REUSED`` when ``branch`` already holds this run's commit, ``None`` when it does not
+    exist; any other existing branch is an error."""
+    existing = git.resolve(f"refs/heads/{branch}")
+    if existing is None:
+        return None
+    parent = git.resolve(f"{existing}~1")
+    found = (
+        {key: value for item in git.trailers(parent, existing) for key, value in item.items()}
+        if parent
+        else {}
+    )
+    if found.get(TRAILER_RUN) == execution_id and found.get(TRAILER_CHANGESET) == change_set.digest:
+        return ClosureCommit(mode, "REUSED", None, existing, parent, branch, trailers)
+    raise ClosureCommitError(
+        f"branch {branch} already exists and does not hold this run's commit; "
+        "set delivery.branch or delete the branch, then run continue"
+    )
+
+
+def _work_is_stale(workspace: Path, item: ChangedFile) -> bool:
+    """The workspace no longer holds the approved content of ``item``."""
+    target = workspace / item.path
+    if item.after_digest is None:
+        return target.exists()
+    return not target.is_file() or sha256_bytes(target.read_bytes()) != item.after_digest
+
+
+def _stale_paths(
+    git: Git, workspace: Path, head: str, change_set: ChangeSet
+) -> tuple[list[str], list[str]]:
+    """The paths whose baseline ``HEAD`` does not hold, and those the workspace changed since."""
+    stale_base = []
+    stale_work = []
+    for item in change_set.files:
+        current = git.blob(head, item.path)
+        if (sha256_bytes(current) if current is not None else None) != item.before_digest:
+            stale_base.append(item.path)
+        if _work_is_stale(workspace, item):
+            stale_work.append(item.path)
+    return stale_base, stale_work
+
+
+def _write_tree(git: Git, workspace: Path, head: str, change_set: ChangeSet) -> str:
+    """The tree of ``HEAD`` with the approved ChangeSet applied, built in a private index."""
+    with tempfile.TemporaryDirectory(prefix="harness-index-") as directory:
+        index = {"GIT_INDEX_FILE": str(Path(directory) / "index")}
+        git.run("read-tree", head, env=index)
+        for item in change_set.files:
+            if item.after_digest is None:
+                git.run("update-index", "--force-remove", "--", item.path, env=index)
+                continue
+            path = workspace / item.path
+            blob = git.text("hash-object", "-w", "--no-filters", "--stdin", stdin=path.read_bytes())
+            git.run(
+                "update-index",
+                "--add",
+                "--cacheinfo",
+                f"{_mode(git, head, item.path, path)},{blob},{item.path}",
+                env=index,
+            )
+        return git.text("write-tree", env=index)
+
+
 def create_closure_commit(
     workspace: Path,
     config: DeliveryConfig,
@@ -141,39 +212,10 @@ def create_closure_commit(
     trailers = closure_trailers(execution_id, task, change_set, decision)
     branch = branch_name(config, execution_id, task.task_id) if mode == "branch" else None
     if branch is not None:
-        existing = git.resolve(f"refs/heads/{branch}")
-        if existing is not None:
-            parent = git.resolve(f"{existing}~1")
-            found = (
-                {
-                    key: value
-                    for item in git.trailers(parent, existing)
-                    for key, value in item.items()
-                }
-                if parent
-                else {}
-            )
-            if (
-                found.get(TRAILER_RUN) == execution_id
-                and found.get(TRAILER_CHANGESET) == change_set.digest
-            ):
-                return ClosureCommit(mode, "REUSED", None, existing, parent, branch, trailers)
-            raise ClosureCommitError(
-                f"branch {branch} already exists and does not hold this run's commit; "
-                "set delivery.branch or delete the branch, then run continue"
-            )
-    stale_base = []
-    stale_work = []
-    for item in change_set.files:
-        current = git.blob(head, item.path)
-        if (sha256_bytes(current) if current is not None else None) != item.before_digest:
-            stale_base.append(item.path)
-        target = workspace / item.path
-        if item.after_digest is None:
-            if target.exists():
-                stale_work.append(item.path)
-        elif not target.is_file() or sha256_bytes(target.read_bytes()) != item.after_digest:
-            stale_work.append(item.path)
+        reused = _reused_branch(git, mode, branch, execution_id, change_set, trailers)
+        if reused is not None:
+            return reused
+    stale_base, stale_work = _stale_paths(git, workspace, head, change_set)
     if stale_work:
         raise ClosureCommitError(
             f"the workspace no longer holds the approved content of {', '.join(sorted(stale_work))}"
@@ -191,23 +233,7 @@ def create_closure_commit(
             branch=branch,
             trailers=trailers,
         )
-    with tempfile.TemporaryDirectory(prefix="harness-index-") as directory:
-        index = {"GIT_INDEX_FILE": str(Path(directory) / "index")}
-        git.run("read-tree", head, env=index)
-        for item in change_set.files:
-            if item.after_digest is None:
-                git.run("update-index", "--force-remove", "--", item.path, env=index)
-                continue
-            path = workspace / item.path
-            blob = git.text("hash-object", "-w", "--no-filters", "--stdin", stdin=path.read_bytes())
-            git.run(
-                "update-index",
-                "--add",
-                "--cacheinfo",
-                f"{_mode(git, head, item.path, path)},{blob},{item.path}",
-                env=index,
-            )
-        tree = git.text("write-tree", env=index)
+    tree = _write_tree(git, workspace, head, change_set)
     message = commit_message(execution_id, task, change_set, decision, trailers)
     commit = git.text(
         "commit-tree",
@@ -225,6 +251,19 @@ def create_closure_commit(
             f"the commit's diff recomputes to {recomputed.digest}, not the approved "
             f"{change_set.digest}; no ref was updated"
         )
+    _update_ref(git, branch, execution_id, commit, head, change_set)
+    return ClosureCommit(mode, "CREATED", None, commit, head, branch, trailers)
+
+
+def _update_ref(
+    git: Git,
+    branch: str | None,
+    execution_id: str,
+    commit: str,
+    head: str,
+    change_set: ChangeSet,
+) -> None:
+    """Create ``branch`` at ``commit``, or move ``HEAD`` to it and refresh the index."""
     if branch is not None:
         git.run(
             "update-ref",
@@ -234,9 +273,8 @@ def create_closure_commit(
             commit,
             "",
         )
-    else:
-        git.run("update-ref", "-m", f"harness closure {execution_id}", "HEAD", commit, head)
-        paths = [item.path for item in change_set.files]
-        if paths:
-            git.run("reset", "-q", "--", *paths)
-    return ClosureCommit(mode, "CREATED", None, commit, head, branch, trailers)
+        return
+    git.run("update-ref", "-m", f"harness closure {execution_id}", "HEAD", commit, head)
+    paths = [item.path for item in change_set.files]
+    if paths:
+        git.run("reset", "-q", "--", *paths)

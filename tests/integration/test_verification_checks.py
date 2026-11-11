@@ -120,7 +120,8 @@ def test_interface_mismatch_fails_verification_under_enforce(
     )
     finding = rules(application, python_workspace, run)["interface.signature"]
     assert finding.severity is FindingSeverity.HIGH
-    assert finding.location is not None and finding.location.path == "src/sample/pricing.py"
+    assert finding.location is not None
+    assert finding.location.path == "src/sample/pricing.py"
 
 
 def test_interface_under_warn_records_low_findings(python_workspace: Path, tmp_path: Path) -> None:
@@ -305,8 +306,97 @@ def test_preexisting_failure_does_not_block(python_workspace: Path, tmp_path: Pa
     assert pytest_result.kind is ValidationKind.PREEXISTING_ERROR
     assert pytest_result.status is ResultStatus.PASSED
     note = rules(application, python_workspace, run)["differential.preexisting"]
-    assert note.introduced is False and "test_legacy" in note.message
+    assert note.introduced is False
+    assert "test_legacy" in note.message
+    # pytest -q does not list the tests that passed: whether the changed test file ran is
+    # unknown, which is said, not left silent (#190).
+    unknown = rules(application, python_workspace, run)["tests.changed-not-run"]
+    assert unknown.severity is FindingSeverity.INFO
+    assert "tests/test_pricing.py" in unknown.message
     assert status["gate"]["status"] == ResultStatus.PASSED
+
+
+def differential_events(application: HarnessApplication, workspace: Path, run: str) -> list[Any]:
+    with application._services(workspace) as services:
+        return [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "verification.differential.inconclusive"
+        ]
+
+
+def test_a_run_interrupted_at_collection_on_both_sides_still_blocks(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """The repro of #190: a test file that cannot be collected on the baseline and on the
+    ChangeSet hides a real regression; the shared collection error must not pass the gate."""
+    (python_workspace / "tests" / "test_needs_dep.py").write_text(
+        "import missing_dependency_for_190  # noqa: F401\n\n\ndef test_dep() -> None:\n"
+        "    assert True\n"
+    )
+    configure(python_workspace, {"differential": True})
+    wrong = GOOD.replace("1 - rate", "1 + rate")
+    application, run = run_task(
+        python_workspace,
+        tmp_path,
+        task_yaml([patch("src/sample/pricing.py", wrong), patch("tests/test_pricing.py", TEST)]),
+    )
+    status = application.status(python_workspace, run)
+    assert status["execution"]["currentPhase"] == PhaseId.VERIFICATION
+    pytest_result = latest(application, python_workspace, run)["python.pytest"]
+    assert pytest_result.status is ResultStatus.FAILED
+    assert pytest_result.kind is not ValidationKind.PREEXISTING_ERROR
+    found = rules(application, python_workspace, run)
+    assert found["python.pytest.failed"].severity is FindingSeverity.HIGH
+    assert "differential.preexisting" not in found
+    events = differential_events(application, python_workspace, run)
+    assert [item["validatorId"] for item in events] == ["python.pytest"]
+    assert "exit code 2" in events[0]["reason"]
+
+
+def test_a_changed_test_file_that_did_not_run_blocks(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """The shared failure is real (tests ran), but the test file the ChangeSet added has no
+    test that ran; with ``-rA`` the output lists every test, so this is a HIGH finding."""
+    broken_legacy(python_workspace)
+    configure(
+        python_workspace,
+        {"differential": True},
+        toolchain={
+            "validators": [
+                {
+                    "id": "python.pytest",
+                    "command": ["python", "-m", "pytest", "-q", "-rA"],
+                    "mandatory": True,
+                    "timeoutSeconds": 900,
+                }
+            ]
+        },
+    )
+    helper = "from sample import apply_discount\n\n\ndef check_threshold() -> bool:\n"
+    helper += "    return apply_discount(100, 100, 0.1) == 90\n"
+    application, run = run_task(
+        python_workspace,
+        tmp_path,
+        task_yaml(
+            [
+                patch("src/sample/pricing.py", GOOD),
+                patch("tests/test_pricing.py", TEST),
+                patch("tests/test_untested.py", helper, operation="create"),
+            ]
+        ),
+    )
+    assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
+        PhaseId.VERIFICATION
+    )
+    pytest_result = latest(application, python_workspace, run)["python.pytest"]
+    assert pytest_result.status is ResultStatus.FAILED
+    found = rules(application, python_workspace, run)["tests.changed-not-run"]
+    assert found.severity is FindingSeverity.HIGH
+    assert "tests/test_untested.py" in found.message
+    assert "tests/test_pricing.py" not in found.message
+    assert found.finding_id in pytest_result.finding_ids
 
 
 def test_introduced_failure_blocks_with_its_own_finding(
@@ -330,7 +420,8 @@ def test_introduced_failure_blocks_with_its_own_finding(
         for item in application.list_findings(python_workspace, run)
         if item.rule_id == "differential.introduced"
     ]
-    assert found and all(item.introduced for item in found)
+    assert found
+    assert all(item.introduced for item in found)
     assert any("test_at_threshold" in item.message for item in found)
     assert not any("test_legacy" in item.message for item in found)
 

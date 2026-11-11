@@ -22,7 +22,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime
 from importlib import metadata
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 
 def sha256_file(path: Path) -> str:
@@ -36,7 +36,16 @@ def sha256_file(path: Path) -> str:
 def code_digest(root: Path) -> str:
     """Digest of every file of the evaluation code copy (sorted paths and contents)."""
     digest = hashlib.sha256()
-    for path in sorted(p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+    files = (p for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts)
+    if sys.platform == "win32":
+        # The POSIX digest of the same files: POSIX path order (WindowsPath sorts without case)
+        # and forward slashes.
+        relative = sorted(PurePosixPath(p.relative_to(root).as_posix()) for p in files)
+        for name in relative:
+            digest.update(str(name).encode())
+            digest.update(hashlib.sha256((root / name).read_bytes()).digest())
+        return digest.hexdigest()[:16]
+    for path in sorted(files):
         digest.update(str(path.relative_to(root)).encode())
         digest.update(hashlib.sha256(path.read_bytes()).digest())
     return digest.hexdigest()[:16]
@@ -96,10 +105,15 @@ def main() -> int:
         "os": f"{platform.system()} {platform.release()} {platform.machine()}",
         "codeDigest": code_digest(args.code) if args.code else None,
     }
+    if sys.platform == "win32":
+        # Declared deviation: conditions.apply_provider sets runtime.agentSandbox off on Windows.
+        entry["agentSandbox"] = "off (no OS sandbox on Windows)"
     data = json.loads(args.out.read_text(encoding="utf-8")) if args.out.exists() else {}
     data.setdefault("blocks", {})[args.block or "default"] = entry
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8")
+    args.out.write_text(
+        json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
     print(f"wrote {args.out}: {json.dumps(entry)}")
     return 0
 

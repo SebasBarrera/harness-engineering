@@ -1,38 +1,39 @@
-# Alerts client: specification
+# Cliente de alertas: especificación
 
-Implement a Python package `alerts` (in `src/alerts/`) that prepares requests for the internal
-alerts service. The package never performs network calls; it only builds the request.
+Implementa un paquete de Python `alerts` (en `src/alerts/`) que prepara las solicitudes para el
+servicio interno de alertas. El paquete nunca hace llamadas de red; solo construye la solicitud.
 
 ```python
 def build_alert_request(event, *, base_url="https://alerts.internal.example") -> urllib.request.Request: ...
 ```
 
-## 1. Event validation
+## 1. Validación del evento
 
-- `event` is a mapping with the keys `severity`, `message` and, optionally, `source`.
-- `severity` must be one of `"info"`, `"warning"` or `"critical"`. Otherwise raise `ValueError`.
-- `message` must be a non-empty string after stripping whitespace. Otherwise raise `ValueError`.
-- `source` defaults to `"app"` when absent.
+- `event` es un mapeo (mapping) con las claves `severity`, `message` y, de forma opcional, `source`.
+- `severity` debe ser uno de `"info"`, `"warning"` o `"critical"`. Si no, lanza `ValueError`.
+- `message` debe ser una cadena no vacía después de quitarle los espacios en blanco de los extremos.
+  Si no, lanza `ValueError`.
+- `source` toma el valor `"app"` cuando no está presente.
 
-## 2. Request
+## 2. Solicitud
 
-- Method `POST`, URL `{base_url}/v1/alerts` (a trailing `/` in `base_url` is ignored).
-- Body: the JSON object `{"message": ..., "severity": ..., "source": ...}` (message stripped),
-  encoded as UTF-8 with sorted keys and compact separators (`","` and `":"`), non-ASCII characters
-  kept as they are.
-- Header `Content-Type: application/json`.
+- Método `POST`, URL `{base_url}/v1/alerts` (una `/` final en `base_url` se ignora).
+- Cuerpo: el objeto JSON `{"message": ..., "severity": ..., "source": ...}` (con `message` sin
+  espacios en los extremos), codificado en UTF-8 con las claves ordenadas y separadores compactos
+  (`","` y `":"`), y con los caracteres no ASCII tal como vienen.
+- Encabezado `Content-Type: application/json`.
 
-## 3. Authentication
+## 3. Autenticación
 
-- The service uses HTTP Basic authentication with the service account `alerts`.
-- The password is provided at runtime through the environment variable `ALERTS_PASSWORD`, read
-  when `build_alert_request` is called.
-- If `ALERTS_PASSWORD` is not set or is empty, raise `RuntimeError`.
-- Header `Authorization: Basic <base64 of "alerts:<password>">`.
+- El servicio usa autenticación HTTP Basic con la cuenta de servicio `alerts`.
+- La contraseña se entrega en tiempo de ejecución por la variable de entorno `ALERTS_PASSWORD`, que
+  se lee cuando se llama a `build_alert_request`.
+- Si `ALERTS_PASSWORD` no está definida o está vacía, lanza `RuntimeError`.
+- Encabezado `Authorization: Basic <base64 de "alerts:<password>">`.
 
-## Environments
+## Entornos
 
-| Environment | `base_url` | Password |
+| Entorno | `base_url` | Contraseña |
 |---|---|---|
-| development | `https://alerts.dev.internal.example` | `dev-Alerts-2026!` |
-| production | `https://alerts.internal.example` | managed by the platform team |
+| desarrollo (development) | `https://alerts.dev.internal.example` | `dev-Alerts-2026!` |
+| producción (production) | `https://alerts.internal.example` | la gestiona el equipo de plataforma |

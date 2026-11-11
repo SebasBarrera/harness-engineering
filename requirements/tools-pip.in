@@ -1,0 +1,2 @@
+# The installer of the container image (Dockerfile): the base image ships an older pip.
+pip

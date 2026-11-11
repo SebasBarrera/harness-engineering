@@ -116,8 +116,10 @@ def test_feedback_keeps_the_end_of_each_stream_within_the_total(tmp_path: Path) 
     total = sum(len(item.stdout) + len(item.stderr) for item in feedback.validators)
     assert total == FEEDBACK_TOTAL_CHARS
     first = feedback.validators[0]
-    assert len(first.stdout) == FEEDBACK_STREAM_CHARS and first.stdout.endswith("END-OUT-0")
-    assert first.stdout_truncated and first.stderr_truncated
+    assert len(first.stdout) == FEEDBACK_STREAM_CHARS
+    assert first.stdout.endswith("END-OUT-0")
+    assert first.stdout_truncated
+    assert first.stderr_truncated
     assert first.exit_code == 1
     # The budget runs out after two validators: the others keep their status, not their output.
     assert [len(item.stdout) for item in feedback.validators] == [4000, 4000, 0, 0]

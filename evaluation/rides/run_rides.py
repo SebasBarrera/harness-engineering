@@ -11,7 +11,7 @@ Conditions:
   direct    the whole instruction in one agent invocation, without the harness;
   stepwise  (super only) the 16 steps sent one by one to the agent, without the harness and without
             any verification between steps;
-  harness   governed tasks: one for paragraph (only criterion "It works.") and requirements, one per step
+  harness   governed tasks: one for paragraph (only criterion "Funciona.") and requirements, one per step
             for super; one_line is refused when the task is created (no acceptance criteria).
   clarify   (paragraph only; harness 1.1.0 or later) the governed paragraph task with
             intake.criteriaPolicy enforce: INTENT asks clarification questions and a simulated product
@@ -56,7 +56,7 @@ sys.path.insert(0, str(HERE))
 
 import run_eval  # noqa: E402
 from agentlib import build_prompt, run_claude  # noqa: E402
-from product_owner import ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 from quality import analyze  # noqa: E402
 
 git, harness, run_harness = run_eval.git, run_eval.harness, run_eval.run_harness
@@ -65,9 +65,21 @@ from run_session import calls_since, final_measures, usage  # noqa: E402
 PROMPTS = yaml.safe_load((HERE / "prompts.yaml").read_text(encoding="utf-8"))
 SPEC_TEXT = (HERE / "SPEC.md").read_text(encoding="utf-8")
 HIDDEN = HERE / "hidden"
-# Ruff and Mypy for quality.py: the repository's tool venv, found from the repository or from a copy in .local.
-TOOLS_PYTHON = str(next(p for p in HERE.parents if (p / ".local" / "venv-repo").is_dir()) / ".local" / "venv-repo"
-                   / "bin" / "python")
+
+
+def _tools_python() -> str:
+    """The interpreter that runs Ruff and Mypy for quality.py: $HARNESS_EVAL_TOOLS_PYTHON, else the
+    repository's tool venv in .local/venv-repo (the original campaign machine), else this one."""
+    if os.environ.get("HARNESS_EVAL_TOOLS_PYTHON"):
+        return os.environ["HARNESS_EVAL_TOOLS_PYTHON"]
+    for parent in HERE.parents:
+        venv = parent / ".local" / "venv-repo"
+        if venv.is_dir():
+            return str(venv / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python"))
+    return sys.executable
+
+
+TOOLS_PYTHON = _tools_python()
 AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
@@ -88,14 +100,14 @@ SECTIONS = requirements_by_section()
 
 
 def super_text() -> str:
-    lines = [PROMPTS["requirements_intro"], "", "Engineering guide (it applies to every step):",
+    lines = [PROMPTS["requirements_intro"], "", "Guía de ingeniería (se aplica a todos los pasos):",
              *[f"- {g}" for g in PROMPTS["engineering_guide"]], "",
-             ("Work plan. Build it in this order, and do not start a step until "
-              "the previous one is complete and every test passes:")]
+             ("Plan de trabajo. Constrúyelo en este orden, y no empieces un paso hasta que "
+              "el anterior esté completo y pasen todas las pruebas:")]
     for number, step in enumerate(PROMPTS["steps"], start=1):
-        lines.append(f"{number}. {step['title']} (sections {', '.join(step['sections'])} of docs/SPEC.md).")
-    lines += ["", "Approval conditions for every step:", *[f"- {c}" for c in PROMPTS["approval_conditions"]], "",
-              "When every step is done, reply with a short summary of each step and how it was verified."]
+        lines.append(f"{number}. {step['title']} (secciones {', '.join(step['sections'])} de docs/SPEC.md).")
+    lines += ["", "Condiciones de aprobación para cada paso:", *[f"- {c}" for c in PROMPTS["approval_conditions"]], "",
+              "Cuando todos los pasos estén terminados, responde con un resumen corto de cada paso y de cómo se verificó."]
     return "\n".join(lines)
 
 
@@ -104,37 +116,37 @@ def step_task(step: dict[str, Any]) -> dict[str, Any]:
     return {
         "taskId": f"task_{step['id'].lower()}",
         "title": step["title"],
-        "intent": (f"Implement sections {', '.join(step['sections'])} of docs/SPEC.md ({step['title'].lower()}) "
-                   "in the rides package, with pytest tests. The general rules X1 to X8 of docs/SPEC.md "
-                   "apply to everything."),
+        "intent": (f"Implementa las secciones {', '.join(step['sections'])} de docs/SPEC.md ({step['title'].lower()}) "
+                   "en el paquete rides, con pruebas de pytest. Las reglas generales X1 a X8 de docs/SPEC.md "
+                   "se aplican a todo."),
         "requirements": reqs,
         "acceptanceCriteria": [
-            "Every requirement above holds, exactly as written in docs/SPEC.md.",
-            "tests/ contains pytest tests for every requirement above.",
-            "python -m pytest -q passes, including the tests of earlier steps.",
-            "Every time, distance and amount limit of the requirements above is tested on both sides.",
+            "Cada requisito de arriba se cumple, exactamente como está escrito en docs/SPEC.md.",
+            "tests/ contiene pruebas de pytest para cada requisito de arriba.",
+            "python -m pytest -q pasa, incluidas las pruebas de los pasos anteriores.",
+            "Cada límite de tiempo, distancia y monto de los requisitos de arriba se prueba por ambos lados.",
         ],
-        "constraints": list(PROMPTS["approval_conditions"][2:4]) + ["Use only the Python standard library."]
-        + [f"Engineering guide: {g}" for g in PROMPTS["engineering_guide"]],
+        "constraints": list(PROMPTS["approval_conditions"][2:4]) + ["Usa solo la biblioteca estándar de Python."]
+        + [f"Guía de ingeniería: {g}" for g in PROMPTS["engineering_guide"]],
     }
 
 
 def whole_task(level: str) -> dict[str, Any]:
     if level == "one_line":
-        return {"taskId": "task_platform", "title": "Ride-hailing and food delivery platform",
+        return {"taskId": "task_platform", "title": "Plataforma de viajes y domicilios de comida",
                 "intent": PROMPTS["one_line"]}
     if level == "paragraph":
-        return {"taskId": "task_platform", "title": "Ride-hailing and food delivery platform",
-                "intent": PROMPTS["paragraph"], "acceptanceCriteria": ["It works."]}
+        return {"taskId": "task_platform", "title": "Plataforma de viajes y domicilios de comida",
+                "intent": PROMPTS["paragraph"], "acceptanceCriteria": ["Funciona."]}
     return {
-        "taskId": "task_platform", "title": "Ride-hailing and food delivery platform",
+        "taskId": "task_platform", "title": "Plataforma de viajes y domicilios de comida",
         "intent": PROMPTS["requirements_intro"],
         "acceptanceCriteria": [
-            "Every requirement of docs/SPEC.md holds, exactly as written.",
-            "tests/ contains pytest tests for every requirement of docs/SPEC.md.",
-            "python -m pytest -q passes.",
+            "Cada requisito de docs/SPEC.md se cumple, exactamente como está escrito.",
+            "tests/ contiene pruebas de pytest para cada requisito de docs/SPEC.md.",
+            "python -m pytest -q pasa.",
         ],
-        "constraints": ["Use only the Python standard library.", "Follow INTERFACE.md exactly."],
+        "constraints": ["Usa solo la biblioteca estándar de Python.", "Sigue INTERFACE.md exactamente."],
     }
 
 
@@ -145,7 +157,7 @@ def prepare(workspace: Path, site_packages: Path, with_spec: bool) -> None:
     if with_spec:
         (workspace / "docs").mkdir()
         shutil.copy2(HERE / "SPEC.md", workspace / "docs" / "SPEC.md")
-    (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
+    (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8", newline="\n")
     git(workspace, "init", "-q")
     git(workspace, "add", "-A")
     git(workspace, "commit", "-qm", "baseline")
@@ -212,7 +224,7 @@ def configure_limits(workspace: Path, model: str) -> None:
         "--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET, "--resumable"]
     # Waits for the usage limit happen inside the provider call, so the harness must not cut it short.
     config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
 
 
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str,
@@ -220,7 +232,7 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
     # Feedback belongs to the correction cycles of one task; a later step must not receive it.
     (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
-    task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+    task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8", newline="\n")
     if "acceptanceCriteria" not in task:
         harness(workspace, "init", "--path", ".")
         created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
@@ -252,6 +264,8 @@ def main() -> int:
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--po-model", default=DEFAULT_PO_MODEL,
+                        help="the simulated product owner's model, the same in every cell (amendment of 2026-11-11)")
     args = parser.parse_args()
     if (args.condition, args.level) not in VALID:
         parser.error(f"{args.condition} does not apply to {args.level}")
@@ -262,7 +276,7 @@ def main() -> int:
     if unfinished:
         run_dir = unfinished[-1]
         workspace, scratch = run_dir / "ws", run_dir / "measure"
-        (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
+        (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8", newline="\n")
         progress = json.loads((run_dir / "progress.json").read_text(encoding="utf-8"))
         progress["restarts"] += 1
     else:
@@ -282,7 +296,7 @@ def main() -> int:
     def save_progress(current: str | None) -> None:
         progress["current"] = current
         progress["elapsedSeconds"] = round(time.monotonic() - started, 3)
-        (run_dir / "progress.json").write_text(json.dumps(progress, indent=1), encoding="utf-8")
+        (run_dir / "progress.json").write_text(json.dumps(progress, indent=1), encoding="utf-8", newline="\n")
 
     def direct(text: str, label: str) -> None:
         before = len(list(calls_dir.glob("call-*.json")))
@@ -326,7 +340,7 @@ def main() -> int:
             t0 = time.monotonic()
             prompts_sent.append(yaml.safe_dump(task, sort_keys=False))
             save_progress(label)
-            clarifier = ProductOwner(SPEC_TEXT, args.model, run_dir) if args.condition == "clarify" else None
+            clarifier = ProductOwner(SPEC_TEXT, args.po_model, run_dir) if args.condition == "clarify" else None
             result = governed(workspace, run_dir, task, args.model, label, clarifier)
             if clarifier is not None:
                 result["productOwner"] = clarifier.rounds
@@ -343,6 +357,7 @@ def main() -> int:
         "condition": args.condition,
         "model": args.model,
         "rep": args.rep,
+        "productOwnerModel": args.po_model if args.condition == "clarify" else None,
         "runDir": str(run_dir),
         "harnessSource": str(Path(__import__("governed_harness").__file__).resolve().parents[1]),
         "restarts": progress["restarts"],
@@ -356,10 +371,10 @@ def main() -> int:
         "final": {"hidden": hidden, **final_measures(workspace, scratch)},
         "quality": analyze(workspace, TOOLS_PYTHON),
     }
-    (run_dir / "prompts-sent.json").write_text(json.dumps(prompts_sent, indent=1), encoding="utf-8")
-    (run_dir / "record.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8")
+    (run_dir / "prompts-sent.json").write_text(json.dumps(prompts_sent, indent=1), encoding="utf-8", newline="\n")
+    (run_dir / "record.json").write_text(json.dumps(record, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
     print(json.dumps({k: record[k] for k in ("level", "condition", "model", "rep", "wallSeconds")}
                      | ({"hidden": "pending"} if hidden.get("pending") else

@@ -1,7 +1,213 @@
 # Changelog
 
-## 2.0.0 - 2026-10-06
+## 2.0.0 - 2026-11-11
 
+- Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
+  INTENT blocked by clarification questions names the rules that asked
+  (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the
+  questions, and `gate decide` refused for an `agent.*`, `validator.*` or `harness.*` actor now
+  has a `hint` (`harness review --run <run>`, then decide as a person with your own `--actor`).
+  Neither message exists in `v0.8.0`.
+- H44 reproduces the states it declares (second amendment of 2026-11-11 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). B06 expects exit 4, the code
+  `docs/reference/exit-codes.md` documents for a run that waits at DECISION for an exception of a
+  blocking risk factor; B13 leaves the `C0` questions unanswered, as B14 does, so the `C0` block
+  stays; R01 tries the `APPROVE` on B02's run in VERIFICATION, where it fails, instead of skipping
+  the case. The validators' tools of `evaluation/campaign/run_deterministic.py` are pinned to
+  exact versions (`pytest==8.3.5`, `pytest-cov==7.1.0`, `freezegun==1.4.0`, `ruff==0.17.4`,
+  `mypy==2.4.1`, `coverage==7.17.2`), so the ratchet sees the same Ruff defaults on every run. No
+  criterion changes.
+- `evaluation/dry_run.py` refuses an environment that cannot test the harness it means to (#70):
+  it exits 2 before any case when `PYTHONPATH` is set, `harness` is not on `PATH` or the measuring
+  tools lack `pytest` or `freezegun`. A dry run with a source tree mounted through `PYTHONPATH` on
+  a venv without `freezegun` failed `casual-harness` (pytest stopped while collecting the
+  brownfield suite, so the differential verification blocked the run, as #190 requires) and
+  `embedded-init` (the host session's processes drop `PYTHONPATH`, so its MCP server imported the
+  venv's installed harness and rejected the configuration `harness init` had written). With the
+  source tree in a `.pth` file of a venv with the measuring tools, both cases pass on `develop`
+  unchanged. No harness behavior changes.
+- The deterministic INTENT rules read Spanish tasks (`intake.language`, written by `harness init`
+  as `auto`; Refs #70). The rules (`C0` to `C3`, `T1`) only knew English: their words were ASCII
+  runs (`contraseñas` became `contrase` and `as`, `rápido` became `r` and `pido`), Spanish vague
+  words, result verbs, quality words and number words were unknown, and the questions were in
+  English. Under the key words are Unicode runs compared without diacritics; `es` adds Spanish
+  vocabularies to the English ones and asks the questions (and the next step of a `warn`
+  finding) in Spanish; `auto` detects the language of each task with a fixed count of Spanish
+  and English signals. Rule ids, question ids and targets do not change. Without the key the
+  rules, the questions and the configuration digest stay as they were. On the experiment tasks
+  of `evaluation/deterministic/intent_equivalence.py`, the Spanish set of the evaluation in
+  Spanish goes from `C0` 196, `C1` 6, `T1` 7 (no key) to `C0` 196, `C1` 6, `C2` 1, `T1` 6
+  (`auto`), against `C0` 196, `C1` 6, `C2` 1, `T1` 8 for the English set, which gives the same
+  questions with and without the key. See
+  `docs/reference/configuration.md` (the language of the rules) and
+  `docs/es/tareas-en-espanol.md`.
+- The risk factors (`verification.riskFactors`, #52) no longer count a line the ChangeSet removes
+  and adds again with the same text (Refs #70). A file rewritten with other line endings (a CRLF
+  file written back with LF, common on Windows) lists every line as removed and added, so the
+  lines it already had raised factors: in H44 (R02, R04, B15) the correct change of the sample
+  project reached DECISION with the gate `FAILED` by `risk.floatMoney` (`HIGH` under `block`,
+  validator `harness.risk-factors`) on the unchanged signature
+  `def apply_discount(subtotal: float, ...) -> float`. A line moved within a file is no longer a
+  new line or a deleted one either (`deletedWithoutTests`). New and changed lines raise factors
+  as before.
+- Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
+  provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so
+  removing the provider's grant did not block the run; it now starts the fixture by the absolute
+  path of the project's interpreter, which no profile rule names, and blocks with
+  `capabilities.command-denied`. H45's reference solutions used the hidden tests unedited as
+  visible tests; they name none of the task's requirements and do not follow Ruff's defaults in
+  the project, so `traceability.requirement-untested` and `ratchet.regressed` (`HIGH`) blocked
+  them. Their visible tests are now `evaluation/deterministic/h45_reference_tests/` (the same
+  test functions and assertions, a docstring that names the requirements and the Ruff fixes); the
+  unedited form still runs and is reported apart (`ref-*-as-is`, outside the criterion). No
+  criterion and no harness behavior changes.
+- Implementation routes very easy tasks to Haiku and keeps Sonnet as the default (#197).
+  Under `agentRouting.mode: tiered` or `anchored` an `implement` call whose task is `trivial`
+  (size `S`, between 1 and `agentRouting.thresholds.trivial.requirements` requirements, between
+  1 and `files` owned files, at most `loc` lines in them, no risk flag, not decomposed; starting
+  values 1, 1 and 150, to be calibrated) runs on the family's new `trivial` rung:
+  `claude-haiku-5-5` with `medium` effort in the claude-code table, the `S` rung in the codex
+  table and in tables without the entry. Every other task stays on Sonnet (`S`, `M`) or Opus
+  (`L`). A trivial call that fails verification or review escalates to the `S` rung first and
+  then up the ladder (rule `escalation:N:implement:trivial`). The decision records the size
+  `trivial`; the `S`/`M`/`L` classification of the agent contract, friction and metrics does not
+  change. Neither 0.8.0 nor 1.0.0 had routing, so no evaluated behavior changes.
+- The evaluation compares how the implementations differ, not only whether they pass the hidden
+  tests (#70). `evaluation/analysis/compare_implementations.py` reads the run directories of the
+  pilot and the campaign and computes, without calling a model, the change against the baseline
+  (by file kind, out of scope), the tests added and their outcome, the coverage of the changed
+  lines, Ruff, Mypy and Bandit findings and secret patterns new against the baseline, the public
+  surface, coding practices of the source and the tests (`evaluation/analysis/practices.py`, `ast`
+  only), the hidden tests by criterion and what the harness recorded (questions, answers,
+  assumptions, decisions, disputes, correction cycles, blocking validators) or what the direct
+  agent's final text states. It writes one JSON per run and a Spanish `comparison.md` that pairs
+  `direct` with each governed condition, poor and casual prompts first. A stopped run is measured
+  on the baseline with its quarantined patch applied, because the apparatus copy did not get the
+  patch in the Haiku pilot. The metrics are declared in a dated amendment of
+  `evaluation/campaign/PREREGISTRO.md`; the exploratory output on the Haiku pilot is in
+  `evaluation/results-2.0.0/pilot-2.0.0/comparison/`.
+- The evaluation measures a stopped governed run on its own change again (#70, found by #201).
+  `evaluation/run_eval.py:measure_quarantine` applied the quarantined patch to the restored
+  workspace, where the kept acceptance tests already exist ("already exists in working
+  directory"), and wrote the patch in text mode, so on Windows its line ends became CRLF ("patch
+  does not apply"); when `git apply` failed, the unpatched baseline was measured. In the Haiku pilot
+  both stopped runs scored the baseline's 18/24 hidden tests this way. The patch is now written byte
+  for byte and applied to a copy returned to the baseline commit; a patch that does not apply is not
+  measured (`invalid: quarantine-patch-not-applied`, `<out>.invalid.jsonl`, exit code 3, no rerun).
+  `evaluation/remeasure_quarantine.py` measures the patch of earlier run directories again without
+  a model call. Amendment of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`.
+- The evaluation is in Spanish (#70): its documentation, the result READMEs and every stimulus the
+  evaluated model receives (casual, poor and full tasks, fixture specifications, `build_prompt`,
+  the embedded instructions, the rides and longitudinal scenarios and the simulated product owner),
+  with identifiers, values and hidden tests unchanged. The simulated product owner answers as an
+  engineer who owns the product and runs with one fixed model in every cell (`--po-model`, default
+  `claude-sonnet-5-5`, recorded as `productOwnerModel`). Two dated amendments in
+  `evaluation/campaign/PREREGISTRO.md` record both changes before any campaign result.
+
+- The differential verification no longer passes a test run that ran no test (#190). Under
+  `verification.differential` (written by `harness init`) a pytest run stopped at collection
+  (exit code 2, for example by a missing test dependency) on both the ChangeSet and the baseline
+  became a `PASSED` `PREEXISTING_ERROR`: its `HIGH` findings left the gate and the ladder
+  certified criteria from tests that never ran, so a real regression passed. A test run with no
+  test outcome (pytest exit codes 2 to 5, no passed or failed test, or another runner with no
+  parsed failed test) is now not comparable and keeps blocking, as in 1.0.0 (event
+  `verification.differential.inconclusive` with a `reason`). A shared failure passes only when
+  every test file the ChangeSet added or modified ran (`tests.changed-not-run`: `HIGH` and the
+  failure stays; `INFO` when the output does not list the tests that ran), and a
+  `PREEXISTING_ERROR` pass no longer gives L1 or L2 certification credit.
+- `examples/brownfield-itsdangerous/reproduce.sh` runs again (#188). It expected `run start` 6
+  and, after installing `freezegun`, `run continue` 4. `run start` exited 4 until #190 fixed the
+  differential verification; with that fix it exits 6 again, but `governance.stopTheLine: restore`
+  (written by `harness init`) puts the failed run's changes in quarantine and restores the
+  baseline, so `run continue` verifies an empty ChangeSet and exits 6. The script now checks
+  `run start` 6 (pytest stops while collecting), the `environment.baseline-failing` and
+  `python.pytest.failed` findings, a new `run start` 4 after installing `freezegun` (298 passed,
+  gate `PASSED`) and `APPROVE` 0. It keeps the run registry in its work directory
+  (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory in Git Bash, which used to split
+  `PATH` at the drive colon. The `docs-smoke` flows job runs it on the built wheel; the brownfield
+  guides and the README describe the current flow.
+- `harness run continue` after `governance.stopTheLine: restore` quarantined a run in
+  VERIFICATION evaluates the run's ChangeSet again instead of the restored baseline (#193).
+  Before, a run whose verification failed because of the environment (the brownfield example
+  without freezegun) could not be continued: VERIFICATION failed with `Current ChangeSet is empty`
+  and the command exited 6. The quarantine record now also stores the content of every restored
+  path with its digest (`quarantinedContents`) and the phase (`phase`); `run continue` puts that
+  content back first (`workspace.quarantine.reapplied`) and blocks the run without writing
+  anything (`workspace.quarantine.reapply-refused`) when a stored content is missing or does not
+  match its digest. A new attempt written over a restored path is never overwritten: the
+  quarantine is superseded (`workspace.quarantine.superseded`) and the run is evaluated on the
+  workspace as before. `stopTheLine` is not part of 0.8.0 or 1.0.0, so no evaluated behavior
+  changes.
+- The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
+  `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
+  (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous
+  2.2.0 pins 8.1.1 in its own `requirements/tests.txt`; its 298 tests pass with 9.0.3. The thesis
+  evaluation does not install this file.
+- Evaluation: the simulated person answers a dispute of frozen acceptance tests (#70, amendment
+  of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`). An apparatus precheck of the Haiku
+  pilot showed the governed runs stopping at the `acceptance-dispute` wait, which
+  `evaluation/person.py` had no rule for. The product owner (`ProductOwner.judge_dispute`, in
+  `po-calls`) now answers UPHOLD or REVISE from the criteria, the disputed tests' source and the
+  agent's reasons, bound to the digest shown (fallback without a product owner: UPHOLD); a new
+  dry-run case `acceptance-dispute` covers REVISE and the approval of the rewritten tests.
+  `fake_claude.py` reads a prompt given on stdin on Windows with LF newlines again, so the dry
+  run finds the request there.
+
+- Security: a quoted secret inside a JSON string is no longer stored in clear (#178). The
+  `generic_secret_assignment` rule (unchanged since 0.8.0) runs on the serialized JSON of an
+  artifact, where `password = "..."` in a string is escaped as `password = \"...\"` and does not
+  match, and the string-by-string redaction of #152 ran only when the text redaction broke the
+  document. `put_json` now also runs the redactor on every decoded string and, when any of them
+  redacts, stores the document redacted string by string. A JSON artifact with nothing to redact
+  in its strings keeps its bytes and digest; the stored bytes of 1.0.0 change only where such a
+  secret was stored in clear. A redacted artifact is never applied as data: a pinned task revision
+  stored redacted is replaced by the stored task while it has the digest pinned with it (otherwise
+  the run stops with a policy error), and a snapshot text that no longer matches its file's digest
+  is never written back by a restore or a materialized copy (Git gives it back under
+  `baseline: manifest`, otherwise the path is reported as not restorable). The reproduce-first
+  check keeps the snapshot its correction started from in memory.
+- Releases are signed with Sigstore and carry their provenance as an asset (#90). OpenSSF
+  Scorecard scored Signed-Releases 0: it looks for signature or provenance files among the
+  release assets and does not see GitHub attestations. `release.yml` now signs the wheel and the
+  sdist keylessly (`sigstore/gh-action-sigstore-python`, checked against the workflow's own
+  identity), attaches each `<file>.sigstore.json` and the build-provenance attestation as
+  `governed-agent-harness-<version>.intoto.jsonl`; the GitHub attestation is unchanged.
+  `SECURITY.md` and the advanced installation guide show how to verify them.
+- The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
+  They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
+  regression, but the agent cannot change them (approved by a person, write-protected): in the
+  2.0.0 Haiku pilot a run whose tests all passed failed VERIFICATION after both automatic
+  corrections on four Ruff problems in the frozen files. `harness.ratchet` now leaves out the
+  problems of a frozen acceptance test still as approved; the validators still report them, and
+  a frozen file the agent changed is not exempt.
+- The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
+  which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
+  pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported
+  `acceptance.modified` and `acceptance.write-undone` against an agent that had not touched them.
+  The Python profile now runs `python -m ruff check --no-fix .` (also its `lint` default command
+  and the Ruff entry of the Python standards catalogue); Ruff reports every problem and changes
+  nothing.
+- The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
+  request target with its query, so a token sent by mistake as `?token=...` was refused with 401
+  but written in clear to standard output. The access line now keeps the client, method, path,
+  HTTP version and status; authentication is unchanged.
+- Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
+  `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
+  retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
+  status, `harness run cancel` and a new `harness run start` of its task).
+- A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
+  as if it were within its budget (#157, found by the H20 evaluation suite): with no further
+  agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before
+  `INDEPENDENT_REVIEW` (or before `DECISION` when a review call crossed it) until a person runs
+  `harness budget raise` and `harness run continue`.
+- The fast lane no longer prevents disputing a frozen acceptance test (#161). Its affected tests
+  ran first and stopped the attempt on a failure, so when they included the frozen file
+  `harness.acceptance-tests` never ran and no dispute could open: `disputes: person` had no
+  effect on size-S tasks. Under `verification.acceptanceTests.disputes: person` the frozen files
+  are now left out of the affected tests (event `verification.affected-tests` lists the rest);
+  they still run in `harness.acceptance-tests` and in the full suite. A failing ordinary affected
+  test still stops the attempt, and without `disputes: person` nothing changes.
 - A catalogue of ten architecture styles with an expert for each, and persistent reverse
   engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
   `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests
@@ -26,6 +232,15 @@
     the documents exist; `architecture.survey.reused` records `agentCalls: 0` and the digest of
     the documents. `harness architecture refresh` redoes it. Guides in Spanish:
     `docs/es/arquitecturas.md` and `docs/es/ingenieria-inversa.md`.
+- `harness verify` and the events after the anchored head (#149), behind the new key
+  `governance.unanchoredEvents` that `harness init` writes (`warn`). The chain anchor covers
+  the chain up to its head; before, the events appended after it passed verify (only counted
+  in `eventsAfterAnchor`), and a forged `retention.artifacts.pruned` event appended after the
+  anchor made a deleted blob pass. Under the key, verify lists those events
+  (`anchor.unanchoredEvents`, a `warnings` entry; `fail` makes the anchor status `unanchored`
+  and exits 6), and a prune event excuses a missing artifact only when it is within the
+  anchored part (retention re-anchors after it prunes). A project without the key keeps the
+  earlier report and exit codes.
 - A versioned contract between a parent and its agent calls (#97, wave 11), behind the new
   `agentContract` section that `harness init` writes (`mode: enforce`, `maxIterations: 5`); a
   `project.yaml` without it behaves, and digests, as before.
@@ -43,9 +258,31 @@
   - One cap of iterations per agent and run (default 5, a configured cap above 6 is rejected);
     corrections, contract retries, escalations and calls cut by a limit count; at the cap the
     phase blocks with `agent.iterations.exhausted` and the advice to restructure the input.
+    The event and its `agent-iteration-cap` evidence carry the response the parent gets
+    instead of a call, with `finalStatus: ITERATIONS_EXHAUSTED` (#149; before, no code wrote
+    that status of the response schema).
   - Token budget and time limit per call from the router's S/M/L size (starting values, to be
     calibrated): the time limit stops the process, the token budget is checked on the usage the
     provider reports; either ends the call as `LIMIT_REACHED` with the evidence kept.
+  - The token budget counts the work of a call, not its prompt-cache reads (#70). In a five-run
+    Haiku pilot every governed run blocked in INTENT: Claude Code re-reads its cached context on
+    each turn, the adapter folded those reads into `inputTokens`, and one read-only `clarify`
+    call reported 350160 tokens, almost all cache reads, against the M budget of 200000. Usage
+    gains `cacheReadTokens` (the part of `cacheTokens` read from the cache; protocol, the
+    `resource-usage` and `agent-call-response` schemas), reported by `claude-code`
+    (`cache_read_input_tokens`), `codex` (`cached_input_tokens`) and `gemini-cli` (`cached`, which
+    also fills `cacheTokens` now). The budget counts fresh input, cache creation, output and
+    reasoning; cache reads are recorded with the usage, the response and the metrics
+    (`tokens.cacheRead`) but not counted, and the limit message gives both numbers. A provider
+    that reports no cache-read split counts its whole input, as before.
+  - The reviewers of the review panel go through the contract (#149): before, their answers
+    bypassed it and an ~80 kB answer was accepted, and with `harness init` the panel replaces
+    `agentReview`, so the `review` kind was never checked. Each reviewer answer is now judged
+    as a `review` call (token budget, time limit, result bytes and field caps, with the keys of
+    the panel's answer) and recorded in `agent.call.recorded` with its reviewer; an answer
+    outside the limits is discarded and retried as any answer without a valid result, and a
+    reviewer without a valid answer blocks under `review.panel.mode: enforce`. Only under
+    `agentContract: enforce`; without it the panel reads its answers as before.
   - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
     commands and the embedded MCP tools; the implement instructions tell the agent to use only
     that contract.

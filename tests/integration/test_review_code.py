@@ -94,6 +94,7 @@ def _feature(root: Path, *, content: str = "    return subtotal * 0.9\n") -> str
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n" + content,
         encoding="utf-8",
+        newline="\n",
     )
     git(root, "add", "src/sample/pricing.py")
     git(root, "commit", "-qm", "discount")

@@ -39,7 +39,8 @@ class PublishError(HarnessError):
 
 
 class Transport(Protocol):
-    def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any: ...
+    def request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
+        """Send a REST request to ``path`` and return the decoded response."""
 
 
 @dataclass
@@ -98,7 +99,7 @@ class RestTransport:
                 text = response.read().decode("utf-8", "replace")
         except urllib.error.HTTPError as error:
             raise PublishError(f"{method} {path} returned HTTP {error.code}") from error
-        except (urllib.error.URLError, OSError) as error:
+        except OSError as error:  # urllib.error.URLError is an OSError
             raise PublishError(f"{method} {path} failed: {error}") from error
         return json.loads(text) if text.strip() else None
 
@@ -122,6 +123,109 @@ def _cell(value: Any) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ").strip()
 
 
+def _criteria_lines(asked: dict[str, Any]) -> list[str]:
+    if not asked.get("acceptanceCriteria"):
+        return []
+    return [
+        "### Acceptance criteria",
+        "",
+        *(
+            f"- {_cell(item['criterionId'])} [{item.get('priority', 'MUST')}]: {_cell(item['text'])}"
+            for item in asked["acceptanceCriteria"]
+        ),
+        "",
+    ]
+
+
+def _changed_lines(changed: dict[str, Any]) -> list[str]:
+    if not changed.get("files"):
+        return []
+    return [
+        "### Changed files",
+        "",
+        "| File | Status | + | - |",
+        "|---|---|---:|---:|",
+        *(
+            f"| `{_cell(item['path'])}` | {item['status']} | {item['additions']} | "
+            f"{item['deletions']} |"
+            for item in changed["files"]
+        ),
+        "",
+    ]
+
+
+def _finding_lines(risks: list[dict[str, Any]]) -> list[str]:
+    if not risks:
+        return []
+    lines = [
+        "### Findings",
+        "",
+        "| Severity | Rule | Location | Message |",
+        "|---|---|---|---|",
+    ]
+    lines += [
+        f"| {item['severity']}{' (blocking)' if item.get('blocking') else ''} | "
+        f"`{_cell(item['ruleId'])}` | {_cell(item.get('location') or '')} | "
+        f"{_cell(item['message'])[:300]} |"
+        for item in risks[:50]
+    ]
+    if len(risks) > 50:
+        lines.append(f"| | | | {len(risks) - 50} more finding(s) in the SARIF report |")
+    lines.append("")
+    return lines
+
+
+def _verified_lines(brief: dict[str, Any]) -> list[str]:
+    verified = (brief.get("verified") or {}).get("validations") or []
+    if not verified:
+        return []
+    return [
+        "### Verified",
+        "",
+        *(
+            f"- `{item['validatorId']}`{'' if item['mandatory'] else ' (optional)'}: "
+            f"{item['status']}"
+            for item in verified
+        ),
+        "",
+    ]
+
+
+def _not_verified_lines(brief: dict[str, Any]) -> list[str]:
+    if not brief.get("notVerified"):
+        return []
+    return ["### Not verified", "", *(f"- {_cell(item)}" for item in brief["notVerified"]), ""]
+
+
+def _provenance_lines(brief: dict[str, Any]) -> list[str]:
+    if not brief.get("provenance"):
+        return []
+    provenance = brief["provenance"]
+    return [
+        "### Provenance",
+        "",
+        f"{provenance['agentFiles']} file(s) written by an agent invocation, "
+        f"{provenance['outOfBandFiles']} changed out of band: "
+        + (", ".join(f"`{path}`" for path in provenance["outOfBandPaths"]) or "none"),
+        "",
+    ]
+
+
+def _decision_lines(decisions: list[dict[str, Any]]) -> list[str]:
+    if not decisions:
+        return []
+    return [
+        "### Decisions",
+        "",
+        *(
+            f"- {item['decision']} by `{_cell(item['actorId'])}` at {item['decidedAt']} on "
+            f"`{item['changeSetDigest']}`: {_cell(item['rationale'])[:500]}"
+            for item in decisions
+        ),
+        "",
+    ]
+
+
 def render_brief_markdown(brief: dict[str, Any]) -> str:
     """The decision brief (``harness review``) as GitHub Markdown."""
     run = brief["run"]
@@ -142,70 +246,13 @@ def render_brief_markdown(brief: dict[str, Any]) -> str:
     if gate:
         reasons = ", ".join(f"`{item['code']}`" for item in gate.get("reasons", [])) or "none"
         lines += [f"Gate: **{gate['status']}** ({reasons})", ""]
-    if asked.get("acceptanceCriteria"):
-        lines += ["### Acceptance criteria", ""]
-        lines += [
-            f"- {_cell(item['criterionId'])} [{item.get('priority', 'MUST')}]: {_cell(item['text'])}"
-            for item in asked["acceptanceCriteria"]
-        ]
-        lines.append("")
-    if changed.get("files"):
-        lines += ["### Changed files", "", "| File | Status | + | - |", "|---|---|---:|---:|"]
-        lines += [
-            f"| `{_cell(item['path'])}` | {item['status']} | {item['additions']} | "
-            f"{item['deletions']} |"
-            for item in changed["files"]
-        ]
-        lines.append("")
-    risks = brief.get("risks") or []
-    if risks:
-        lines += [
-            "### Findings",
-            "",
-            "| Severity | Rule | Location | Message |",
-            "|---|---|---|---|",
-        ]
-        lines += [
-            f"| {item['severity']}{' (blocking)' if item.get('blocking') else ''} | "
-            f"`{_cell(item['ruleId'])}` | {_cell(item.get('location') or '')} | "
-            f"{_cell(item['message'])[:300]} |"
-            for item in risks[:50]
-        ]
-        if len(risks) > 50:
-            lines.append(f"| | | | {len(risks) - 50} more finding(s) in the SARIF report |")
-        lines.append("")
-    verified = (brief.get("verified") or {}).get("validations") or []
-    if verified:
-        lines += ["### Verified", ""]
-        lines += [
-            f"- `{item['validatorId']}`{'' if item['mandatory'] else ' (optional)'}: "
-            f"{item['status']}"
-            for item in verified
-        ]
-        lines.append("")
-    if brief.get("notVerified"):
-        lines += ["### Not verified", ""]
-        lines += [f"- {_cell(item)}" for item in brief["notVerified"]]
-        lines.append("")
-    if brief.get("provenance"):
-        provenance = brief["provenance"]
-        lines += [
-            "### Provenance",
-            "",
-            f"{provenance['agentFiles']} file(s) written by an agent invocation, "
-            f"{provenance['outOfBandFiles']} changed out of band: "
-            + (", ".join(f"`{path}`" for path in provenance["outOfBandPaths"]) or "none"),
-            "",
-        ]
-    decisions = brief.get("decisions") or []
-    if decisions:
-        lines += ["### Decisions", ""]
-        lines += [
-            f"- {item['decision']} by `{_cell(item['actorId'])}` at {item['decidedAt']} on "
-            f"`{item['changeSetDigest']}`: {_cell(item['rationale'])[:500]}"
-            for item in decisions
-        ]
-        lines.append("")
+    lines += _criteria_lines(asked)
+    lines += _changed_lines(changed)
+    lines += _finding_lines(brief.get("risks") or [])
+    lines += _verified_lines(brief)
+    lines += _not_verified_lines(brief)
+    lines += _provenance_lines(brief)
+    lines += _decision_lines(brief.get("decisions") or [])
     lines.append(
         "Verify that the merged tree is the approved ChangeSet: "
         "`harness verify-approval --base <base> --head <head> --bundle <bundle>`."

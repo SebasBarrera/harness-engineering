@@ -8,7 +8,7 @@ and independent of formatting."""
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from dataclasses import dataclass
 
 from governed_harness.checks.model import Issue, is_test_path
@@ -57,23 +57,43 @@ def _resolve_relative(module: str, is_package: bool, level: int, target: str | N
     return ".".join(parts)
 
 
-def _imported_modules(tree: ast.Module, module: str, is_package: bool) -> Iterator[tuple[int, str]]:
+def _imported_modules(
+    tree: ast.Module,
+    module: str,
+    is_package: bool,
+    module_exists: Callable[[str], bool] | None = None,
+) -> Iterator[tuple[int, str]]:
     """Every module an import statement may bind, with its line. ``from pkg import name`` may
-    import the submodule ``pkg.name``, so both ``pkg`` and ``pkg.name`` are candidates."""
+    import the submodule ``pkg.name``, so both ``pkg`` and ``pkg.name`` are candidates; with
+    ``module_exists``, ``pkg.name`` is one only when it is a module or package of the workspace
+    (otherwise ``name`` is a function, class or variable of ``pkg``)."""
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 yield node.lineno, alias.name
         elif isinstance(node, ast.ImportFrom):
-            if node.level:
-                base = _resolve_relative(module, is_package, node.level, node.module)
-            else:
-                base = node.module or ""
-            if base:
-                yield node.lineno, base
-            for alias in node.names:
-                if alias.name != "*":
-                    yield node.lineno, f"{base}.{alias.name}" if base else alias.name
+            yield from _from_imported_modules(node, module, is_package, module_exists)
+
+
+def _from_imported_modules(
+    node: ast.ImportFrom,
+    module: str,
+    is_package: bool,
+    module_exists: Callable[[str], bool] | None = None,
+) -> Iterator[tuple[int, str]]:
+    """The candidates of one ``from ... import`` statement: the base and each named module."""
+    if node.level:
+        base = _resolve_relative(module, is_package, node.level, node.module)
+    else:
+        base = node.module or ""
+    if base:
+        yield node.lineno, base
+    for alias in node.names:
+        if alias.name == "*":
+            continue
+        named = f"{base}.{alias.name}" if base else alias.name
+        if module_exists is None or module_exists(named):
+            yield node.lineno, named
 
 
 def _functions(

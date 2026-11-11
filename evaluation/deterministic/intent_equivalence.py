@@ -58,7 +58,7 @@ def experiment_tasks() -> list[dict[str, Any]]:
                 "source": "evaluation/tasks",
                 "id": path.stem,
                 "kind": "file",
-                "task": yaml.safe_load(path.read_text()),
+                "task": yaml.safe_load(path.read_text(encoding="utf-8")),
             }
         )
     for path in sorted((EVALUATION / "tasks").glob("*-casual.txt")):
@@ -67,10 +67,12 @@ def experiment_tasks() -> list[dict[str, Any]]:
                 "source": "evaluation/tasks",
                 "id": path.stem,
                 "kind": "text",
-                "text": path.read_text().strip(),
+                "text": path.read_text(encoding="utf-8").strip(),
             }
         )
-    increments = yaml.safe_load((EVALUATION / "longitudinal" / "increments.yaml").read_text())
+    increments = yaml.safe_load(
+        (EVALUATION / "longitudinal" / "increments.yaml").read_text(encoding="utf-8")
+    )
     for increment in increments:
         items.append(
             {
@@ -88,7 +90,9 @@ def experiment_tasks() -> list[dict[str, Any]]:
                 "text": increment["casual"],
             }
         )
-    reports = yaml.safe_load((EVALUATION / "longitudinal" / "bug_reports.yaml").read_text())
+    reports = yaml.safe_load(
+        (EVALUATION / "longitudinal" / "bug_reports.yaml").read_text(encoding="utf-8")
+    )
     for name, report in reports.items():
         # The fix task and the casual fix prompt of run_session.py for a single report.
         items.append(
@@ -97,11 +101,15 @@ def experiment_tasks() -> list[dict[str, Any]]:
                 "id": f"fix-{name}",
                 "kind": "file",
                 "task": {
-                    "title": "Fix reported defects after I1 (round 1)",
-                    "intent": "Fix the reported defects without breaking other behavior, and add tests for them.",
+                    "title": "Corregir los defectos reportados después de I1 (ronda 1)",
+                    "intent": "Corregir los defectos reportados sin romper otro comportamiento, y "
+                    "agregar pruebas para ellos.",
                     "requirements": [report],
-                    "acceptanceCriteria": [f"Fixed: {report}", "All tests in tests/ pass."],
-                    "constraints": ["Use only the Python standard library."],
+                    "acceptanceCriteria": [
+                        f"Corregido: {report}",
+                        "Todas las pruebas de tests/ pasan.",
+                    ],
+                    "constraints": ["Usar solo la biblioteca estándar de Python."],
                 },
             }
         )
@@ -110,7 +118,7 @@ def experiment_tasks() -> list[dict[str, Any]]:
                 "source": "longitudinal/bug_reports",
                 "id": f"fix-{name}-casual",
                 "kind": "text",
-                "text": "some things are broken:\n- " + report + "\nfix them",
+                "text": "algunas cosas están rotas:\n- " + report + "\narréglalas",
             }
         )
     for label, folder, script in (
@@ -177,7 +185,9 @@ def assess(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for label, value in variants:
                 if isinstance(value, dict):
                     path = Path(scratch) / f"task-{index}-{len(results)}.yaml"
-                    path.write_text(yaml.safe_dump(value, sort_keys=False, allow_unicode=True))
+                    path.write_text(
+                        yaml.safe_dump(value, sort_keys=False, allow_unicode=True), encoding="utf-8"
+                    )
                     try:
                         loaded = load_task_file(path, project_id="p24", criteria_policy="enforce")
                     except Exception as error:  # noqa: BLE001 - recorded as the outcome
@@ -261,7 +271,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.inner:
         items = experiment_tasks()
-        args.inner.write_text(json.dumps(assess(items)))
+        args.inner.write_text(json.dumps(assess(items)), encoding="utf-8")
         return 0
     args.out = args.out.resolve()
     python = args.harness_python or str(Path(args.harness).resolve().parent / "python")
@@ -275,7 +285,7 @@ def main() -> int:
         if proc.returncode != 0:
             sys.stderr.write(proc.stdout + proc.stderr)
             return proc.returncode
-        assessed = json.loads(target.read_text())
+        assessed = json.loads(target.read_text(encoding="utf-8"))
     version, records = assessed[0], assessed[1:]
     write_json(
         args.out / "environment.json",

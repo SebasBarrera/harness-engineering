@@ -146,13 +146,12 @@ class AgentResults:
     def after_verification(
         self,
         execution: Execution,
-        phase: PhaseExecution,
         change_set: Any,
         outputs: list[Any],
     ) -> list[Any]:
         """Reclassify failing validators against the baseline (``verification.differential``,
         ``verification.ratchet``)."""
-        return self.differential.reclassify(execution, phase, change_set, outputs)
+        return self.differential.reclassify(execution, change_set, outputs)
 
     def baseline_stored(self, execution: Execution) -> StoredSnapshot | None:
         """The workspace as DISCOVERY recorded it (1.0.0 text snapshot or manifest)."""
@@ -524,6 +523,20 @@ class AgentResults:
         capped = self.agent_contract.begin(execution, phase, kind)
         if capped is not None:
             return capped
+        return self.budget_block(execution, kind=kind, stopped=f"no {kind} call was made")
+
+    def before_phase(self, execution: Execution, phase: PhaseExecution) -> PhaseOutcome | None:
+        """Fail closed before INDEPENDENT_REVIEW and DECISION when a limit is crossed: a limit
+        crossed by the last agent call of a run (no further call to refuse) stops the run there,
+        so it never reaches the decision as if it were within its budget (#157)."""
+        return self.budget_block(
+            execution, kind=None, stopped=f"the {phase.phase_id.value} phase was not started"
+        )
+
+    def budget_block(
+        self, execution: Execution, *, kind: CallKind | None, stopped: str
+    ) -> PhaseOutcome | None:
+        """The ``BLOCKED`` outcome while a limit is crossed and no person raised it since."""
         check = self.budget_check(execution)
         if check is None:
             return None
@@ -546,12 +559,15 @@ class AgentResults:
         reasons = "; ".join(item.describe() for item in crossings)
         return PhaseOutcome(
             ResultStatus.BLOCKED,
-            f"{BUDGET_EXCEEDED_RULE}: {reasons}; no {kind} call was made. Raise the limit with "
+            f"{BUDGET_EXCEEDED_RULE}: {reasons}; {stopped}. Raise the limit with "
             "harness budget raise and continue the run.",
         )
 
     def after_agent_call(
-        self, execution: Execution, phase: PhaseExecution, result: AgentExecutionResult
+        self,
+        execution: Execution,
+        phase: PhaseExecution,  # NOSONAR(S1172) ResultsHost.after_agent_call signature
+        result: AgentExecutionResult,
     ) -> None:
         """Account for a finished call: per-call limit, warnings at ``warnAt``, and a crossing
         that blocks the next call. First, the frozen acceptance tests the call changed are put
@@ -820,6 +836,7 @@ class AgentResults:
             request_ref=request_ref,
             limits=limits,
             sent=sent,
+            timeout_seconds=context.timeout_seconds,
         )
 
     def _call_timeout(self, command_timeout: int, limits: CallLimits | None) -> int:
@@ -1081,7 +1098,6 @@ class AgentResults:
         phase: PhaseExecution,
         task: Task,
         provider_id: str,
-        actor: Actor,
         grants: list[CapabilityGrant],
     ) -> dict[str, Any] | None:
         """The keys the agent-results settings add to the implement request; with any of

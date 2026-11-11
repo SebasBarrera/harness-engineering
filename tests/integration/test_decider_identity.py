@@ -81,6 +81,8 @@ def test_gate_decide_refuses_non_human_actor_ids(
     result = _decide(python_workspace, run, digest, "--actor", actor)
     assert result.exit_code == 5
     assert "only a person" in result.stderr
+    # The refusal says what to run next (H44, R04): the brief, then a decision by a person.
+    assert f"harness review --run {run}" in result.stderr
     status = HarnessApplication().status(python_workspace, run)
     assert status["execution"]["currentPhase"] == "DECISION"
     assert status["humanDecision"] is None
@@ -93,8 +95,9 @@ def test_actor_namespaces_are_refused_without_governance_settings(
     """The namespace check is a defect fix: it applies to a 1.0.0 project.yaml as well."""
     _drop_governance(python_workspace)
     run, digest = _pending_run(python_workspace, tmp_path)
+    harness_application = HarnessApplication()
     with pytest.raises(NonHumanActorError):
-        HarnessApplication().decide_gate(
+        harness_application.decide_gate(
             python_workspace,
             execution_id=run,
             decision=DecisionKind.APPROVE_EXCEPTION,

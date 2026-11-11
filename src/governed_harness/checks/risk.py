@@ -6,11 +6,16 @@ factor, the file and the line so a reviewer can confirm or dismiss it. They are 
 themselves; the caller decides what a factor implies (a stricter gate, a second reviewer).
 
 Documentation files (``.md``, ``.rst``, ``.adoc``) do not raise the ``authentication`` factor: a
-README that mentions tokens changes no access control."""
+README that mentions tokens changes no access control.
+
+A line removed and added again with the same text is not a change: a file rewritten with other line
+endings (CRLF to LF, the diff lists every line) or a line moved within the file raises no factor
+for the lines it already had."""
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -85,7 +90,12 @@ _PYPROJECT_INLINE = re.compile(
     rf"^\s*dependencies\s*=\s*\[\s*[\"']{_REQUIREMENT}"
     rf"|^\s*[\w-]+\s*=\s*\[\s*[\"']{_REQUIREMENT}\s*(?:[<>=!~]=?|;|@)"
 )
-_KEY_VERSION = re.compile(r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*(?P<value>.+?)\s*,?\s*$")
+# The value ends at its last character before the trailing ``\s*,?\s*`` (a comma also stays
+# in the value when another comma follows it); only an all-blank value keeps one blank.
+_KEY_VERSION = re.compile(
+    r"^\s*[\"']?(?P<name>[\w.@/-]+)[\"']?\s*[=:]\s*"
+    r"(?P<value>\S(?:[^\n]*[^\s,])?(?:[^\S\n]*,(?=\s*,))*|[^\S\n](?=\n*$))\s*(?:,\s*)?$"
+)
 _VERSION_VALUE = re.compile(
     r"^(?:[\"'](?:[\^~<>=*]|\d|latest\b|workspace:|file:|git\+|npm:)"
     r"|\{[^}]*\b(?:version|git|path|url)\s*=)"
@@ -218,17 +228,16 @@ def _destructive_migrations(diff: Sequence[DiffFile]) -> Iterable[RiskSignal]:
 
 
 # ----- publicContract ------------------------------------------------------------------------
-_DEFINITION = re.compile(
-    r"^\s*(?:async\s+)?def\s+(?P<function>[A-Za-z]\w*)\s*\(|^\s*(?:export\s+)?class\s+(?P<cls>[A-Za-z]\w*)\b"
-)
+_FUNCTION_DEFINITION = re.compile(r"^\s*(?:async\s+)?def\s+(?P<name>[A-Za-z]\w*)\s*\(")
+_CLASS_DEFINITION = re.compile(r"^\s*(?:export\s+)?class\s+(?P<name>[A-Za-z]\w*)\b")
 
 
 def _definitions(lines: Iterable[DiffLine]) -> list[tuple[str, DiffLine]]:
     found: list[tuple[str, DiffLine]] = []
     for line in lines:
-        match = _DEFINITION.match(line.text)
+        match = _FUNCTION_DEFINITION.match(line.text) or _CLASS_DEFINITION.match(line.text)
         if match:
-            found.append((match.group("function") or match.group("cls"), line))
+            found.append((match.group("name"), line))
     return found
 
 
@@ -349,6 +358,25 @@ def _deleted_without_tests(diff: Sequence[DiffFile]) -> Iterable[RiskSignal]:
         )
 
 
+def _net(file: DiffFile) -> DiffFile:
+    """``file`` without the lines it removes and adds again with the same text."""
+    common = Counter(line.text for line in file.added) & Counter(line.text for line in file.removed)
+    if not common:
+        return file
+
+    def kept(lines: list[DiffLine]) -> list[DiffLine]:
+        left = Counter(common)
+        result: list[DiffLine] = []
+        for line in lines:
+            if left[line.text]:
+                left[line.text] -= 1
+            else:
+                result.append(line)
+        return result
+
+    return DiffFile(file.old_path, file.new_path, kept(file.added), kept(file.removed))
+
+
 def _paths(file: DiffFile) -> list[str]:
     return [path for path in (file.old_path, file.new_path) if path]
 
@@ -358,6 +386,7 @@ def detect_risk_factors(
 ) -> list[RiskSignal]:
     """Every risk signal of ``diff``, ordered by factor (the order of ``FACTORS``), then path,
     then line."""
+    diff = [_net(file) for file in diff]
     signals = [
         *_new_dependencies(diff),
         *_authentication(diff),

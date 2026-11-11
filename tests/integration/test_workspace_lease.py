@@ -103,8 +103,9 @@ def test_second_harness_on_a_leased_workspace_is_refused(
 def test_lease_is_exclusive_in_one_process(tmp_path: Path) -> None:
     first = WorkspaceLease(tmp_path, "run start").acquire()
     try:
+        workspace_lease = WorkspaceLease(tmp_path, "run continue")
         with pytest.raises(WorkspaceBusyError):
-            WorkspaceLease(tmp_path, "run continue").acquire()
+            workspace_lease.acquire()
     finally:
         first.release()
     WorkspaceLease(tmp_path, "run continue").acquire().release()

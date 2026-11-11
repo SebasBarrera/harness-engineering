@@ -45,7 +45,11 @@ phases run in full.
 
 **Faster verification.** In the fast lane, the Python tests the change affects run first (the
 changed test files, the tests named after a changed module and the tests that import it); a
-failure stops the attempt early, and the full suite still runs before the gate. The other
+failure stops the attempt early, and the full suite still runs before the gate. Under
+`verification.acceptanceTests.disputes: person` the frozen acceptance tests are not among them:
+they run in `harness.acceptance-tests` and the full suite, so a failure confined to them can open
+a dispute as in the full lane (#161); a failing ordinary affected test still stops the attempt.
+The other
 validators run side by side (`runtime.maxParallel`), and a `PASSED` validator result is reused for
 the same validator, ChangeSet digest, baseline and configuration (`validator.reused`). Other
 technologies have no affected-test selection.

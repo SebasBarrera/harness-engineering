@@ -1,53 +1,56 @@
-# Shipping cost library: specification
+# Biblioteca de costos de envío: especificación
 
-Implement a Python package `shipping` (in `src/shipping/`) exposing one function:
+Implementa un paquete de Python `shipping` (en `src/shipping/`) que expone una función:
 
 ```python
 def shipping_cost(weight_kg, zone, subtotal, *, express=False, coupon=None) -> Decimal: ...
 ```
 
-All money values are `decimal.Decimal`. Rules are applied in the order below.
+Todos los valores de dinero son `decimal.Decimal`. Las reglas se aplican en el orden de abajo.
 
-## 1. Inputs and validation
+## 1. Entradas y validación
 
-- `weight_kg` and `subtotal` accept `int`, `float`, `str` or `Decimal`. A `float` is converted
-  through its string representation (`Decimal(str(value))`), never through binary conversion.
-- `weight_kg` must be greater than 0 and at most 30. Otherwise raise `ValueError`.
-- `subtotal` must be greater than or equal to 0. Otherwise raise `ValueError`.
-- `zone` must be exactly one of `"local"`, `"national"` or `"international"` (lowercase).
-  Any other value raises `ValueError`.
+- `weight_kg` y `subtotal` aceptan `int`, `float`, `str` o `Decimal`. Un `float` se convierte a
+  través de su representación en texto (`Decimal(str(value))`), nunca por conversión binaria.
+- `weight_kg` debe ser mayor que 0 y como máximo 30. Si no, lanza `ValueError`.
+- `subtotal` debe ser mayor o igual que 0. Si no, lanza `ValueError`.
+- `zone` debe ser exactamente uno de `"local"`, `"national"` o `"international"` (en minúsculas).
+  Cualquier otro valor lanza `ValueError`.
 
-## 2. Base cost by weight
+## 2. Costo base por peso
 
-| Zone | Up to 1 kg (inclusive) | Up to 5 kg (inclusive) | Above 5 kg |
+| Zona | Hasta 1 kg (inclusive) | Hasta 5 kg (inclusive) | Más de 5 kg |
 |---|---:|---:|---|
-| local | 5.00 | 8.00 | 8.00 + 1.50 per started kg above 5 |
-| national | 9.00 | 14.00 | 14.00 + 2.50 per started kg above 5 |
-| international | 25.00 | 40.00 | 40.00 + 6.00 per started kg above 5 |
+| local | 5.00 | 8.00 | 8.00 + 1.50 por kg empezado por encima de 5 |
+| national | 9.00 | 14.00 | 14.00 + 2.50 por kg empezado por encima de 5 |
+| international | 25.00 | 40.00 | 40.00 + 6.00 por kg empezado por encima de 5 |
 
-"Per started kg" means that any fraction counts as a full kilogram: 5.01 kg adds one kilogram,
-7.2 kg adds three.
+«Por kg empezado» (per started kg) significa que cualquier fracción cuenta como un kilogramo completo:
+5.01 kg suma un kilogramo y 7.2 kg suma tres.
 
-## 3. Express delivery
+## 3. Envío express
 
-- `express=True` adds a surcharge of 50 % of the base cost.
-- Express delivery is not available for `"international"`: raise `ValueError`.
+- `express=True` suma un recargo del 50 % del costo base.
+- El envío express no está disponible para `"international"`: lanza `ValueError`.
 
-## 4. Free shipping
+## 4. Envío gratis
 
-- For `"local"` and `"national"`, when `subtotal` is at least 100.00 and `express` is `False`, the
-  cost is 0.00.
-- Free shipping never applies to express deliveries or to `"international"`.
+- Para `"local"` y `"national"`, cuando `subtotal` es al menos 100.00 y `express` es `False`, el
+  costo es 0.00.
+- El envío gratis nunca aplica a los envíos express ni a `"international"`.
 
-## 5. Coupons
+## 5. Cupones
 
-- `coupon` is optional. Codes are case-insensitive and surrounding whitespace is ignored.
-- `ENVIO10`: 10 % off the cost computed so far.
-- `FLAT5`: 5.00 off the cost computed so far; the result is never below 0.00.
-- A coupon has no effect when the cost is already 0.00.
-- Any other non-empty code raises `ValueError`. `None` or an empty string means no coupon.
+- `coupon` es opcional. Los códigos no distinguen mayúsculas de minúsculas y se ignoran los espacios
+  en blanco de los extremos.
+- `ENVIO10`: 10 % de descuento sobre el costo calculado hasta ese punto.
+- `FLAT5`: 5.00 de descuento sobre el costo calculado hasta ese punto; el resultado nunca queda por
+  debajo de 0.00.
+- Un cupón no tiene efecto cuando el costo ya es 0.00.
+- Cualquier otro código no vacío lanza `ValueError`. `None` o una cadena vacía significa que no hay
+  cupón.
 
-## 6. Rounding
+## 6. Redondeo
 
-- Compute with full precision and round only once, at the end, to two decimal places with
-  `ROUND_HALF_UP`. The returned `Decimal` always has exactly two decimal places.
+- Calcula con precisión completa y redondea una sola vez, al final, a dos decimales con
+  `ROUND_HALF_UP`. El `Decimal` devuelto siempre tiene exactamente dos decimales.

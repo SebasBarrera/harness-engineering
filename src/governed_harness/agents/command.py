@@ -132,7 +132,7 @@ class CommandAgentProvider:
     def failure_summary(self, result: ProcessResult) -> str:
         return f"Agent CLI exited with {result.exit_code}"
 
-    def extract_result(self, result: ProcessResult) -> Any:
+    def extract_result(self, result: ProcessResult) -> Any:  # NOSONAR(S1172) hook to override
         """The ``result`` object of a read-only call when the answer did not carry it in the
         protocol field (built-in adapters read it from the agent's text)."""
         return None
@@ -172,13 +172,7 @@ class CommandAgentProvider:
         call_kind: CallKind | None,
         require_result: bool = False,
     ) -> tuple[AgentExecutionResult, dict[str, Any] | None]:
-        actor = context.provenance.actor
-        if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
-            actor = Actor(
-                actor_type=ActorType.AGENT,
-                actor_id=f"agent.{self.provider_id}",
-                version="1",
-            )
+        actor = self._agent_actor(context)
         started = datetime.now(UTC)
         prompt_digest = sha256_json(request)
         argv, stdin, recorded_argv = self.process_input(request, context)
@@ -230,31 +224,13 @@ class CommandAgentProvider:
         if result.status is ResultStatus.PASSED:
             try:
                 answer = self.read_answer(result)
-                if answer.usage is not None:
-                    usage = _reported_usage(
-                        answer.usage,
-                        execution_id=context.execution_id,
-                        invocation_id=invocation_id,
-                        wall_time_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
-                        limitations=answer.usage_limitations,
-                    )
-                    usage_ref = context.artifact_store.put_json(
-                        usage.model_dump(mode="json", by_alias=True),
-                        metadata={"kind": "resource-usage", "provider": self.provider_id},
-                    ).uri
+                usage, usage_ref = self._answer_usage(answer, context, invocation_id, started)
                 status = answer.status
                 summary = answer.summary
                 session_id = answer.session_id
                 self_report = answer.self_report
                 if require_result and status is ResultStatus.PASSED:
-                    value = (
-                        answer.result if answer.result is not None else self.extract_result(result)
-                    )
-                    if not isinstance(value, dict):
-                        raise ValueError(
-                            f"a {call_kind} response that passes needs a 'result' object"
-                        )
-                    structured = value
+                    structured = self._structured_result(answer, result, call_kind)
             except Exception as exc:
                 usage, usage_ref, structured = None, None, None
                 status = ResultStatus.ERROR
@@ -265,13 +241,7 @@ class CommandAgentProvider:
                     actor=actor,
                 )
                 summary = str(exc)
-        redactor = context.artifact_store.redactor
-        if redactor.configured:
-            summary = redactor.redact_configured_text(summary)
-            if error is not None:
-                error = error.model_copy(
-                    update={"message": redactor.redact_configured_text(error.message)}
-                )
+        summary, error = _redact_configured(context, summary, error)
         routing = request_routing(request)
         invocation = AgentInvocation(
             invocation_id=invocation_id,
@@ -295,10 +265,74 @@ class CommandAgentProvider:
         )
         return (
             AgentExecutionResult(
-                status, summary, invocation, (tool,), stdout_ref.uri, usage, self_report
+                status,
+                summary,
+                invocation,
+                (tool,),
+                stdout_ref.uri,
+                usage,
+                self_report,
+                request_bytes=len(json.dumps(request, sort_keys=True).encode("utf-8")),
             ),
             structured,
         )
+
+    def _agent_actor(self, context: AgentContext) -> Actor:
+        """The context's actor when it is this provider's agent; otherwise a fresh one."""
+        actor = context.provenance.actor
+        if actor.actor_type is not ActorType.AGENT or actor.actor_id != f"agent.{self.provider_id}":
+            actor = Actor(
+                actor_type=ActorType.AGENT,
+                actor_id=f"agent.{self.provider_id}",
+                version="1",
+            )
+        return actor
+
+    def _answer_usage(
+        self,
+        answer: ProviderAnswer,
+        context: AgentContext,
+        invocation_id: str,
+        started: datetime,
+    ) -> tuple[ResourceUsage | None, str | None]:
+        """The usage an answer reports and its stored reference; ``(None, None)`` without it."""
+        if answer.usage is None:
+            return None, None
+        usage = _reported_usage(
+            answer.usage,
+            execution_id=context.execution_id,
+            invocation_id=invocation_id,
+            wall_time_ms=int((datetime.now(UTC) - started).total_seconds() * 1000),
+            limitations=answer.usage_limitations,
+        )
+        usage_ref = context.artifact_store.put_json(
+            usage.model_dump(mode="json", by_alias=True),
+            metadata={"kind": "resource-usage", "provider": self.provider_id},
+        ).uri
+        return usage, usage_ref
+
+    def _structured_result(
+        self, answer: ProviderAnswer, result: ProcessResult, call_kind: CallKind | None
+    ) -> dict[str, Any]:
+        """The ``result`` object of a passing answer; a protocol error without one."""
+        value = answer.result if answer.result is not None else self.extract_result(result)
+        if not isinstance(value, dict):
+            raise ValueError(f"a {call_kind} response that passes needs a 'result' object")
+        return value
+
+
+def _redact_configured(
+    context: AgentContext, summary: str, error: HarnessErrorRecord | None
+) -> tuple[str, HarnessErrorRecord | None]:
+    """The summary and error message with the configured secrets redacted."""
+    redactor = context.artifact_store.redactor
+    if redactor.configured:
+        summary = redactor.redact_configured_text(summary)
+        if error is not None:
+            error = error.model_copy(
+                update={"message": redactor.redact_configured_text(error.message)}
+            )
+    return summary, error
 
 
 def request_routing(request: dict[str, object]) -> dict[str, str]:
@@ -318,6 +352,7 @@ _USAGE_FIELDS = {
     "reasoningTokens": "reasoning_tokens",
     "costUsd": "cost_usd",
     "cacheTokens": "cache_tokens",
+    "cacheReadTokens": "cache_read_tokens",
 }
 
 

@@ -51,7 +51,9 @@ the criteria that prove it, split it when it asks for more than one thing, then 
 
 Queda un hallazgo `HIGH` con la regla `agent.iterations.exhausted`, el evento
 `agent.iterations.exhausted` y el artefacto `agent-iteration-cap`, que lista cada iteración con su
-estado, las cuatro causas posibles y la recomendación:
+estado, las cuatro causas posibles y la recomendación. El evento y el artefacto llevan también la
+respuesta que recibe el padre en lugar de la llamada (`response`, con el contrato de respuesta y
+`finalStatus: ITERATIONS_EXHAUSTED`). Las causas posibles:
 
 - un prompt mal estructurado (la tarea es vaga, contradictoria o demasiado larga);
 - contexto incorrecto o insuficiente (al agente le faltan archivos o datos);
@@ -77,6 +79,15 @@ Los umbrales por defecto que escribe `harness init` son:
 Una bandera de riesgo (interfaz pública o palabras de seguridad) sube S a M, y una tarea que la
 planificación ya descompuso por grande es L. Se puede calibrar con `harness routing calibrate`.
 No se creó una segunda clasificación: se reutiliza la del router.
+
+Desde #197 el router tiene además un nivel `trivial` solo para la llamada `implement`: una
+tarea S con entre 1 y `thresholds.trivial.requirements` requisitos (por defecto 1), entre 1 y
+`thresholds.trivial.files` archivos propios (por defecto 1), como mucho `thresholds.trivial.loc`
+líneas (por defecto 150), sin banderas de riesgo y sin descomponer se implementa con Haiku
+(`claude-haiku-5-5`, esfuerzo `medium`); todo lo demás sigue en Sonnet (S, M) u Opus (L). Si esa
+llamada falla la verificación, la escalada pasa primero al nivel S (Sonnet). Los presupuestos de
+esta página siguen usando S, M y L: una tarea trivial recibe el presupuesto de S. Los umbrales
+son valores iniciales por calibrar.
 
 ## Presupuesto de tokens y límite de tiempo
 

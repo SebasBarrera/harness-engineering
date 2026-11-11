@@ -198,13 +198,15 @@ project:
 - **Clean tree or known baseline.** Changes that exist before the run are part of the baseline and
   stay out of the ChangeSet.
 - **Install the project's test dependencies where the harness runs.** In the case, `freezegun`
-  (declared in `requirements/tests.txt`) was missing: `run start` exited with **6** and the stored
-  pytest output showed two test modules failing to collect, outside the ChangeSet.
-- **Two ways out of a broken baseline:** fix it and `harness run continue` (the case then ran
-  **298 tests**, all passing, with the same ChangeSet digest; the gate counts the latest attempt of
-  each validator, so it `PASSED` and a plain `APPROVE` closed the run: 46 events, chain valid), or
-  close with `APPROVE_EXCEPTION` and a written rationale. In the evaluated 0.8.0 cut the gate kept
-  the failure of the first attempt and the case closed by exception.
+  (declared in `requirements/tests.txt`) was missing and two test modules fail to collect, outside
+  the ChangeSet: `run start` exits with **6**. The baseline fails the same way, but pytest ran no
+  test, so the baseline comparison that `harness init` writes does not count it as pre-existing
+  (#190).
+- **Fix the environment and run the task again.** The failed run's changes are in quarantine
+  (`governance.stopTheLine: restore`), so a new `run start` applies the patch: **298 tests** pass,
+  the gate `PASSED` and a plain `APPROVE` closes the run (122 events, chain valid), or close with
+  `APPROVE_EXCEPTION` and a written rationale. In the evaluated 0.8.0 cut the case closed by
+  exception.
 - **Respect conventions.** Detection is read-only (the case: Python, confidence 1.0 from
   `pyproject.toml` and `tox.ini`). Several lock files raise the Node.js confidence, but the profile
   always runs `npm`.
@@ -305,7 +307,7 @@ Full reference: [docs/reference/configuration.md](docs/reference/configuration.m
 
 | Profile | Detected by | Mandatory validator | Optional (when available) |
 |---|---|---|---|
-| Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check .`, `python -m mypy .` |
+| Python | `pyproject.toml`, `requirements.txt`, `pytest.ini`, … | `python -m pytest -q` | `python -m ruff check --no-fix .`, `python -m mypy .` |
 | Node.js | `package.json` and lock files | `npm test --silent` (needs a `test` script) | `npm run lint`, `npm run typecheck` (if defined) |
 | Go, Rust, Java/Kotlin (Gradle, Maven), Swift, Android | `go.mod`, `Cargo.toml`, `build.gradle`, `pom.xml`, `Package.swift`, `AndroidManifest.xml` (under `toolchain.extendedProfiles`) | the toolchain's test command | its static check |
 
@@ -408,9 +410,11 @@ when a price table is configured).
 This software is the artifact of the master's thesis *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis evaluates
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis documents the cut
 [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), which reproduces
-the evaluated cut byte for byte ([provenance](docs/provenance.md)).
+it byte for byte ([provenance](docs/provenance.md)), and its evaluation reports only version 2.0.0
+(campaign in progress, [`evaluation/campaign/`](evaluation/campaign/)); results of earlier versions are
+in the git history and the `v0.8.0` tag and are not part of that analysis.
 
 Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state):
 
@@ -420,7 +424,6 @@ Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state
 | JSON Schema contracts · CLI commands · API routes | 25 · 21 · 9 |
 | Tests | 86 (core 79, E2E Python 4, E2E Node.js 1, performance 2) |
 | Core coverage | lines 80.60 %, branches 59.29 % (77.48 % combined) |
-| Governed-process overhead | 10.09 % and 11.23 % (about 1.2 ms) |
 | Brownfield case | itsdangerous 2.2.0, 298 tests, invariant ChangeSet digest |
 
 More in [docs/thesis.md](docs/thesis.md). To cite the software, use [CITATION.cff](CITATION.cff)

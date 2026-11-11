@@ -87,6 +87,10 @@ RESULT_KEYS: Final[dict[str, tuple[str, ...]]] = {
 }
 """The keys the ``result`` object of each call kind may carry."""
 
+PANEL_RESULT_KEYS: Final[tuple[str, ...]] = ("verdict", "summary", "findings", "model")
+"""The keys a reviewer of the review panel answers with (``review.contract``): a ``review``
+call whose answer is the panel's verdict object, not the single reviewer's ``findings``."""
+
 FILE_CONTENT_KEYS: Final[frozenset[str]] = frozenset(
     {"content", "contents", "filecontent", "filecontents", "source", "sourcecode", "body"}
 )
@@ -207,6 +211,9 @@ class Usage(_Contract):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     reasoning_tokens: int | None = Field(default=None, ge=0)
+    cache_read_tokens: int | None = Field(default=None, ge=0)
+    """The part of ``input_tokens`` read from the provider's prompt cache, when reported; the
+    token budget does not count it."""
 
 
 class AgentCallResponse(_Contract):
@@ -303,15 +310,20 @@ def limit_summary(summary: str, chars: int) -> tuple[str, bool]:
 
 
 def check_answer(
-    kind: str, result: dict[str, Any] | None, config: AgentContractConfig
+    kind: str,
+    result: dict[str, Any] | None,
+    config: AgentContractConfig,
+    *,
+    keys: tuple[str, ...] | None = None,
 ) -> list[str]:
     """What a passing answer's ``result`` does against the contract of its kind: unknown keys,
     a size above the cap, a text field above its cap, file contents where only a conclusion is
-    due. Empty: the answer keeps the contract."""
+    due. ``keys``: the allowed keys when they are not the kind's (a reviewer of the panel).
+    Empty: the answer keeps the contract."""
     if result is None:
         return []
     problems: list[str] = []
-    allowed = RESULT_KEYS.get(kind, ())
+    allowed = RESULT_KEYS.get(kind, ()) if keys is None else keys
     unknown = sorted(set(result) - set(allowed))
     if unknown:
         problems.append(f"result carries keys outside the {kind} contract: {', '.join(unknown)}")
@@ -322,15 +334,25 @@ def check_answer(
     return problems[:20]
 
 
-def _field_problems(kind: str, value: Any, field_chars: int, path: str = "result") -> list[str]:
+def _field_problems(
+    kind: str, value: Any, field_chars: int, path: str = "result", *, layer_names: bool = False
+) -> list[str]:
+    """The problems of a ``result`` value. ``layer_names``: the keys of ``value`` are layer
+    names (an architecture ``allow`` mapping), so a layer called ``source`` or ``content`` is
+    not taken for file content; the values under those keys are still checked."""
     problems: list[str] = []
     if isinstance(value, dict):
         for key, item in value.items():
             where = f"{path}.{key}"
-            if kind != "acceptance" and str(key).lower() in FILE_CONTENT_KEYS:
+            if not layer_names and kind != "acceptance" and str(key).lower() in FILE_CONTENT_KEYS:
                 problems.append(f"{where} carries file content; a {kind} call returns a conclusion")
                 continue
-            problems.extend(_field_problems(kind, item, field_chars, where))
+            allow = kind == "architecture" and not layer_names and key == "allow"
+            problems.extend(
+                _field_problems(
+                    kind, item, field_chars, where, layer_names=allow and isinstance(item, dict)
+                )
+            )
     elif isinstance(value, list):
         for index, item in enumerate(value):
             problems.extend(_field_problems(kind, item, field_chars, f"{path}[{index}]"))

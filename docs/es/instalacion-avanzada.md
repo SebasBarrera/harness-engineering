@@ -85,6 +85,19 @@ Cada release del repositorio incluye los distribuibles, el archivo `SHA256SUMS` 
 
    Es el mismo comando que `release.yml` agrega a las notas de cada release. No lo pude ejecutar sin red.
 
+4. Verifica la firma de Sigstore y la atestación adjunta, sin consultar la API de atestaciones de GitHub. Desde que `release.yml` firma los distribuibles (#90), cada release adjunta `<archivo>.sigstore.json` por distribuible (una firma sin llaves hecha con la identidad OIDC del flujo) y la atestación de procedencia como `governed-agent-harness-<versión>.intoto.jsonl`. Para la versión `2.0.0`:
+
+   ```bash
+   python -m pip install sigstore
+   python -m sigstore verify identity governed_agent_harness-2.0.0-py3-none-any.whl \
+     --cert-identity https://github.com/SebasBarrera/harness-engineering/.github/workflows/release.yml@refs/tags/v2.0.0 \
+     --cert-oidc-issuer https://token.actions.githubusercontent.com
+   gh attestation verify governed_agent_harness-2.0.0-py3-none-any.whl \
+     --repo SebasBarrera/harness-engineering --bundle governed-agent-harness-2.0.0.intoto.jsonl
+   ```
+
+   `sigstore verify identity` busca la firma en `governed_agent_harness-2.0.0-py3-none-any.whl.sigstore.json`, junto al wheel, e imprime `OK: <archivo>`. Los dos comandos los probé con el wheel de `v1.0.0` y su atestación descargada con `gh attestation download` (sigstore 4.5.1 imprimió `OK`); los `.sigstore.json` solo existen desde el primer release hecho con este flujo, así que esa parte aún no se ha ejecutado.
+
 Si publicas en PyPI con el Trusted Publisher, la acción `pypa/gh-action-pypi-publish` genera además atestaciones de PyPI (PEP 740) por defecto cuando publica con OIDC, según su documentación; no lo he verificado porque la publicación aún no está activa. El wheel que sube a PyPI es el mismo archivo que construyó, atestó y adjuntó el trabajo `release`, así que las sumas coinciden.
 
 ## Instalar sin red (wheel local)

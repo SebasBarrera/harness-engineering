@@ -8,7 +8,7 @@ GitHub Packages no tiene un registro para paquetes de Python, así que el harnes
 
 | Canal | Qué publica | Flujo | Estado |
 |---|---|---|---|
-| GitHub Releases | wheel, sdist, `SHA256SUMS`, SBOM SPDX, atestación de procedencia | `release.yml` | Siempre, con cada etiqueta `v*` |
+| GitHub Releases | wheel, sdist, `SHA256SUMS`, SBOM SPDX, atestación de procedencia (también como `.intoto.jsonl`), firmas Sigstore `.sigstore.json` | `release.yml` | Siempre, con cada etiqueta `v*` |
 | GHCR | Imagen `ghcr.io/sebasbarrera/harness-engineering` multi-arquitectura, con SBOM y atestación | `docker.yml` | Siempre, con cada etiqueta `v*` |
 | PyPI | El mismo wheel y sdist, con un Trusted Publisher (sin tokens) | `release.yml`, trabajo `publish-pypi` | Solo si el mantenedor lo habilita (abajo) |
 
@@ -38,9 +38,10 @@ Se ejecuta al subir una etiqueta `v*` (salvo `v0.8.0`). El trabajo `release` (no
 2. Construye el sdist y el wheel con `python -m build` y los revisa con `twine check --strict`.
 3. Genera el SBOM SPDX con `anchore/sbom-action`.
 4. Atestigua la procedencia de los distribuibles con `actions/attest-build-provenance`.
-5. Guarda el wheel y el sdist como artefacto del flujo (`python-distributions`, 7 días), para el trabajo de PyPI.
-6. Copia el SBOM a `dist/`, escribe `SHA256SUMS`, genera las notas desde los Conventional Commits (`scripts/release_notes.py`) y agrega a las notas la sección de verificación.
-7. Crea el release de GitHub con todo lo de `dist/` (`gh release create --verify-tag`).
+5. Firma el wheel y el sdist sin llaves con `sigstore/gh-action-sigstore-python` (identidad OIDC del flujo, permiso `id-token: write` que el trabajo ya tenía para la atestación), comprueba cada firma contra la identidad `https://github.com/<repo>/.github/workflows/release.yml@<ref>` y deja `<archivo>.sigstore.json` en `dist/`. Copia la atestación de procedencia a `dist/governed-agent-harness-<versión>.intoto.jsonl`. Son los archivos que busca la comprobación Signed-Releases de OpenSSF Scorecard, que no ve las atestaciones de GitHub.
+6. Guarda el wheel y el sdist como artefacto del flujo (`python-distributions`, 7 días), para el trabajo de PyPI.
+7. Copia el SBOM a `dist/`, escribe `SHA256SUMS`, genera las notas desde los Conventional Commits (`scripts/release_notes.py`) y agrega a las notas la sección de verificación.
+8. Crea el release de GitHub con todo lo de `dist/` (`gh release create --verify-tag`).
 
 `docker.yml` hace en paralelo su trabajo: construye y escanea la imagen y, con una etiqueta `v*`, la publica en GHCR para `linux/amd64` y `linux/arm64` con SBOM y atestación.
 

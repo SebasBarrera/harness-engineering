@@ -1,0 +1,2 @@
+# Brownfield example (examples/brownfield-itsdangerous/reproduce.sh): the test runner.
+pytest==9.0.3

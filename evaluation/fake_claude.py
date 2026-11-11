@@ -9,7 +9,8 @@ Claude Code prints (``result``, ``is_error``, ``subtype``, ``usage``, ``total_co
   acceptance, locate, architecture survey and advice) get a valid ``result`` object, chosen so that
   every wait of the simulated person is exercised once (one clarification question per task until
   it has been answered, acceptance tests, a plan, architecture options or layers);
-* the simulated product owner gets an answers file for every question id in its prompt;
+* the simulated product owner gets an answers file for every question id in its prompt, and
+  REVISE for a dispute of frozen acceptance tests;
 * anything else is an implementation: the reference solution of the scenario found in the working
   directory is copied in, with one test that names every requirement and criterion id.
 
@@ -46,7 +47,7 @@ def _scenario(cwd: Path) -> str | None:
     if (cwd / "src" / "itsdangerous").is_dir():
         return "brownfield"
     spec = (cwd / "SPEC.md").read_text(encoding="utf-8") if (cwd / "SPEC.md").is_file() else ""
-    if "Inventory library" in spec:
+    if "Biblioteca de inventario" in spec:
         return "inventory"
     if "`alerts`" in spec:
         return "security"
@@ -109,7 +110,25 @@ def _implement(cwd: Path, prompt: str) -> str:
         (tests / "test_fake_broken.py").write_text(
             "def test_broken() -> None:\n    assert False\n", encoding="utf-8"
         )
-    return f"Applied the reference solution of {scenario} and one test per id ({len(names)})."
+    text = f"Applied the reference solution of {scenario} and one test per id ({len(names)})."
+    if _mode(cwd) == "dispute-acceptance" and "disputedAcceptanceTests" in prompt:
+        # The frozen tests of this mode cannot pass: the agent disputes them (#94).
+        frozen = sorted((cwd / "tests" / "acceptance").glob("test_acceptance_*.py"))
+        report = {
+            "assumptions": [],
+            "alternativesDiscarded": [],
+            "lowConfidenceAreas": [],
+            "unrequestedChanges": [],
+            "disputedAcceptanceTests": [
+                {
+                    "test": path.relative_to(cwd).as_posix(),
+                    "reason": "Dry run: the test expects the package to be missing.",
+                }
+                for path in frozen
+            ],
+        }
+        text += "\n\n```json\n" + json.dumps({"harnessSelfReport": report}) + "\n```\n"
+    return text
 
 
 def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
@@ -186,8 +205,11 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
         package = PACKAGE.get(_scenario(cwd) or "", "")
         directory = request.get("directory") or "tests/acceptance"
         criteria = [c.get("criterion_id") for c in task.get("acceptance_criteria") or []] or ["ac"]
+        # dispute-acceptance: the first proposal cannot pass, the one for a revision can.
+        wrong = _mode(cwd) == "dispute-acceptance" and not request.get("revision")
+        check = " is None" if wrong else ""
         content = "import importlib\n" + "".join(
-            f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r})\n"
+            f"\n\ndef test_{cid}_package_exists() -> None:\n    assert importlib.import_module({package!r}){check}\n"
             for cid in criteria
         )
         name = f"{directory}/test_acceptance_{criteria[0]}.py"  # one file per task: no overwrite
@@ -195,20 +217,39 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
     if "Find where the task below must be implemented" in prompt:
         return {"locations": [], "questions": []}
     if "Survey the architecture of the existing project" in prompt:
-        return {
+        survey: dict[str, Any] = {
             "style": "layered",
             "summary": "Dry run: one source layer.",
             "layers": [{"name": "source", "paths": ["src/**"], "modules": []}],
             "allow": {"source": []},
         }
+        if '"organization" (Markdown' in prompt:
+            # The reverse engineering fields of architecture.documentation: project (#97).
+            survey |= {
+                "organization": "Dry run: the package lives under src/.",
+                "components": [{"name": "source", "path": "src", "responsibility": "The code."}],
+                "conventions": [],
+                "guidance": ["Dry run: follow the existing structure."],
+            }
+        return survey
+    if "A person chose the" in prompt and "architecture for the new project" in prompt:
+        # The expert's organization plan under architecture.catalogue: experts (#97).
+        return {
+            "summary": "Dry run: one package.",
+            "structure": [{"path": "src", "purpose": "The package."}],
+            "practices": ["Dry run: keep the package small."],
+        }
     if "is new. From the task below" in prompt:
-        option = {
+        option: dict[str, Any] = {
             "benefits": ["simple"],
             "costs": ["none"],
             "fit": "small library",
             "layers": [{"name": "package", "paths": ["src/**"], "modules": []}],
             "allow": {"package": []},
         }
+        if "a 'supports' list" in prompt:
+            # Under architecture.catalogue: experts every option names what supports it (#97).
+            option["supports"] = ["a small library"]
         return {
             "options": [
                 {
@@ -231,19 +272,24 @@ def _call(prompt: str, cwd: Path) -> dict[str, Any] | None:
 
 
 def _product_owner(prompt: str) -> str | None:
-    if not prompt.startswith("You are the product owner"):
+    if not prompt.startswith("Eres el product owner"):
         return None
+    if "Pruebas disputadas y las razones del agente:" in prompt:
+        return (
+            "```yaml\ndecision: REVISE\nreason: |\n"
+            "  Corrida en seco: la prueba disputada afirma un valor equivocado.\n```"
+        )
     ids = sorted(set(re.findall(r"^- (Q-\d+):", prompt, re.MULTILINE)))
     lines = ["```yaml", "answers:"]
     for qid in ids:
         lines += [
             f"  {qid}: |",
-            "    The smallest valid input returns the documented result; invalid input raises the documented error.",
+            "    La entrada válida más pequeña devuelve el resultado documentado; una entrada inválida lanza el error documentado.",
         ]
     lines += [
         "addCriteria:",
         "  - |",
-        "    Running python -m pytest -q exits with code 0.",
+        "    Ejecutar python -m pytest -q termina con código 0.",
         "```",
     ]
     return "\n".join(lines)
@@ -300,7 +346,7 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
     first = cwd.parent / "fake-host-prompt.txt"
     if not first.exists():
         first.write_text(prompt, encoding="utf-8")
-    starting = "harness_task_create, passing exactly" in prompt
+    starting = "harness_task_create, pasando exactamente" in prompt
     prompt = prompt + "\n" + first.read_text(encoding="utf-8")  # the task's ids for the tests
     try:
         match = re.search(r"```json\n(.*?)\n```", prompt, re.DOTALL)
@@ -332,6 +378,12 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
 
 def main(argv: list[str]) -> int:
     prompt = _arg(argv, "-p") or sys.stdin.read()
+    if sys.platform == "win32" and prompt.startswith("--"):
+        # agentlib gives the prompt on stdin on Windows (the command line is limited to 32767
+        # characters), so "-p" is followed by the next option.
+        # The text mode of the pipe on Windows turns its newlines into CRLF: read them back as
+        # LF, or the ```json block of the request is not found.
+        prompt = sys.stdin.buffer.read().decode("utf-8").replace("\r\n", "\n")
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
     if "--mcp-config" in argv:

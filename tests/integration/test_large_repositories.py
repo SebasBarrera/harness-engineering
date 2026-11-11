@@ -172,7 +172,10 @@ def test_an_edit_that_restores_the_modification_time_is_seen(python_workspace: P
         stat = os.stat(target)
         before = store.take().files["src/sample/pricing.py"].digest
         time.sleep(0.01)
-        target.write_text(target.read_text().replace("subtotal", "SUBTOTAL"), encoding="utf-8")
+        # LF like the fixture: a CRLF rewrite on Windows would change the size the test holds.
+        target.write_text(
+            target.read_text().replace("subtotal", "SUBTOTAL"), encoding="utf-8", newline="\n"
+        )
         os.utime(target, ns=(stat.st_atime_ns, stat.st_mtime_ns))
         assert os.stat(target).st_size == stat.st_size
         assert store.take().files["src/sample/pricing.py"].digest != before
@@ -209,7 +212,8 @@ def test_guard_watches_ignored_files_under_git_snapshots(
     with application._services(python_workspace) as services:
         findings = services.state.list("finding", Finding, execution_id=run.execution_id)
     guarded = [item for item in findings if item.rule_id == "workspace.out-of-changeset-write"]
-    assert guarded and ".env" in guarded[0].message
+    assert guarded
+    assert ".env" in guarded[0].message
     assert guarded[0].severity.value == "CRITICAL"
 
 
@@ -234,9 +238,11 @@ def test_gc_removes_orphan_artifacts(python_workspace: Path) -> None:
         plan = RetentionCollector(services).plan(now=datetime.now(UTC))
         assert plan.orphans == [orphan.uri]
         assert recent.uri not in plan.orphans
-        assert plan.removed_runs == [] and plan.pruned_runs == {}
+        assert plan.removed_runs == []
+        assert plan.pruned_runs == {}
         report = plan.as_dict(applied=False)
-        assert report["orphansRemoved"] == 1 and report["orphanBytes"] > 0
+        assert report["orphansRemoved"] == 1
+        assert report["orphanBytes"] > 0
         RetentionCollector(services).apply(plan)
         assert not services.artifacts.verify(orphan.uri)
         assert services.artifacts.verify(recent.uri)

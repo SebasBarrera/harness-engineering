@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from governed_harness.checks import parse_unified_diff
-from governed_harness.checks.layers import LayerRules, check_layers, imports
+from governed_harness.checks.layers import LayerRules, check_layers, imports, known_modules
 from governed_harness.checks.principles import (
     PrincipleLimits,
     check_principles,
@@ -151,6 +151,54 @@ def test_layer_rules_across_languages() -> None:
         (2, "module", "fmt"),
         (3, "module", "example.com/shop/infra"),
     ]
+
+
+# The layered template (resources/architecture/layered.md): ``**/api/**`` is presentation.
+LAYERED = LayerRules.from_mapping(
+    [
+        {"name": "presentation", "paths": ["**/presentation/**", "**/api/**", "**/web/**"]},
+        {"name": "services", "paths": ["**/services/**", "**/service/**"]},
+        {"name": "data", "paths": ["**/data/**", "**/repositories/**", "**/persistence/**"]},
+    ],
+    {"presentation": ["services"], "services": ["data"]},
+)
+SERVICES_API = "def services_value() -> int:\n    return 10\n"
+
+
+def test_an_imported_name_is_not_a_module_path_of_another_layer() -> None:
+    # #166: ``services_value`` is a function of ``app.services.api`` (layer services), not the
+    # module ``app/services/api/services_value`` that ``**/api/**`` puts in presentation.
+    files = {
+        "src/app/services/api.py": SERVICES_API,
+        "src/app/services/other.py": "from app.services.api import services_value\n",
+    }
+    assert check_layers(files, LAYERED, severity=FindingSeverity.HIGH) == []
+
+
+def test_an_imported_name_does_not_hide_a_new_violation_in_differential_mode() -> None:
+    # #166: the baseline imports services only; presentation is a layer the change adds.
+    path = "src/app/data/pre.py"
+    before = "from app.services.api import services_value\n"
+    after = before + "from app.presentation.api import presentation_value\n"
+    found = check_layers(
+        {path: after}, LAYERED, severity=FindingSeverity.HIGH, baseline={path: before}.get
+    )
+    assert [(item.line, "layer presentation" in item.message) for item in found] == [(2, True)]
+
+
+def test_an_imported_submodule_is_still_a_module(tmp_path: Path) -> None:
+    # ``from app import presentation`` imports the package: in the files, or on disk only.
+    path = "src/app/data/pre.py"
+    files = {path: "from app import presentation\n"}
+    assert check_layers(files, LAYERED, severity=FindingSeverity.HIGH) == []
+    (tmp_path / "src" / "app" / "presentation").mkdir(parents=True)
+    on_disk = known_modules(files, tmp_path)
+    assert on_disk("app.presentation")
+    assert not on_disk("app.presentation.value")
+    found = check_layers(files, LAYERED, severity=FindingSeverity.HIGH, module_exists=on_disk)
+    assert ["layer presentation" in item.message for item in found] == [True]
+    listed = {**files, "src/app/presentation/api.py": "VALUE = 1\n"}
+    assert len(check_layers(listed, LAYERED, severity=FindingSeverity.HIGH)) == 1
 
 
 def _git(root: Path, *args: str) -> None:

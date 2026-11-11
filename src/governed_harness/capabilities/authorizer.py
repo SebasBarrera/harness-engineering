@@ -6,25 +6,12 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from governed_harness.capabilities.denial import CapabilityDenied as CapabilityDenied
+from governed_harness.capabilities.denial import command_in_scope as command_in_scope
+from governed_harness.capabilities.phase import current_policy
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import Actor, CapabilityGrant
-
-
-class CapabilityDenied(PermissionError):
-    pass
-
-
-def command_in_scope(argv: Sequence[str], scope: str) -> bool:
-    """Whether a ``process.execute`` scope allows the command ``argv``: every command (``**``),
-    its executable, the whole command, or a prefix of it ending at an argument boundary."""
-    resource = " ".join(argv)
-    return (
-        scope == "**"
-        or (bool(argv) and argv[0] == scope)
-        or resource == scope
-        or resource.startswith(f"{scope} ")
-    )
 
 
 class CapabilityAuthorizer:
@@ -96,8 +83,6 @@ def grants_from_rules(
     *,
     lifetime: timedelta = timedelta(hours=8),
 ) -> list[CapabilityGrant]:
-    from governed_harness.capabilities.phase import current_policy
-
     policy = current_policy()
     if policy is not None:
         # governance.phaseCapabilities (#4): only what the running phase allows.

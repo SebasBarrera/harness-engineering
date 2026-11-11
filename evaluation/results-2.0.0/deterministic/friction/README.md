@@ -1,40 +1,42 @@
-# N03-a: friction of small changes with the fixture provider
+# N03-a: fricción de los cambios pequeños con el proveedor fixture
 
-Two small (S) changes on the sample project (the discount at the threshold and above it, with a
-test that names the requirement), each also with one injected risk factor: a literal credential in
-the source, an `eval` call, or a README change outside the paths the task owns (`ownedPaths` of the
-task file, `--owned` of `harness do`). Three conditions, each on a fresh project with the
-configuration `harness init` writes:
+Dos cambios pequeños (S) sobre el proyecto de ejemplo (el descuento en el umbral y por encima de él,
+con una prueba que nombra el requisito), cada uno también con un factor de riesgo inyectado: una
+credencial literal en el código, una llamada a `eval` o un cambio del README fuera de las rutas de
+las que la tarea es dueña (`ownedPaths` del archivo de tarea, `--owned` de `harness do`). Tres
+condiciones, cada una sobre un proyecto nuevo con la configuración que escribe `harness init`:
 
-- `full`: without the `friction` section (the full flow): `task create`, `run start`,
+- `full`: sin la sección `friction` (el flujo completo): `task create`, `run start`,
   `gate decide`;
-- `fast-lane`: `harness do TEXT --criterion ... --owned ...`, then `gate decide`;
-- `fast-lane+pre-approval`: `harness do ... --pre-approve` (then `gate decide` only if the run
-  still waits for a person).
+- `fast-lane`: `harness do TEXT --criterion ... --owned ...`, luego `gate decide`;
+- `fast-lane+pre-approval`: `harness do ... --pre-approve` (luego `gate decide` solo si la corrida
+  todavía espera a una persona).
 
-At DECISION the measuring person types `gate decide --decision APPROVE` whatever the gate (a
-refused approval exits 5 and the change is not delivered). The fixture provider (copied from
-`scripts/measure_friction.py`, not modified) writes the change and answers the read-only kinds with
-empty results; it reports as usage an **estimate** of its tokens (request characters / 4) that the
-harness records, and it logs every call (kind, estimated tokens, its own wall seconds) to
-`agent-calls.jsonl` in the run directory, next to `runner-clock.json` (the typed commands and their
-seconds): N04 uses both as the external measurement.
+En DECISION la persona que mide escribe `gate decide --decision APPROVE` sea cual sea el gate (una
+aprobación rechazada sale con 5 y el cambio no se entrega). El proveedor fixture (copiado de
+`scripts/measure_friction.py`, sin modificar) escribe el cambio y responde los tipos de solo lectura
+con resultados vacíos; reporta como uso una **estimación** de sus tokens (caracteres de la solicitud
+/ 4) que el harness registra, y anota cada llamada (tipo, tokens estimados, sus propios segundos de
+reloj) en `agent-calls.jsonl` dentro del directorio de la corrida, junto a `runner-clock.json` (los
+comandos escritos y sus segundos): N04 usa ambos como la medición externa.
 
-Measures per run: commands typed, human interactions the harness recorded
-(`human.interactions`), agent calls by kind (fixture log) and recorded calls and tokens
-(`budget show`), seconds of the typed commands on this machine (no human time), the lane
-(`lane.classified`) and its escalation (`lane.escalated`), the approval in advance, the gate,
-whether the change was delivered and whether it was delivered without a person (a false fast
-lane for a risk task).
+Medidas por corrida: comandos escritos, interacciones humanas que registró el harness
+(`human.interactions`), llamadas al agente por tipo (registro del fixture) y llamadas y tokens
+registrados (`budget show`), segundos de los comandos escritos en esta máquina (sin tiempo humano),
+el carril (`lane.classified`) y su escalamiento (`lane.escalated`), la aprobación por adelantado, el
+gate, si el cambio se entregó y si se entregó sin una persona (un falso carril rápido para una tarea
+con riesgo).
 
-Command (worktree code with wave 9 merged). On 2026-10-06 it ran after the fault-probe suite had
-finished, with no other suite running (the first results shared the machine with the probes):
+Comando (código del worktree con la ola 9 fusionada). El 2026-10-06 corrió después de que terminara
+la suite de sondas de fallas, sin ninguna otra suite corriendo (los primeros resultados compartieron
+la máquina con las sondas):
 
 ```bash
-SCRATCH=/private/tmp/claude-502/-Users-jbarrerapuli-Documents-Repos-Proyecto-de-grado/ceca23e5-5679-47dc-ab0b-75aa4166d2c7/scratchpad
+SCRATCH=<scratch>/scratchpad
 $SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/friction.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/friction --work $SCRATCH/work/friction-w9
 ```
 
-Files: `friction.jsonl` (24 records), `friction-summary.json` (per condition: risk-free medians;
-with a risk factor: escalated or full lane, false fast lanes, blocked), `environment.json`.
+Archivos: `friction.jsonl` (24 registros), `friction-summary.json` (por condición: medianas sin
+riesgo; con un factor de riesgo: carril escalado o completo, falsos carriles rápidos, bloqueados),
+`environment.json`.

@@ -41,6 +41,8 @@ if request.get("kind") == "acceptance":
         "from sample import apply_discount\\n\\n\\n"
         f"def test_ac_1() -> None:\\n    assert {expected}\\n"
     )
+    if MODE == "lint":
+        content = "import os\\n" + content
     print(json.dumps({"status": "PASSED", "summary": "1 file",
                       "result": {"tests": [{"path": "tests/acceptance/test_ac_1.py", "content": content}]}}))
     sys.exit(0)
@@ -102,12 +104,13 @@ def test_approved_tests_are_frozen_and_must_pass(python_workspace: Path, tmp_pat
     assert status["currentPhase"] == PhaseId.SPECIFICATION
     assert status["status"] == ResultStatus.BLOCKED
     assert not (python_workspace / "tests" / "acceptance").exists()
+    digest = application.acceptance(python_workspace, run)["digest"]
     with pytest.raises(PolicyViolationError):
         application.decide_acceptance(
             python_workspace,
             execution_id=run,
             decision=DecisionKind.APPROVE,
-            digest=application.acceptance(python_workspace, run)["digest"],
+            digest=digest,
             rationale="x",
             actor_id="agent.fixture_agent",
         )
@@ -115,7 +118,8 @@ def test_approved_tests_are_frozen_and_must_pass(python_workspace: Path, tmp_pat
     assert result["acceptanceTests"]["failBefore"]["status"] == "FAILED"
     assert result["execution"]["currentPhase"] == PhaseId.DECISION
     calls = json.loads(log.read_text())
-    assert calls[0]["kind"] == "acceptance" and calls[0]["routing"]["model"] == "author-model"
+    assert calls[0]["kind"] == "acceptance"
+    assert calls[0]["routing"]["model"] == "author-model"
     assert calls[1]["acceptanceTests"]["paths"] == ["tests/acceptance/test_ac_1.py"]
     assert not [
         item
@@ -149,6 +153,26 @@ def test_tests_that_pass_before_the_change_are_a_finding(
         if item.rule_id == "acceptance.passes-before"
     ]
     assert weak.severity is FindingSeverity.MEDIUM
+
+
+def test_the_ratchet_spares_problems_in_the_frozen_tests(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#183: Ruff's problems in a frozen acceptance test still as approved are not the agent's
+    (the file is write-protected); the ratchet held them as a HIGH regression that the
+    correction loop could never fix."""
+    configure(python_workspace, tmp_path, "lint")
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["verification"]["ratchet"] = "enforce"
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    application, run = start(python_workspace, tmp_path)
+    result = approve(application, python_workspace, run)
+    found = application.list_findings(python_workspace, run)
+    # Ruff still fails on the frozen file (F401); only the ratchet no longer blames the agent.
+    assert "python.ruff.failed" in {item.rule_id for item in found}
+    assert not [item for item in found if item.rule_id == "ratchet.regressed"]
+    assert result["execution"]["currentPhase"] == PhaseId.DECISION
 
 
 # ----- #82: frozen files of two runs in one workspace ------------------------------------------

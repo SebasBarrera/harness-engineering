@@ -46,33 +46,32 @@ import agentlib  # noqa: E402
 import conditions  # noqa: E402
 import harness_state  # noqa: E402
 import run_eval  # noqa: E402
-from agentlib import allocate_call, build_prompt, load_calls  # noqa: E402
 from measure import measure  # noqa: E402
 from person import SimulatedPerson  # noqa: E402
-from product_owner import ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 
 MAX_SEGMENTS = 6
 SESSION_LIMIT_CODE = 75
 EMBEDDED_INSTRUCTIONS = """
-Govern this change with the Governed Agent Harness, through its MCP tools (server "harness") and
-the harness skill of this repository:
-1. Create the task with harness_task_create, passing exactly this task document as the task object:
+Gobierna este cambio con el Governed Agent Harness, a través de sus herramientas MCP (servidor "harness") y
+del skill harness de este repositorio:
+1. Crea la tarea con harness_task_create, pasando exactamente este documento de tarea como el objeto task:
 ```json
 {task}
 ```
-2. Start the run with harness_run_start (provider session).
-3. When the run waits in IMPLEMENTATION for your edits, implement the task in this workspace, run
-   harness_check until it passes, then call harness_run_continue.
-4. When the harness waits for a person (clarification questions, acceptance tests, a plan, the
-   architecture or the decision), stop and say what it waits for: a person decides in a terminal.
-   Never answer or decide for the person.
+2. Inicia la corrida con harness_run_start (sesión del proveedor, provider session).
+3. Cuando la corrida espere en IMPLEMENTATION tus ediciones, implementa la tarea en este espacio de trabajo,
+   ejecuta harness_check hasta que pase y luego llama a harness_run_continue.
+4. Cuando el harness espere a una persona (preguntas de aclaración, pruebas de aceptación, un plan, la
+   arquitectura o la decisión), detente y di qué está esperando: una persona decide en una terminal.
+   Nunca respondas ni decidas por la persona.
 """
 RESUME_TEMPLATE = (
-    "The harness run {run} was updated by the person or by the harness. Current state: {state}.\n"
+    "La persona o el harness actualizaron la corrida {run} del harness. Estado actual: {state}.\n"
     "{reason}\n"
-    "Read the run with harness_status (and harness_review if useful). If the run waits for your "
-    "edits, implement or fix what the findings say, run harness_check and call "
-    "harness_run_continue. If it waits for a person, stop and say so."
+    "Lee la corrida con harness_status (y harness_review si sirve). Si la corrida espera tus "
+    "ediciones, implementa o corrige lo que dicen los hallazgos, ejecuta harness_check y llama a "
+    "harness_run_continue. Si espera a una persona, detente y dilo."
 )
 
 
@@ -122,7 +121,7 @@ class HostSession:
             command, self.workspace, self.model, agentlib.AGENT_TIMEOUT_SECONDS
         )
         record.update({"kind": "host-session", "segment": len(self.segments) + 1})
-        log = allocate_call(self.run_dir / "session-calls")
+        log = agentlib.allocate_call(self.run_dir / "session-calls")
         log.write_text(json.dumps(record, indent=2), encoding="utf-8")
         log.with_suffix(".stderr.txt").write_text(stderr[-20000:], encoding="utf-8")
         log.with_suffix(".prompt.txt").write_text(prompt, encoding="utf-8")
@@ -182,6 +181,11 @@ def main() -> int:
         help="init: the harness condition's configuration; no-acceptance: the same without "
         "verification.acceptanceTests and with governance.stopTheLine off (declared ablation, see README)",
     )
+    parser.add_argument(
+        "--po-model",
+        default=DEFAULT_PO_MODEL,
+        help="the simulated product owner's model, the same in every cell (amendment of 2026-11-11)",
+    )
     args = parser.parse_args()
     claude_bin = None
     if args.dry_run:
@@ -217,7 +221,7 @@ def main() -> int:
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         config.get("verification", {}).pop("acceptanceTests", None)
         config.setdefault("governance", {})["stopTheLine"] = "off"
-        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+        path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     shutil.copy2(workspace / ".harness" / "project.yaml", run_dir / "project.yaml")
     harness_exe = shutil.which(run_eval.HARNESS_CMD[0]) or run_eval.HARNESS_CMD[0]
     mcp = {
@@ -229,11 +233,11 @@ def main() -> int:
             }
         }
     }
-    (run_dir / "mcp.json").write_text(json.dumps(mcp, indent=1), encoding="utf-8")
+    (run_dir / "mcp.json").write_text(json.dumps(mcp, indent=1), encoding="utf-8", newline="\n")
     task_file = run_eval.SCENARIOS[args.scenario]["task"]
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     document = {**task, "implementation": {"mode": "none"}}
-    prompt = build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(task=json.dumps(document, indent=2))
+    prompt = agentlib.build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(task=json.dumps(document, indent=2))
     host = HostSession(workspace, run_dir, args.model, args.max_segments)
     host.call(prompt)
     run_id, task_id = latest_run(workspace)
@@ -243,6 +247,7 @@ def main() -> int:
         "model": args.model,
         "prompt": "full",
         "rep": args.rep,
+        "productOwnerModel": args.po_model,
         "dryRun": args.dry_run,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "skillsInit": skills.returncode,
@@ -252,11 +257,11 @@ def main() -> int:
     if run_id is None:
         record["harness"] = {"outcome": "no-run", "delivered": False}
     else:
-        knowledge = "Full task description:\n" + task_file.read_text(encoding="utf-8")
+        knowledge = "Descripción completa de la tarea:\n" + task_file.read_text(encoding="utf-8")
         spec = run_eval.SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
         if spec.is_file():
             knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
-        owner = ProductOwner(knowledge, args.model, run_dir)
+        owner = ProductOwner(knowledge, args.po_model, run_dir)
         person = SimulatedPerson(
             run_eval.harness,
             workspace,
@@ -298,9 +303,9 @@ def main() -> int:
         record["productOwner"] = owner.rounds
     record["session"] = {"segments": host.segments, "calls": len(host.segments)}
     record["wallSeconds"] = round(time.monotonic() - started, 3)
-    record["agent"] = run_eval.summarize_calls(load_calls(run_dir / "agent-calls"))
-    record["hostSession"] = run_eval.summarize_calls(load_calls(run_dir / "session-calls"))
-    record["productOwnerCalls"] = run_eval.summarize_calls(load_calls(run_dir / "po-calls"))
+    record["agent"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "agent-calls"))
+    record["hostSession"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "session-calls"))
+    record["productOwnerCalls"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "po-calls"))
     quarantine = ((record["harness"].get("state") or {}).get("measures") or {}).get("quarantine")
     if quarantine and quarantine.get("patchRef"):
         record["measures"] = run_eval.measure_quarantine(
@@ -316,7 +321,7 @@ def main() -> int:
         record["measures"] = measure(args.scenario, workspace, baseline, run_dir, args.cache, HERE)
         record["measures"]["measuredOn"] = "workspace"
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )

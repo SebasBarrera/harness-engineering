@@ -198,6 +198,10 @@ The run waits for a person (`BLOCKED` in VERIFICATION, exit code 6) when all of 
 - the self-report of the implementation that produced the ChangeSet lists at least one disputed
   test with a reason.
 
+The same holds in the fast lane of `friction` (#161): its affected tests, which run first and
+stop the attempt on a failure, leave out the frozen files under `disputes: person`, so the frozen
+tests run in `harness.acceptance-tests` and the full suite before the outcome is decided.
+
 Otherwise the run fails as before. A waiting run is not stopped: `governance.stopTheLine` leaves
 its workspace alone. `harness inbox` shows an `acceptance-dispute` entry with the disputed tests,
 the reasons and the digest of the dispute (the ChangeSet, the approved tests and what was
@@ -298,9 +302,9 @@ findings are `LOW`.
 | `secrets: context` | Secrets weighed by context: values the task declares, environment assignments, constants, test paths and dummy values; replaces the review's pattern rule. |
 | `sarif` | SARIF reports of external scanners (`path`, `tool`, `required`), with tool and rule versions. |
 | `invariants` | Commands (`id`, `command`) that must pass on every VERIFICATION, including each sub-task's. |
-| `riskFactors` | `newDependency`, `authentication`, `destructiveMigration`, `publicContract`, `network`, `floatMoney`, `sensitiveLogging`, `deletedWithoutTests`, each `block`, `acknowledge`, `inform` or `off`. |
-| `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. |
-| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. |
+| `riskFactors` | `newDependency`, `authentication`, `destructiveMigration`, `publicContract`, `network`, `floatMoney`, `sensitiveLogging`, `deletedWithoutTests`, each `block`, `acknowledge`, `inform` or `off`. A line the ChangeSet removes and adds again with the same text (other line endings, a move within the file) raises none. |
+| `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. A test run with no test outcome is not comparable and keeps blocking (#190): pytest exit codes 2 to 5 (interrupted, for example by a collection error, internal error, usage error, no test collected), a pytest output with no passed or failed test, or another runner with no parsed failed test. A shared test failure passes only when every test file the ChangeSet added or modified ran: otherwise `tests.changed-not-run` (`HIGH`, the failure stays), or `INFO` when the output does not list the tests that ran (pytest lists them with `-rA` or `-v`). A `PREEXISTING_ERROR` pass gives no L1 or L2 rung to the certification. |
+| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. The problems in a frozen acceptance test still as approved are left out: the agent cannot change that file (#183). |
 
 A risk factor with `acknowledge` must be acknowledged in the decision; the decision brief lists
 the factors:
@@ -341,13 +345,30 @@ be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace wh
 restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
 restored with the rest.
 
+Under `restore` the quarantine record also keeps the content of every restored path
+(`quarantinedContents`, each with its digest) and the phase the run stopped in. When
+`harness run continue` resumes a run quarantined in VERIFICATION or a later phase (for example
+after installing a missing test dependency), it first puts that content back and records
+`workspace.quarantine.reapplied`, so the run is evaluated on its own ChangeSet again rather than
+on the restored baseline (#193). Nothing is written over a new attempt: when a restored path
+holds content that is neither its baseline nor its quarantined content (a person or an embedded
+session wrote a correction), the quarantine is superseded (`workspace.quarantine.superseded`) and
+the run is evaluated on the workspace as it is. It fails closed: if a stored content is missing
+or does not match its digest (a redacted artifact does not), nothing is written,
+`workspace.quarantine.reapply-refused` is recorded and the run is `BLOCKED` with the paths in its
+reason; write the change again (the quarantined patch is on the run's chain) and `run continue`,
+or cancel the run. A run quarantined in IMPLEMENTATION implements again from the baseline.
+
 ## Budget (#42)
 
 `budget` sets limits per agent call, per task (all its runs) and per run, for `costUsd`, `tokens`
 and `wallSeconds`, with `warnAt` (default 0.8). Usage is what providers report and the wall time
 the harness measures. Crossing `warnAt` records a LOW `budget.warning` once; crossing a limit
 records a HIGH `budget.exceeded` finding and no further agent call is made until a person raises
-the limit:
+the limit. A limit crossed by the last agent call of a run, with no further call to refuse, stops
+the run before `INDEPENDENT_REVIEW` (`BLOCKED`, exit code 6), or before `DECISION` when a review
+call crossed it (exit code 4, no gate evaluated): the run never reaches the decision as if it were
+within its budget (#157):
 
 ```bash
 harness budget show --run <runId>
@@ -378,6 +399,41 @@ command name decides); `tables` override the starting tables. Every decision is 
 (`agent.routing.decided`) with its inputs, rule and policy digest. `fixed` keeps the provider's
 own model.
 
+### Trivial implement tasks (#197)
+
+Implementation runs on Sonnet by default (`S` and `M` rungs of the starting claude-code table,
+`L` on Opus). Only a very easy task goes to Haiku: since #197 an `implement` call whose task is
+`trivial` uses the family's `trivial` rung (`claude-haiku-5-5` with `medium` effort in the
+claude-code table; the codex table has no cheaper model, so its `trivial` rung is its `S` rung;
+a table without a `trivial` entry uses its `S` rung). A task is trivial only when all of these
+hold:
+
+- it is `S` by the thresholds above;
+- it has at least one and at most `thresholds.trivial.requirements` requirements (default 1);
+- it owns at least one and at most `thresholds.trivial.files` files (default 1);
+- those files have at most `thresholds.trivial.loc` lines (default 150);
+- it has no risk flag (a public `interface`, security words, a path matching `riskPaths`) and
+  PLANNING did not decompose it.
+
+The defaults are deliberately conservative starting values to calibrate with
+`harness routing calibrate`, not a measured optimum; `thresholds.trivial.requirements: 0` turns
+the tier off. The other call kinds and the `S`/`M`/`L` size used by the agent contract, friction
+and metrics do not change. The decision records the size `trivial` and the rule
+`tier:implement:trivial`. When a trivial call fails verification or gets blocking review
+findings, its first escalation runs on the `S` rung (Sonnet, `medium`) and further escalations
+climb the ladder from there (`escalation:N:implement:trivial`), within `maxEscalations`. Under
+`anchored` the Haiku rung is kept when the invoking model is Sonnet or Opus, and escalation stops
+at the invoking model as for any other call.
+
+```yaml
+agentRouting:
+  thresholds:
+    trivial:
+      requirements: 1
+      files: 1
+      loc: 150
+```
+
 The starting tables come from a research note of 2026-10-04 (Claude Code `--model`/`--effort`,
 Codex `-m`/`model_reasoning_effort`); they are a starting point, and whether an account can use
 a model is not checked. `harness routing calibrate` reports the cost per approved task of the
@@ -401,7 +457,7 @@ Claude models are ranked by name (`haiku` below `sonnet` below `opus`); the mode
 family by their first rung in its ladder. A model whose tier cannot be told allows only itself.
 With the starting tables: invoked with `claude-haiku-4-5-20251001`, every call runs on it;
 with `claude-sonnet-5-5`, the `plan`, `review`, `architecture` and size-`L` rungs run on
-Sonnet with `high` effort; with `claude-opus-5-5`, the models and efforts are those of `tiered`.
+Sonnet with `high` effort and a trivial implement call stays on Haiku (#197); with `claude-opus-5-5`, the models and efforts are those of `tiered`.
 
 How the invoking model is determined, for the provider that answers the call:
 
@@ -427,7 +483,7 @@ same model once.
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
-| `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
+| `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_run_outcome.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
 | `verification.acceptanceTests.protect`, `disputes` (#94) | `tests/integration/test_acceptance_dispute.py` |
 | `verification.reverifyOnChange` | `tests/integration/test_run_lifecycle.py` |

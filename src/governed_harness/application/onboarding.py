@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness.configuration.models import ResolvedConfiguration, ValidatorDefinition
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.runtime.sandbox import SandboxHost
 from governed_harness.validators.command import _MODULE_MISSING_EXIT_CODE, _MODULE_PROBE
 
@@ -180,7 +181,7 @@ def _run(
     argv: list[str], cwd: Path | None, timeout: float = 20.0
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # nosec B603 - argv lists built here (git, a validator's interpreter), no shell
-        argv,
+        [resolve_executable(argv[0]), *argv[1:]],
         cwd=cwd,
         stdin=subprocess.DEVNULL,
         capture_output=True,
@@ -251,6 +252,32 @@ def _executable(argv0: str, workspace: Path) -> str | None:
     return shutil.which(argv0)
 
 
+def _provider_entry(
+    provider_id: str, provider: Any, default: str, workspace: Path
+) -> dict[str, Any]:
+    """Whether the command of one agent provider is found; only the default one fails."""
+    found = _executable(provider.effective_command[0], workspace)
+    if found:
+        status = "PASSED"
+    elif provider_id == default:
+        status = "FAILED"
+    else:
+        status = "WARNING"
+    entry: dict[str, Any] = {
+        "provider": provider_id,
+        "command": provider.effective_command[0],
+        "status": status,
+    }
+    if found:
+        entry["path"] = found
+    else:
+        entry["hint"] = (
+            f"Install the agent CLI or adapter {provider.effective_command[0]!r} or put it on PATH; "
+            f"runs with provider {provider_id!r} fail in IMPLEMENTATION without it."
+        )
+    return entry
+
+
 def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
     project = resolved.project
     default = project.agent_provider
@@ -263,19 +290,7 @@ def provider_checks(resolved: ResolvedConfiguration) -> dict[str, Any]:
         }
     others: list[dict[str, Any]] = []
     for provider_id, provider in project.agent_providers.items():
-        found = _executable(provider.effective_command[0], resolved.workspace_root)
-        entry: dict[str, Any] = {
-            "provider": provider_id,
-            "command": provider.effective_command[0],
-            "status": "PASSED" if found else "FAILED" if provider_id == default else "WARNING",
-        }
-        if found:
-            entry["path"] = found
-        else:
-            entry["hint"] = (
-                f"Install the agent CLI or adapter {provider.effective_command[0]!r} or put it on PATH; "
-                f"runs with provider {provider_id!r} fail in IMPLEMENTATION without it."
-            )
+        entry = _provider_entry(provider_id, provider, default, resolved.workspace_root)
         if provider_id == default:
             checks["agentProvider"] = entry
         else:

@@ -64,6 +64,8 @@ No se versiona nada de esto. Sí conviene respaldarla si necesitas conservar el 
 
 Con `governance.chainAnchor: file` (lo que escribe `init`), después de cada comando que agrega eventos a una ejecución el harness copia la cabeza de la cadena de eventos a otro lugar: un archivo JSON por espacio de trabajo en `$HARNESS_ANCHOR_DIR`, o bien, sin esa variable, en la carpeta `anchors/` del directorio de datos de la plataforma (`~/Library/Application Support/governed-harness/anchors` en macOS, que fue donde apareció en la prueba aunque `HARNESS_STATE_DIR` apuntaba a otra carpeta). `harness verify` compara ambas copias. Sirve para detectar que alguien truncó el historial; no es a prueba de manipulación para quien tenga los permisos de tu usuario.
 
+El ancla cubre la cadena hasta la cabeza anclada, no los eventos que se agregan después. Con `governance.unanchoredEvents: warn` (lo que escribe `init`), `harness verify` lista esos eventos en `anchor.unanchoredEvents` y agrega una advertencia (`warnings`) sin cambiar el código de salida; con `fail` el ancla queda `unanchored` y `verify` sale con `6`. Con cualquiera de los dos valores, un evento `retention.artifacts.pruned` solo justifica un artefacto borrado si está dentro de la parte anclada: `harness gc` vuelve a anclar después de podar, así que un evento de poda agregado después del ancla deja el artefacto como `missing`. Sin la clave, `verify` se comporta como en 1.x: solo cuenta esos eventos (`eventsAfterAnchor`).
+
 ### Retención
 
 `retention.artifactDays: 30` y `retention.eventDays: 365` (lo que escribe `init`) indican cuánto se conserva de las ejecuciones terminadas. Nada se borra solo: `harness gc` muestra el informe y `harness gc --apply` aplica la retención. Las ejecuciones abiertas nunca se tocan.

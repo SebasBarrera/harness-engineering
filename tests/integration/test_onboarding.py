@@ -46,7 +46,8 @@ def test_no_json_prints_text_not_a_python_repr(python_workspace: Path) -> None:
     assert json.loads(piped.stdout)["detections"]
     text = runner.invoke(app, ["inspect", "--path", str(python_workspace), "--no-json"])
     assert text.exit_code == 0
-    assert "{'" not in text.stdout and "profile id: python_default" in text.stdout
+    assert "{'" not in text.stdout
+    assert "profile id: python_default" in text.stdout
     global_flag = runner.invoke(app, ["--no-json", "run", "list", "--path", str(python_workspace)])
     assert global_flag.stdout.startswith("No runs recorded.")
     forced = runner.invoke(app, ["--json", "run", "list", "--path", str(python_workspace)])
@@ -132,7 +133,8 @@ def test_doctor_fails_when_the_agent_cli_is_missing(python_workspace: Path) -> N
     result = CliRunner().invoke(app, ["doctor", "--path", str(python_workspace)])
     assert result.exit_code == 2
     check = json.loads(result.stdout)["checks"]["agentProvider"]
-    assert check["status"] == "FAILED" and "definitely-not-an-agent-cli-53" in check["hint"]
+    assert check["status"] == "FAILED"
+    assert "definitely-not-an-agent-cli-53" in check["hint"]
 
 
 def test_doctor_fails_on_a_missing_mandatory_validator(python_workspace: Path) -> None:

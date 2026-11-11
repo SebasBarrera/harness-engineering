@@ -452,9 +452,11 @@ CLIs y transportes falsos; las métricas de tokens y costo dependen de que el pr
 Este software es el artefacto de la tesis de maestría *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis evalúa
-[**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), que reproduce
-byte a byte el corte evaluado ([procedencia](docs/provenance.md)).
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis documenta el corte
+[**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), que lo reproduce
+byte a byte ([procedencia](docs/provenance.md)), y su evaluación reporta solo la versión 2.0.0
+(campaña en curso, [`evaluation/campaign/`](evaluation/campaign/)); los resultados de versiones
+anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de ese análisis.
 
 Snapshot reportado por la tesis para v0.8.0 (los badges de CI muestran el estado actual):
 
@@ -464,7 +466,6 @@ Snapshot reportado por la tesis para v0.8.0 (los badges de CI muestran el estado
 | Contratos JSON Schema · comandos de la CLI · rutas de la API | 25 · 21 · 9 |
 | Pruebas | 86 (núcleo 79, E2E Python 4, E2E Node.js 1, rendimiento 2) |
 | Cobertura del núcleo | líneas 80,60 %, ramas 59,29 % (77,48 % combinada) |
-| Sobrecarga del proceso gobernado | 10,09 % y 11,23 % (cerca de 1,2 ms) |
 | Caso brownfield | itsdangerous 2.2.0, 298 pruebas, digest del ChangeSet invariante |
 
 Más en [docs/thesis.md](docs/thesis.md). Para citar el software, usa [CITATION.cff](CITATION.cff)

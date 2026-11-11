@@ -107,7 +107,7 @@ Muestra el uso de la ejecución y de su tarea, los límites, lo que una persona 
 Qué ocurre al llegar a un límite, según el código (el proveedor `simulated` informa cero tokens y tiempos de milisegundos, así que no pude provocarlo en la prueba):
 
 - Al cruzar el aviso queda un hallazgo `budget.warning` de severidad `LOW` y un evento `budget.warning`.
-- Al superar el límite queda un hallazgo `budget.exceeded` de severidad `HIGH` y un evento `budget.exceeded`, y se bloquea la siguiente llamada.
+- Al superar el límite queda un hallazgo `budget.exceeded` de severidad `HIGH` y un evento `budget.exceeded`, y se bloquea la siguiente llamada. Si el límite lo cruza la última llamada de la ejecución, la ejecución se detiene antes de `INDEPENDENT_REVIEW` (`BLOCKED`, código 6) o, si lo cruzó una llamada de revisión, antes de `DECISION` (código 4, sin gate evaluado): nunca llega a la decisión como si estuviera dentro del presupuesto.
 - Una persona sube el límite con `harness budget raise --run <run-id> --scope run --metric costUsd --to <valor> --rationale "motivo"` (queda registrado con su identificador y el motivo) y retoma con `harness run continue`.
 
 Otros límites que puedes encontrar: el tiempo máximo de cada comando (`runtime.commandTimeoutSeconds`), que deja el validador en `TIMED_OUT`; el límite de correcciones de verificación (`runtime.verificationCorrections`) y los reintentos y escalamientos de agente. El tope único de iteraciones por agente y la forma de reconocer que se alcanzó están en [Contrato de agentes y límites](contrato-de-agentes.md).

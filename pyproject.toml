@@ -115,3 +115,5 @@ branch = true
 [tool.coverage.report]
 show_missing = true
 skip_covered = false
+# Protocol classes are interfaces: their method bodies are docstrings that never run.
+exclude_also = ['class \w+\((?:.*, )?Protocol(?:\[.*\])?\):']

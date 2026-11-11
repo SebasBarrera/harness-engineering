@@ -58,9 +58,11 @@ class CoverageValidator:
                 )
             }
         )
-        first = CommandValidator(self.validator_id).execute(
-            replace(context, definition=run_definition)
+        # dataclasses.replace returns the type it receives; Sonar types it as DataclassInstance.
+        run_context: ValidationContext = replace(  # NOSONAR(S5890)
+            context, definition=run_definition
         )
+        first = CommandValidator(self.validator_id).execute(run_context)  # NOSONAR(S5655)
         if not first.result.status.successful:
             return first
         report_definition = context.definition.model_copy(
@@ -75,9 +77,10 @@ class CoverageValidator:
                 )
             }
         )
-        second = CommandValidator(self.validator_id).execute(
-            replace(context, definition=report_definition)
+        report_context: ValidationContext = replace(  # NOSONAR(S5890)
+            context, definition=report_definition
         )
+        second = CommandValidator(self.validator_id).execute(report_context)  # NOSONAR(S5655)
         result = second.result.model_copy(
             update={
                 "summary": (

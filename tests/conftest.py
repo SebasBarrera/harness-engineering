@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,7 +39,7 @@ def _state_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.Mon
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup", "language"),
     "verification": (
         "interface",
         "architecture",
@@ -111,7 +112,25 @@ def without_agent_results(root: Path) -> None:
         *API_SECTIONS,
     ):
         config.pop(section, None)
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
+
+
+WINDOWS_SYMLINK_PRIVILEGE = 1314
+"""ERROR_PRIVILEGE_NOT_HELD: Windows creates symbolic links only with the
+SeCreateSymbolicLinkPrivilege (an administrator or Developer Mode)."""
+
+
+def make_symlink(link: Path, target: Path | str, *, target_is_directory: bool = False) -> None:
+    """Create ``link`` pointing to ``target``; on Windows without the privilege to create
+    symbolic links the calling test is skipped, since the capability does not exist there."""
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as error:
+        if sys.platform == "win32" and getattr(error, "winerror", None) == (
+            WINDOWS_SYMLINK_PRIVILEGE
+        ):
+            pytest.skip("creating symbolic links needs a privilege this Windows user lacks")
+        raise
 
 
 def git_init(path: Path) -> None:
@@ -131,24 +150,27 @@ def python_workspace(tmp_path: Path) -> Path:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "src" / "sample" / "__init__.py").write_text(
-        "from .pricing import apply_discount\n", encoding="utf-8"
+        "from .pricing import apply_discount\n", encoding="utf-8", newline="\n"
     )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
         "    return subtotal\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from sample import apply_discount\n\n"
         "def test_below_threshold() -> None:\n"
         "    assert apply_discount(99, 100, 0.1) == 99\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         "[build-system]\nrequires=[]\nbuild-backend='setuptools.build_meta'\n\n"
         "[project]\nname='sample-fixture'\nversion='0.1.0'\n\n"
         "[tool.pytest.ini_options]\ntestpaths=['tests']\npythonpath=['src']\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
@@ -166,6 +188,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  return { ...defaults, ...task, ...repository };\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "test" / "resolve-config.test.js").write_text(
         "import assert from 'node:assert/strict';\n"
@@ -175,6 +198,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n"
         "});\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "package.json").write_text(
         "{\n"
@@ -189,6 +213,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  }\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
@@ -198,5 +223,5 @@ def node_workspace(tmp_path: Path) -> Path:
 
 def write_task(path: Path, content: str) -> Path:
     task = path / "task-input.yaml"
-    task.write_text(content, encoding="utf-8")
+    task.write_text(content, encoding="utf-8", newline="\n")
     return task

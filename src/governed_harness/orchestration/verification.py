@@ -12,6 +12,11 @@ events had been deleted was reported as valid. The verifier reports, for one run
   compared with the stored projection, plus the execution's pointers and the phase results;
 * every artifact the run references: present and with the digest its record states.
 
+The anchor covers the chain up to the anchored head. Under ``governance.unanchoredEvents``
+(#149) the events after it are listed as unanchored (a warning, or a failure under ``fail``), and
+a ``retention.artifacts.pruned`` event excuses a missing artifact only when it is within the
+anchored part: an event appended after the anchor proves nothing the anchor vouches for.
+
 Nothing is repaired: the report says what differs, and the events say what happened.
 """
 
@@ -62,6 +67,11 @@ PROJECTED_EVENTS: dict[str, tuple[str, type[BaseModel], str]] = {
 """Event type -> (record type, model, id field) of the records projected one-to-one from events."""
 
 PRUNED_EVENT = "retention.artifacts.pruned"
+VALID_ANCHOR = frozenset({"matched", "absent", "off"})
+UNANCHORED = "unanchored"
+"""The anchor status of a chain with events after its anchored head under
+``unanchoredEvents: fail``."""
+SHOWN_UNANCHORED = 50
 
 
 @dataclass
@@ -73,18 +83,21 @@ class RunVerification:
     record_problems: list[dict[str, Any]] = field(default_factory=list)
     artifacts_checked: int = 0
     artifact_problems: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    """Since #149, under ``governance.unanchoredEvents: warn``: what verifies but the anchor does
+    not cover. A report without warnings keeps its earlier form."""
 
     @property
     def valid(self) -> bool:
         return (
             bool(self.chain["valid"])
-            and self.anchor["status"] in {"matched", "absent", "off"}
+            and self.anchor["status"] in VALID_ANCHOR
             and not self.record_problems
             and not self.artifact_problems
         )
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        value = {
             "executionId": self.execution_id,
             "valid": self.valid,
             "eventChain": self.chain,
@@ -92,12 +105,15 @@ class RunVerification:
             "records": {"checked": self.records_checked, "problems": self.record_problems},
             "artifacts": {"checked": self.artifacts_checked, "problems": self.artifact_problems},
         }
+        if self.warnings:
+            value["warnings"] = list(self.warnings)
+        return value
 
     def summary(self) -> str:
         reasons = []
         if not self.chain["valid"]:
             reasons.append(f"event chain: {self.chain['error']}")
-        if self.anchor["status"] not in {"matched", "absent", "off"}:
+        if self.anchor["status"] not in VALID_ANCHOR:
             reasons.append(f"anchor: {self.anchor['status']}")
         if self.record_problems:
             reasons.append(f"{len(self.record_problems)} record(s) differ from the events")
@@ -125,9 +141,49 @@ class RunVerifier:
             chain=check.as_dict(),
             anchor=self._anchor(execution_id, events),
         )
+        self._check_unanchored(report, events)
         self._check_records(report, events)
         self._check_artifacts(report, events)
         return report
+
+    @property
+    def unanchored_policy(self) -> str | None:
+        """``governance.unanchoredEvents`` when an anchor is kept, else ``None`` (1.x)."""
+        settings = self.s.resolved.project.governance_settings
+        if not settings.chain_anchor or settings.chain_anchor == "off":
+            return None
+        return settings.unanchored_events
+
+    def _anchored_through(self, report: RunVerification) -> int | None:
+        """The last sequence the anchor covers under ``unanchoredEvents`` (``0``: none, the
+        anchor is absent or does not match); ``None``: no limit (the key is absent)."""
+        if self.unanchored_policy is None:
+            return None
+        if report.anchor["status"] in {"matched", UNANCHORED}:
+            return int(report.anchor["sequence"])
+        return 0
+
+    def _check_unanchored(self, report: RunVerification, events: list[StoredEvent]) -> None:
+        """List the events after the anchored head: a warning, or a failed anchor under
+        ``fail``."""
+        policy = self.unanchored_policy
+        if policy is None or report.anchor["status"] != "matched":
+            return
+        sequence = int(report.anchor["sequence"])
+        later = [event for event in events if event.sequence > sequence]
+        if not later:
+            return
+        report.anchor["unanchoredEvents"] = [
+            {"sequence": event.sequence, "eventType": event.event_type}
+            for event in later[:SHOWN_UNANCHORED]
+        ]
+        if policy == "fail":
+            report.anchor["status"] = UNANCHORED
+            return
+        report.warnings.append(
+            f"{len(later)} event(s) after the anchored head (sequence {sequence}) are not "
+            "covered by the anchor"
+        )
 
     def execution_ids(self) -> list[str]:
         ids = dict.fromkeys(self.s.events.execution_ids())
@@ -170,34 +226,8 @@ class RunVerifier:
 
     def _check_records(self, report: RunVerification, events: list[StoredEvent]) -> None:
         execution_id = report.execution_id
-        from_events: dict[tuple[str, str], dict[str, Any]] = {}
-        for event in events:
-            projected = PROJECTED_EVENTS.get(event.event_type)
-            if projected is None:
-                continue
-            record_type, model, id_field = projected
-            try:
-                item = model.model_validate(event.payload)
-            except ValidationError as error:
-                report.record_problems.append(
-                    self._problem(record_type, None, "unreadable-event", str(error)[:300])
-                )
-                continue
-            key = (record_type, str(getattr(item, id_field)))
-            from_events[key] = item.model_dump(mode="json")
-        stored: dict[tuple[str, str], dict[str, Any]] = {}
-        for record_type, model, id_field in {
-            (value[0], value[1], value[2]) for value in PROJECTED_EVENTS.values()
-        }:
-            for raw in self.s.state.list_dicts(record_type, execution_id=execution_id):
-                try:
-                    item = model.model_validate(raw)
-                except ValidationError as error:
-                    report.record_problems.append(
-                        self._problem(record_type, None, "unreadable-record", str(error)[:300])
-                    )
-                    continue
-                stored[(record_type, str(getattr(item, id_field)))] = item.model_dump(mode="json")
+        from_events = self._projected(report, events)
+        stored = self._stored(report, execution_id)
         report.records_checked = len(set(from_events) | set(stored))
         for key in sorted(set(from_events) | set(stored)):
             record_type, record_id = key
@@ -218,6 +248,48 @@ class RunVerifier:
                 )
         self._check_execution(report, events, from_events)
         self._check_phases(report, events)
+
+    def _projected(
+        self, report: RunVerification, events: list[StoredEvent]
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """The records the events project, by (record type, id); an unreadable event is a
+        problem of the report."""
+        from_events: dict[tuple[str, str], dict[str, Any]] = {}
+        for event in events:
+            projected = PROJECTED_EVENTS.get(event.event_type)
+            if projected is None:
+                continue
+            record_type, model, id_field = projected
+            try:
+                item = model.model_validate(event.payload)
+            except ValidationError as error:
+                report.record_problems.append(
+                    self._problem(record_type, None, "unreadable-event", str(error)[:300])
+                )
+                continue
+            key = (record_type, str(getattr(item, id_field)))
+            from_events[key] = item.model_dump(mode="json")
+        return from_events
+
+    def _stored(
+        self, report: RunVerification, execution_id: str
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        """The stored records of the run, by (record type, id); an unreadable record is a
+        problem of the report."""
+        stored: dict[tuple[str, str], dict[str, Any]] = {}
+        for record_type, model, id_field in {
+            (value[0], value[1], value[2]) for value in PROJECTED_EVENTS.values()
+        }:
+            for raw in self.s.state.list_dicts(record_type, execution_id=execution_id):
+                try:
+                    item = model.model_validate(raw)
+                except ValidationError as error:
+                    report.record_problems.append(
+                        self._problem(record_type, None, "unreadable-record", str(error)[:300])
+                    )
+                    continue
+                stored[(record_type, str(getattr(item, id_field)))] = item.model_dump(mode="json")
+        return stored
 
     def _check_execution(
         self,
@@ -307,10 +379,11 @@ class RunVerifier:
                 )
 
     def _check_artifacts(self, report: RunVerification, events: list[StoredEvent]) -> None:
+        through = self._anchored_through(report)
         pruned = {
             str(uri)
             for event in events
-            if event.event_type == PRUNED_EVENT
+            if event.event_type == PRUNED_EVENT and (through is None or event.sequence <= through)
             for uri in event.payload.get("artifactRefs", [])
         }
         seen: set[tuple[str, str]] = set()
@@ -329,6 +402,27 @@ class RunVerifier:
             except ValidationError:
                 continue  # reported by the record check
             self._check_artifact(report, evidence.artifact_ref, evidence.digest, pruned, seen)
+        if through is not None:
+            self._explain_unanchored_prunes(report, events, through)
+
+    @staticmethod
+    def _explain_unanchored_prunes(
+        report: RunVerification, events: list[StoredEvent], through: int
+    ) -> None:
+        """Say why a missing artifact that a prune event names was not excused: the event is
+        after the anchored head."""
+        later = {
+            str(uri)
+            for event in events
+            if event.event_type == PRUNED_EVENT and event.sequence > through
+            for uri in event.payload.get("artifactRefs", [])
+        }
+        for problem in report.artifact_problems:
+            if problem.get("problem") == "missing" and problem.get("uri") in later:
+                problem["detail"] = (
+                    "named by a retention.artifacts.pruned event after the anchored head "
+                    f"(sequence {through}), which the anchor does not cover"
+                )
 
     def _check_artifact(
         self,

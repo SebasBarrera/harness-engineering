@@ -21,6 +21,7 @@ from governed_harness.metrics import (
     load_prices,
     render,
 )
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.storage.sqlite import SQLiteStateStore
 
 NARRATIVE_PROMPT = (
@@ -69,7 +70,7 @@ def _registry_sources(entries: list[dict[str, Any]], current: Path) -> list[Proj
 def _sources(path: Path, all_repos: bool) -> tuple[list[ProjectSource], dict[str, Any]]:
     """The current project (with its configuration) and, with ``all_repos``, every project of
     the run registry (``runtime.stateDir``)."""
-    from governed_harness.orchestration.engine import EnginePaths
+    from governed_harness.orchestration.engine_types import EnginePaths
     from governed_harness.runtime.state_location import registered_projects
 
     sources: list[ProjectSource] = []
@@ -148,7 +149,7 @@ def run_narrative(
     started = datetime.now(UTC)
     try:
         result = subprocess.run(  # nosec B603 - argv from project.yaml, no shell
-            list(narrative.command),
+            [resolve_executable(narrative.command[0]), *narrative.command[1:]],
             input=payload.encode("utf-8"),
             capture_output=True,
             cwd=workspace,

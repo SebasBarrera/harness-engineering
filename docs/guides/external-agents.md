@@ -57,9 +57,9 @@ capabilities:
 
 | `kind` | Runs (before `args`) | Prompt | Reads |
 |---|---|---|---|
-| `claude-code` | `claude -p --output-format json --permission-mode acceptEdits` | standard input | `result`, `is_error`, `subtype`, `session_id`, `usage` (input tokens are input, cache-creation and cache-read tokens), `total_cost_usd` |
+| `claude-code` | `claude -p --output-format json --permission-mode acceptEdits` | standard input | `result`, `is_error`, `subtype`, `session_id`, `usage` (input tokens are input, cache-creation and cache-read tokens; the cache reads are also kept as `cacheReadTokens`), `total_cost_usd` |
 | `codex` | `codex exec --json --full-auto --skip-git-repo-check -` | standard input | JSON events: the last `agent_message`, `turn.completed` usage (no cost), `turn.failed` or `error`, the `thread_id` |
-| `gemini-cli` | `gemini --output-format json --approval-mode auto_edit --prompt <a pointer to standard input>` | standard input | `response`, `error`, `stats.models.*.tokens` (`prompt`, `candidates`, `thoughts`; no cost) |
+| `gemini-cli` | `gemini --output-format json --approval-mode auto_edit --prompt <a pointer to standard input>` | standard input | `response`, `error`, `stats.models.*.tokens` (`prompt`, `candidates`, `thoughts`, `cached` as cache reads; no cost) |
 | `aider` | `aider --yes-always --no-auto-commits --no-dirty-commits --no-stream --no-pretty --no-gitignore --no-check-update --analytics-disable`, history files in the null device, `--message <prompt>` | command line (recorded as `<prompt>`) | the `Tokens: … sent, … received. Cost: $… message, $… session.` lines (counts above 1,000 are printed rounded) |
 
 `command` replaces the executable (for example `[npx, -y, "@anthropic-ai/claude-code"]` or a
@@ -224,7 +224,7 @@ exit with 0:
 |---|---|
 | `status` | `PASSED`, `FAILED` or `BLOCKED` |
 | `summary` | optional text recorded on the agent invocation |
-| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheTokens` (non-negative integers; `cacheTokens`, since 2.0, is the part of `inputTokens` read from or written to a prompt cache) and `costUsd` (non-negative number), as reported by the agent |
+| `usage` | optional object with any of `inputTokens`, `outputTokens`, `reasoningTokens`, `cacheTokens` (non-negative integers; `cacheTokens`, since 2.0, is the part of `inputTokens` read from or written to a prompt cache; `cacheReadTokens`, since 2.0, is the part of `cacheTokens` read from it, which the agent contract's token budget does not count) and `costUsd` (non-negative number), as reported by the agent |
 
 When `usage` is present it is stored as a `ResourceUsage` record of quality `REPORTED` and summed
 into the metrics `tokens.*` and `cost.usd`. The harness records what the provider reports and

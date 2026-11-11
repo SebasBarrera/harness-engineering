@@ -47,12 +47,12 @@ sys.path.insert(0, str(HERE))
 import agentlib  # noqa: E402
 import conditions  # noqa: E402
 import harness_state  # noqa: E402
-from agentlib import build_prompt, load_calls, run_claude, run_codex  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
-from product_owner import ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 
 __all__ = [
+    "MAX_CLARIFY_ROUNDS",
     "MAX_CORRECTIONS",
     "configure_provider",
     "git",
@@ -172,7 +172,7 @@ def configure_provider(
     # Wave 9 (#87): the provider command must be granted (extend under phaseCapabilities).
     phase_capabilities = bool((config.get("governance") or {}).get("phaseCapabilities"))
     conditions.grant_provider_command(config, command, core=not phase_capabilities)
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
 
 
 def feedback_from(workspace: Path, run_id: str, status: dict[str, Any]) -> str:
@@ -337,8 +337,82 @@ def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
             sort_keys=False,
         ),
         encoding="utf-8",
+        newline="\n",
     )
     return path
+
+
+QUARANTINE_NOT_APPLIED = "quarantine-patch-not-applied"
+"""``invalid`` of a stopped run whose quarantined patch could not be applied to the baseline: its
+change cannot be measured, so the record goes to ``<out>.invalid.jsonl`` instead of measuring the
+unpatched tree (the amendment of 2026-11-11 to the pre-registration)."""
+MEASUREMENT_FAILED_EXIT_CODE = 3
+"""Exit code of a runner whose run could not be measured (not the usage limit: no rerun)."""
+
+
+def apply_to_baseline(
+    workspace: Path, baseline: str, patch: bytes, copy: Path, patch_file: Path
+) -> dict[str, Any]:
+    """Copy ``workspace`` to ``copy``, return the copy to ``baseline`` and apply ``patch`` to it.
+
+    The restored workspace of a stopped run is not the baseline: the harness keeps the approved
+    acceptance tests (``workspace.quarantined.keptPaths``) after the quarantine, so a patch that
+    adds them fails as a whole ("already exists in working directory"). The copy is reset to the
+    baseline commit and its untracked files are removed first (ignored files stay). The patch is
+    written byte for byte: a text-mode write on Windows turns its LF line ends into CRLF and its
+    context lines no longer match ("patch does not apply")."""
+    shutil.rmtree(copy, ignore_errors=True)
+    shutil.copytree(workspace, copy, ignore=shutil.ignore_patterns(".harness"), symlinks=True)
+    git(copy, "reset", "-q", "--hard", baseline)
+    removed = [
+        line.removeprefix("Removing ").strip()
+        for line in git(copy, "clean", "-fd").splitlines()
+        if line.startswith("Removing ")
+    ]
+    patch_file.write_bytes(patch)
+    applied = subprocess.run(
+        [*GIT, "apply", "--whitespace=nowarn", str(patch_file)],
+        cwd=copy,
+        capture_output=True,
+        text=True,
+        env={**os.environ, **GIT_ENV},
+    )
+    return {
+        "exitCode": applied.returncode,
+        "stderr": applied.stderr[-500:],
+        "appliedTo": "baseline",
+        "removedBeforeApply": sorted(removed),
+    }
+
+
+def measure_patch(
+    scenario: str,
+    workspace: Path,
+    baseline: str,
+    run_dir: Path,
+    cache: Path,
+    site_packages: Path,
+    patch: bytes,
+    names: tuple[str, str, str] = ("quarantine-ws", "quarantined.patch", "measure-quarantine"),
+) -> dict[str, Any]:
+    """Measure ``patch`` applied to the baseline of ``workspace``; ``names`` are the copy, the patch
+    file and the scratch directory in ``run_dir``. A patch that does not apply is not measured:
+    the result carries ``invalid`` and the ``git apply`` error, never the unpatched tree."""
+    copy_name, patch_name, scratch_name = names
+    copy = run_dir / copy_name
+    applied = apply_to_baseline(workspace, baseline, patch, copy, run_dir / patch_name)
+    if applied["exitCode"] != 0:
+        return {"measuredOn": None, "patchApply": applied, "invalid": QUARANTINE_NOT_APPLIED}
+    point_import_path(site_packages, copy)
+    try:
+        measured = measure(
+            scenario, copy, baseline, run_dir, cache, HERE, scratch_name=scratch_name
+        )
+    finally:
+        point_import_path(site_packages, workspace)
+    measured["measuredOn"] = "quarantine-copy"
+    measured["patchApply"] = applied
+    return measured
 
 
 def measure_quarantine(
@@ -350,33 +424,27 @@ def measure_quarantine(
     site_packages: Path,
     patch_ref: str,
 ) -> dict[str, Any]:
-    """Measure the stopped run's own change: a copy of the workspace with the quarantined patch."""
-    patch = harness(workspace, "artifact", "show", "--path", ".", patch_ref)
-    copy = run_dir / "quarantine-ws"
-    shutil.rmtree(copy, ignore_errors=True)
-    shutil.copytree(workspace, copy, ignore=shutil.ignore_patterns(".harness"), symlinks=True)
-    patch_file = run_dir / "quarantined.patch"
-    patch_file.write_text(patch.stdout, encoding="utf-8")
-    applied = subprocess.run(
-        ["git", "apply", "--whitespace=nowarn", str(patch_file)],
-        cwd=copy,
+    """Measure the stopped run's own change: the baseline with the quarantined patch applied."""
+    env = {**os.environ, **GIT_ENV, **HARNESS_ENV}
+    shown = subprocess.run(
+        [*HARNESS_CMD, "artifact", "show", "--path", ".", patch_ref],
+        cwd=workspace,
         capture_output=True,
-        text=True,
-        env={**os.environ, **GIT_ENV},
+        env=env,
     )
-    point_import_path(site_packages, copy)
-    try:
-        measured = measure(
-            scenario, copy, baseline, run_dir, cache, HERE, scratch_name="measure-quarantine"
-        )
-    finally:
-        point_import_path(site_packages, workspace)
-    measured["measuredOn"] = "quarantine-copy"
-    measured["patchApply"] = {
-        "exitCode": applied.returncode,
-        "stderr": applied.stderr[-500:],
-        "showExit": patch.returncode,
-    }
+    if shown.returncode != 0 or not shown.stdout:
+        return {
+            "measuredOn": None,
+            "patchApply": {
+                "showExit": shown.returncode,
+                "stderr": shown.stderr.decode(errors="replace")[-500:],
+            },
+            "invalid": QUARANTINE_NOT_APPLIED,
+        }
+    measured = measure_patch(
+        scenario, workspace, baseline, run_dir, cache, site_packages, shown.stdout
+    )
+    measured["patchApply"]["showExit"] = shown.returncode
     return measured
 
 
@@ -449,6 +517,12 @@ def main() -> int:
         action="store_true",
         help="governed conditions: no simulated product owner (task questions stop the run)",
     )
+    parser.add_argument(
+        "--po-model",
+        default=DEFAULT_PO_MODEL,
+        help="the simulated product owner's model, the same in every cell and condition "
+        f"(default {DEFAULT_PO_MODEL}; amendment of 2026-11-11)",
+    )
     args = parser.parse_args()
     condition = "direct" if args.condition == "baseline" else args.condition
     if args.provider == "simulated" and not args.dry_run:
@@ -490,6 +564,9 @@ def main() -> int:
         "prompt": args.prompt,
         "effort": args.effort or None,
         "rep": args.rep,
+        "productOwnerModel": None
+        if condition == "direct" or args.no_product_owner
+        else args.po_model,
         "dryRun": args.dry_run,
         "provider": args.provider if condition != "direct" else None,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -497,11 +574,11 @@ def main() -> int:
     owner = None
     if condition == "direct":
         log = run_dir / "agent-calls" / "call-1.json"
-        prompt = casual_prompt if casual_prompt is not None else build_prompt(task)
+        prompt = casual_prompt if casual_prompt is not None else agentlib.build_prompt(task)
         if args.agent == "codex":
-            run_codex(prompt, workspace, args.model, args.effort, log)
+            agentlib.run_codex(prompt, workspace, args.model, args.effort, log)
         else:
-            run_claude(prompt, workspace, args.model, log)
+            agentlib.run_claude(prompt, workspace, args.model, log)
         record["direct"] = {"delivered": True}
     else:
         record["harnessVersion"] = harness_version()
@@ -513,11 +590,11 @@ def main() -> int:
         # The simulated product owner knows the full task and the specification the prompt leaves out.
         full_task = SCENARIOS[args.scenario]["task"]
         spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
-        knowledge = "Full task description:\n" + full_task.read_text(encoding="utf-8")
+        knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
         if spec.is_file():
             knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
         if not args.no_product_owner:
-            owner = ProductOwner(knowledge, args.model, run_dir)
+            owner = ProductOwner(knowledge, args.po_model, run_dir)
         if condition == "clarify":
             global RESUMABLE_PROVIDER  # noqa: PLW0603
             RESUMABLE_PROVIDER = True
@@ -559,8 +636,8 @@ def main() -> int:
         record["quarantine"] = quarantine
         record["_run"] = run_id
     record["wallSeconds"] = round(time.monotonic() - started, 3)
-    calls = load_calls(run_dir / "agent-calls")
-    po_calls = load_calls(run_dir / "po-calls")
+    calls = agentlib.load_calls(run_dir / "agent-calls")
+    po_calls = agentlib.load_calls(run_dir / "po-calls")
     limited = sum(1 for c in calls + po_calls if agentlib.hit_limit(c))
     if limited:
         # The account's usage limit stopped a call: the run measures the limit, not the condition.
@@ -604,6 +681,9 @@ def main() -> int:
             site_packages,
             record["quarantine"]["patchRef"],
         )
+        if record["measures"].get("invalid") and not record.get("invalid"):
+            # The stopped run's change could not be measured: never report the unpatched tree.
+            record["invalid"] = record["measures"]["invalid"]
         record["measuresFinalTree"] = measure(
             args.scenario,
             workspace,
@@ -621,7 +701,7 @@ def main() -> int:
     out = (
         args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out
     )
-    with out.open("a", encoding="utf-8") as handle:
+    with out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )
@@ -632,7 +712,9 @@ def main() -> int:
     summary["calls"] = record["agent"]["calls"]
     summary["invalid"] = record.get("invalid")
     print(json.dumps(summary))
-    return agentlib.LIMIT_EXIT_CODE if record.get("invalid") else 0
+    if not record.get("invalid"):
+        return 0
+    return agentlib.LIMIT_EXIT_CODE if limited else MEASUREMENT_FAILED_EXIT_CODE
 
 
 if __name__ == "__main__":

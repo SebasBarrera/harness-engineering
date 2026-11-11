@@ -5,6 +5,7 @@ import os
 import shutil
 import signal
 import subprocess  # nosec B404 - the governed runner: resolved executable, no shell
+import sys
 import threading
 import time
 from collections.abc import Mapping
@@ -52,7 +53,7 @@ def resolve_executable(argv0: str) -> str:
     """On Windows, resolve a bare command name through PATH and PATHEXT (``npm`` is
     ``npm.cmd``), which CreateProcess does not do; elsewhere return it unchanged. Authorization
     always applies to the name as written in the command."""
-    if os.name != "nt":
+    if sys.platform != "win32":
         return argv0
     return shutil.which(argv0) or argv0
 
@@ -104,9 +105,11 @@ class ProcessObserver(Protocol):
     """Told about every process the runner starts and finishes (``governance.workspaceLease``
     records the process groups so that a recovery can terminate what a killed harness left)."""
 
-    def started(self, pid: int, argv: tuple[str, ...]) -> None: ...
+    def started(self, pid: int, argv: tuple[str, ...]) -> None:
+        """Record that process ``pid`` started with ``argv``."""
 
-    def finished(self, pid: int) -> None: ...
+    def finished(self, pid: int) -> None:
+        """Record that process ``pid`` finished."""
 
 
 class SafeProcessRunner:
@@ -171,7 +174,7 @@ class SafeProcessRunner:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             shell=False,
-            start_new_session=os.name != "nt",
+            start_new_session=sys.platform != "win32",
         )
         if self.observer is not None:
             self.observer.started(process.pid, spec.argv)
@@ -180,7 +183,7 @@ class SafeProcessRunner:
         except BaseException:
             if self.terminate_on_exit:
                 self._terminate(process)
-                if os.name != "nt":
+                if sys.platform != "win32":
                     # The leader may be gone while its children still run in its group.
                     with contextlib.suppress(ProcessLookupError, PermissionError):
                         os.killpg(process.pid, signal.SIGKILL)
@@ -208,36 +211,9 @@ class SafeProcessRunner:
         ]
         for reader in readers:
             reader.start()
-        writer = None
-        if spec.stdin is not None:
-            if process.stdin is None:  # not reached: stdin is a pipe when there is input
-                raise RuntimeError("the process was started without its input pipe")
-            writer = threading.Thread(
-                target=_write_stdin, args=(process.stdin, spec.stdin), daemon=True
-            )
-            writer.start()
-        timed_out = False
-        cancelled = False
+        writer = self._start_writer(process, spec)
         deadline = start + spec.timeout_seconds
-        while True:
-            # Joining the readers returns as soon as the child closes its output (normally when
-            # it exits), without the growing sleep intervals of Popen.wait(timeout=...).
-            for reader in readers:
-                reader.join(timeout=_POLL_SECONDS)
-            if not any(reader.is_alive() for reader in readers):
-                try:
-                    process.wait(timeout=_POLL_SECONDS)
-                    break
-                except subprocess.TimeoutExpired:
-                    pass  # the streams are closed but the process still runs
-            if cancellation and cancellation.cancelled:
-                cancelled = True
-                self._terminate(process)
-                break
-            if time.perf_counter() >= deadline:
-                timed_out = True
-                self._terminate(process)
-                break
+        timed_out, cancelled = self._poll(process, readers, cancellation, deadline)
         process.wait()
         if writer is not None:
             writer.join(timeout=_READER_JOIN_SECONDS)
@@ -246,16 +222,8 @@ class SafeProcessRunner:
         duration_ms = max(0, round((time.perf_counter() - start) * 1000))
         stdout, stderr = readers[0].data(), readers[1].data()
         stdout_truncated, stderr_truncated = readers[0].truncated, readers[1].truncated
-        if cancelled:
-            status = ResultStatus.CANCELLED
-        elif timed_out:
-            status = ResultStatus.TIMED_OUT
-        elif process.returncode == 0:
-            status = ResultStatus.PASSED
-        else:
-            status = ResultStatus.FAILED
         return ProcessResult(
-            status=status,
+            status=_result_status(cancelled, timed_out, process.returncode),
             exit_code=process.returncode,
             stdout=stdout,
             stderr=stderr,
@@ -267,11 +235,49 @@ class SafeProcessRunner:
         )
 
     @staticmethod
+    def _start_writer(
+        process: subprocess.Popen[bytes], spec: CommandSpec
+    ) -> threading.Thread | None:
+        """Start the thread that writes ``spec.stdin``; ``None`` without input."""
+        if spec.stdin is None:
+            return None
+        if process.stdin is None:  # not reached: stdin is a pipe when there is input
+            raise RuntimeError("the process was started without its input pipe")
+        writer = threading.Thread(
+            target=_write_stdin, args=(process.stdin, spec.stdin), daemon=True
+        )
+        writer.start()
+        return writer
+
+    def _poll(
+        self,
+        process: subprocess.Popen[bytes],
+        readers: list[_BoundedReader],
+        cancellation: CancellationToken | None,
+        deadline: float,
+    ) -> tuple[bool, bool]:
+        """Wait until the process exits, is cancelled or reaches the deadline; whether it timed
+        out and whether it was cancelled."""
+        while True:
+            # Joining the readers returns as soon as the child closes its output (normally when
+            # it exits), without the growing sleep intervals of Popen.wait(timeout=...).
+            for reader in readers:
+                reader.join(timeout=_POLL_SECONDS)
+            if not any(reader.is_alive() for reader in readers) and _exited(process):
+                return False, False
+            if cancellation and cancellation.cancelled:
+                self._terminate(process)
+                return False, True
+            if time.perf_counter() >= deadline:
+                self._terminate(process)
+                return True, False
+
+    @staticmethod
     def _terminate(process: subprocess.Popen[bytes]) -> None:
         if process.poll() is not None:
             return
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 process.terminate()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
@@ -279,7 +285,7 @@ class SafeProcessRunner:
         except (ProcessLookupError, subprocess.TimeoutExpired):
             # Still running after SIGTERM: kill it; a process group that is already gone is fine.
             with contextlib.suppress(ProcessLookupError):
-                if os.name == "nt":
+                if sys.platform == "win32":
                     process.kill()
                 else:
                     os.killpg(process.pid, signal.SIGKILL)
@@ -299,3 +305,22 @@ class SafeProcessRunner:
                 raise ValueError(f"environment variables not authorized: {sorted(unknown)}")
             environment.update(extra_env)
         return environment
+
+
+def _exited(process: subprocess.Popen[bytes]) -> bool:
+    """Whether the process exits within a poll interval once its streams are closed."""
+    try:
+        process.wait(timeout=_POLL_SECONDS)
+    except subprocess.TimeoutExpired:
+        return False  # the streams are closed but the process still runs
+    return True
+
+
+def _result_status(cancelled: bool, timed_out: bool, returncode: int) -> ResultStatus:
+    if cancelled:
+        return ResultStatus.CANCELLED
+    if timed_out:
+        return ResultStatus.TIMED_OUT
+    if returncode == 0:
+        return ResultStatus.PASSED
+    return ResultStatus.FAILED

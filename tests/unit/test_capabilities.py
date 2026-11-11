@@ -40,23 +40,21 @@ def test_glob_scope_authorizes_nested_file() -> None:
 def test_different_actor_is_denied() -> None:
     actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.one")
     other = Actor(actor_type=ActorType.AGENT, actor_id="agent.two")
+    capability_authorizer = CapabilityAuthorizer()
+    grants = [grant(actor, "filesystem.read", ("**",))]
     with pytest.raises(CapabilityDenied):
-        CapabilityAuthorizer().authorize(
-            actor=other,
-            capability="filesystem.read",
-            resource="README.md",
-            grants=[grant(actor, "filesystem.read", ("**",))],
+        capability_authorizer.authorize(
+            actor=other, capability="filesystem.read", resource="README.md", grants=grants
         )
 
 
 def test_approval_required_grant_is_not_implicit() -> None:
     actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.test")
+    capability_authorizer = CapabilityAuthorizer()
+    grants = [grant(actor, "git.push", ("**",), approval=True)]
     with pytest.raises(CapabilityDenied):
-        CapabilityAuthorizer().authorize(
-            actor=actor,
-            capability="git.push",
-            resource="origin/main",
-            grants=[grant(actor, "git.push", ("**",), approval=True)],
+        capability_authorizer.authorize(
+            actor=actor, capability="git.push", resource="origin/main", grants=grants
         )
 
 
@@ -71,11 +69,11 @@ def test_command_prefix_authorization() -> None:
 
 def test_unlisted_command_is_denied() -> None:
     actor = Actor(actor_type=ActorType.TOOL, actor_id="tool.test")
+    capability_authorizer = CapabilityAuthorizer()
+    grants = [grant(actor, "process.execute", ("python",))]
     with pytest.raises(CapabilityDenied):
-        CapabilityAuthorizer().authorize_command(
-            actor=actor,
-            argv=("bash", "-c", "echo x"),
-            grants=[grant(actor, "process.execute", ("python",))],
+        capability_authorizer.authorize_command(
+            actor=actor, argv=("bash", "-c", "echo x"), grants=grants
         )
 
 

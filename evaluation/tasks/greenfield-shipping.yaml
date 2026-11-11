@@ -1,22 +1,22 @@
 taskId: task_eval_greenfield_shipping
-title: Implement the shipping cost library
+title: Implementar la biblioteca de costos de envío
 intent: >-
-  Implement the Python package `shipping` in src/shipping/ exactly as specified in SPEC.md,
-  including the function shipping_cost and tests for it in tests/.
+  Implementa el paquete de Python `shipping` en src/shipping/ exactamente como se especifica en SPEC.md,
+  incluida la función shipping_cost y sus pruebas en tests/.
 requirements:
   - requirementId: req_spec
-    text: shipping_cost implements every rule of SPEC.md (validation, base cost, express, free shipping, coupons, rounding).
+    text: shipping_cost implementa todas las reglas de SPEC.md (validación, costo base, express, envío gratis, cupones, redondeo).
     source: SPEC.md
   - requirementId: req_tests
-    text: The repository contains pytest tests in tests/ that exercise the rules of SPEC.md.
+    text: El repositorio contiene pruebas de pytest en tests/ que ejercitan las reglas de SPEC.md.
     source: SPEC.md
 acceptanceCriteria:
   - criterionId: ac_rules
-    text: Every rule and boundary of SPEC.md holds for shipping_cost.
+    text: Todas las reglas y todos los límites de SPEC.md se cumplen para shipping_cost.
   - criterionId: ac_decimal
-    text: shipping_cost returns a Decimal with exactly two decimal places, rounded half up once at the end.
+    text: shipping_cost devuelve un Decimal con exactamente dos decimales, redondeado una sola vez al final, con los empates hacia arriba (half up).
   - criterionId: ac_tests
-    text: python -m pytest -q passes.
+    text: python -m pytest -q pasa.
 constraints:
-  - Use only the Python standard library.
-  - Keep the public signature shipping_cost(weight_kg, zone, subtotal, *, express=False, coupon=None).
+  - Usa solo la biblioteca estándar de Python.
+  - Conserva la firma pública shipping_cost(weight_kg, zone, subtotal, *, express=False, coupon=None).

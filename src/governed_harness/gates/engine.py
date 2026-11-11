@@ -47,29 +47,7 @@ class GateEngine:
         provenance: Provenance | None = None,
     ) -> GateEvaluation | LegacyGateDecision:
         if inputs is not None:
-            mandatory_inputs = [item for item in inputs if item.mandatory]
-            if not mandatory_inputs:
-                return LegacyGateDecision(ResultStatus.INCONCLUSIVE, ("NO_MANDATORY_INPUTS",))
-            non_passed = [
-                item for item in mandatory_inputs if item.status is not ResultStatus.PASSED
-            ]
-            if not non_passed:
-                return LegacyGateDecision(ResultStatus.PASSED, ("ALL_MANDATORY_PASSED",))
-            if any(item.status is ResultStatus.ERROR for item in non_passed):
-                status = ResultStatus.ERROR
-            elif any(
-                item.status
-                in {ResultStatus.BLOCKED, ResultStatus.TIMED_OUT, ResultStatus.CANCELLED}
-                for item in non_passed
-            ):
-                status = ResultStatus.BLOCKED
-            elif any(item.status is ResultStatus.INCONCLUSIVE for item in non_passed):
-                status = ResultStatus.INCONCLUSIVE
-            else:
-                status = ResultStatus.FAILED
-            return LegacyGateDecision(
-                status, tuple(f"{item.check_id}_{item.status}" for item in non_passed)
-            )
+            return self._legacy(inputs)
         if (
             execution_id is None
             or gate_id is None
@@ -103,18 +81,6 @@ class GateEngine:
             reasons.append(f"BLOCKING_FINDING_{finding.finding_id}")
         if not reasons and status is ResultStatus.PASSED:
             reasons.append("ALL_MANDATORY_VALIDATIONS_PASSED")
-        if (
-            execution_id is None
-            or gate_id is None
-            or change_set_digest is None
-            or policy_digest is None
-            or policy is None
-            or provenance is None
-        ):
-            raise TypeError(
-                "evaluate() without inputs needs execution_id, gate_id, change_set_digest, "
-                "policy_digest, policy and provenance"
-            )
         return GateEvaluation(
             gate_evaluation_id=new_id("gateeval"),
             execution_id=execution_id,
@@ -127,6 +93,33 @@ class GateEngine:
             requires_human_decision=policy.require_human_decision,
             provenance=provenance,
         )
+
+    @staticmethod
+    def _legacy(inputs: list[GateInput]) -> LegacyGateDecision:
+        """The decision over plain check inputs: only mandatory inputs count."""
+        mandatory_inputs = [item for item in inputs if item.mandatory]
+        if not mandatory_inputs:
+            return LegacyGateDecision(ResultStatus.INCONCLUSIVE, ("NO_MANDATORY_INPUTS",))
+        non_passed = [item for item in mandatory_inputs if item.status is not ResultStatus.PASSED]
+        if not non_passed:
+            return LegacyGateDecision(ResultStatus.PASSED, ("ALL_MANDATORY_PASSED",))
+        return LegacyGateDecision(
+            GateEngine._legacy_status(non_passed),
+            tuple(f"{item.check_id}_{item.status}" for item in non_passed),
+        )
+
+    @staticmethod
+    def _legacy_status(non_passed: list[GateInput]) -> ResultStatus:
+        if any(item.status is ResultStatus.ERROR for item in non_passed):
+            return ResultStatus.ERROR
+        if any(
+            item.status in {ResultStatus.BLOCKED, ResultStatus.TIMED_OUT, ResultStatus.CANCELLED}
+            for item in non_passed
+        ):
+            return ResultStatus.BLOCKED
+        if any(item.status is ResultStatus.INCONCLUSIVE for item in non_passed):
+            return ResultStatus.INCONCLUSIVE
+        return ResultStatus.FAILED
 
     @staticmethod
     def _status(mandatory: list[ValidationResult], reasons: list[str]) -> ResultStatus:

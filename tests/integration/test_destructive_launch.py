@@ -60,7 +60,7 @@ def test_a_refused_destructive_launch_blocks_the_run(
 ) -> None:
     victim = tmp_path / "outside" / "victim"
     victim.mkdir(parents=True)
-    configure(python_workspace, ["sh", "-c", f"rm -rf {victim}"])
+    configure(python_workspace, ["sh", "-c", f"rm -rf {victim.as_posix()}"])
     code, body = start(python_workspace, tmp_path)
     assert victim.is_dir()
     assert code == 6
@@ -74,7 +74,7 @@ def test_the_blocked_reason_names_the_refused_command(
 ) -> None:
     victim = tmp_path / "outside" / "victim"
     victim.mkdir(parents=True)
-    configure(python_workspace, ["sh", "-c", f"rm -rf {victim}"], phaseCapabilities=True)
+    configure(python_workspace, ["sh", "-c", f"rm -rf {victim.as_posix()}"], phaseCapabilities=True)
     code, body = start(python_workspace, tmp_path)
     assert code == 6
     with HarnessApplication()._services(python_workspace) as services:

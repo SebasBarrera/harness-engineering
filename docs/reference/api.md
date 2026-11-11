@@ -21,7 +21,9 @@ harness api serve --path . --host 127.0.0.1 --port 8765
 With the `api` section (and `api.auth` not `off`), every request, the dashboard page and
 `/openapi.json` included, must carry `Authorization: Bearer TOKEN`; without a valid token the
 answer is **401** with `WWW-Authenticate: Bearer`. The token is accepted in that header only
-(never in a query string, which servers log) and compared in constant time.
+(never in a query string, which servers log) and compared in constant time. The access log of
+`harness api serve` (standard output) records the client, method, path, HTTP version and status of
+each request, never its query string, so a token sent there by mistake is refused and not written.
 
 | Role | May |
 |---|---|

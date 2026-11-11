@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import re
-from pathlib import Path
+import sys
+from pathlib import Path, PureWindowsPath
 from typing import Any, Literal
 
 from pydantic import (
@@ -179,8 +180,12 @@ DEFAULT_AGENT_SANDBOX: AgentSandboxMode = "off"
 """Mode of a project.yaml without ``runtime.agentSandbox`` (files written before 2.0)."""
 
 DEFAULT_SANDBOX_WRITE_PATHS: tuple[tuple[str, str], ...] = (
-    # An allow-list entry of the agent's write sandbox, not a file the harness creates.
-    ("/tmp", "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it."),  # nosec B108
+    # An allow-list entry of the agent's write sandbox, not a file the harness creates: Bandit
+    # B108 and Sonar S5443 (publicly writable directory) do not apply to a path nothing writes.
+    (
+        "/tmp",  # NOSONAR(S5443) # nosec B108
+        "Shared temporary directory (/private/tmp on macOS): compilers, npm and git use it.",
+    ),
     (
         "/var/folders",
         "Per-user temporary and cache directories of macOS (/private/var/folders); $TMPDIR "
@@ -207,6 +212,14 @@ def _sandbox_mode_from_yaml(value: Any) -> Any:
     # YAML 1.1 (PyYAML) reads a bare ``off`` as false; a hand-written ``agentSandbox: off`` must
     # mean what it says.
     return "off" if value is False else value
+
+
+def _is_state_dir_path(value: str) -> bool:
+    """A ``runtime.stateDir`` path: absolute or under ``~/``. On Windows an absolute path also
+    starts with a drive or a UNC share (``C:\\...``, ``\\\\server\\share``)."""
+    if value.startswith(("/", "~/")):
+        return True
+    return sys.platform == "win32" and PureWindowsPath(value).is_absolute()
 
 
 class RuntimeConfig(ConfigModel):
@@ -309,7 +322,7 @@ class RuntimeConfig(ConfigModel):
     def _state_dir(cls, value: str | None) -> str | None:
         if value is None or value == "auto":
             return value
-        if not value.startswith(("/", "~/")) or "$" in value:
+        if not _is_state_dir_path(value) or "$" in value:
             raise ValueError(
                 f"stateDir is auto, an absolute path or a path that starts with ~/: {value!r}"
             )
@@ -384,7 +397,7 @@ NATIVE_DEFAULT_COMMANDS: dict[str, tuple[str, ...]] = {
 }
 """The executable a built-in adapter runs when the provider sets no ``command``."""
 
-_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 
 
 class ProviderEnvReference(ConfigModel):
@@ -473,6 +486,7 @@ class AgentProviderConfiguration(ConfigModel):
 
 
 CriteriaPolicy = Literal["enforce", "warn", "off"]
+IntakeLanguage = Literal["auto", "en", "es"]
 
 DEFAULT_CRITERIA_POLICY: CriteriaPolicy = "warn"
 """Policy of a project.yaml without ``intake.criteriaPolicy`` (files written before 2.0)."""
@@ -515,6 +529,14 @@ class IntakeConfig(ConfigModel):
     testing strategy and the standards of a new project, and of an existing project whatever
     detection could not establish (rule ``P1``)."""
 
+    language: IntakeLanguage | None = None
+    """Since 2.0: the language of the deterministic INTENT rules (C0 to C3, T1). ``en`` and
+    ``es`` choose it, ``auto`` detects it from the task text (Spanish when the task has more
+    Spanish than English function words and Spanish marks, otherwise English). Words are
+    Unicode tokens compared without diacritics, ``es`` adds the Spanish vocabularies to the
+    English ones and asks the questions in Spanish; rule and question ids do not change.
+    Absent keeps the earlier rules: ASCII words, English vocabularies and questions."""
+
     @field_validator("ambiguity_review", "operational_contract", "project_setup", mode="before")
     @classmethod
     def _bare_off(cls, value: Any) -> Any:
@@ -544,6 +566,7 @@ class IntakeConfig(ConfigModel):
             "operational_contract",
             "interruptions",
             "project_setup",
+            "language",
         ):
             if getattr(self, name) is None:
                 data.pop(name, None)
@@ -698,7 +721,7 @@ class ReviewConfig(ConfigModel):
 
 NotificationEvent = Literal["decision.pending", "run.finished", "exception.granted"]
 
-_WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,127}$")
+_WEBHOOK_ENV_NAME = re.compile(r"^[A-Za-z_]\w{0,127}$", re.ASCII)
 
 
 class WebhookConfig(ConfigModel):
@@ -753,6 +776,7 @@ class RetrospectiveConfig(ConfigModel):
 DeciderIdentity = Literal["git", "default"]
 StopTheLine = Literal["restore", "block", "off"]
 ChainAnchorMode = Literal["file", "git-note", "off"]
+UnanchoredEvents = Literal["warn", "fail"]
 
 DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
 """Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
@@ -780,6 +804,12 @@ class GovernanceConfig(ConfigModel):
       ``status`` adds the result of the record check.
     * ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event
       chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.
+    * ``unanchoredEvents`` (#149): how ``harness verify`` treats the events after the anchored
+      head, which the anchor does not cover. ``warn`` lists them as a warning and ``fail`` also
+      fails the run; under either, a ``retention.artifacts.pruned`` event excuses a missing
+      artifact only when it is within the anchored part of the chain. Absent, the events after
+      the anchor are only counted (``eventsAfterAnchor``) and every prune event excuses, as in
+      1.x.
     * ``pinTaskRevision``: a run works on the task revision it was created with (or a revision
       made through ``task clarify``), ``task create`` refuses a task id that has an open run, and
       a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.
@@ -834,6 +864,7 @@ class GovernanceConfig(ConfigModel):
     trusted_hosts: tuple[str, ...] | None = Field(default=None, alias="trustedHosts")
     verify_records: bool | None = Field(default=None, alias="verifyRecords")
     chain_anchor: ChainAnchorMode | None = Field(default=None, alias="chainAnchor")
+    unanchored_events: UnanchoredEvents | None = Field(default=None, alias="unanchoredEvents")
     pin_task_revision: bool | None = Field(default=None, alias="pinTaskRevision")
     protect_excluded_paths: bool | None = Field(default=None, alias="protectExcludedPaths")
     workspace_lease: bool | None = Field(default=None, alias="workspaceLease")

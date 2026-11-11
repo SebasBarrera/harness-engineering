@@ -127,7 +127,7 @@ from pathlib import Path
 
 request = json.load(sys.stdin)
 for patch in request["task"]["implementation"]["patches"]:
-    with Path(patch["path"]).open("a", encoding="utf-8") as handle:
+    with Path(patch["path"]).open("a", encoding="utf-8", newline="\\n") as handle:
         handle.write(patch.get("content") or "")
 # Fixed figures: this fixture exercises the usage protocol, it does not call a model.
 usage = {"inputTokens": 1200, "outputTokens": 340, "costUsd": 0.0125}
@@ -230,21 +230,26 @@ def git(cwd: Path, *args: str) -> None:
 def python_project(root: Path) -> Path:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
-    (root / "src" / "sample" / "__init__.py").write_text("from .pricing import apply_discount\n")
+    (root / "src" / "sample" / "__init__.py").write_text(
+        "from .pricing import apply_discount\n", newline="\n"
+    )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
-        "    return subtotal\n"
+        "    return subtotal\n",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from sample import apply_discount\n\n\n"
         "def test_below_threshold() -> None:\n"
-        "    assert apply_discount(99, 100, 0.1) == 99\n"
+        "    assert apply_discount(99, 100, 0.1) == 99\n",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         '[project]\nname = "sample"\nversion = "0.1.0"\n\n'
-        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\npythonpath = ["src"]\n'
+        '[tool.pytest.ini_options]\ntestpaths = ["tests"]\npythonpath = ["src"]\n',
+        newline="\n",
     )
-    (root / ".gitignore").write_text(".harness/\n__pycache__/\n.pytest_cache/\n")
+    (root / ".gitignore").write_text(".harness/\n__pycache__/\n.pytest_cache/\n", newline="\n")
     git(root, "init", "-q")
     git(root, "add", ".")
     git(root, "commit", "-qm", "baseline")
@@ -256,19 +261,22 @@ def node_project(root: Path) -> Path:
     (root / "test").mkdir()
     (root / "src" / "resolve-config.js").write_text(
         "export function resolveConfig(defaults, repository, task) {\n"
-        "  return { ...defaults, ...task, ...repository };\n}\n"
+        "  return { ...defaults, ...task, ...repository };\n}\n",
+        newline="\n",
     )
     (root / "test" / "resolve-config.test.js").write_text(
         "import assert from 'node:assert/strict';\nimport test from 'node:test';\n"
         "import { resolveConfig } from '../src/resolve-config.js';\n\n"
         "test('repository overrides defaults', () => {\n"
-        "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n});\n"
+        "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n});\n",
+        newline="\n",
     )
     (root / "package.json").write_text(
         '{\n  "name": "node-sample",\n  "version": "0.1.0",\n  "private": true,\n'
-        '  "type": "module",\n  "scripts": {\n    "test": "node --test"\n  }\n}\n'
+        '  "type": "module",\n  "scripts": {\n    "test": "node --test"\n  }\n}\n',
+        newline="\n",
     )
-    (root / ".gitignore").write_text(".harness/\nnode_modules/\n")
+    (root / ".gitignore").write_text(".harness/\nnode_modules/\n", newline="\n")
     git(root, "init", "-q")
     git(root, "add", ".")
     git(root, "commit", "-qm", "baseline")
@@ -276,7 +284,7 @@ def node_project(root: Path) -> Path:
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup", "language"),
     "verification": (
         "interface",
         "architecture",
@@ -329,7 +337,7 @@ def without_agent_results(root: Path) -> None:
         "friction",
     ):
         config.pop(section, None)
-    path.write_text(yaml.safe_dump(config, sort_keys=False))
+    path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
 
 
 def current_digest(t: Transcript, flow: str, root: Path, run_id: str) -> str:
@@ -343,18 +351,21 @@ def readme_project(root: Path) -> Path:
     (root / "tests").mkdir()
     (root / "src" / "pricing" / "__init__.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
-        "    return subtotal\n"
+        "    return subtotal\n",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from pricing import apply_discount\n\n\n"
         "def test_below_threshold() -> None:\n"
-        "    assert apply_discount(99, 100, 0.1) == 99\n"
+        "    assert apply_discount(99, 100, 0.1) == 99\n",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         '[project]\nname = "pricing-demo"\nversion = "0.1.0"\n\n'
-        '[tool.pytest.ini_options]\npythonpath = ["src"]\n'
+        '[tool.pytest.ini_options]\npythonpath = ["src"]\n',
+        newline="\n",
     )
-    (root / ".gitignore").write_text(".harness/\n")
+    (root / ".gitignore").write_text(".harness/\n", newline="\n")
     git(root, "init", "-q")
     git(root, "add", ".")
     git(root, "commit", "-qm", "baseline")
@@ -411,7 +422,7 @@ def flow_later_change(t: Transcript, root: Path) -> None:
     """Thesis flow 4: a change after a passing gate invalidates the pending approval."""
     flow = "later-change"
     python_project(root)
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     t.run(flow, root, ["init", "--path", "."], 0)
     without_agent_results(root)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
@@ -419,7 +430,7 @@ def flow_later_change(t: Transcript, root: Path) -> None:
         flow, root, ["run", "start", "--path", ".", "--task", "task_python_add_discount"], 4
     )["executionId"]
     stale = current_digest(t, flow, root, run_id)
-    with (root / "src" / "sample" / "pricing.py").open("a") as handle:
+    with (root / "src" / "sample" / "pricing.py").open("a", newline="\n") as handle:
         handle.write("# manual edit after the gate was evaluated\n")
     t.run(
         flow,
@@ -502,10 +513,10 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     flow = "broken-baseline"
     python_project(root)
     legacy = root / "tests" / "test_legacy.py"
-    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n")
+    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n", newline="\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "legacy test (already broken)")
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     t.run(flow, root, ["init", "--path", "."], 0)
     without_agent_results(root)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
@@ -517,7 +528,9 @@ def flow_broken_baseline(t: Transcript, root: Path) -> None:
     before = current_digest(t, flow, root, run_id)
     # A different size than the broken version: Python reuses the bytecode cache of a source
     # with the same size rewritten within the same second.
-    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2  # repaired\n")
+    legacy.write_text(
+        "def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 2  # repaired\n", newline="\n"
+    )
     t.run(flow, root, ["run", "continue", "--path", ".", "--run", run_id], 4)
     status = t.json(flow, root, ["status", "--path", ".", "--run", run_id], 0)
     digest = status["execution"]["changeSetDigest"]
@@ -560,7 +573,8 @@ def flow_review_exception(t: Transcript, root: Path) -> None:
             '            password = "supersecret123"\n'
             "            _ = password\n"
             "            return subtotal * (1 - rate) if subtotal >= threshold else subtotal",
-        )
+        ),
+        newline="\n",
     )
     t.run(flow, root, ["init", "--path", "."], 0)
     without_agent_results(root)
@@ -621,7 +635,7 @@ def flow_node(t: Transcript, root: Path) -> None:
     """Thesis flow 2: Node.js project, gate PASSED, ordinary approval."""
     flow = "node"
     node_project(root)
-    (root / "task.yaml").write_text(NODE_TASK)
+    (root / "task.yaml").write_text(NODE_TASK, newline="\n")
     t.run(flow, root, ["init", "--path", "."], 0)
     t.run(flow, root, ["inspect", "--path", "."], 0)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
@@ -686,7 +700,7 @@ def flow_memory(t: Transcript, root: Path) -> None:
     """
     flow = "memory"
     python_project(root)
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     without_agent_results(root)
@@ -786,7 +800,8 @@ def flow_memory(t: Transcript, root: Path) -> None:
             test="test_above_threshold",
             subtotal=200,
             expected=180,
-        )
+        ),
+        newline="\n",
     )
     t.run(flow, root, ["task", "create", *here, "--file", "task-2.yaml"], 0)
     second = t.json(
@@ -834,12 +849,13 @@ def flow_memory(t: Transcript, root: Path) -> None:
     # A command provider that reports its usage fills the token and cost metrics. The flow is
     # about usage and runs on Linux and Windows hosts without a sandbox mechanism, so it turns the
     # agent sandbox that init enforces off (with enforce such a host blocks IMPLEMENTATION).
-    (root / "usage_adapter.py").write_text(USAGE_ADAPTER)
+    (root / "usage_adapter.py").write_text(USAGE_ADAPTER, newline="\n")
     config = root / ".harness" / "project.yaml"
     config.write_text(
         config.read_text().replace("agentSandbox: enforce", "agentSandbox: 'off'")
         + "agentProviders:\n  usage_fixture:\n    kind: command\n"
-        + "    command: [python, usage_adapter.py]\n    model: usage-fixture\n"
+        + "    command: [python, usage_adapter.py]\n    model: usage-fixture\n",
+        newline="\n",
     )
     (root / "task-3.yaml").write_text(
         FOLLOW_UP_TASK.format(
@@ -848,7 +864,8 @@ def flow_memory(t: Transcript, root: Path) -> None:
             test="test_zero_subtotal",
             subtotal=0,
             expected=0,
-        )
+        ),
+        newline="\n",
     )
     t.run(flow, root, ["task", "create", *here, "--file", "task-3.yaml"], 0)
     third = t.json(
@@ -923,9 +940,11 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     becomes its criteria, so run continue reaches DECISION."""
     flow = "clarification"
     python_project(root)
-    (root / "task.yaml").write_text(VAGUE_TASK)
-    (root / "answers.yaml").write_text(CLARIFICATION)
-    (root / "unknown.yaml").write_text("answers:\n  Q-9: Not a question of this task.\n")
+    (root / "task.yaml").write_text(VAGUE_TASK, newline="\n")
+    (root / "answers.yaml").write_text(CLARIFICATION, newline="\n")
+    (root / "unknown.yaml").write_text(
+        "answers:\n  Q-9: Not a question of this task.\n", newline="\n"
+    )
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
@@ -946,8 +965,8 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     approve(t, flow, root, run_id, "Clarified criteria covered by the validators")
     t.run(flow, root, [*clarify, "--file", "answers.yaml"], 5)
 
-    (root / "one-sentence.yaml").write_text(ONE_SENTENCE_TASK)
-    (root / "elicitation.yaml").write_text(ELICITATION)
+    (root / "one-sentence.yaml").write_text(ONE_SENTENCE_TASK, newline="\n")
+    (root / "elicitation.yaml").write_text(ELICITATION, newline="\n")
     task_id = "task_python_one_sentence"
     created = t.json(flow, root, ["task", "create", *here, "--file", "one-sentence.yaml"], 0)
     t.check(
@@ -1007,7 +1026,7 @@ def flow_traceability(t: Transcript, root: Path) -> None:
     mapping of A1 to its test is recorded as VERIFICATION evidence."""
     flow = "traceability"
     python_project(root)
-    (root / "task.yaml").write_text(UNTRACED_TASK)
+    (root / "task.yaml").write_text(UNTRACED_TASK, newline="\n")
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
@@ -1056,12 +1075,14 @@ fixed = mode == "flaky" or (mode == "fix" and "feedback" in request)
 body = "subtotal * (1 - rate) if subtotal >= threshold else subtotal" if fixed else "subtotal"
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
-    f"    return {body}\\n"
+    f"    return {body}\\n",
+    newline="\\n",
 )
 Path("tests/test_threshold.py").write_text(
     "from sample import apply_discount\\n\\n\\n"
     "def test_at_threshold() -> None:\\n"
-    "    assert apply_discount(100, 100, 0.1) == 90\\n"
+    "    assert apply_discount(100, 100, 0.1) == 90\\n",
+    newline="\\n",
 )
 print(json.dumps({"status": "PASSED", "summary": "Implemented the threshold discount"}))
 """
@@ -1089,7 +1110,7 @@ def flow_corrections(t: Transcript, root: Path) -> None:
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     without_agent_results(root)
-    (root / "agent.py").write_text(CORRECTING_AGENT)
+    (root / "agent.py").write_text(CORRECTING_AGENT, newline="\n")
     config = root / ".harness" / "project.yaml"
     # The flow runs on hosts without a sandbox mechanism (CI Linux without bwrap, Windows).
     config.write_text(
@@ -1100,11 +1121,12 @@ def flow_corrections(t: Transcript, root: Path) -> None:
         + "".join(
             f"  {mode}:\n    kind: command\n    command: [python, agent.py, {mode}]\n"
             for mode in ("fix", "stubborn", "flaky")
-        )
+        ),
+        newline="\n",
     )
 
     def start(task_id: str, provider: str, expect: int) -> str:
-        (root / f"{task_id}.yaml").write_text(CORRECTION_TASK.format(task_id=task_id))
+        (root / f"{task_id}.yaml").write_text(CORRECTION_TASK.format(task_id=task_id), newline="\n")
         t.run(flow, root, ["task", "create", *here, "--file", f"{task_id}.yaml"], 0)
         (root / ".agent-calls").unlink(missing_ok=True)
         started = ["run", "start", *here, "--task", task_id, "--provider", provider]
@@ -1148,7 +1170,7 @@ def flow_integrity(t: Transcript, root: Path) -> None:
     status and verify and refused by trace."""
     flow = "integrity"
     python_project(root)
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     without_agent_results(root)
@@ -1205,7 +1227,7 @@ def flow_delivery(t: Transcript, root: Path) -> None:
     (exit 5) and fails once a later commit changes the range (exit 5)."""
     flow = "delivery"
     python_project(root)
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     t.run(flow, root, ["init", "--path", "."], 0)
     t.run(flow, root, ["task", "create", "--path", ".", "--file", "task.yaml"], 0)
     run_id = t.json(
@@ -1248,7 +1270,7 @@ def flow_delivery(t: Transcript, root: Path) -> None:
     t.run(flow, root, [*approval, "--head", branch, "--bundle", "evidence.tar.gz"], 0)
     t.run(flow, root, [*approval, "--head", branch], 5)
     git(root, "checkout", "-q", "--force", branch)  # the working tree holds the same change
-    with (root / "src" / "sample" / "pricing.py").open("a") as handle:
+    with (root / "src" / "sample" / "pricing.py").open("a", newline="\n") as handle:
         handle.write("# a later edit nobody approved\n")
     git(root, "commit", "-qam", "later edit")
     t.run(flow, root, [*approval, "--head", "HEAD", "--bundle", "evidence.tar.gz"], 5)
@@ -1261,10 +1283,10 @@ def flow_agent_results(t: Transcript, root: Path) -> None:
     flow = "agent-results"
     python_project(root)
     legacy = root / "tests" / "test_legacy.py"
-    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n")
+    legacy.write_text("def test_legacy_behaviour() -> None:\n    assert 1 + 1 == 3\n", newline="\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "legacy test (already broken)")
-    (root / "task.yaml").write_text(PY_TASK)
+    (root / "task.yaml").write_text(PY_TASK, newline="\n")
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     validated = t.json(flow, root, ["config", "validate", *here], 0)
@@ -1438,12 +1460,12 @@ def flow_ladder(t: Transcript, root: Path) -> None:
     file that tells the agent to skip the hooks (exit 6)."""
     flow = "ladder"
     python_project(root)
-    (root / "src" / "sample" / "cli.py").write_text(LADDER_CLI)
+    (root / "src" / "sample" / "cli.py").write_text(LADDER_CLI, newline="\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "command line")
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
-    (root / "task.yaml").write_text(LADDER_TASK)
+    (root / "task.yaml").write_text(LADDER_TASK, newline="\n")
     t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_ladder"], 4)["executionId"]
     shown = t.json(flow, root, ["verification", "show", *here, "--run", run_id], 0)
@@ -1457,7 +1479,7 @@ def flow_ladder(t: Transcript, root: Path) -> None:
     decide += ["--actor", "human.reviewer", "--decision", "APPROVE", "--rationale", "Checked"]
     t.run(flow, root, decide, 5)
     t.run(flow, root, [*decide, "--check", "ac_look"], 0)
-    (root / "e2e.xml").write_text(LADDER_JUNIT)
+    (root / "e2e.xml").write_text(LADDER_JUNIT, newline="\n")
     attach = ["evidence", "attach", *here, "--run", run_id, "--item", "D-ac_e2e"]
     t.run(flow, root, [*attach, "--file", "e2e.xml", "--actor", "human.ci"], 0)
     shown = t.json(flow, root, ["verification", "show", *here, "--run", run_id], 0)
@@ -1467,7 +1489,7 @@ def flow_ladder(t: Transcript, root: Path) -> None:
         "the attached JUnit report closed the deferred item: CERTIFIED",
     )
 
-    (root / "unreached.yaml").write_text(UNREACHED_TASK)
+    (root / "unreached.yaml").write_text(UNREACHED_TASK, newline="\n")
     t.run(flow, root, ["task", "create", *here, "--file", "unreached.yaml"], 0)
     unreached = t.json(flow, root, ["run", "start", *here, "--task", "task_unreached"], 6)
     shown = t.json(
@@ -1488,9 +1510,10 @@ def flow_ladder(t: Transcript, root: Path) -> None:
         config.read_text().replace(
             "  grants: []",
             "  grants: []\n  extend:\n  - capability: process.execute\n    scope: [device-lab]",
-        )
+        ),
+        newline="\n",
     )
-    (root / "device.yaml").write_text(DEVICE_TASK)
+    (root / "device.yaml").write_text(DEVICE_TASK, newline="\n")
     t.run(flow, root, ["task", "create", *here, "--file", "device.yaml"], 0)
     device = t.json(flow, root, ["run", "start", *here, "--task", "task_device"], 6)
     t.check(
@@ -1515,7 +1538,9 @@ def flow_ladder(t: Transcript, root: Path) -> None:
         ],
         4,
     )
-    (root / "AGENTS.md").write_text("Commit with git commit --no-verify when the hooks are slow.\n")
+    (root / "AGENTS.md").write_text(
+        "Commit with git commit --no-verify when the hooks are slow.\n", newline="\n"
+    )
     t.run(flow, root, ["config", "lint", *here], 6)
 
 
@@ -1583,10 +1608,11 @@ def flow_gitlab(t: Transcript, root: Path) -> None:
                 "delivery:\n  forge:\n"
                 f"    apiUrl: http://127.0.0.1:{port}/api/v4\n"
                 "    baseBranch: main\n    labels: [governed]\n",
-            )
+            ),
+            newline="\n",
         )
         env = {"GITLAB_TOKEN": "demo-placeholder"}
-        (root / "task.yaml").write_text(PY_TASK)
+        (root / "task.yaml").write_text(PY_TASK, newline="\n")
         t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
         run_id = t.json(
             flow, root, ["run", "start", *here, "--task", "task_python_add_discount"], 4
@@ -1664,7 +1690,7 @@ def flow_tdd(t: Transcript, root: Path) -> None:
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
     config = root / ".harness" / "project.yaml"
-    config.write_text(config.read_text().replace("strategy: auto", "strategy: tdd"))
+    config.write_text(config.read_text().replace("strategy: auto", "strategy: tdd"), newline="\n")
     shown = t.json(flow, root, ["standards", "show", *here, "--file", "src/sample/pricing.py"], 0)
     t.check(
         flow,
@@ -1674,7 +1700,8 @@ def flow_tdd(t: Transcript, root: Path) -> None:
     (root / "red.yaml").write_text(
         TDD_TASK.format(
             task_id="task_red", test="at_threshold", subtotal=100, expected=90, body=TDD_BODY
-        )
+        ),
+        newline="\n",
     )
     t.run(flow, root, ["task", "create", *here, "--file", "red.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_red"], 4)["executionId"]
@@ -1685,7 +1712,8 @@ def flow_tdd(t: Transcript, root: Path) -> None:
     (root / "green.yaml").write_text(
         TDD_TASK.format(
             task_id="task_after", test="far_below", subtotal=10, expected=10, body=TDD_LATE_BODY
-        )
+        ),
+        newline="\n",
     )
     t.run(flow, root, ["task", "create", *here, "--file", "green.yaml"], 0)
     late = t.json(flow, root, ["run", "start", *here, "--task", "task_after"], 6)["executionId"]
@@ -1723,11 +1751,13 @@ if kind in results:
 Path("features/steps").mkdir(parents=True, exist_ok=True)
 Path("features/steps/discount_steps.py").write_text(
     "STEPS = ['a subtotal of 100 and a threshold of 100', "
-    "'the discount of 10 percent applies', 'the total is 90']\\n"
+    "'the discount of 10 percent applies', 'the total is 90']\\n",
+    newline="\\n",
 )
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
-    "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n"
+    "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n",
+    newline="\\n",
 )
 print(json.dumps({"status": "PASSED", "summary": "step definitions and code"}))
 """
@@ -1769,8 +1799,8 @@ def flow_bdd(t: Transcript, root: Path) -> None:
     behave, pytest-bdd, Cucumber, SpecFlow or its pack's runner."""
     flow = "bdd"
     python_project(root)
-    (root / "agent.py").write_text(BDD_AGENT)
-    (root / "run_features.py").write_text(FEATURE_RUNNER)
+    (root / "agent.py").write_text(BDD_AGENT, newline="\n")
+    (root / "run_features.py").write_text(FEATURE_RUNNER, newline="\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "agent and runner fixtures")
     here = ["--path", "."]
@@ -1782,9 +1812,10 @@ def flow_bdd(t: Transcript, root: Path) -> None:
         .replace("agentSandbox: enforce", "agentSandbox: 'off'")
         .replace("agentProvider: simulated", "agentProvider: bdd_agent")
         .replace("providerRetryDelaySeconds: 60", "providerRetryDelaySeconds: 0")
-        + "agentProviders:\n  bdd_agent:\n    kind: command\n    command: [python, agent.py]\n"
+        + "agentProviders:\n  bdd_agent:\n    kind: command\n    command: [python, agent.py]\n",
+        newline="\n",
     )
-    (root / "task.yaml").write_text(BDD_TASK)
+    (root / "task.yaml").write_text(BDD_TASK, newline="\n")
     t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_bdd"], 6)["executionId"]
     proposal = t.json(flow, root, ["acceptance", "show", *here, "--run", run_id], 0)
@@ -1861,7 +1892,7 @@ def review_project(t: Transcript, flow: str, root: Path, mode: str = "find") -> 
     """A Python project with the review panel written by init, a fixture reviewer provider
     that calls no model, and a feature branch whose change uses a literal discount rate."""
     python_project(root)
-    (root / "reviewer.py").write_text(REVIEWER.replace("MODE", repr(mode)))
+    (root / "reviewer.py").write_text(REVIEWER.replace("MODE", repr(mode)), newline="\n")
     git(root, "add", "reviewer.py")
     git(root, "commit", "-qm", "reviewer fixture")
     here = ["--path", "."]
@@ -1869,12 +1900,14 @@ def review_project(t: Transcript, flow: str, root: Path, mode: str = "find") -> 
     config = root / ".harness" / "project.yaml"
     config.write_text(
         config.read_text().replace("agentSandbox: enforce", "agentSandbox: 'off'")
-        + "agentProviders:\n  reviewer:\n    kind: command\n    command: [python, reviewer.py]\n"
+        + "agentProviders:\n  reviewer:\n    kind: command\n    command: [python, reviewer.py]\n",
+        newline="\n",
     )
     git(root, "checkout", "-q", "-b", "feat/discount")
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
-        "    return subtotal * 0.9 if subtotal >= threshold else subtotal\n"
+        "    return subtotal * 0.9 if subtotal >= threshold else subtotal\n",
+        newline="\n",
     )
     git(root, "commit", "-qam", "discount")
     return here
@@ -1889,7 +1922,7 @@ def flow_review_panel(t: Transcript, root: Path) -> None:
     here = review_project(t, flow, root)
     rules = root / ".harness" / "review" / "rules"
     rules.mkdir(parents=True)
-    (rules / "quality.md").write_text(PROJECT_REVIEW_RULE)
+    (rules / "quality.md").write_text(PROJECT_REVIEW_RULE, newline="\n")
     shown = t.json(flow, root, ["review", "rules", "show", *here], 0)
     t.check(flow, shown["catalog"]["byLayer"]["C"] == 1, "the project rule is in the catalog")
     failed = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 6)
@@ -1902,7 +1935,8 @@ def flow_review_panel(t: Transcript, root: Path) -> None:
     )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
-        "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\n"
+        "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\n",
+        newline="\n",
     )
     git(root, "commit", "-qam", "read the rate")
     passed = t.json(flow, root, ["review-code", *here, "--provider", "reviewer"], 0)
@@ -2009,7 +2043,7 @@ results = {"clarify": {"questions": []}, "review": {"findings": []}, "plan": {"s
            "architecture": {"style": "custom", "summary": "No layers.", "layers": [], "allow": {}, "organization": "None.", "components": [{"name": "app", "path": ".", "responsibility": "The project."}], "conventions": [], "guidance": ["Follow the structure."]}}
 if kind == "implement":
     text = request["task"]["intent"]
-    with Path("README.md").open("a", encoding="utf-8") as handle:
+    with Path("README.md").open("a", encoding="utf-8", newline="\\n") as handle:
         handle.write("\\n" + text + "\\n")
     answer = {"status": "PASSED", "summary": "README updated"}
 else:
@@ -2027,9 +2061,9 @@ def flow_friction(t: Transcript, root: Path) -> None:
     self-contained HTML file. A fixture command provider writes the README; no model."""
     flow = "friction"
     python_project(root)
-    (root / "README.md").write_text("# Sample\n")
-    (root / "agent.py").write_text(FRICTION_AGENT)
-    with (root / ".gitignore").open("a", encoding="utf-8") as handle:
+    (root / "README.md").write_text("# Sample\n", newline="\n")
+    (root / "agent.py").write_text(FRICTION_AGENT, newline="\n")
+    with (root / ".gitignore").open("a", encoding="utf-8", newline="\n") as handle:
         handle.write("agent.py\n*.json\nmetrics.html\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "readme")
@@ -2042,7 +2076,7 @@ def flow_friction(t: Transcript, root: Path) -> None:
     config["agentProvider"] = "fixture"
     config["agentProviders"] = {"fixture": {"kind": "command", "command": ["python", "agent.py"]}}
     config["runtime"].update({"agentSandbox": "off", "providerRetryDelaySeconds": 0})
-    config_path.write_text(yaml.safe_dump(config, sort_keys=False))
+    config_path.write_text(yaml.safe_dump(config, sort_keys=False), newline="\n")
     done = t.json(
         flow,
         root,
@@ -2199,7 +2233,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         if state:
             shutil.rmtree(state, ignore_errors=True)
     if args.transcript:
-        args.transcript.write_text(json.dumps(transcript.steps, indent=2) + "\n", encoding="utf-8")
+        args.transcript.write_text(
+            json.dumps(transcript.steps, indent=2) + "\n", encoding="utf-8", newline="\n"
+        )
     failed = [step for step in transcript.steps if not step["ok"]]
     print(f"{len(transcript.steps)} steps, {len(failed)} unexpected exit code(s)")
     return 0 if transcript.ok else 1

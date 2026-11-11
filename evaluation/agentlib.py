@@ -9,13 +9,25 @@ from __future__ import annotations
 
 import json
 import os
-import pwd
 import re
+import shutil
 import subprocess
+import sys
 import time
 import uuid
 from pathlib import Path
 from typing import Any
+
+if sys.platform != "win32":
+    import pwd
+
+# Windows (the 2.0.0 pilot machine): no pwd module, a CreateProcess command line of at most 32767
+# characters and a non-UTF-8 default encoding. Every Windows branch below is guarded; POSIX keeps
+# its behaviour.
+WINDOWS = sys.platform == "win32"
+# Variables a Windows program needs (Node, Git for Windows): derived from HOME and SYSTEMROOT when
+# the caller did not pass them, so the agent gets the same environment in every condition.
+WINDOWS_PATHEXT = ".COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC"
 
 CLAUDE_BIN = os.environ.get("EVAL_CLAUDE_BIN", "claude")
 # The deterministic stand-in for the Claude Code CLI used by the dry runs (no model call).
@@ -36,6 +48,12 @@ ALLOWED_TOOLS = [
     "Bash(ls:*)",
     "Bash(cd:*)",
 ]
+# The tools of a read-only call of the governed conditions (``clarify``, ``acceptance``, ``locate``,
+# ``architecture``, ``plan``, ``review``): the ones the built-in ``claude-code`` adapter gives it
+# (#92, ``governed_harness.agents.native.READ_ONLY_TOOLS``), without accepted edits; the tools that
+# write files and the shell are denied.
+READ_ONLY_TOOLS = ["Read", "Grep", "Glob"]
+READ_ONLY_DENIED = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]
 AGENT_TIMEOUT_SECONDS = 1500
 MAX_BUDGET_USD = "5"
 # A resumable call that stops on the account usage limit (or an overloaded API) waits and resumes the
@@ -91,38 +109,79 @@ def _items(task: dict[str, Any], *keys: str) -> list[str]:
 def build_prompt(task: dict[str, Any], feedback: str | None = None) -> str:
     """Render a task (camelCase task file or snake_case harness request) as the agent prompt."""
     lines = [
-        "You are working in the Git repository in the current directory.",
+        "Estás trabajando en el repositorio Git del directorio actual.",
         "",
-        f"Task: {task['title']}",
+        f"Tarea: {task['title']}",
         "",
         str(task["intent"]).strip(),
     ]
     sections = (
-        ("Requirements", _items(task, "requirements")),
-        ("Acceptance criteria", _items(task, "acceptanceCriteria", "acceptance_criteria")),
-        ("Constraints", _items(task, "constraints")),
+        ("Requisitos", _items(task, "requirements")),
+        ("Criterios de aceptación", _items(task, "acceptanceCriteria", "acceptance_criteria")),
+        ("Restricciones", _items(task, "constraints")),
     )
     for title, items in sections:
         if items:
             lines += ["", f"{title}:", *[f"- {item}" for item in items]]
     lines += [
         "",
-        "Work only inside this directory. Do not commit, do not create branches and do not install",
-        "packages. You may run the test suite with `python -m pytest -q`. When you are done, reply",
-        "with a short summary of the change.",
+        "Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales",
+        "paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,",
+        "responde con un resumen breve del cambio.",
     ]
     if feedback:
         lines += [
             "",
-            "A previous attempt was returned for changes by the reviewer. Evidence:",
+            "El revisor devolvió un intento anterior para que se hicieran cambios. Evidencia:",
             feedback.strip(),
-            "Address these points.",
+            "Atiende estos puntos.",
         ]
     return "\n".join(lines) + "\n"
 
 
+def home_directory() -> str:
+    """HOME, or the account's home directory (the password database; on Windows, Path.home())."""
+    if WINDOWS:
+        return os.environ.get("HOME") or str(Path.home())
+    return os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir)
+
+
+def _windows_environment() -> dict[str, str]:
+    home = home_directory()
+    root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+    temp = (
+        os.environ.get("TEMP")
+        or os.environ.get("TMP")
+        or str(Path(home, "AppData", "Local", "Temp"))
+    )
+    user = os.environ.get("USERNAME") or Path(home).name
+    env = {
+        "HOME": home,
+        "USERPROFILE": home,
+        "APPDATA": str(Path(home, "AppData", "Roaming")),
+        "LOCALAPPDATA": str(Path(home, "AppData", "Local")),
+        "PATH": os.environ.get("PATH", ""),
+        "PATHEXT": WINDOWS_PATHEXT,
+        "SYSTEMROOT": root,
+        "WINDIR": root,
+        "SYSTEMDRIVE": root[:2],
+        "COMSPEC": str(Path(root, "System32", "cmd.exe")),
+        "TEMP": temp,
+        "TMP": temp,
+        "USER": user,
+        "USERNAME": user,
+        "LOGNAME": user,
+        "LANG": os.environ.get("LANG", "en_US.UTF-8"),
+    }
+    if os.environ.get("TMPDIR"):
+        env["TMPDIR"] = os.environ["TMPDIR"]
+    return env
+
+
 def agent_environment() -> dict[str, str]:
     """Minimal environment for the agent CLI: identity, locale and the evaluation PATH."""
+    if WINDOWS:
+        return _windows_environment()
     user = pwd.getpwuid(os.getuid()).pw_name
     env = {
         "HOME": os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir),
@@ -156,7 +215,7 @@ def allocate_call(directory: Path) -> Path:
     while True:
         path = directory / f"call-{number}.json"
         try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
         except FileExistsError:
             number += 1
             continue
@@ -191,9 +250,34 @@ def anonymize(text: str, *roots: Path) -> str:
     home = os.environ.get("HOME", "")
     if home:
         text = text.replace(home, "~")
+    if WINDOWS:
+        text = _anonymize_windows(text, roots)
     # Temporary directories (and a call record's truncated command) keep no machine path either.
     text = TEMP_PATH.sub("<tmp>", text)
     return RUN_ID.sub("run", text)
+
+
+def _windows_forms(path: str) -> set[str]:
+    """A Windows path as it can appear in a record: backslashes, forward slashes, JSON-escaped
+    backslashes and the Git Bash form (/c/Users/...)."""
+    forms = {path, path.replace("\\", "/"), path.replace("\\", "\\\\")}
+    if len(path) > 2 and path[1] == ":":
+        forms.add("/" + path[0].lower() + path[2:].replace("\\", "/"))
+    return {f for f in forms if len(f) > 3}
+
+
+def _anonymize_windows(text: str, roots: tuple[Path, ...]) -> str:
+    for label, root in zip(("<run>", "<code>", "<work>"), roots, strict=False):
+        for form in sorted(
+            {f for p in {str(root), str(root.resolve())} for f in _windows_forms(p)},
+            key=len,
+            reverse=True,
+        ):
+            text = re.sub(re.escape(form), lambda _m, lab=label: lab, text, flags=re.IGNORECASE)
+    homes = {os.environ.get(k, "") for k in ("HOME", "USERPROFILE")} | {str(Path.home())}
+    for form in sorted({f for h in homes if h for f in _windows_forms(h)}, key=len, reverse=True):
+        text = re.sub(re.escape(form), "~", text, flags=re.IGNORECASE)
+    return text
 
 
 class AccountError(RuntimeError):
@@ -213,7 +297,7 @@ def ensure_account() -> str:
     for name in ("ANTHROPIC_API_KEY", "CLAUDE_CONFIG_DIR"):
         if os.environ.get(name):
             raise AccountError(f"{name} is set: the evaluation runs only on the subscription login")
-    path = Path(os.environ.get("HOME", pwd.getpwuid(os.getuid()).pw_dir)) / ".claude.json"
+    path = Path(home_directory()) / ".claude.json"
     try:
         account = (json.loads(path.read_text(encoding="utf-8")).get("oauthAccount") or {}).get(
             "emailAddress", ""
@@ -226,8 +310,33 @@ def ensure_account() -> str:
 
 
 def _command(
-    prompt: str, model: str, max_budget_usd: str, session: list[str], effort: str | None = None
+    prompt: str,
+    model: str,
+    max_budget_usd: str,
+    session: list[str],
+    effort: str | None = None,
+    read_only: bool = False,
 ) -> list[str]:
+    if read_only:
+        tools = [
+            "--tools",
+            ",".join(READ_ONLY_TOOLS),
+            "--allowedTools",
+            *READ_ONLY_TOOLS,
+            "--disallowedTools",
+            *READ_ONLY_DENIED,
+            "--permission-mode",
+            "default",
+        ]
+    else:
+        tools = [
+            "--tools",
+            TOOLS,
+            "--allowedTools",
+            *ALLOWED_TOOLS,
+            "--permission-mode",
+            "acceptEdits",
+        ]
     return [
         CLAUDE_BIN,
         "-p",
@@ -242,12 +351,7 @@ def _command(
         "--safe-mode",
         "--strict-mcp-config",
         *session,
-        "--tools",
-        TOOLS,
-        "--allowedTools",
-        *ALLOWED_TOOLS,
-        "--permission-mode",
-        "acceptEdits",
+        *tools,
         "--max-budget-usd",
         max_budget_usd,
     ]
@@ -263,18 +367,31 @@ def run_claude(
     resumable: bool = False,
     resume_session: str | None = None,
     effort: str | None = None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     """Run Claude Code non-interactively and return the normalized usage record.
 
     The large-project scenario raises the time and budget limits and makes the call resumable; every
     other scenario uses the defaults (one call, no session kept). ``effort`` is passed only for the
-    calls the anchored router sends with an effort.
+    calls the anchored router sends with an effort. ``read_only`` (the read-only call kinds of the
+    governed conditions) runs Claude Code with the read-only tools instead of the direct
+    condition's.
     """
     if resumable:
         return _run_resumable(
-            prompt, cwd, model, log_path, timeout_seconds, max_budget_usd, resume_session, effort
+            prompt,
+            cwd,
+            model,
+            log_path,
+            timeout_seconds,
+            max_budget_usd,
+            resume_session,
+            effort,
+            read_only,
         )
-    command = _command(prompt, model, max_budget_usd, ["--no-session-persistence"], effort)
+    command = _command(
+        prompt, model, max_budget_usd, ["--no-session-persistence"], effort, read_only
+    )
     record, stderr, _ = _invoke(command, cwd, model, timeout_seconds)
     record["effort"] = effort
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -325,6 +442,7 @@ def _run_resumable(
     max_budget_usd: str,
     resume_session: str | None,
     effort: str | None = None,
+    read_only: bool = False,
 ) -> dict[str, Any]:
     """One call that survives usage limits and restarts of the runner.
 
@@ -348,13 +466,11 @@ def _run_resumable(
     while True:
         if not state["started"]:
             state["sessionId"] = str(uuid.uuid4())
-            command = _command(
-                prompt, model, max_budget_usd, ["--session-id", state["sessionId"]], effort
-            )
+            session = ["--session-id", state["sessionId"]]
+            command = _command(prompt, model, max_budget_usd, session, effort, read_only)
         else:
-            command = _command(
-                CONTINUE_PROMPT, model, max_budget_usd, ["--resume", state["sessionId"]], effort
-            )
+            session = ["--resume", state["sessionId"]]
+            command = _command(CONTINUE_PROMPT, model, max_budget_usd, session, effort, read_only)
         inflight.write_text(json.dumps(state, indent=1), encoding="utf-8")
         active = sum(seg["wallSeconds"] for seg in state["segments"])
         record, stderr, result = _invoke(
@@ -439,22 +555,47 @@ def _run_resumable(
     return record
 
 
+def _windows_command(command: list[str], env: dict[str, str]) -> tuple[list[str], dict[str, Any]]:
+    """The command line on Windows: the CLI resolved through the run's PATH (CreateProcess searches
+    the parent's PATH and only adds .exe), the fake CLI of the dry runs started by this Python,
+    and the prompt given on stdin instead of after ``-p`` (a CreateProcess command line holds at
+    most 32767 characters; ``claude -p`` reads its prompt from stdin when none follows it)."""
+    binary = command[0]
+    if binary.endswith(".py"):
+        head = [sys.executable, binary]
+    else:
+        head = [shutil.which(binary, path=env.get("PATH")) or binary]
+    rest = list(command[1:])
+    stdin: dict[str, Any] = {"stdin": subprocess.DEVNULL}
+    if len(rest) >= 2 and rest[0] == "-p":
+        stdin = {"input": rest[1]}
+        rest = ["-p", *rest[2:]]
+    return [*head, *rest], stdin
+
+
 def _invoke(
     command: list[str], cwd: Path, model: str, timeout_seconds: int
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
     """Run one Claude Code process; return its normalized record, its stderr and the raw result."""
     if not is_fake(command[0]):
         ensure_account()
+    env = agent_environment()
+    stdin_kwargs: dict[str, Any] = {"stdin": subprocess.DEVNULL}
+    text_kwargs: dict[str, Any] = {}
+    if WINDOWS:
+        command, stdin_kwargs = _windows_command(command, env)
+        text_kwargs = {"encoding": "utf-8", "errors": "replace"}
     started = time.monotonic()
     try:
         proc = subprocess.run(
             command,
             cwd=cwd,
-            env=agent_environment(),
+            env=env,
             capture_output=True,
             text=True,
             timeout=timeout_seconds,
-            stdin=subprocess.DEVNULL,
+            **stdin_kwargs,
+            **text_kwargs,
         )
         exit_code, stdout, stderr, timed_out = proc.returncode, proc.stdout, proc.stderr, False
     except subprocess.TimeoutExpired as exc:
@@ -467,7 +608,7 @@ def _invoke(
         payload = json.loads(stdout)
         result = payload[-1] if isinstance(payload, list) else payload
     except (json.JSONDecodeError, IndexError):
-        pass
+        pass  # the output is not JSON (or an empty list): the call has no result or usage
     usage = result.get("usage") or {}
     record = {
         "model": model,

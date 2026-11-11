@@ -82,6 +82,7 @@ from governed_harness.profiles import detect_profiles
 from governed_harness.reporting import TraceReporter
 from governed_harness.runtime import GitAdapter
 from governed_harness.runtime.lease import WorkspaceLease, interruptible
+from governed_harness.runtime.process_runner import resolve_executable
 from governed_harness.telemetry import MetricsProjector
 
 from .agent_contract import agent_calls
@@ -198,7 +199,7 @@ def _hooks_install_check(command: tuple[str, ...], workspace: Path) -> dict[str,
     import subprocess  # nosec B404 - runs the project's declared hook installer
 
     completed = subprocess.run(  # nosec B603 - the project's own declared command
-        list(command),
+        [resolve_executable(command[0]), *command[1:]],
         cwd=workspace,
         capture_output=True,
         check=False,
@@ -343,7 +344,7 @@ class HarnessApplication(ReviewCodeCommands):
                 for item in resolved.effective_capabilities
             ],
             "policies": resolved.effective_policies,
-            "intake": {"criteriaPolicy": resolved.project.criteria_policy},
+            "intake": self._intake_settings(resolved.project),
             "verification": self._verification(resolved.project),
             "review": self._review(resolved.project),
             "agentSandbox": {
@@ -481,6 +482,13 @@ class HarnessApplication(ReviewCodeCommands):
             "applyProfilePolicies": bool(settings.apply_profile_policies),
             "applyNetworkPolicy": bool(settings.apply_network_policy),
         }
+
+    @staticmethod
+    def _intake_settings(project: ProjectConfiguration) -> dict[str, Any]:
+        value: dict[str, Any] = {"criteriaPolicy": project.criteria_policy}
+        if project.intake is not None and project.intake.language is not None:
+            value["language"] = project.intake.language
+        return value
 
     @staticmethod
     def _verification(project: ProjectConfiguration) -> dict[str, Any]:
@@ -1452,11 +1460,15 @@ class HarnessApplication(ReviewCodeCommands):
             verifier = RunVerifier(services)
             ids = [execution_id] if execution_id else verifier.execution_ids()
             runs = [verifier.verify(item).as_dict() for item in ids]
-            return {
+            report: dict[str, Any] = {
                 "valid": all(item["valid"] for item in runs),
                 "runCount": len(runs),
                 "runs": runs,
             }
+            invalid = [item["executionId"] for item in runs if not item["valid"]]
+            if invalid:
+                report["hint"] = _verify_hint(services, invalid)
+            return report
 
     def export_bundle(self, path: Path, execution_id: str, output: Path) -> dict[str, Any]:
         """Write the portable evidence bundle of a run (``delivery.bundle``). Under
@@ -1745,18 +1757,18 @@ class HarnessApplication(ReviewCodeCommands):
             events = services.events.list(execution_id)
             metrics = MetricsProjector(services.state).project(execution_id, events)
             reporter = TraceReporter()
-            kwargs = dict(
-                execution=execution,
-                task=task,
-                phases=phases,
-                validations=validations,
-                findings=findings,
-                gate=gate,
-                decision=decision,
-                events=events,
-                metrics=metrics,
-                retrospective=retrospectives[-1] if retrospectives else None,
-            )
+            kwargs = {
+                "execution": execution,
+                "task": task,
+                "phases": phases,
+                "validations": validations,
+                "findings": findings,
+                "gate": gate,
+                "decision": decision,
+                "events": events,
+                "metrics": metrics,
+                "retrospective": retrospectives[-1] if retrospectives else None,
+            }
             if format == "json":
                 return reporter.render_json(**kwargs)
             if format == "sarif":
@@ -2386,3 +2398,20 @@ class HarnessApplication(ReviewCodeCommands):
                 for item in value
             ]
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+
+
+def _verify_hint(services: EngineServices, invalid: list[str]) -> str:
+    """The next step after a run that does not verify (#157): nothing repairs the record, so
+    the run is inspected and its task is done again in a new run."""
+    steps: list[str] = []
+    for execution_id in invalid:
+        try:
+            task_id = services.state.get("execution", execution_id, Execution).task_id
+        except NotFoundError:
+            task_id = "<taskId>"
+        steps.append(
+            f"`harness status --run {execution_id}` shows the run; nothing repairs its record "
+            f"(an export refuses it): `harness run cancel --run {execution_id}` ends it "
+            f"and `harness run start --task {task_id}` does the task again"
+        )
+    return "; ".join(steps) + "."

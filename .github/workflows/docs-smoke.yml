@@ -1,6 +1,7 @@
 # Keeps the documentation honest: reproduces the README quickstart and the demonstration flows
-# with their documented exit codes, checks that the generated references are up to date and
-# builds the documentation site in strict mode.
+# with their documented exit codes, runs the brownfield example on the built wheel (it downloads
+# the itsdangerous tag archive, checked by SHA-256, and hash-pinned packages), checks that the
+# generated references are up to date and builds the documentation site in strict mode.
 name: docs-smoke
 
 on:
@@ -43,15 +44,20 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: lts/*
           package-manager-cache: false
       - name: Install the package with pytest (as a user would)
-        run: python -m pip install . pytest
+        run: |
+          python -m venv "$RUNNER_TEMP/build"
+          "$RUNNER_TEMP/build"/bin/python -m pip install --require-hashes -r requirements/tools-build.txt
+          "$RUNNER_TEMP/build"/bin/python -m build --wheel --no-isolation --outdir dist
+          python -m pip install --require-hashes -r requirements/bench.txt
+          python -m pip install --no-deps dist/*.whl
       - name: Run the quickstart and the demonstration flows
         run: |
           python scripts/demo_flows.py all --transcript transcript.json
@@ -62,6 +68,10 @@ jobs:
           for s in steps:
               print(f"| {s['flow']} | `{s['command'][:80]}` | {s['expected']} | {s['actual']} |")
           PY
+      - name: Reproduce the brownfield case (pallets/itsdangerous 2.2.0)
+        run: |
+          wheel=$(ls "$PWD"/dist/*.whl)
+          PYTHON=python bash examples/brownfield-itsdangerous/reproduce.sh "$wheel" "$RUNNER_TEMP/brownfield"
 
   references:
     name: generated references
@@ -71,12 +81,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Check that the CLI and task-file references are up to date
         run: |
-          python -m pip install -e .
+          python -m pip install --require-hashes -r requirements/runtime.txt
+          python -m pip install --no-deps -e .
           python scripts/gen_cli_docs.py --check
           python scripts/gen_schema_docs.py --check
 
@@ -88,10 +99,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Build the site in strict mode
         run: |
-          python -m pip install -r docs/requirements.txt
+          python -m pip install --require-hashes -r requirements/docs.txt
           python -m mkdocs build --strict --site-dir site

@@ -18,10 +18,28 @@
 #   EVAL_DRY=1       dry run: fake_claude.py instead of Claude Code, no account check, no model call
 #   EVAL_CLAUDE_ACCOUNT  the account every real call must use (default: the one in agentlib.py)
 #   EVAL_CORE_REFERENCE_SRC  src/ of harness 1.0.0: harness-core runs compare their digest with it
+#
+# Windows (Git Bash, the 2.0.0 pilot machine): EVAL_EXTRA_PATH is semicolon-separated (Windows paths
+# hold a colon), the slot venvs keep their programs in Scripts/ with a harness.exe launcher, the run
+# PATH lists Git's cmd/ and the Windows system directories, PYTHONUTF8=1 is exported, and the
+# governed conditions run with runtime.agentSandbox off (Windows has no OS write sandbox; declared
+# in environment.json and log.txt). Every other system keeps the POSIX branch unchanged.
 set -u
 
 LAUNCHERS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EVAL_DIR="$(dirname "$LAUNCHERS")"
+EVAL_WINDOWS=0
+VENV_BIN=bin
+case "$(uname -s)" in
+  MINGW* | MSYS* | CYGWIN*)
+    EVAL_WINDOWS=1
+    VENV_BIN=Scripts
+    # The Windows form (C:/...): these paths also reach Python inside program text.
+    LAUNCHERS="$(cygpath -m "$LAUNCHERS")"
+    EVAL_DIR="$(cygpath -m "$EVAL_DIR")"
+    export PYTHONUTF8=1
+    ;;
+esac
 : "${EVAL_PYTHON:?set EVAL_PYTHON to the python of the evaluation venv}"
 : "${EVAL_WORK:?set EVAL_WORK to a work directory outside the repository}"
 : "${EVAL_CACHE:?set EVAL_CACHE to the directory with itsdangerous-2.2.0.tar.gz}"
@@ -50,7 +68,9 @@ check_account() {
   fi
   local expected="${EVAL_CLAUDE_ACCOUNT:-$("$EVAL_PYTHON" -c "import sys; sys.path.insert(0, '$EVAL_DIR'); import agentlib; print(agentlib.EXPECTED_ACCOUNT)")}"
   local account
-  account=$(python3 -c "import json,os; print((json.load(open(os.path.expanduser('~/.claude.json'))).get('oauthAccount') or {}).get('emailAddress',''))")
+  local py=python3
+  [ "$EVAL_WINDOWS" = "1" ] && py="$EVAL_PYTHON"
+  account=$("$py" -c "import json,os; print((json.load(open(os.path.expanduser('~/.claude.json'))).get('oauthAccount') or {}).get('emailAddress',''))")
   if [ "$account" != "$expected" ] || [ -n "${ANTHROPIC_API_KEY:-}" ] || [ -n "${CLAUDE_CONFIG_DIR:-}" ]; then
     echo "ABORT: the Claude CLI is not authenticated with the evaluation account (found '$account') or an override is set" >&2
     exit 3
@@ -89,6 +109,10 @@ copy_code() {
 # A slot venv per concurrent run: the brownfield project is made importable through a .pth file in
 # the venv's site-packages, so two runs must never share one.
 make_slot() {
+  if [ "$EVAL_WINDOWS" = "1" ]; then
+    make_slot_windows "$1"
+    return
+  fi
   local slot="$EVAL_WORK/venvs/slot-$1"
   if [ ! -x "$slot/bin/python" ]; then
     local base_python
@@ -114,10 +138,46 @@ SH
   echo "$slot"
 }
 
+# make_slot on Windows: the same venv and .pth file; Python prints Windows paths, and the harness
+# launcher is a harness.exe (pip's own launcher, distlib's ScriptMaker, bound to the slot's python),
+# which Git Bash and CreateProcess (run_eval.py starts "harness") both find.
+make_slot_windows() {
+  local slot="$EVAL_WORK/venvs/slot-$1"
+  if [ ! -x "$slot/Scripts/python.exe" ]; then
+    local base_python
+    base_python=$("$EVAL_PYTHON" -c "import sys; print(sys._base_executable)")
+    "$(cygpath -u "$base_python")" -m venv --without-pip "$slot" > /dev/null
+  fi
+  local base_site
+  base_site=$("$EVAL_PYTHON" -c "import sys; print(next(p for p in sys.path if p.endswith('site-packages')))")
+  local own_site
+  own_site=$("$slot/Scripts/python.exe" -c "import sys; print(next(p for p in sys.path if p.endswith('site-packages')))")
+  { [ -n "${EVAL_EXTRA_PATH:-}" ] && echo "$EVAL_EXTRA_PATH" | tr ';' '\n'; echo "$base_site"; } \
+    > "$(cygpath -u "$own_site")/00_eval_base.pth"
+  "$EVAL_PYTHON" -c "
+import sys
+from pip._vendor.distlib.scripts import ScriptMaker
+maker = ScriptMaker(None, sys.argv[1])
+maker.executable = sys.argv[2]
+maker.variants = {''}
+maker.clobber = True
+maker.make('harness = governed_harness.cli.main:main')
+" "$(cygpath -w "$slot/Scripts")" "$(cygpath -w "$slot/Scripts/python.exe")" > /dev/null
+  echo "$slot"
+}
+
 # The PATH of a run: the slot first (python, harness), then the Claude Code CLI and the system.
 slot_path() {
   local claude_dir=""
   command -v claude > /dev/null && claude_dir="$(dirname "$(command -v claude)"):"
+  if [ "$EVAL_WINDOWS" = "1" ]; then
+    # Git Bash form; it becomes a Windows PATH for the programs it starts. Git's cmd/ lets Claude
+    # Code find Git Bash for its Bash tool and the harness find git.
+    local root
+    root="$(cygpath -u "${SYSTEMROOT:-C:/Windows}")"
+    echo "$(cygpath -u "$1")/Scripts:${claude_dir}/cmd:/usr/bin:$root/System32:$root:$root/System32/Wbem:$root/System32/WindowsPowerShell/v1.0"
+    return
+  fi
   echo "$1/bin:${claude_dir}/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
 }
 
@@ -130,14 +190,20 @@ record_environment() {
   local source=()
   if [ -n "${EVAL_EXTRA_PATH:-}" ]; then
     # A development source tree instead of the wheel (the pilot): its commit is recorded.
-    source=(--source "${EVAL_EXTRA_PATH%%:*}")
+    if [ "$EVAL_WINDOWS" = "1" ]; then
+      source=(--source "${EVAL_EXTRA_PATH%%;*}")
+    else
+      source=(--source "${EVAL_EXTRA_PATH%%:*}")
+    fi
   elif [ "$EVAL_DRY" != "1" ] && [ -z "${EVAL_WHEEL:-}" ]; then
     echo "ABORT: set EVAL_WHEEL to the v2.0.0 wheel the evaluation venv was installed from" >&2
     exit 5
   fi
-  PATH="$(slot_path "$slot")" "$slot/bin/python" "$CODE/environment.py" "$EVAL_OUT/environment.json" \
+  PATH="$(slot_path "$slot")" "$slot/$VENV_BIN/python" "$CODE/environment.py" "$EVAL_OUT/environment.json" \
     ${wheel[@]+"${wheel[@]}"} ${source[@]+"${source[@]}"} --code "$CODE" --block "$1"
   [ -n "${EVAL_EXTRA_PATH:-}" ] && echo "EVAL_EXTRA_PATH set: the harness comes from a source tree, not the wheel" \
+    | tee -a "$EVAL_OUT/log.txt"
+  [ "$EVAL_WINDOWS" = "1" ] && echo "Windows: runtime.agentSandbox off in the governed conditions (no OS sandbox on Windows; harness init writes enforce)" \
     | tee -a "$EVAL_OUT/log.txt"
   unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT PYTHONPATH
 }

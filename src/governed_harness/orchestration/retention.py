@@ -140,16 +140,27 @@ class RetentionCollector:
             for run_id, uris in plan.pruned_runs.items()
             if any(uri in removable for uri in uris)
         }
-        orphans = retention.get("orphanArtifacts")
-        if orphans is not None:
-            if not isinstance(orphans, bool):
-                raise ConfigurationError(
-                    f"retention.orphanArtifacts must be true or false: {orphans!r}"
-                )
-            plan.orphan_artifacts = orphans
-            if orphans:
-                self._plan_orphans(plan, moment, removable)
+        self._orphans(plan, retention, moment, removable)
         return plan
+
+    def _orphans(
+        self,
+        plan: RetentionPlan,
+        retention: dict[str, Any],
+        moment: datetime,
+        removable: set[str],
+    ) -> None:
+        """Apply ``retention.orphanArtifacts``: when true, plan the orphan artifacts too."""
+        orphans = retention.get("orphanArtifacts")
+        if orphans is None:
+            return
+        if not isinstance(orphans, bool):
+            raise ConfigurationError(
+                f"retention.orphanArtifacts must be true or false: {orphans!r}"
+            )
+        plan.orphan_artifacts = orphans
+        if orphans:
+            self._plan_orphans(plan, moment, removable)
 
     def _plan_orphans(self, plan: RetentionPlan, moment: datetime, planned: set[str]) -> None:
         referenced: set[str] = set()

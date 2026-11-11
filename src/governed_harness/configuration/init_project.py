@@ -131,6 +131,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "stopConditions": list(STOP_CONDITIONS),
             },
             "projectSetup": "ask",
+            # 2.0: the deterministic INTENT rules follow the task's language (en or es).
+            "language": "auto",
         },
         "verification": {
             "requirementTraceability": "enforce",
@@ -243,6 +245,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "trustedHosts": list(DEFAULT_TRUSTED_HOSTS),
             "verifyRecords": True,
             "chainAnchor": "file",
+            # #149: events after the anchored head are a warning, and do not excuse a prune.
+            "unanchoredEvents": "warn",
             "pinTaskRevision": True,
             "protectExcludedPaths": True,
             "workspaceLease": True,

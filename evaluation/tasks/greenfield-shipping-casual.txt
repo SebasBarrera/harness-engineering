@@ -1,1 +1,1 @@
-implement the shipping cost calculator from SPEC.md
+implementa la calculadora de costos de envío de SPEC.md

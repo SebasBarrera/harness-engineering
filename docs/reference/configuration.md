@@ -81,6 +81,7 @@ intake:
     - scope-contradiction
     - destructive-collision
   projectSetup: ask
+  language: auto
 verification:
   requirementTraceability: enforce
   outputParsers: true
@@ -215,6 +216,7 @@ governance:
   - ::1
   verifyRecords: true
   chainAnchor: file
+  unanchoredEvents: warn
   pinTaskRevision: true
   protectExcludedPaths: true
   workspaceLease: true
@@ -370,6 +372,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
+| `agentRouting.thresholds.trivial` | `requirements: 1`, `files: 1`, `loc: 150` when absent | Since #197: the upper bounds under which an `S` task (with at least one requirement and one owned file, no risk flag, not decomposed) is `trivial` and its `implement` call runs on the family's `trivial` rung (`claude-haiku-5-5` in the claude-code table); a failed trivial call escalates to the `S` rung. Starting values to calibrate; `requirements: 0` turns the tier off. See [trivial implement tasks](../guides/agent-results.md#trivial-implement-tasks-197). |
 | `agentRouting.mode`, `agentRouting.anchorModel` | `fixed` when absent; `init` writes `anchored` (before #85: `tiered`) | `fixed` keeps the provider's model, `tiered` chooses from the tables, `anchored` chooses from the tables with the invoking model as the ceiling; `anchorModel` names the invoking model when the provider does not (for example an embedded session). See [anchored routing](../guides/agent-results.md#anchored-at-the-invoking-model-85). |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
@@ -390,6 +393,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `architecture.catalogue` | `off` when absent; `init` writes `experts` | `experts`: a new project is offered the ten styles of the catalogue; the advise call recommends one with its reasons and the project characteristics that support it (report in `.harness/architecture-options.md`), a person accepts it or picks any style (`harness architecture decide --style`), and an expert for the chosen style plans the organization and rides with every later request. See [architectures (Spanish)](../es/arquitecturas.md). |
 | `architecture.documentation` | `off` when absent; `init` writes `project` | `project`: the survey of an existing project also writes persistent reverse engineering documents in `.harness/reverse-engineering` that later requests point to; the survey is reused while they hold. See [reverse engineering (Spanish)](../es/ingenieria-inversa.md). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
+| `intake.language` | the English rules when absent; `init` writes `auto` | The language of the deterministic INTENT rules (`C0` to `C3`, `T1`): `en`, `es`, or `auto` to detect it from each task. See [the language of the rules](#the-language-of-the-rules). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
 
@@ -555,7 +559,7 @@ with the questions depends on `intake.criteriaPolicy`:
 
 | Policy | INTENT with questions |
 |---|---|
-| `enforce` | `BLOCKED` with `Intent needs clarification: N question(s)`; `run start` and `run continue` exit with 6. |
+| `enforce` | `BLOCKED` with `Intent needs clarification: N question(s) (rules ...)`, naming the rules that asked (since 2.0.0); `run start` and `run continue` exit with 6. |
 | `warn` | `PASSED`; each question is also recorded as a `LOW` finding of `intake.clarification`, which the gate does not count. |
 | `off` | No assessment: INTENT behaves as in 1.0.0. |
 
@@ -597,6 +601,37 @@ task, when the file adds no requirement or criterion, becomes a requirement with
 task without an open request (exit 3), and a task that has a run past INTENT or an actor id in a
 namespace the harness uses for agents, validators or itself (`agent.`, `validator.`, `harness.`)
 (exit 5). Actor ids are recorded, not authenticated.
+
+### The language of the rules
+
+`intake.language` chooses the vocabularies and the question texts of the rules above; rule ids,
+question ids and targets do not change.
+
+| Value | The rules |
+|---|---|
+| absent | As described above: words are ASCII runs (`contraseñas` is read as `contrase` and `as`), the vocabularies and the questions are English. A `project.yaml` without the key keeps its configuration digest. |
+| `en` | Words are Unicode runs of letters, digits, `_`, `'` and `-`, compared without diacritics; the English vocabularies and questions. For ASCII text the words, and so the questions, are the same as without the key. |
+| `es` | Unicode words as under `en`; the Spanish vocabularies are added to the English ones (Spanish tasks keep English code words) and the questions and the next step of a `warn` finding are in Spanish. |
+| `auto` | `es` or `en` for each task, detected from its title, intent, criteria and verification hints (below). |
+
+The Spanish vocabularies: vague words such as "funciona", "correctamente", "adecuadamente",
+"bien", "bueno", "limpio", "robusto", "como se espera", "fácil de usar"; filler words such as
+articles, auxiliaries and "código", "sistema", "aplicación", "resultado"; result verbs such as
+"devuelve", "lanza", "rechaza", "acepta", "contiene", "lista", "guarda", "imprime", "muestra",
+"responde", "crea", "elimina", "coincide", "pasa", "falla", "dentro", "antes", "después",
+"como máximo", "al menos"; quality words "rápido", "veloz", "eficiente", "escalable", "seguro",
+"fiable", "confiable", "responsivo", "performante"; and number words such as "cero", "dos",
+"diez", "cien", "mil", "millón", "medio" and "doble"
+("un" and "una" are left out, since they are mostly articles). The full lists are in
+`src/governed_harness/intake/language.py`.
+
+Detection is a fixed count, without a language model: a word counts for Spanish when it is a
+Spanish function word ("el", "de", "que", "para", ...), a common word of short Spanish requests
+("agrega", "implementa", "pruebas", ...) or a word of the Spanish vocabularies; an English
+function word ("the", "of", "should", ...) counts for English; each `ñ`, `¿`, `¡` or accented
+vowel counts for Spanish. Words shared by both languages ("a", "general", "once") count for
+neither. The task is Spanish when Spanish counts more; a tie, including a task with no signal,
+is English. The `T1` intent length (25 words) is the same in both languages.
 
 ### Tasks without acceptance criteria
 
@@ -875,6 +910,7 @@ the reason in `eventChainError` (before, an edited event made it exit with 1).
 |---|---|---|---|
 | `verifyRecords` | `false` | `true` | `harness trace` (every format, and the API trace route) verifies the run first and refuses to export a run that does not verify (exit 6, API 409); `status` adds `recordsValid` and, when false, `verificationSummary`. |
 | `chainAnchor` | `off` | `file` | After every command that appends events to a run (`run start`, `run continue`, `gate decide`, `run cancel`, `task clarify`), the sequence and digest of the chain head are copied outside `.harness`. `file`: a JSON file per workspace under `$HARNESS_ANCHOR_DIR`, else `$XDG_DATA_HOME/governed-harness/anchors`, else `~/Library/Application Support/governed-harness/anchors` (macOS), `%LOCALAPPDATA%\governed-harness\anchors` (Windows) or `~/.local/share/governed-harness/anchors`. `git-note`: a Git note under `refs/notes/governed-harness` of the workspace repository, attached to a blob named after the run. `off`: no anchor. A chain that does not verify is never anchored, and a failed write does not stop the run (verify then reports `absent`). |
+| `unanchoredEvents` | 1.x behaviour | `warn` | Since 2.0 (#149), with `chainAnchor` set. The anchor covers the chain up to the anchored head; events appended after it (by a command that does not re-anchor, or by a forger) are not covered. `warn`: `harness verify` lists them in `anchor.unanchoredEvents` and adds a `warnings` entry, exit 0 if nothing else fails. `fail`: the anchor status is `unanchored` and verify fails (exit 6). Under either value a `retention.artifacts.pruned` event excuses a missing artifact only when it is within the anchored part; one after the head (or any, when the anchor is `absent`) leaves the artifact `missing`, with the reason in `detail` when the event is after the head. Absent: the events after the anchor are only counted (`eventsAfterAnchor`) and every prune event excuses its artifacts, so a forged prune event appended after the anchor hides a deleted blob. |
 
 Neither anchor is tamper-proof: a process with your permissions can rewrite the anchor as well as
 `state.db`. It turns a silent truncation into an edit of two places, and a deleted anchor shows up
@@ -1302,7 +1338,7 @@ confirmContract: true
 | `environment.variables` | none | none | Each named variable must be set (only the name is recorded). |
 | `environment.gitHooks` | none | none | `required` hooks must be present and executable in the directory Git uses; the reason names `install`, which only `harness doctor --install-hooks` runs. Hooks are never bypassed. |
 | `environment.dirtyTree` | `allow` | `warn` | Uncommitted changes outside `.harness/`: `block` stops DISCOVERY, `warn` records a `LOW` finding. |
-| `environment.baseline` | off | `report` | The mandatory validators run on a scratch copy of the baseline in DISCOVERY: `require` stops the run when one does not pass, `report` records a `LOW` finding; the comparison with the baseline (`verification.differential`) reuses the result. |
+| `environment.baseline` | off | `report` | The mandatory validators run on a scratch copy of the baseline in DISCOVERY: `require` stops the run when one does not pass, `report` records a `LOW` finding; the comparison with the baseline (`verification.differential`) reuses the result. A shared failure of a test run that ran no test (pytest exit codes 2 to 5) does not make the comparison pass (#190). |
 | `workspace.isolation` | none | `mode: none`, the branch template, `fetch: true` | `mode: worktree` (or `run start --isolate worktree`) runs the phases in a Git worktree under `directory` (default `.harness/worktrees/RUN`) on a new branch (`branch`, default `harness/{taskId}-{runId}`, or the contract's) from `base` (default the current branch), fetched from `remote` (default `origin`) first. An existing branch or directory blocks the run (exit 6, `stop.condition` `destructive-collision`); nothing is reset or deleted, and `run continue` tries again. The closure commit goes on the worktree's branch; `harness run cleanup` removes a finished run's worktree (never its branch). `init` keeps `none`: the documented flows and the README quickstart work in place. |
 | `runtime.stateDir` | the workspace's `.harness/` | `auto` | The state database and the artifact store of the project move to `auto` (`$HARNESS_STATE_DIR`, else `$XDG_DATA_HOME/governed-harness/state`, else the platform's application-data directory) or the path given, in a directory named after the project id and the repository (its Git common directory, shared by its worktrees) with a `registry.json`. The agent sandbox keeps it read-only; `harness registry` and `GET /api/registry` list the projects and their latest runs. `.harness/` keeps the configuration, the lease, caches and scratch copies. |
 | `toolchain.extendedProfiles` | off | `true` | Detect the built-in Go, Rust, JVM (Gradle, Maven), Swift and Android profiles. |
@@ -1328,7 +1364,7 @@ the section behaves, and digests, as before. The guide in Spanish is
 |---|---|---|
 | `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
 | `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
-| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. |
+| `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. The token budget counts the work of the call as the provider reports it: fresh input, cache creation, output and reasoning. Prompt-cache reads (`cacheReadTokens`) are recorded with the call's usage, its response and the metrics, but do not count; a provider that reports no cache-read split counts its whole input. The limit message gives both numbers. |
 | `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
 | `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
 | `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |
@@ -1387,7 +1423,7 @@ read-only and reports a confidence with the marker files it found.
 
 | Profile | Detection markers (weight) | Mandatory validator | Optional validators (when available) |
 |---|---|---|---|
-| `python_default` | `pyproject.toml` (0.80), `requirements.txt` (0.45), `pytest.ini` (0.35) | `python.pytest`: `python -m pytest -q` | `python.ruff`: `python -m ruff check .`, `python.mypy`: `python -m mypy .` |
+| `python_default` | `pyproject.toml` (0.80), `requirements.txt` (0.45), `pytest.ini` (0.35) | `python.pytest`: `python -m pytest -q` | `python.ruff`: `python -m ruff check --no-fix .`, `python.mypy`: `python -m mypy .` |
 | `node_default` | `package.json` (0.80), `package-lock.json`, `pnpm-lock.yaml`, `yarn.lock` (0.35 each) | `node.test`: `npm test --silent` (requires a `test` script) | `node.lint`: `npm run lint --silent`, `node.typecheck`: `npm run typecheck --silent` (only if the scripts exist) |
 | `go_default` (`extendedProfiles`) | `go.mod` (0.80), `go.sum` (0.20) | `go.test`: `go test ./...` | `go.vet`: `go vet ./...` |
 | `rust_default` (`extendedProfiles`) | `Cargo.toml` (0.80), `Cargo.lock` (0.20) | `rust.test`: `cargo test --quiet` | `rust.check`, `rust.clippy` |

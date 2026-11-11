@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from governed_harness.delivery.bundle import decision_entries, verify_bundle
-from governed_harness.delivery.vcs import Git, revision_diff
+from governed_harness.delivery.vcs import Git, RevisionDiff, revision_diff
 from governed_harness.domain.models import utc_now
 from governed_harness.events.sqlite_store import SQLiteEventStore
 
@@ -89,59 +89,14 @@ def verify_approval(
     diff = revision_diff(root, base, head)
     approvals: list[dict[str, Any]] = []
     for bundle in bundles:
-        report = verify_bundle(bundle, moment)
-        for decision in report["decisions"]:
-            approvals.append(
-                {
-                    **decision,
-                    "source": f"bundle:{bundle}",
-                    "executionId": report["executionId"],
-                    "evidenceValid": report["valid"],
-                    "problems": report["problems"],
-                }
-            )
-        if not report["decisions"]:
-            approvals.append(
-                {
-                    "source": f"bundle:{bundle}",
-                    "executionId": report["executionId"],
-                    "decision": None,
-                    "approval": False,
-                    "changeSetDigest": None,
-                    "expired": False,
-                    "evidenceValid": report["valid"],
-                    "problems": report["problems"],
-                }
-            )
+        approvals.extend(_bundle_approvals(bundle, moment))
     if use_workspace:
         approvals.extend(_local_approvals(root, moment))
     for item in approvals:
-        item["matches"] = bool(
-            item.get("approval")
-            and item.get("changeSetDigest") == diff.digest
-            and not item.get("expired")
-            and item.get("evidenceValid")
-        )
+        item["matches"] = _matches(item, diff.digest)
     matched = [item for item in approvals if item["matches"]]
     trailers = Git(root).trailers(diff.base, diff.head)
-    reasons: list[str] = []
-    if not diff.paths:
-        reasons.append("the range changes no file: there is nothing an approval could cover")
-    if diff.special:
-        reasons.append(
-            "the range holds changes a ChangeSet cannot hold: " + ", ".join(diff.special)
-        )
-    if not matched:
-        reasons.append(
-            f"no valid, unexpired APPROVE or APPROVE_EXCEPTION is bound to {diff.digest}"
-        )
-    for item in trailers:
-        claimed = item.get("Harness-ChangeSet")
-        if claimed and claimed != diff.digest:
-            reasons.append(
-                f"commit {item['commit'][:12]} claims ChangeSet {claimed}; the range recomputes "
-                f"to {diff.digest} (informational)"
-            )
+    reasons = _approval_reasons(diff, bool(matched), trailers)
     passed = bool(matched) and not diff.special and bool(diff.paths)
     return {
         "status": "PASSED" if passed else "FAILED",
@@ -163,3 +118,67 @@ def verify_approval(
         "matchedApproval": matched[0] if matched else None,
         "reasons": reasons,
     }
+
+
+def _bundle_approvals(bundle: Path, moment: datetime) -> list[dict[str, Any]]:
+    """The decisions of one bundle, or one non-approval entry when it holds none."""
+    report = verify_bundle(bundle, moment)
+    approvals = [
+        {
+            **decision,
+            "source": f"bundle:{bundle}",
+            "executionId": report["executionId"],
+            "evidenceValid": report["valid"],
+            "problems": report["problems"],
+        }
+        for decision in report["decisions"]
+    ]
+    if not report["decisions"]:
+        approvals.append(
+            {
+                "source": f"bundle:{bundle}",
+                "executionId": report["executionId"],
+                "decision": None,
+                "approval": False,
+                "changeSetDigest": None,
+                "expired": False,
+                "evidenceValid": report["valid"],
+                "problems": report["problems"],
+            }
+        )
+    return approvals
+
+
+def _matches(item: dict[str, Any], digest: str) -> bool:
+    """A valid, unexpired approval bound to ``digest``."""
+    return bool(
+        item.get("approval")
+        and item.get("changeSetDigest") == digest
+        and not item.get("expired")
+        and item.get("evidenceValid")
+    )
+
+
+def _approval_reasons(
+    diff: RevisionDiff, matched: bool, trailers: list[dict[str, str]]
+) -> list[str]:
+    """Why the range fails, plus informational ChangeSet trailers that disagree with it."""
+    reasons: list[str] = []
+    if not diff.paths:
+        reasons.append("the range changes no file: there is nothing an approval could cover")
+    if diff.special:
+        reasons.append(
+            "the range holds changes a ChangeSet cannot hold: " + ", ".join(diff.special)
+        )
+    if not matched:
+        reasons.append(
+            f"no valid, unexpired APPROVE or APPROVE_EXCEPTION is bound to {diff.digest}"
+        )
+    for item in trailers:
+        claimed = item.get("Harness-ChangeSet")
+        if claimed and claimed != diff.digest:
+            reasons.append(
+                f"commit {item['commit'][:12]} claims ChangeSet {claimed}; the range recomputes "
+                f"to {diff.digest} (informational)"
+            )
+    return reasons

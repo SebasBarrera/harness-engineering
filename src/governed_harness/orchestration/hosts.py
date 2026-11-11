@@ -21,7 +21,7 @@ if TYPE_CHECKING:
     from datetime import datetime
     from pathlib import Path
 
-    from governed_harness.agents import AgentExecutionResult, AgentProvider
+    from governed_harness.agents import AgentCallResult, AgentExecutionResult, AgentProvider
     from governed_harness.agents.requests import CallKind
     from governed_harness.agents.routing import TaskSignals
     from governed_harness.checks.layers import LayerRules
@@ -52,6 +52,7 @@ if TYPE_CHECKING:
         ValidationResult,
     )
     from governed_harness.gates import GateEngine
+    from governed_harness.orchestration.agent_contract_types import CallLimits
     from governed_harness.orchestration.engine_types import (
         AgentCallOutcome,
         EngineServices,
@@ -241,6 +242,10 @@ class ResultsHost(Protocol):
         """Whether any agent-results setting is configured."""
 
     @property
+    def agent_contract(self) -> AgentContractPort:
+        """The agent contract (#97)."""
+
+    @property
     def agent_review(self) -> AgentReviewPort:
         """The single independent reviewer."""
 
@@ -405,6 +410,33 @@ class AcceptancePort(Protocol):
 
     def untouched(self, execution: Execution) -> set[str]:
         """The frozen files still as approved (the harness's, not the agent's edits)."""
+
+
+class AgentContractPort(Protocol):
+    """The agent contract as the review panel uses it (#149)."""
+
+    @property
+    def enabled(self) -> bool:
+        """Whether ``agentContract`` is set to ``enforce``."""
+
+    def limits(self, execution: Execution, task: Task) -> CallLimits:
+        """The token budget and the time limit of a call for the task's size."""
+
+    def timeout(self, default: int, limits: CallLimits) -> int:
+        """The time a process may run under the limits."""
+
+    def settle_reviewer(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        reviewer: str,
+        answer: AgentCallResult,
+        *,
+        request: dict[str, Any],
+        request_ref: str | None,
+        limits: CallLimits,
+    ) -> str | None:
+        """Judge and record one reviewer answer; the reason to discard it, else ``None``."""
 
 
 class AgentReviewPort(Protocol):

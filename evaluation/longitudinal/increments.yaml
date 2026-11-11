@@ -2,101 +2,105 @@
 # casual: the one-line prompt of the baseline. task: the structured task of the harness condition,
 # which carries the rules as requirements and acceptance criteria. SPEC.md names only the API.
 # parts: SPEC parts checked by the external oracle after the increment.
+# The texts the model receives are in Spanish (maintainer decision of 2026-11-11); identifiers,
+# values and commands stay as they are.
 - id: I1
   parts:
   - a
-  casual: make the inventory library from SPEC.md, just part A (items) for now
+  casual: haz la biblioteca de inventario de SPEC.md, por ahora solo la parte A (artículos)
   task:
-    title: Inventory items (part A)
-    intent: Implement part A (items) of the inventory package, with pytest tests.
+    title: Artículos del inventario (parte A)
+    intent: Implementar la parte A (artículos) del paquete inventory, con pruebas de pytest.
     requirements:
-    - 'add_item(sku, name, price, quantity=0): sku must match ^[A-Z]{3}-\d{4}$; a duplicate SKU, an empty name,
-      a negative price or a quantity that is not a non-negative int raise ValueError; price accepts int, str or
-      Decimal and is stored as Decimal rounded half up to two places.'
-    - get_item(sku) returns {sku, name, price, quantity}; remove_item(sku) deletes it; unknown SKUs raise KeyError;
-      list_items() returns the items as dictionaries sorted by SKU.
+    - 'add_item(sku, name, price, quantity=0): sku debe cumplir ^[A-Z]{3}-\d{4}$; un SKU duplicado, un nombre
+      vacío, un precio negativo o una cantidad que no sea un int no negativo lanzan ValueError; price acepta int,
+      str o Decimal y se guarda como Decimal redondeado half up (mitad hacia arriba) a dos decimales.'
+    - get_item(sku) devuelve {sku, name, price, quantity}; remove_item(sku) lo elimina; los SKU desconocidos
+      lanzan KeyError; list_items() devuelve los artículos como diccionarios ordenados por SKU.
     acceptanceCriteria:
-    - Invalid SKUs (lowercase, wrong length, missing dash, empty), duplicate SKUs, empty names, negative prices
-      and negative or non-int quantities raise ValueError.
-    - get_item returns the price as Decimal with two places (for example '3.456' becomes 3.46); unknown SKUs raise
-      KeyError in get_item and remove_item.
-    - tests/ contains pytest tests for every rule above and python -m pytest -q passes.
+    - Los SKU inválidos (en minúsculas, de longitud incorrecta, sin guion, vacíos), los SKU duplicados, los
+      nombres vacíos, los precios negativos y las cantidades negativas o que no son int lanzan ValueError.
+    - get_item devuelve el precio como Decimal con dos decimales (por ejemplo, '3.456' se convierte en 3.46); los
+      SKU desconocidos lanzan KeyError en get_item y remove_item.
+    - tests/ contiene pruebas de pytest para cada regla anterior y python -m pytest -q pasa.
     constraints:
-    - Use only the Python standard library.
+    - Usar solo la biblioteca estándar de Python.
 - id: I2
   parts:
   - a
   - b
-  casual: now add stock movements, part B of the spec
+  casual: ahora agrega los movimientos de stock, la parte B de la especificación
   task:
-    title: Stock movements (part B)
-    intent: Implement part B (stock movements) without breaking part A, with pytest tests.
+    title: Movimientos de stock (parte B)
+    intent: Implementar la parte B (movimientos de stock) sin romper la parte A, con pruebas de pytest.
     requirements:
-    - 'receive(sku, quantity) and ship(sku, quantity): quantity must be a positive int (0, negatives, floats and
-      strings raise ValueError); shipping more than the available quantity raises ValueError and changes neither
-      the quantity nor the history.'
-    - history(sku) returns the movements in order as tuples ('receive' or 'ship', quantity); unknown SKUs raise
-      KeyError.
+    - 'receive(sku, quantity) y ship(sku, quantity): quantity debe ser un int positivo (0, los negativos, los
+      floats y los strings lanzan ValueError); despachar más que la cantidad disponible lanza ValueError y no
+      cambia ni la cantidad ni el historial.'
+    - history(sku) devuelve los movimientos en orden como tuplas ('receive' o 'ship', quantity); los SKU
+      desconocidos lanzan KeyError.
     acceptanceCriteria:
-    - receive and ship update the quantity; history lists the movements in order.
-    - Invalid quantities and over-shipping raise ValueError with no change; unknown SKUs raise KeyError.
-    - Tests cover part B and all existing tests keep passing.
+    - receive y ship actualizan la cantidad; history lista los movimientos en orden.
+    - Las cantidades inválidas y los despachos mayores que la cantidad disponible lanzan ValueError sin cambios;
+      los SKU desconocidos lanzan KeyError.
+    - Las pruebas cubren la parte B y todas las pruebas existentes siguen pasando.
     constraints:
-    - Use only the Python standard library.
+    - Usar solo la biblioteca estándar de Python.
 - id: I3
   parts:
   - a
   - b
-  casual: add unit tests
+  casual: agrega pruebas unitarias
   task:
-    title: Unit tests for parts A and B
-    intent: Add or complete pytest tests that cover every rule of parts A and B (the rules of the previous tasks).
+    title: Pruebas unitarias de las partes A y B
+    intent: Agregar o completar pruebas de pytest que cubran cada regla de las partes A y B (las reglas de las
+      tareas anteriores).
     requirements:
-    - Every validation rule and error of parts A and B has at least one test.
+    - Cada regla de validación y cada error de las partes A y B tiene al menos una prueba.
     acceptanceCriteria:
-    - Tests exercise valid and invalid inputs for add_item, get_item, remove_item, list_items, receive, ship and
-      history.
-    - python -m pytest -q passes.
+    - Las pruebas ejercitan entradas válidas e inválidas para add_item, get_item, remove_item, list_items, receive,
+      ship y history.
+    - python -m pytest -q pasa.
     constraints:
-    - Do not change the public behavior of the library.
+    - No cambiar el comportamiento público de la biblioteca.
 - id: I4
   parts:
   - a
   - b
   - c
-  casual: add saving and loading the inventory to a json file (part C), make it secure
+  casual: agrega guardar y cargar el inventario en un archivo json (parte C), que sea seguro
   task:
-    title: Secure persistence (part C)
-    intent: Implement part C (persistence) securely, with pytest tests.
+    title: Persistencia segura (parte C)
+    intent: Implementar la parte C (persistencia) de forma segura, con pruebas de pytest.
     requirements:
-    - save(path) writes the inventory including history as JSON, with prices as strings.
-    - Inventory.load(path) returns a new inventory; it accepts only paths ending in .json, rejects files larger
-      than 1 MB, and raises ValueError for malformed JSON or invalid data (bad SKU, negative quantity, negative
-      price); it never uses pickle or eval.
+    - save(path) escribe el inventario, incluido el historial, como JSON, con los precios como strings.
+    - Inventory.load(path) devuelve un inventario nuevo; acepta solo rutas que terminan en .json, rechaza archivos
+      de más de 1 MB y lanza ValueError ante JSON mal formado o datos inválidos (SKU incorrecto, cantidad negativa,
+      precio negativo); nunca usa pickle ni eval.
     acceptanceCriteria:
-    - A save/load round trip preserves items, prices and history.
-    - load raises ValueError for a non-.json path, a file over 1 MB, malformed JSON, an invalid SKU, a negative
-      quantity or a negative price.
-    - Tests cover part C and all existing tests keep passing.
+    - Un ciclo de ida y vuelta save/load (round trip) conserva los artículos, los precios y el historial.
+    - load lanza ValueError para una ruta que no es .json, un archivo de más de 1 MB, JSON mal formado, un SKU
+      inválido, una cantidad negativa o un precio negativo.
+    - Las pruebas cubren la parte C y todas las pruebas existentes siguen pasando.
     constraints:
-    - Use only the Python standard library.
+    - Usar solo la biblioteca estándar de Python.
 - id: I5
   parts:
   - a
   - b
   - c
   - d
-  casual: add the reports from part D
+  casual: agrega los reportes de la parte D
   task:
-    title: Reports (part D)
-    intent: Implement part D (reports), with pytest tests.
+    title: Reportes (parte D)
+    intent: Implementar la parte D (reportes), con pruebas de pytest.
     requirements:
-    - low_stock(threshold) returns the SKUs whose quantity is strictly below threshold, sorted.
-    - total_value() returns the sum of price * quantity as a Decimal rounded once, half up, to two places (0.00
-      for an empty inventory).
+    - low_stock(threshold) devuelve los SKU cuya cantidad es estrictamente menor que threshold, ordenados.
+    - total_value() devuelve la suma de price * quantity como un Decimal redondeado una sola vez, half up (mitad
+      hacia arriba), a dos decimales (0.00 para un inventario vacío).
     acceptanceCriteria:
-    - low_stock uses a strict comparison and returns sorted SKUs.
-    - total_value returns a Decimal with two places, rounded once.
-    - Tests cover part D and all existing tests keep passing.
+    - low_stock usa una comparación estricta y devuelve los SKU ordenados.
+    - total_value devuelve un Decimal con dos decimales, redondeado una sola vez.
+    - Las pruebas cubren la parte D y todas las pruebas existentes siguen pasando.
     constraints:
-    - Use only the Python standard library.
+    - Usar solo la biblioteca estándar de Python.

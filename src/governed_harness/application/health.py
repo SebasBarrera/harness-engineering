@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from governed_harness import __version__
+from governed_harness.domain.actors import NON_HUMAN_ACTOR_PREFIXES
 from governed_harness.domain.enums import ActorType, DecisionKind, ResultStatus
 from governed_harness.domain.errors import ConfigurationError, PolicyViolationError
 from governed_harness.domain.ids import new_id
@@ -32,7 +33,7 @@ from governed_harness.domain.models import (
     utc_now,
 )
 from governed_harness.gates.exceptions import exception_ids
-from governed_harness.orchestration.engine import NON_HUMAN_ACTOR_PREFIXES, EngineServices
+from governed_harness.orchestration.engine import EngineServices
 
 OUTCOME_KINDS: tuple[OutcomeKind, ...] = ("INCIDENT", "REVERT", "HOTFIX", "REGRESSION", "OTHER")
 
@@ -120,6 +121,129 @@ def _blank() -> dict[str, Any]:
     }
 
 
+def _blank_validator() -> dict[str, Any]:
+    return {"runs": 0, "mandatory": False, "notPassed": 0, "results": 0}
+
+
+def _tally_validations(
+    services: EngineServices, run_id: str, validators: dict[str, dict[str, Any]]
+) -> dict[str, str]:
+    """Count the validation results of one run; the ChangeSet digest each finding came from."""
+    digest_of: dict[str, str] = {}
+    seen_validators: set[str] = set()
+    for validation in services.state.list("validation", ValidationResult, execution_id=run_id):
+        for finding_id in validation.finding_ids:
+            digest_of[finding_id] = validation.change_set_digest
+        entry = validators[validation.validator_id]
+        entry["results"] += 1
+        entry["mandatory"] = entry["mandatory"] or validation.mandatory
+        if validation.status is not ResultStatus.PASSED:
+            entry["notPassed"] += 1
+        seen_validators.add(validation.validator_id)
+    for validator_id in seen_validators:
+        validators[validator_id]["runs"] += 1
+    return digest_of
+
+
+def _tally_findings(
+    run_id: str,
+    findings: dict[str, Finding],
+    rules: dict[str, dict[str, Any]],
+    signals: tuple[bool, bool, bool, str | None, dict[str, str]],
+) -> None:
+    """Count the findings of one run by rule: ``signals`` is (corrected, rejected, has an
+    outcome, final ChangeSet digest, digest by finding)."""
+    corrected, rejected, has_outcome, final, digest_of = signals
+    for finding in findings.values():
+        entry = rules[finding.rule_id]
+        entry["fired"] += 1
+        entry["runs"].add(run_id)
+        if corrected and digest_of.get(finding.finding_id) not in {None, final}:
+            entry["correctedRuns"].add(run_id)
+        if rejected and digest_of.get(finding.finding_id) == final:
+            entry["rejectedRuns"].add(run_id)
+        if has_outcome:
+            entry["outcomeRuns"].add(run_id)
+
+
+def _tally_gates(
+    services: EngineServices,
+    run_id: str,
+    findings: dict[str, Finding],
+    rules: dict[str, dict[str, Any]],
+    applications: dict[str, int],
+) -> None:
+    """Count the gates each rule blocked in one run and the exceptions they applied."""
+    for gate in services.state.list("gate", GateEvaluation, execution_id=run_id):
+        for code in gate.reason_codes:
+            blocked = (
+                findings.get(code.removeprefix("BLOCKING_FINDING_"))
+                if code.startswith("BLOCKING_FINDING_")
+                else None
+            )
+            if blocked is not None:
+                rules[blocked.rule_id]["blockedGates"] += 1
+        for exception_id in exception_ids(gate.reason_codes):
+            applications[exception_id] += 1
+
+
+def _tally_run(
+    services: EngineServices,
+    execution: Execution,
+    outcome_runs: set[str],
+    tallies: tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]], dict[str, int]],
+) -> bool:
+    """Count one run into ``tallies`` (rules, validators, exception applications); whether a
+    correction was authorized in it."""
+    rules, validators, applications = tallies
+    run_id = execution.execution_id
+    events = services.events.list(run_id)
+    corrected = any(event.event_type == "correction.authorized" for event in events)
+    decisions = services.state.list("decision", HumanDecision, execution_id=run_id)
+    rejected = any(item.decision is DecisionKind.REJECT for item in decisions)
+    final = execution.change_set_digest
+    findings = {
+        item.finding_id: item
+        for item in services.state.list("finding", Finding, execution_id=run_id)
+    }
+    digest_of = _tally_validations(services, run_id, validators)
+    signals = (corrected, rejected, run_id in outcome_runs, final, digest_of)
+    _tally_findings(run_id, findings, rules, signals)
+    _tally_gates(services, run_id, findings, rules, applications)
+    return corrected
+
+
+def _tally_exceptions(
+    services: EngineServices,
+    project_id: str,
+    run_ids: set[str],
+    rules: dict[str, dict[str, Any]],
+    applications: dict[str, int],
+) -> None:
+    """Count the exceptions recorded for each rule in the selected runs."""
+    for record in services.state.list("exception", ExceptionRecord, project_id=project_id):
+        if record.execution_id not in run_ids:
+            continue
+        for rule_id in {scope.rule_id for scope in record.scope}:
+            rules[rule_id]["excepted"] += 1
+            rules[rule_id]["exceptionApplications"] += applications[record.exception_id]
+
+
+def _rule_row(rule_id: str, entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "ruleId": rule_id,
+        "fired": entry["fired"],
+        "runs": len(entry["runs"]),
+        "blockedGates": entry["blockedGates"],
+        "excepted": entry["excepted"],
+        "exceptionApplications": entry["exceptionApplications"],
+        "correctedRuns": len(entry["correctedRuns"]),
+        "rejectedRuns": len(entry["rejectedRuns"]),
+        "runsWithLaterOutcomes": len(entry["outcomeRuns"]),
+        "signal": _signal(entry),
+    }
+
+
 def rule_health(services: EngineServices, since_days: int | None = None) -> dict[str, Any]:
     project_id = services.resolved.project.project_id
     cutoff = utc_now() - timedelta(days=since_days) if since_days is not None else None
@@ -130,9 +254,7 @@ def rule_health(services: EngineServices, since_days: int | None = None) -> dict
     ]
     run_ids = {item.execution_id for item in runs}
     rules: dict[str, dict[str, Any]] = defaultdict(_blank)
-    validators: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"runs": 0, "mandatory": False, "notPassed": 0, "results": 0}
-    )
+    validators: dict[str, dict[str, Any]] = defaultdict(_blank_validator)
     outcomes = [
         item
         for item in services.state.list("outcome", OutcomeRecord, project_id=project_id)
@@ -142,71 +264,10 @@ def rule_health(services: EngineServices, since_days: int | None = None) -> dict
     corrected_runs: set[str] = set()
     applications: dict[str, int] = defaultdict(int)
     for execution in runs:
-        run_id = execution.execution_id
-        events = services.events.list(run_id)
-        corrected = any(event.event_type == "correction.authorized" for event in events)
-        if corrected:
-            corrected_runs.add(run_id)
-        decisions = services.state.list("decision", HumanDecision, execution_id=run_id)
-        rejected = any(item.decision is DecisionKind.REJECT for item in decisions)
-        final = execution.change_set_digest
-        findings = {
-            item.finding_id: item
-            for item in services.state.list("finding", Finding, execution_id=run_id)
-        }
-        digest_of: dict[str, str] = {}
-        seen_validators: set[str] = set()
-        for validation in services.state.list("validation", ValidationResult, execution_id=run_id):
-            for finding_id in validation.finding_ids:
-                digest_of[finding_id] = validation.change_set_digest
-            entry = validators[validation.validator_id]
-            entry["results"] += 1
-            entry["mandatory"] = entry["mandatory"] or validation.mandatory
-            if validation.status is not ResultStatus.PASSED:
-                entry["notPassed"] += 1
-            seen_validators.add(validation.validator_id)
-        for validator_id in seen_validators:
-            validators[validator_id]["runs"] += 1
-        for finding in findings.values():
-            entry = rules[finding.rule_id]
-            entry["fired"] += 1
-            entry["runs"].add(run_id)
-            if corrected and digest_of.get(finding.finding_id) not in {None, final}:
-                entry["correctedRuns"].add(run_id)
-            if rejected and digest_of.get(finding.finding_id) == final:
-                entry["rejectedRuns"].add(run_id)
-            if run_id in outcome_runs:
-                entry["outcomeRuns"].add(run_id)
-        for gate in services.state.list("gate", GateEvaluation, execution_id=run_id):
-            for code in gate.reason_codes:
-                if code.startswith("BLOCKING_FINDING_"):
-                    blocked = findings.get(code.removeprefix("BLOCKING_FINDING_"))
-                    if blocked is not None:
-                        rules[blocked.rule_id]["blockedGates"] += 1
-            for exception_id in exception_ids(gate.reason_codes):
-                applications[exception_id] += 1
-    for record in services.state.list("exception", ExceptionRecord, project_id=project_id):
-        if record.execution_id not in run_ids:
-            continue
-        for rule_id in {scope.rule_id for scope in record.scope}:
-            rules[rule_id]["excepted"] += 1
-            rules[rule_id]["exceptionApplications"] += applications[record.exception_id]
-    rows = []
-    for rule_id, entry in rules.items():
-        rows.append(
-            {
-                "ruleId": rule_id,
-                "fired": entry["fired"],
-                "runs": len(entry["runs"]),
-                "blockedGates": entry["blockedGates"],
-                "excepted": entry["excepted"],
-                "exceptionApplications": entry["exceptionApplications"],
-                "correctedRuns": len(entry["correctedRuns"]),
-                "rejectedRuns": len(entry["rejectedRuns"]),
-                "runsWithLaterOutcomes": len(entry["outcomeRuns"]),
-                "signal": _signal(entry),
-            }
-        )
+        if _tally_run(services, execution, outcome_runs, (rules, validators, applications)):
+            corrected_runs.add(execution.execution_id)
+    _tally_exceptions(services, project_id, run_ids, rules, applications)
+    rows = [_rule_row(rule_id, entry) for rule_id, entry in rules.items()]
     rows.sort(key=lambda item: (-item["fired"], item["ruleId"]))
     return {
         "projectId": project_id,

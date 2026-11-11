@@ -9,8 +9,10 @@ from typing import Any
 
 import pytest
 import yaml
+from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
+from governed_harness.cli.main import app
 from governed_harness.configuration.agent_results import BudgetConfig
 from governed_harness.domain.enums import FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.errors import PolicyViolationError
@@ -117,7 +119,32 @@ def test_crossing_the_run_limit_blocks_the_next_call_until_raised(
         for item in rules(application, python_workspace, run)
         if item.rule_id == "budget.exceeded"
     ]
-    assert exceeded and exceeded[0].severity is FindingSeverity.HIGH
+    assert exceeded
+    assert exceeded[0].severity is FindingSeverity.HIGH
+    refused = CliRunner().invoke(
+        app,
+        [
+            "budget",
+            "raise",
+            "--run",
+            run,
+            "--scope",
+            "run",
+            "--metric",
+            "costUsd",
+            "--to",
+            "5",
+            "--rationale",
+            " ",
+            "--path",
+            str(python_workspace),
+        ],
+    )
+    assert refused.exit_code == 5
+    # The next step of the refusal (#157).
+    hint = json.loads(refused.stderr)["hint"]
+    assert f"`harness budget show --run {run}`" in hint
+    assert "--rationale" in hint
     with pytest.raises(PolicyViolationError):
         application.raise_budget(
             python_workspace,
@@ -171,7 +198,39 @@ def test_warning_is_recorded_once(python_workspace: Path, tmp_path: Path) -> Non
         for item in rules(application, python_workspace, run)
         if item.rule_id == "budget.warning"
     ]
-    assert len(warnings) == 1 and warnings[0].severity is FindingSeverity.LOW
+    assert len(warnings) == 1
+    assert warnings[0].severity is FindingSeverity.LOW
     assert application.status(python_workspace, run)["execution"]["currentPhase"] == (
         PhaseId.DECISION
     )
+
+
+def test_a_limit_crossed_by_the_last_call_stops_the_run_before_the_decision(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # The fixture's single implement call fixes nothing, so the run would need a correction;
+    # a fixed one (no feedback needed) is the last call of the run.
+    log = configure(python_workspace, tmp_path, {"perRun": {"costUsd": 0.4}})
+    agent = python_workspace / "agent.py"
+    agent.write_text(
+        agent.read_text(encoding="utf-8").replace('fixed = "feedback" in request', "fixed = True"),
+        encoding="utf-8",
+    )
+    application, run = start(python_workspace, tmp_path)
+    assert len(json.loads(log.read_text())) == 1
+    execution = application.status(python_workspace, run)["execution"]
+    assert execution["status"] == ResultStatus.BLOCKED
+    assert execution["currentPhase"] == PhaseId.INDEPENDENT_REVIEW  # not DECISION (exit 6)
+    assert execution["gateEvaluationId"] is None
+    application.raise_budget(
+        python_workspace,
+        execution_id=run,
+        scope="run",
+        metric="costUsd",
+        limit=5,
+        rationale="The change is worth it",
+        actor_id="human.reviewer",
+    )
+    continued = application.continue_run(python_workspace, run)
+    assert continued.current_phase is PhaseId.DECISION
+    assert len(json.loads(log.read_text())) == 1

@@ -58,7 +58,21 @@ if kind == "review":
             "issue": "The discount ignores the threshold",
             "evidence": "return subtotal",
         }]
+    if MODE == "huge":
+        # About 80 kB of suggestions: every text field under its cap, the result above the
+        # 64 KiB of a review call.
+        findings = [{
+            "file": "src/sample/pricing.py",
+            "side": "new",
+            "line": 2,
+            "rule": f"quality.note-{index}",
+            "severity": "suggestion",
+            "issue": "A note",
+            "evidence": "x" * 2000,
+        } for index in range(40)]
     result = {"verdict": "FAIL" if findings else "PASS", "findings": findings, "summary": "ok"}
+    if MODE == "huge":
+        result["verdict"] = "PASS_WARN"
     print(json.dumps({"status": "PASSED", "summary": "reviewed", "result": result}))
     sys.exit(0)
 fixed = "feedback" in request
@@ -67,18 +81,26 @@ body = "subtotal * (1 - rate) if subtotal >= threshold else subtotal" if fixed e
 )
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
-    f"    return {body}\\n"
+    f"    return {body}\\n",
+    newline="\\n",
 )
 Path("tests/test_pricing.py").write_text(
     "from sample import apply_discount\\n\\n"
     "def test_at_threshold() -> None:\\n"
-    "    assert apply_discount(100, 100, 0.1) == 90\\n"
+    "    assert apply_discount(100, 100, 0.1) == 90\\n",
+    newline="\\n",
 )
 print(json.dumps({"status": "PASSED", "summary": "implemented"}))
 """
 
 
-def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
+def configure(
+    workspace: Path,
+    tmp_path: Path,
+    mode: str,
+    contract: dict[str, Any] | None = None,
+    **panel: Any,
+) -> Path:
     log = tmp_path / f"calls-{mode}"
     script = AGENT.replace("LOG", repr(str(log))).replace("MODE", repr(mode))
     (workspace / "agent.py").write_text(script, encoding="utf-8")
@@ -97,6 +119,8 @@ def configure(workspace: Path, tmp_path: Path, mode: str, **panel: Any) -> Path:
         }
     )
     config["provenance"] = {"agentSnapshots": True}
+    if contract is not None:
+        config["agentContract"] = contract
     config["review"] = {
         "panel": {
             "mode": "enforce",
@@ -260,3 +284,62 @@ def test_reviewers_record_no_routing_without_agent_routing(
         for item in events(application, python_workspace, run)
         if item.event_type == "agent.routing.decided"
     ]
+
+
+# The contract tests run the reviewers one at a time (``parallel: 1``): parallel reviewers that
+# store the same blob at once can fail on Windows with a PermissionError of the artifact store,
+# which the panel retries and the counts below would then include.
+def panel_validation(application: HarnessApplication, workspace: Path, run: str) -> Any:
+    with application._services(workspace) as services:
+        return [
+            item
+            for item in services.state.list("validation", ValidationResult, execution_id=run)
+            if item.validator_id == "review.agent"
+        ][-1]
+
+
+def test_without_the_agent_contract_a_large_reviewer_answer_is_accepted(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # The 1.0.0 behaviour, kept without agentContract: the panel reads the ~80 kB answer.
+    log = configure(python_workspace, tmp_path, "huge", parallel=1)
+    application, run = start(python_workspace, tmp_path)
+    assert requests(log, "review")
+    assert panel_validation(application, python_workspace, run).status is ResultStatus.PASSED
+    assert application.agent_calls(python_workspace, run)["calls"] == []
+
+
+def test_the_agent_contract_discards_a_reviewer_answer_above_its_limits(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #149: under agentContract the answer of each reviewer is a review call of the contract.
+    log = configure(python_workspace, tmp_path, "huge", contract={"mode": "enforce"}, parallel=1)
+    application, run = start(python_workspace, tmp_path)
+    reviews = requests(log, "review")
+    reviewers = {item["reviewer"]["id"] for item in reviews}
+    # Every reviewer answered twice (the second attempt goes to the fallback), both discarded.
+    assert len(reviews) == 2 * len(reviewers)
+    assert panel_validation(application, python_workspace, run).status is ResultStatus.BLOCKED
+    calls = application.agent_calls(python_workspace, run, "review")["calls"]
+    assert [item["finalStatus"] for item in calls] == ["CONTRACT_VIOLATION"] * len(reviews)
+    assert all(item["sentBytes"] > 0 for item in calls)
+    shown = application.agent_calls(python_workspace, run, "review", 1)
+    record = shown["call"]["record"]
+    assert record["reviewer"] in reviewers
+    assert any("above the cap of 65536" in item for item in record["received"]["violations"])
+    assert record["received"]["result"] is None
+    assert shown["call"]["verification"]["digestMatches"] is True
+    rules = [item.rule_id for item in application.list_findings(python_workspace, run)]
+    assert "agent.contract.violation" in rules
+    assert "review.panel.unknown" in rules
+    assert application.agent_calls(python_workspace, run)["iterations"]["review"]["used"] == 2
+
+
+def test_under_the_agent_contract_a_good_reviewer_answer_is_recorded(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    log = configure(python_workspace, tmp_path, "clean", contract={"mode": "enforce"}, parallel=1)
+    application, run = start(python_workspace, tmp_path)
+    assert panel_validation(application, python_workspace, run).status is ResultStatus.PASSED
+    calls = application.agent_calls(python_workspace, run, "review")["calls"]
+    assert [item["finalStatus"] for item in calls] == ["PASSED"] * len(requests(log, "review"))

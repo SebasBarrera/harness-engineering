@@ -7,7 +7,8 @@ simulated person (REQUEST_CHANGES, REJECT and the measure of a quarantined chang
 block D and the embedded mode, then checks what each must show. The records go to
 ``<out>/dry-run.jsonl``, ``longitudinal-dry.jsonl`` and ``embedded-dry.jsonl``, the checks to
 ``<out>/dry-run-checks.json``. Exit code 1 when a required check fails; the checks marked
-``observed`` document a behaviour of the harness under test and do not fail the dry run.
+``observed`` document a behaviour of the harness under test and do not fail the dry run. Exit code
+2 before any case when the environment cannot give a meaningful result (see ``preflight``).
 
 Usage: python dry_run.py --work DIR --cache DIR --out DIR [--core-reference-src DIR] [--only NAME ...]
 """
@@ -16,6 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -63,6 +66,28 @@ def inbox_answered(r: dict[str, Any]) -> bool:
     """Every wait before DECISION the person answered was read from the inbox (#73)."""
     acted = [w for w in waits(r) if w.get("action") and w.get("wait") != "clarification"]
     return bool(acted) and all(w.get("source") == "inbox" for w in acted)
+
+
+def dispute_revised(w: dict[str, Any]) -> bool:
+    """A dispute of frozen acceptance tests read from the inbox and revised by the product owner
+    under the digest ``acceptance show`` showed, with the agent's reasons recorded."""
+    return (
+        w.get("wait") == "acceptance-dispute"
+        and w.get("source") == "inbox"
+        and w.get("decision") == "REVISE"
+        and w.get("judge") == "product-owner"
+        and w.get("digestMatches") is True
+        and bool((w.get("reasons") or {}).get("agent"))
+        and str(w.get("action", "")).endswith("-> 0")
+    )
+
+
+def after_dispute(r: dict[str, Any]) -> list[dict[str, Any]]:
+    """The waits after the first dispute of frozen acceptance tests."""
+    names = [w.get("wait") for w in waits(r)]
+    if "acceptance-dispute" not in names:
+        return []
+    return waits(r)[names.index("acceptance-dispute") + 1 :]
 
 
 CASES: dict[str, tuple[str, list[str], list[Check]]] = {
@@ -299,6 +324,47 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
             ),
         ],
     ),
+    "acceptance-dispute": (
+        "run_eval",
+        [
+            "--scenario",
+            "greenfield",
+            "--condition",
+            "harness",
+            "--fake-mode",
+            "dispute-acceptance",
+        ],
+        [
+            (
+                "approved: the frozen tests could not pass, the agent disputed them (#94)",
+                lambda r: outcome(r) == "approved",
+                True,
+            ),
+            (
+                "the dispute read from the inbox, REVISE by the product owner on the shown digest",
+                lambda r: any(dispute_revised(w) for w in waits(r)),
+                True,
+            ),
+            (
+                "after REVISE the rewritten tests wait in SPECIFICATION and are approved",
+                lambda r: any(
+                    w.get("wait") == "acceptance"
+                    and w.get("phase") == "SPECIFICATION"
+                    and str(w.get("action", "")).startswith("acceptance decide APPROVE")
+                    for w in after_dispute(r)
+                ),
+                True,
+            ),
+            (
+                "the product owner's judgement recorded in its rounds",
+                lambda r: any(
+                    p.get("kind") == "acceptance-dispute" and p.get("decision") == "REVISE"
+                    for p in r["productOwner"]
+                ),
+                True,
+            ),
+        ],
+    ),
     "simulated-provider": (
         "run_eval",
         ["--scenario", "greenfield", "--condition", "harness", "--provider", "simulated"],
@@ -359,6 +425,35 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
 }
 
 
+def preflight() -> list[str]:
+    """What keeps the dry run from testing the harness it is meant to test.
+
+    The agent and host-session processes run with a minimal environment
+    (``agentlib.agent_environment``) that drops ``PYTHONPATH``: with a source tree mounted through
+    it, ``harness init`` and the runner use that tree while the embedded mode's MCP server runs
+    whatever package the venv has installed, and rejects the configuration it did not write. A
+    source tree goes first on the import path through a ``.pth`` file in the venv's site-packages
+    instead (``EVAL_EXTRA_PATH`` in ``launchers/common.sh``). The brownfield suite imports
+    ``freezegun``: without it pytest stops while collecting and the differential verification
+    blocks the run (#190), which reads as a harness failure.
+    """
+    problems = []
+    if os.environ.get("PYTHONPATH"):
+        problems.append(
+            "PYTHONPATH is set; the agent processes drop it, so the MCP server would import "
+            "another harness: put the source tree in a .pth file of the venv (EVAL_EXTRA_PATH)"
+        )
+    harness = os.environ.get("EVAL_HARNESS", "harness").split()[0]
+    if shutil.which(harness) is None:
+        problems.append(f"{harness!r} is not on PATH: put the venv's scripts directory first")
+    python = shutil.which("python") or sys.executable
+    for module in ("pytest", "freezegun"):
+        probe = subprocess.run([python, "-c", f"import {module}"], capture_output=True)
+        if probe.returncode != 0:
+            problems.append(f"{module} is not importable by {python}: install the measuring tools")
+    return problems
+
+
 def run(
     name: str, runner: str, extra: list[str], args: argparse.Namespace, rep: int
 ) -> dict[str, Any] | None:
@@ -412,6 +507,11 @@ def main() -> int:
     parser.add_argument("--only", nargs="*", default=None)
     parser.add_argument("--rep", type=int, default=1)
     args = parser.parse_args()
+    problems = preflight()
+    for problem in problems:
+        print(f"dry run not started: {problem}", file=sys.stderr)
+    if problems:
+        return 2
     args.out.mkdir(parents=True, exist_ok=True)
     results: dict[str, Any] = {}
     failed = 0
