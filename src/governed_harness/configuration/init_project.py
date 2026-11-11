@@ -13,6 +13,7 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_CONTEXT_MAX_BYTES,
     DEFAULT_CONTEXT_MAX_FILES,
     DEFAULT_DECOMPOSITION_THRESHOLD,
+    DEFAULT_READ_ONLY_EFFORT,
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
@@ -123,6 +124,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "maxRounds": DEFAULT_AMBIGUITY_ROUNDS,
                 "maxQuestions": DEFAULT_AMBIGUITY_QUESTIONS,
                 "onExhausted": "assume",
+                # 2.0.1: no new call once a round left no question or the stop was recorded.
+                "skipSettled": True,
             },
             "validateAnswers": True,
             "operationalContract": "batch",
@@ -220,7 +223,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "manifest": "auto",
             "maxFiles": DEFAULT_CONTEXT_MAX_FILES,
             "maxBytes": DEFAULT_CONTEXT_MAX_BYTES,
-            "locate": {"mode": "agent"},
+            # 2.0.1: one locate call while the task's scope stays the same.
+            "locate": {"mode": "agent", "reuse": "scope"},
         },
         # Wide on purpose: limits only at the extremes (#42).
         "budget": {
@@ -232,12 +236,19 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
         # Wave 11 (#97): the versioned request and response contract of agent calls, one cap of
         # iterations per agent and the token budget and time limit by task size.
-        "agentContract": {"mode": "enforce", "maxIterations": DEFAULT_MAX_ITERATIONS},
+        # 2.0.1: token budgets by call kind, calibrated on the 2.0.0 pilot calls.
+        "agentContract": {
+            "mode": "enforce",
+            "maxIterations": DEFAULT_MAX_ITERATIONS,
+            "budgetProfile": "by-kind",
+        },
         # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
             "mode": "anchored",
             "thresholds": {key: list(value) for key, value in DEFAULT_SIZE_THRESHOLDS.items()},
             "maxEscalations": 2,
+            # 2.0.1: low or medium effort for the first attempt of the read-only calls.
+            "readOnlyEffort": dict(DEFAULT_READ_ONLY_EFFORT),
         },
         "governance": {
             "deciderIdentity": "git",

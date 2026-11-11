@@ -786,7 +786,7 @@ class AgentResults:
         sent: SentInfo | None = None
         if self.agent_contract.enabled:
             # #97: the minimal request of this kind, with the request contract.
-            limits = self.agent_contract.limits(execution, task)
+            limits = self.agent_contract.limits(execution, task, kind)
             try:
                 sent = self.agent_contract.apply_read_only(execution, kind, request, limits)
             except ValueError as error:
@@ -1134,7 +1134,7 @@ class AgentResults:
             }
         )
         if contract:
-            limits = self.agent_contract.limits(execution, task)
+            limits = self.agent_contract.limits(execution, task, "implement")
             self.agent_contract.apply_implement(execution, task, extra, limits)
         return extra
 

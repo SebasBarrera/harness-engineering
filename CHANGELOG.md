@@ -15,6 +15,36 @@
   `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), recorded in `environment.json` (`agentCalls`). The
   amendment also states that the reported cost is computed from tokens at API list prices (the
   runs use a subscription login) and lists the prices. Only the evaluation apparatus changes.
+- Fewer agent calls in INTENT, cheaper read-only calls and token budgets by call kind, each behind
+  a key `harness init` now writes; without the keys the calls, the budgets and the configuration
+  digest stay as they were. In the 2.0.0 Sonnet pilots `locate` ran again for every answered
+  revision (its cache is the task digest, which every answer changes) and `clarify` ran a third
+  round after the `unresolvable-ambiguity` stop.
+  - `context.locate.reuse: scope` reuses the last locate result of the task while its scope is
+    unchanged (owned paths, the contract's `scope`, `scopePaths` and `outOfScope`, size class,
+    `maxLocations`): one call instead of one per revision, recorded as `locate.reused` with
+    `scope: true`; the questions of the earlier result are not asked again.
+  - `intake.ambiguityReview.skipSettled: true` does not call the review again for a new revision
+    when the previous round of the run left no agent question or once the
+    `unresolvable-ambiguity` stop was recorded; the run goes on as after an exhausted review with
+    no open point and records `intent.agent-review.skipped` with the reason.
+  - `agentRouting.readOnlyEffort` (`init`: `clarify: low`, `locate: low`, `architecture: medium`,
+    `review: medium`) sets the effort of the first attempt of a routed read-only call, the
+    reviewers of the panel included; `implement` and escalations do not change, and a model that
+    takes no effort (Claude 3, Haiku 4.x, Sonnet and Opus 4.0 to 4.5) gets none, so the Haiku 4.5
+    pilot calls (effort `null`) are not affected.
+  - `agentContract.budgetProfile: by-kind` gives `implement` 120000 (S), 300000 (M) and 800000 (L)
+    counted tokens and the read-only calls 100000 (S), 200000 (M) and 800000 (L). On the 172
+    calls of the pilot work directories (`work`, `work2` to `work6`, `work-dry`, `work-probe`),
+    counted as the budget counts them, `implement` had p95 164930 and maximum 210916 (M), one
+    S call at 67443; the read-only calls p95 64916 and maximum 85893. Of the 145 calls that
+    carried a budget, two exceeded the uniform one (an S `implement` at 67443 of 50000 and an M
+    `implement` at 210916 of 200000, both Haiku 4.5 in `casual-harness`); neither exceeds the new
+    budgets. The time limits do not change.
+- VERIFICATION records the findings of one validation in one transaction of the state store and
+  one of the event store (`put_many`, `append_many`) instead of two commits per finding. Every
+  event is the one `append` writes (same envelope, sequence and digest chain, verified by
+  `verify_chain`). On this machine 67 findings took 16.53 s one by one and 0.23 s batched.
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
   INTENT blocked by clarification questions names the rules that asked
   (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the

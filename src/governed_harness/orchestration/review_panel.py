@@ -278,7 +278,7 @@ class PanelReview:
         flow = self.results.agent_contract
         if not flow.enabled:
             return None, lambda seconds: seconds
-        limits = flow.limits(execution, self.results.engine.run_task(execution))
+        limits = flow.limits(execution, self.results.engine.run_task(execution), "review")
 
         def judge(
             call: ReviewerCall, result: AgentCallResult, request_ref: str | None

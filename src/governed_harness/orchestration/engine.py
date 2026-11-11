@@ -4054,20 +4054,20 @@ class RunEngine:
             execution_id=execution.execution_id,
             project_id=execution.project_id,
         )
-        for finding in output.findings:
-            self.s.state.put(
-                "finding",
-                finding.finding_id,
-                finding,
-                execution_id=execution.execution_id,
-                project_id=execution.project_id,
-            )
-            self.s.events.append(
-                execution.execution_id,
-                _FINDING_RECORDED,
-                finding.model_dump(mode="json"),
-                actor=finding.provenance.actor,
-            )
+        # 2.0.1: the findings of one validation in one transaction of each store; the events
+        # are those one append per finding writes (same order, envelope and digest chain).
+        self.s.state.put_many(
+            [("finding", finding.finding_id, finding) for finding in output.findings],
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append_many(
+            execution.execution_id,
+            [
+                (_FINDING_RECORDED, finding.model_dump(mode="json"), finding.provenance.actor)
+                for finding in output.findings
+            ],
+        )
         for tool in output.tool_invocations:
             self._save_tool(execution, tool)
         self.s.events.append(

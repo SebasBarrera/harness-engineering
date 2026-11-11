@@ -123,6 +123,22 @@
       "additionalProperties": false,
       "description": "The agent contract of a run (wave 11, #97).\n\n* ``maxIterations``: the cap of iterations of one agent in a run, at most 6 (default 5);\n  an iteration is one call to the agent with its own outcome;\n* ``budgets``: token budget and time limit of a call by task size (S, M, L);\n* ``limits``: caps of the response (summary characters, result bytes, characters of any\n  text field of the result).",
       "properties": {
+        "budgetProfile": {
+          "anyOf": [
+            {
+              "enum": [
+                "uniform",
+                "by-kind"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budgetprofile"
+        },
         "budgets": {
           "anyOf": [
             {
@@ -350,6 +366,36 @@
           "default": null,
           "title": "Mode"
         },
+        "readOnlyEffort": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              "propertyNames": {
+                "enum": [
+                  "clarify",
+                  "locate",
+                  "architecture",
+                  "review",
+                  "plan",
+                  "acceptance"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readonlyeffort"
+        },
         "riskPaths": {
           "anyOf": [
             {
@@ -458,6 +504,18 @@
           ],
           "default": null,
           "title": "Onexhausted"
+        },
+        "skipSettled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipsettled"
         }
       },
       "title": "AmbiguityReviewConfig",
@@ -2663,6 +2721,22 @@
           ],
           "default": null,
           "title": "Mode"
+        },
+        "reuse": {
+          "anyOf": [
+            {
+              "enum": [
+                "revision",
+                "scope"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reuse"
         }
       },
       "title": "LocateConfig",
