@@ -68,35 +68,62 @@ aceptación aprueba o rechaza las pruebas reescritas.
 
 Se añade el 2026-11-11, **antes de cualquier resultado de la campaña** (ni el piloto ni los bloques
 con modelo tienen resultados 2.0.0; el piloto Haiku está en curso y no se cita aquí ninguna cifra
-suya). Fija los modelos, la configuración de la condición anclada y las repeticiones de los bloques
-con modelo; no cambia hipótesis, métricas ni criterios de éxito de este registro.
+suya), y se revisa el mismo día, también antes de cualquier resultado. Fija los modelos, la
+configuración de la condición anclada, el énfasis de la comparación y las repeticiones; no cambia
+hipótesis, métricas ni criterios de éxito de las suites de este registro.
 
-1. **Modelos.** El piloto Haiku (`evaluation/launchers/pilot.sh`) es una **comprobación del
-   aparato**: sirve para ver que el lanzador, la persona simulada, el product owner y el registro
-   funcionan, y sus corridas no son resultados de la campaña. Se añade un **piloto Sonnet** con el
-   mismo diseño (mismo escenario, las mismas cinco corridas y el mismo lanzador, con
-   `EVAL_PILOT_MODEL=claude-sonnet-5-5` y su propio directorio de salida; la orden está en
-   `evaluation/README.md`). Los bloques con modelo de la campaña corren con **Haiku y Sonnet**;
-   Opus no es necesario y no se exige.
+**Motivación.** El harness estandariza cómo se programa con IA entre personas con estilos de
+trabajo distintos: las mismas fases, los mismos controles y la misma evidencia, pida lo que pida
+quien lo usa y como lo pida. Por eso la comparación principal es la de un pedido pobre.
+
+1. **Modelos e identificadores.** El piloto Haiku (`evaluation/launchers/pilot.sh`) es una
+   **comprobación del aparato**: sirve para ver que el lanzador, la persona simulada, el product
+   owner y el registro funcionan, y sus corridas no son resultados de la campaña. Se añade un
+   **piloto Sonnet** con el mismo diseño (mismo escenario, las mismas cinco corridas y el mismo
+   lanzador, con su propio directorio de salida; la orden está en `evaluation/README.md`). Los
+   bloques con modelo corren con **Haiku y Sonnet**; Opus no es necesario y no se exige. Los
+   modelos de las celdas son, explícitamente:
+   - Haiku: `claude-haiku-4-5-20251001`, el mismo del piloto Haiku (valor por defecto de
+     `EVAL_PILOT_MODEL`);
+   - Sonnet: `claude-sonnet-5-5`.
+
+   El nivel `trivial` del router (#197) nombra `claude-haiku-5-5` en su tabla por defecto. Bajo
+   `anchored` ese peldaño se recorta al modelo de la celda: en las celdas Haiku una llamada trivial
+   corre con `claude-haiku-4-5-20251001` (mismo nivel que el ancla), y en las celdas Sonnet con
+   `claude-haiku-5-5` (nivel más barato que el ancla, se mantiene). Cada decisión registra el
+   modelo elegido (`agent.routing.decided`).
 2. **Condición anclada.** `harness-anchored` usa los valores por defecto del router de la versión
    bajo prueba con el modelo de la celda como techo, incluido el nivel `trivial` de la llamada
    `implement` (#197): una tarea trivial según `agentRouting.thresholds.trivial` (valores
    iniciales: 1 requisito, 1 archivo propio, 150 líneas, sin banderas de riesgo) se implementa con
-   `claude-haiku-5-5`, y el resto con Sonnet (S, M) u Opus (L) recortado al modelo de la celda. No
-   se cambian ni se calibran los umbrales durante la campaña; cada corrida guarda su
-   `project.yaml` (regla 7) y cada decisión su regla (`agent.routing.decided`).
-   Lo mismo vale para H41, que usa las tablas y los umbrales por defecto: sus señales «dentro de
-   S» (1 requisito, 1 archivo, 10 líneas) son triviales con esos valores, así que su malla y su
-   proyección de costo incluyen el nivel `trivial` (tamaño registrado `trivial`, presupuesto de
-   tokens de S).
-3. **Repeticiones.** 5 repeticiones por celda en los bloques de modelos; 10 por celda en el
-   **contraste primario** (directo frente a harness, prompt completo, Sonnet); 3 por celda en el
-   bloque rides (costo y tiempo). Los resultados se reportan como conteos de éxitos con intervalo
-   de Wilson al 95 % y medianas con rango intercuartílico de costo y tiempo. Con esos n no se hacen
-   afirmaciones de significación (regla 5): las diferencias se describen, no se prueban.
-4. **Costos y tiempos.** El costo y el tiempo de la campaña se estiman a partir de los dos pilotos
+   Haiku como dice el punto 1, y el resto con Sonnet (S, M) u Opus (L) recortado al modelo de la
+   celda. No se cambian ni se calibran los umbrales durante la campaña; cada corrida guarda su
+   `project.yaml` (regla 7). Lo mismo vale para H41, que usa las tablas y los umbrales por
+   defecto: sus señales «dentro de S» (1 requisito, 1 archivo, 10 líneas) son triviales con esos
+   valores, así que su malla y su proyección de costo incluyen el nivel `trivial` (tamaño
+   registrado `trivial`, presupuesto de tokens de S).
+3. **Comparación principal: el pedido pobre.** La comparación principal es **el pedido pobre o
+   débil sin harness frente a con harness**: el prompt `one_line` del escenario rides
+   (`evaluation/rides/PROMPTS.md`: «build an app like Uber with Uber Eats, rides and food
+   delivery, following INTERFACE.md») y el prompt casual (`--prompt casual`). Mide qué hace el
+   modelo cuando el pedido está subespecificado: si pregunta, qué aclara, qué supone, y qué tan
+   completo y coherente es el resultado. Los prompts completos con y sin harness son un **bloque
+   secundario**.
+4. **Repeticiones.** **2 repeticiones por celda** en todos los bloques con modelo (Haiku y Sonnet);
+   **1** en las suites deterministas. Con n = 2 la campaña es **descriptiva**: una comparación de
+   casos. Se reportan conteos y los valores de cada corrida (con mediana y rango cuando ayudan a
+   leer), y **no** se hacen generalizaciones ni afirmaciones de significación (regla 5). Esto
+   sustituye las repeticiones por celda de la primera versión de esta enmienda (5, 10 en el
+   contraste primario y 3 en rides) y las de cada bloque en `CATALOGO.md`.
+5. **Comparación en profundidad de las implementaciones.** Aunque las pruebas ocultas den el mismo
+   puntaje, las implementaciones se comparan en profundidad, y las diferencias se registran por
+   corrida: archivos y líneas cambiados, pruebas añadidas, hallazgos de lint, tipos y seguridad,
+   cobertura, requisitos cubiertos frente a supuestos, preguntas hechas y decisiones registradas.
+   La herramienta de ese análisis y sus definiciones se pre-registran a continuación, en una
+   enmienda propia, antes de cualquier resultado.
+6. **Costos y tiempos.** El costo y el tiempo de la campaña se estiman a partir de los dos pilotos
    (Haiku y Sonnet), no se fijan de antemano; la estimación se escribe con sus fuentes antes de
-   lanzar los bloques y no cambia los números de repeticiones de este punto 3.
+   lanzar los bloques y no cambia las repeticiones del punto 4.
 
 ## Operacionalización común de H01, H03 y H05
 
