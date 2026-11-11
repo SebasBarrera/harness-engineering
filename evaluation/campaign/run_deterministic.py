@@ -78,6 +78,10 @@ PREREGISTERED = {
     "h41": "h41_routing_invariants.py",
     "h44": "h44_block_clarity.py",
     "h45": "h45_clean_changes.py",
+    "h47": "h47_crash_resume.py",
+    "h48": "h48_concurrent_runs.py",
+    "h50": "h50_degraded_provider.py",
+    "h51": "h51_doctor.py",
 }
 SUITES = (
     "fault-probes",
