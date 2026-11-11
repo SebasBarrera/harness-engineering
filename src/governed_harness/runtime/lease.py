@@ -245,6 +245,10 @@ def terminate_process_group(pgid: int, *, grace_seconds: float = 1.0) -> bool:
             os.killpg(pgid, 0)
         except ProcessLookupError:
             return True
+        except PermissionError:
+            # macOS answers EPERM, not ESRCH, while the group holds only zombies not reaped yet:
+            # the group existed and got the signal, so the SIGKILL below settles it.
+            break
         time.sleep(0.05)
     with contextlib.suppress(ProcessLookupError, PermissionError):
         os.killpg(pgid, signal.SIGKILL)

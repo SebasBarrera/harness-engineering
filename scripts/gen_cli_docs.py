@@ -37,6 +37,9 @@ def context(command: Command) -> Any:
 
 def walk(command: Command, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], Command]]:
     if hasattr(command, "list_commands"):
+        if path and getattr(command, "invoke_without_command", False):
+            # A group whose callback runs on its own (``harness review --run``) is a command too.
+            yield path, command
         for name in command.list_commands(context(command)):
             sub = command.get_command(context(command), name)
             if sub is not None and not sub.hidden:

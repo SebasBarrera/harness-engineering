@@ -1453,11 +1453,15 @@ class HarnessApplication(ReviewCodeCommands):
             verifier = RunVerifier(services)
             ids = [execution_id] if execution_id else verifier.execution_ids()
             runs = [verifier.verify(item).as_dict() for item in ids]
-            return {
+            report: dict[str, Any] = {
                 "valid": all(item["valid"] for item in runs),
                 "runCount": len(runs),
                 "runs": runs,
             }
+            invalid = [item["executionId"] for item in runs if not item["valid"]]
+            if invalid:
+                report["hint"] = _verify_hint(services, invalid)
+            return report
 
     def export_bundle(self, path: Path, execution_id: str, output: Path) -> dict[str, Any]:
         """Write the portable evidence bundle of a run (``delivery.bundle``). Under
@@ -2387,3 +2391,20 @@ class HarnessApplication(ReviewCodeCommands):
                 for item in value
             ]
         return json.dumps(value, indent=2, ensure_ascii=False, default=str)
+
+
+def _verify_hint(services: EngineServices, invalid: list[str]) -> str:
+    """The next step after a run that does not verify (#157): nothing repairs the record, so
+    the run is inspected and its task is done again in a new run."""
+    steps: list[str] = []
+    for execution_id in invalid:
+        try:
+            task_id = services.state.get("execution", execution_id, Execution).task_id
+        except NotFoundError:
+            task_id = "<taskId>"
+        steps.append(
+            f"`harness status --run {execution_id}` shows the run; nothing repairs its record "
+            f"(an export refuses it): `harness run cancel --run {execution_id}` ends it "
+            f"and `harness run start --task {task_id}` does the task again"
+        )
+    return "; ".join(steps) + "."

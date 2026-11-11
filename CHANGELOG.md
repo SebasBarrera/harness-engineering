@@ -6,6 +6,15 @@
   request target with its query, so a token sent by mistake as `?token=...` was refused with 401
   but written in clear to standard output. The access line now keeps the client, method, path,
   HTTP version and status; authentication is unchanged.
+- Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
+  `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
+  retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
+  status, `harness run cancel` and a new `harness run start` of its task).
+- A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
+  as if it were within its budget (#157, found by the H20 evaluation suite): with no further
+  agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before
+  `INDEPENDENT_REVIEW` (or before `DECISION` when a review call crossed it) until a person runs
+  `harness budget raise` and `harness run continue`.
 - The fast lane no longer prevents disputing a frozen acceptance test (#161). Its affected tests
   ran first and stopped the attempt on a failure, so when they included the frozen file
   `harness.acceptance-tests` never ran and no dispute could open: `disputes: person` had no
