@@ -15,6 +15,12 @@ and classifies the failure:
 * the outputs cannot be compared (no problem could be parsed, the baseline could not be
   built or the validator did not run on it): the failure stays as it was (fail closed).
 
+A test run that produced no test outcome (pytest interrupted at collection, exit codes 2 to 5,
+or another runner whose output shows no failed test) is never comparable (#190): its problems
+hide every other result. A pre-existing test failure passes only when every test file the
+ChangeSet added or modified ran (``tests.changed-not-run``, HIGH; INFO when the output does not
+list the tests that ran).
+
 Problems are compared by tool rule, path and message (line numbers and other digits removed),
 as the output parsers report them. A baseline run is cached by baseline digest and command.
 
@@ -48,6 +54,13 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.evidence import sha256_json
+from governed_harness.orchestration.run_outcome import (
+    RunOutcome,
+    changed_test_files,
+    not_run,
+    read_test_run,
+    runner_of,
+)
 from governed_harness.orchestration.workspace_ops import materialized
 from governed_harness.runtime import CancellationToken, SafeProcessRunner
 from governed_harness.validators import CommandValidator, ValidationContext, ValidatorOutput
@@ -325,14 +338,46 @@ class Differential:
         return f"baselinerun:{digest}:{definition.validator_id}:{command}"
 
     def _candidate_keys(self, result: ValidationResult, workspace: Path) -> tuple[str, ...]:
+        report = self._report(result)
+        if report is None:
+            return ()
+        _, stdout, stderr = report
+        return issue_keys(stdout, stderr, workspace)
+
+    def _report(self, result: ValidationResult) -> tuple[dict[str, Any], str, str] | None:
+        """The command report of a validation and its output streams."""
         artifacts = self.results.s.artifacts
         try:
             report = json.loads(artifacts.get(result.evidence_refs[0]))
             stdout = artifacts.get(report["stdoutRef"]).decode("utf-8", "replace")
             stderr = artifacts.get(report["stderrRef"]).decode("utf-8", "replace")
         except (OSError, ValueError, KeyError, IndexError, TypeError):
-            return ()
-        return issue_keys(stdout, stderr, workspace)
+            return None
+        if not isinstance(report, dict):
+            return None
+        return report, stdout, stderr
+
+    def _test_run(
+        self, output: ValidatorOutput, candidate: tuple[str, ...]
+    ) -> tuple[str | None, RunOutcome | None]:
+        """The runner and outcome of a failing test validator; ``(None, None)`` for a
+        validator that does not run tests."""
+        definitions = {
+            item.validator_id: item for item in self.results.s.resolved.effective_validators
+        }
+        definition = definitions.get(output.result.validator_id)
+        argv = tuple(definition.command or ()) if definition is not None else ()
+        runner = runner_of(output.result.validator_id, argv)
+        if runner is None:
+            return None, None
+        report = self._report(output.result)
+        if report is None:
+            return runner, read_test_run(runner, None, "", "", ())
+        data, stdout, stderr = report
+        exit_code = data.get("exitCode")
+        return runner, read_test_run(
+            runner, exit_code if isinstance(exit_code, int) else None, stdout, stderr, candidate
+        )
 
     # ----- classification --------------------------------------------------------------------
     def _classify(
@@ -374,7 +419,17 @@ class Differential:
                 started_at=started,
             )
             return ValidatorOutput(result, ())
-        if baseline.status is not ResultStatus.FAILED or not candidate:
+        runner, outcome = self._test_run(output, candidate)
+        reason = ""
+        if baseline.status is not ResultStatus.FAILED:
+            reason = "the baseline run did not pass or fail"
+        elif not candidate:
+            reason = "no problem could be parsed from the output"
+        elif outcome is not None and not outcome.ran:
+            # No test ran (#190): the problems hide every other result, so a regression the
+            # change introduced cannot show up as a new problem.
+            reason = outcome.reason
+        if reason:
             # Not comparable: keep the failure (fail closed) and say why.
             results.s.events.append(
                 execution.execution_id,
@@ -383,6 +438,7 @@ class Differential:
                     "validatorId": validator_id,
                     "baselineStatus": baseline.status.value,
                     "parsedProblems": len(candidate),
+                    "reason": reason,
                 },
             )
             return None
@@ -405,6 +461,31 @@ class Differential:
             actor=actor,
         )
         if not introduced:
+            unrun = (
+                self._changed_not_run(
+                    execution, change_set, validator_id, runner, outcome, refs, actor
+                )
+                if runner is not None
+                else None
+            )
+            if unrun is not None and unrun.severity is FindingSeverity.HIGH:
+                # A changed test file did not run: the comparison says nothing about it, so the
+                # failure stays (fail closed) with the reason as a blocking finding.
+                result = results.record_validation(
+                    execution,
+                    validator_id=validator_id,
+                    digest=change_set.digest,
+                    status=ResultStatus.FAILED,
+                    kind=output.result.kind,
+                    mandatory=True,
+                    summary=(
+                        f"{validator_id} failed; a test file the ChangeSet changed did not run"
+                    ),
+                    findings=(*_original(results, output), note, unrun),
+                    evidence_refs=refs,
+                    started_at=started,
+                )
+                return ValidatorOutput(result, ())
             result = results.record_validation(
                 execution,
                 validator_id=validator_id,
@@ -416,7 +497,7 @@ class Differential:
                     f"{validator_id} failed only with problems the baseline already had "
                     f"({len(preexisting)} pre-existing)"
                 ),
-                findings=(note,),
+                findings=(note,) if unrun is None else (note, unrun),
                 evidence_refs=refs,
                 started_at=started,
             )
@@ -453,6 +534,65 @@ class Differential:
             started_at=started,
         )
         return ValidatorOutput(result, ())
+
+    def _changed_not_run(
+        self,
+        execution: Execution,
+        change_set: ChangeSet,
+        validator_id: str,
+        runner: str,
+        outcome: RunOutcome | None,
+        refs: tuple[str, ...],
+        actor: Actor,
+    ) -> Finding | None:
+        """``tests.changed-not-run`` when a test file the ChangeSet added or modified has no
+        test that ran (HIGH), or when the output does not say which tests ran (INFO)."""
+        changed = changed_test_files(
+            runner, [(item.path, item.status) for item in change_set.files]
+        )
+        if not changed:
+            return None
+        executed = outcome.executed if outcome is not None else None
+        if executed is None:
+            return self.results.record_finding(
+                execution,
+                validator_id=validator_id,
+                rule_id="tests.changed-not-run",
+                category="validation",
+                severity=FindingSeverity.INFO,
+                message=(
+                    "Could not tell from the output whether the tests of the changed test "
+                    "file(s) ran: " + ", ".join(changed[:5])
+                ),
+                evidence_refs=refs,
+                recommendation=(
+                    "Check the tests of these files ran (pytest prints every test with -rA)."
+                ),
+                introduced=False,
+                actor=actor,
+            )
+        missing = not_run(changed, executed)
+        if not missing:
+            return None
+        return self.results.record_finding(
+            execution,
+            validator_id=validator_id,
+            rule_id="tests.changed-not-run",
+            category="validation",
+            severity=FindingSeverity.HIGH,
+            message=(
+                "No test of these test file(s) the ChangeSet added or modified ran: "
+                + ", ".join(missing[:5])
+            ),
+            path=missing[0],
+            evidence_refs=refs,
+            recommendation=(
+                "Make the changed tests run (fix their collection or environment); a failure "
+                "the baseline shares does not stand in for them."
+            ),
+            introduced=True,
+            actor=actor,
+        )
 
     def _ratchet(
         self,

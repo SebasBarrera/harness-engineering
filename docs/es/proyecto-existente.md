@@ -48,7 +48,7 @@ El flujo es el mismo que en [Proyecto nuevo](proyecto-nuevo.md). Lo que cambia e
 
 ## Si el estado base ya está roto
 
-El harness todavía no distingue fallos que ya existían de los que introduce el cambio (el estado `PREEXISTING_ERROR` existe pero no se asigna, issue 7 del repositorio). La evidencia muestra qué archivos fallaron para que veas que están fuera del ChangeSet. Hay dos salidas:
+Con `verification.differential` (lo escribe `harness init`), un validador obligatorio que falla también se ejecuta sobre el estado base: un fallo que el estado base comparte queda como `PREEXISTING_ERROR` y no bloquea; uno nuevo queda como `INTRODUCED_ERROR` y bloquea. Una ejecución de pruebas que no ejecutó ninguna prueba (por ejemplo, pytest detenido por un error de recolección porque falta una dependencia de pruebas) no es comparable y sigue bloqueando (issue 190 del repositorio). La evidencia muestra qué archivos fallaron. Hay dos salidas:
 
 - Corrige el entorno o el estado base y ejecuta `harness run continue --run <run-id>`. El gate cuenta el último intento de cada validador, así que puede quedar en `PASSED` y bastar un `APPROVE` normal.
 - Cierra con `APPROVE_EXCEPTION` y una justificación escrita; queda auditada aparte.
