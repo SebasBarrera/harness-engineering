@@ -99,7 +99,7 @@ def test_enforce_blocks_intent_then_clarify_and_continue_proceed(
     (intent,) = status["phases"]
     assert intent["phaseId"] == "INTENT"
     assert intent["status"] == "BLOCKED"
-    assert intent["summary"] == "Intent needs clarification: 2 question(s)"
+    assert intent["summary"] == "Intent needs clarification: 2 question(s) (rules C1, T1)"
     assert status["findings"]["total"] == 0
 
     code, questions = invoke(python_workspace, "task", "questions", "--task", task_id)

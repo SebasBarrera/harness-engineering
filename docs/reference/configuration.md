@@ -557,7 +557,7 @@ with the questions depends on `intake.criteriaPolicy`:
 
 | Policy | INTENT with questions |
 |---|---|
-| `enforce` | `BLOCKED` with `Intent needs clarification: N question(s)`; `run start` and `run continue` exit with 6. |
+| `enforce` | `BLOCKED` with `Intent needs clarification: N question(s) (rules ...)`, naming the rules that asked (since 2.0.0); `run start` and `run continue` exit with 6. |
 | `warn` | `PASSED`; each question is also recorded as a `LOW` finding of `intake.clarification`, which the gate does not count. |
 | `off` | No assessment: INTENT behaves as in 1.0.0. |
 
