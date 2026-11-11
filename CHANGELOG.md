@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- The fast lane no longer prevents disputing a frozen acceptance test (#161). Its affected tests
+  ran first and stopped the attempt on a failure, so when they included the frozen file
+  `harness.acceptance-tests` never ran and no dispute could open: `disputes: person` had no
+  effect on size-S tasks. Under `verification.acceptanceTests.disputes: person` the frozen files
+  are now left out of the affected tests (event `verification.affected-tests` lists the rest);
+  they still run in `harness.acceptance-tests` and in the full suite. A failing ordinary affected
+  test still stops the attempt, and without `disputes: person` nothing changes.
 - A catalogue of ten architecture styles with an expert for each, and persistent reverse
   engineering documents for existing projects (#97, wave 11, items 11 and 12). Two keys that
   `harness init` writes; a `project.yaml` without them keeps the earlier requests, prompt digests

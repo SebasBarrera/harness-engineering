@@ -109,6 +109,18 @@ class AcceptanceDisputes:
         return extra
 
     # ----- VERIFICATION ----------------------------------------------------------------------
+    def disputable(self, execution: Execution) -> frozenset[str]:
+        """The frozen acceptance files a dispute can cover; empty without ``disputes: person``.
+        The fast lane leaves them out of the affected tests it runs first (#161): a failure
+        there would stop the attempt before ``harness.acceptance-tests`` runs, and a dispute
+        needs that result. They still run, in that validator and in the full suite."""
+        if not self.enabled:
+            return frozenset()
+        state = self.acceptance.state(execution) or {}
+        if state.get("status") != "APPROVED":
+            return frozenset()
+        return frozenset(state.get("frozen") or {})
+
     def waiting(self, execution: Execution, change_set: ChangeSet) -> PhaseOutcome | None:
         """The wait of an open dispute of this ChangeSet, without running the validators
         again."""

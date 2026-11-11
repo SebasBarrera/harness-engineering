@@ -2823,7 +2823,9 @@ class RunEngine:
         )
 
     def _fast_validators(self, execution: Execution, change_set: ChangeSet) -> list[Any]:
-        """fastLane.verification (#58): affected tests first, side by side, reused by digest."""
+        """fastLane.verification (#58): affected tests first, side by side, reused by digest.
+        The frozen acceptance tests a dispute can cover are not among the affected tests
+        (#161)."""
         return self.friction.run_validators(
             execution,
             change_set,
@@ -2833,6 +2835,7 @@ class RunEngine:
                 self._validation_context(execution, change_set, definition),
             ),
             lambda output: self._save_validator_output(execution, output),
+            exclude=self.results.disputes.disputable(execution),
         )
 
     def _traceability_output(
