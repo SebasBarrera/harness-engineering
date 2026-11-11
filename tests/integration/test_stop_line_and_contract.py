@@ -282,3 +282,82 @@ def test_harness_check_runs_the_gate_without_recording(
     assert failed["blockingIssues"] == 1
     with application._services(python_workspace) as services:
         assert len(services.events.list(run)) == before
+
+
+# ----- run continue after a restore quarantine (#193) ------------------------------------------
+def quarantined_run(application: HarnessApplication, workspace: Path, tmp_path: Path) -> str:
+    """A run whose ChangeSet is right and whose VERIFICATION fails because of the environment (a
+    file outside the project stands in for a missing test dependency): restore quarantines it."""
+    set_keys(workspace, governance={"stopTheLine": "restore"})
+    (workspace / "tests" / "test_environment.py").write_text(
+        "from pathlib import Path\n\n"
+        "def test_environment_is_ready() -> None:\n"
+        f"    assert Path({str(tmp_path / 'environment-ready')!r}).exists()\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    run = start(application, workspace, tmp_path, patch_task(GOOD))
+    status = application.status(workspace, run)["execution"]
+    assert (status["currentPhase"], status["status"]) == (
+        PhaseId.VERIFICATION,
+        ResultStatus.FAILED,
+    )
+    assert (workspace / "src" / "sample" / "pricing.py").read_text() == ORIGINAL
+    [quarantined] = events(application, workspace, run, "workspace.quarantined")
+    assert quarantined.payload["phase"] == PhaseId.VERIFICATION
+    (tmp_path / "environment-ready").write_text("ready", encoding="utf-8")  # fix the environment
+    return run
+
+
+def test_continue_reapplies_the_quarantined_change_set(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    application = HarnessApplication()
+    run = quarantined_run(application, python_workspace, tmp_path)
+    execution = application.continue_run(python_workspace, run)
+    assert execution.current_phase is PhaseId.DECISION
+    assert (python_workspace / "src" / "sample" / "pricing.py").read_text() == GOOD
+    [reapplied] = events(application, python_workspace, run, "workspace.quarantine.reapplied")
+    assert reapplied.payload["paths"] == ["src/sample/pricing.py"]
+
+
+def test_a_new_attempt_supersedes_the_quarantine(python_workspace: Path, tmp_path: Path) -> None:
+    """A person (or an embedded session) writes a new attempt over the restored baseline: the
+    quarantined content is never written over it, and the run is evaluated on the new one."""
+    application = HarnessApplication()
+    run = quarantined_run(application, python_workspace, tmp_path)
+    pricing = python_workspace / "src" / "sample" / "pricing.py"
+    again = GOOD + "\n\n# second attempt\n"
+    pricing.write_text(again, encoding="utf-8", newline="\n")
+    execution = application.continue_run(python_workspace, run)
+    assert execution.current_phase is PhaseId.DECISION
+    assert pricing.read_text() == again
+    [superseded] = events(application, python_workspace, run, "workspace.quarantine.superseded")
+    assert superseded.payload["rewrittenPaths"] == ["src/sample/pricing.py"]
+    assert not events(application, python_workspace, run, "workspace.quarantine.reapplied")
+
+
+def test_continue_blocks_when_the_quarantined_content_is_not_intact(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    application = HarnessApplication()
+    run = quarantined_run(application, python_workspace, tmp_path)
+    [quarantined] = events(application, python_workspace, run, "workspace.quarantined")
+    [content] = quarantined.payload["quarantinedContents"]
+    with application._services(python_workspace) as services:
+        blob = services.artifacts._blob_path(content["contentRef"].rsplit("/", 1)[1])
+    blob.write_bytes(b"tampered\n")
+    execution = application.continue_run(python_workspace, run)
+    assert (execution.current_phase, execution.status) == (
+        PhaseId.VERIFICATION,
+        ResultStatus.BLOCKED,
+    )
+    assert "src/sample/pricing.py: quarantined content missing or not matching its digest" in (
+        execution.terminal_reason or ""
+    )
+    pricing = python_workspace / "src" / "sample" / "pricing.py"
+    assert pricing.read_text() == ORIGINAL  # nothing written
+    assert events(application, python_workspace, run, "workspace.quarantine.reapply-refused")
+    # Writing the quarantined change again by hand lets the run continue.
+    pricing.write_text(GOOD, encoding="utf-8", newline="\n")
+    assert application.continue_run(python_workspace, run).current_phase is PhaseId.DECISION

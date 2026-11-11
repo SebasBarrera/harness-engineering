@@ -24,6 +24,18 @@
   (`HARNESS_STATE_DIR`) and accepts a `C:/...` work directory in Git Bash, which used to split
   `PATH` at the drive colon. The `docs-smoke` flows job runs it on the built wheel; the brownfield
   guides and the README describe the current flow.
+- `harness run continue` after `governance.stopTheLine: restore` quarantined a run in
+  VERIFICATION evaluates the run's ChangeSet again instead of the restored baseline (#193).
+  Before, a run whose verification failed because of the environment (the brownfield example
+  without freezegun) could not be continued: VERIFICATION failed with `Current ChangeSet is empty`
+  and the command exited 6. The quarantine record now also stores the content of every restored
+  path with its digest (`quarantinedContents`) and the phase (`phase`); `run continue` puts that
+  content back first (`workspace.quarantine.reapplied`) and blocks the run without writing
+  anything (`workspace.quarantine.reapply-refused`) when a stored content is missing or does not
+  match its digest. A new attempt written over a restored path is never overwritten: the
+  quarantine is superseded (`workspace.quarantine.superseded`) and the run is evaluated on the
+  workspace as before. `stopTheLine` is not part of 0.8.0 or 1.0.0, so no evaluated behavior
+  changes.
 - The brownfield example pins `pytest==9.0.3` instead of 8.1.1 in
   `requirements/example-pytest.in` and its hash-pinned `requirements/example-pytest.txt`
   (GHSA-6w46-j5rx-g56g, CVE-2025-71176: vulnerable tmpdir handling, patched in 9.0.3). itsdangerous

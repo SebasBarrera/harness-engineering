@@ -345,6 +345,20 @@ be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace wh
 restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
 restored with the rest.
 
+Under `restore` the quarantine record also keeps the content of every restored path
+(`quarantinedContents`, each with its digest) and the phase the run stopped in. When
+`harness run continue` resumes a run quarantined in VERIFICATION or a later phase (for example
+after installing a missing test dependency), it first puts that content back and records
+`workspace.quarantine.reapplied`, so the run is evaluated on its own ChangeSet again rather than
+on the restored baseline (#193). Nothing is written over a new attempt: when a restored path
+holds content that is neither its baseline nor its quarantined content (a person or an embedded
+session wrote a correction), the quarantine is superseded (`workspace.quarantine.superseded`) and
+the run is evaluated on the workspace as it is. It fails closed: if a stored content is missing
+or does not match its digest (a redacted artifact does not), nothing is written,
+`workspace.quarantine.reapply-refused` is recorded and the run is `BLOCKED` with the paths in its
+reason; write the change again (the quarantined patch is on the run's chain) and `run continue`,
+or cancel the run. A run quarantined in IMPLEMENTATION implements again from the baseline.
+
 ## Budget (#42)
 
 `budget` sets limits per agent call, per task (all its runs) and per run, for `costUsd`, `tokens`
