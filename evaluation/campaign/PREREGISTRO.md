@@ -498,3 +498,231 @@ Operacionalización común de las cuatro:
 - **Sesgos:** las soluciones de referencia son impecables y las pruebas de `hidden/` son el
   oráculo; la mitigación del catálogo (cambios reales del historial) queda pendiente. La solución
   de referencia de itsdangerous no entra (necesita la descarga del proyecto): exclusión declarada.
+
+## Tercera congelación: H13, H16, H17 y H24
+
+Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
+cuatro pruebas y es el primer commit de la rama que las implementa
+(`evaluation/deterministic/h13_bundle_audit.py`, `h16_decider_identity.py`,
+`h17_retention.py`, `h24_context_bounds.py`). Rigen las siete reglas del principio de este
+archivo: los criterios no se cambian después de ver resultados; un resultado contrario se reporta
+tal cual, con su contexto (configuración, plataforma, versión, casos afectados y causa observada,
+si se conoce); no se ajustan casos ni harness; una suite cuyo aparato no funciona se marca «no
+evaluada». Las cuatro son deterministas (modelo: 0). Si una corrida de humo muestra que una
+condición no puede distinguir lo que debe, se añade aquí una enmienda fechada **antes** de
+cualquier resultado, conservando las condiciones originales. Las desviaciones respecto del
+catálogo se declaran en cada prueba.
+
+Operacionalización común de las cuatro (la de la segunda congelación, salvo lo que se dice):
+
+- **Proveedor:** el fixture `budget_agent.py` (sin modelo), que escribe en `implement` el cambio
+  declarado del caso y responde vacío y válido a las llamadas de solo lectura. Para H24 su
+  registro por llamada añade, sin cambiar lo que responde, el resumen de `contextFiles` que
+  recibió (presencia, número de archivos, suma de `sizeBytes`, `totalBytes`, `candidates`,
+  `omitted`, límites, bytes de la clave serializada) y los bytes de la solicitud.
+- **Proyecto:** el de muestra (`suite_support.sample_project`). En H13 y H17 cada run añade un
+  módulo propio (`src/sample/feature_NN.py`, una función `value_NN()` que devuelve NN, y su prueba
+  `tests/test_feature_NN.py` con una prueba por requisito y criterio), para que cada cambio sea
+  distinto y no toque palabras de dinero (`floatMoney`) ni definiciones públicas existentes.
+- **H** = `harness init` con el proveedor fixture y la concesión exacta de su comando; cada
+  variante declara la única clave que cambia. En Windows (solo humo) `runtime.agentSandbox: off`,
+  declarado en cada registro.
+- **Persona simulada** (`common.simulated_person`) para las esperas antes de DECISION; las
+  decisiones en DECISION las toma el script con los actores declarados por caso (simulación
+  declarada, ids `human.*`).
+- **Reloj:** donde la prueba mueve el tiempo usa `evaluation/deterministic/timeshift.py` con el
+  intérprete del harness (el `python` junto al ejecutable `--harness`), que desplaza solo el reloj
+  de pared de ese proceso.
+- **Registros:** un JSONL por caso y condición y un resumen JSON con el criterio evaluado tal cual
+  (`criteria`) e intervalos de Wilson al 95 % donde hay proporciones; la suite sale con 0 cuando
+  corrió; un caso cuyo aparato falló queda con `apparatusError`, fuera de los denominadores y
+  listado aparte, nunca contado como favorable.
+- **Secretos y tokens sintéticos** se arman por partes en tiempo de ejecución; los tokens de la
+  API se generan al correr (`secrets.token_urlsafe`) y solo viajan en variables de entorno del
+  proceso del servidor; ninguno se escribe en el repositorio.
+
+## H13 Reconstrucción de «quién aprobó qué digest» sin el espacio de trabajo
+
+- **Hipótesis:** desde solo el bundle exportado un tercero responde 8 preguntas de auditoría;
+  desde `git log` + salida de CI (directo) responde menos.
+- **Condiciones:** D\* (repositorio Git + registro de pruebas); H (`harness export` +
+  `harness verify --bundle`).
+- **Corpus (30 runs cerrados o decididos)**, uno por espacio de trabajo nuevo, con un marcador de
+  configuración distinto por run (`retention.artifactDays` = 1000 + n en `project.yaml`; solo
+  `harness gc` lo lee) y uno de tres decisores simulados (`human.ana`, `human.ben`,
+  `human.cora`), con una razón distinta por run:
+  - *aprobados (8)*: `APPROVE` con el digest evaluado; 3 de ellos añaden `requirements-NN.txt`
+    (factor `newDependency`, acción `acknowledge` de `init`) y se aprueban con
+    `--acknowledge-risk newDependency`;
+  - *rechazados (8)*: `REJECT`; 4 con una prueba que falla (gate no `PASSED`) y 4 con el gate
+    `PASSED`;
+  - *con excepción (7)*: el módulo añade `pickle.loads` (hallazgo bloqueante
+    `security.unsafe-deserialization`, como B04 de H44) y se decide `APPROVE_EXCEPTION` con
+    `--expires-in 14d`, `--alternative-evidence` y `--follow-up`;
+  - *vencidos (7)*: `APPROVE --no-continue` y `run continue` con el reloj adelantado 73 h
+    (`decisionExpiryHours` 72): el run queda en DECISION con una decisión vencida.
+- **D\*:** el mismo cambio sobre una copia del proyecto de muestra, con un commit previo en `main`
+  que fija el marcador en `pyproject.toml` (`[tool.sample] configVersion = n`); el cambio va en la
+  rama `change/NN` en un commit cuyo autor es `agent.fixture` (generoso con D\*: el agente queda
+  como autor) y cuyo mensaje es el título de la tarea; `python -m pytest -q` sobre ese commit es
+  el registro de CI. Aprobados, con excepción y vencidos: la persona hace `git merge --no-ff` en
+  `main` con su identidad y el mensaje por defecto; rechazados: no hay merge. D\* no es un agente
+  ni un proceso de revisión real; modela lo que un historial de Git y un CI registran sin
+  convenciones adicionales.
+- **«Sin el espacio de trabajo»:** H se responde leyendo **solo** el archivo del bundle;
+  `harness verify --bundle` corre en un directorio vacío con un directorio de estado vacío. D\* se
+  responde solo con comandos `git` sobre el repositorio y el texto del registro de pruebas.
+- **Cuestionario (8 preguntas) y verdad sembrada** (lo que el script hizo, registrado antes de
+  responder):
+  1. *actor*: quién decidió (H: `actor.actorId` de la decisión; D\*: el committer del merge);
+  2. *digest*: qué cambio exacto (H: `changeSetDigest` = el digest que `status` mostraba al
+     decidir; D\*: el segundo padre del merge = el commit del cambio);
+  3. *hora*: cuándo (H: `decidedAt`; D\*: fecha del merge), exacta si cae en la ventana medida
+     alrededor del comando de decisión (±1 s);
+  4. *razón*: el texto de la razón (H: `rationale`; D\*: no hay campo);
+  5. *riesgos reconocidos*: el conjunto reconocido (H: `acknowledgedRisks`, cuya ausencia
+     significa «ninguno» según `domain/models.py`; D\*: no hay campo);
+  6. *quién cambió qué*: los archivos del cambio y quién los produjo (H: rutas del ChangeSet y
+     proveedor de la invocación del agente; D\*: `--stat` y autor del commit del cambio);
+  7. *versión de la configuración*: el marcador del run (H: la instantánea de configuración del
+     bundle; D\*: `git show <commit del cambio>:pyproject.toml`);
+  8. *validadores que pasaron*: H: los validadores registrados con su estado, exacta si el de
+     pruebas tiene el estado que da una corrida independiente de `pytest` sobre el mismo cambio
+     (la que sirve de CI a D\*); D\*: el resultado del registro de pruebas.
+  *Respondible* = la fuente tiene el dato para ese run (un campo presente o, en la 5 de H, su
+  ausencia documentada); *exacta* = respondible e igual a la verdad. Para los rechazados, D\* no
+  tiene registro de la decisión: las preguntas 1–5 son no respondibles.
+- **Tres preguntas que favorecen al directo** (mitigación del sesgo, reportadas aparte y fuera del
+  criterio): E1 autor del commit que lleva el cambio; E2 su mensaje; E3 la revisión base de la que
+  parte. En H el commit es el de cierre (`delivery.closureCommit: branch`, solo runs cerrados); en
+  D\*, el commit del cambio. Se aplican a los runs donde ese commit existe.
+- **Reportado aparte:** `harness verify --bundle` (salida 0 y `valid`), la marca `expired` de la
+  decisión en los vencidos y, en los aprobados, con excepción y vencidos, `harness verify-approval
+  --base <base> --head <cambio> --bundle <bundle> --no-workspace` (salida esperada 0 en aprobados y
+  con excepción; 5 en los vencidos).
+- **Métricas:** preguntas respondibles/8 y exactas/8 por run y condición; proporción de pares
+  (run, pregunta) respondibles y exactos por condición y por pregunta, con Wilson.
+- **Criterio de éxito:** H responde 8/8 con exactitud 100 % en los 30 runs; D\* se reporta con su
+  valor (se espera < 8).
+- **Sesgo:** el cuestionario favorece lo que el harness registra; mitigación: E1–E3 y un D\*
+  generoso (agente como autor del commit, merge con la identidad de quien decide).
+
+## H16 Identidad y no repudio de quien decide (CLI y API)
+
+- **Hipótesis:** un agente, un validador, un usuario con rol `viewer` o un token inválido no puede
+  aprobar; una excepción exige razón y vence.
+- **Condiciones:** H por CLI con `governance.deciderIdentity: git` (lo que escribe `init`); H por
+  CLI con `deciderIdentity: default` (la identidad sale de la configuración, `human.local`); H por
+  `harness api serve` con la sección `api` de `init` (`auth: token`) más dos usuarios declarados
+  (`human.viewer`, rol `viewer`; `human.reviewer`, rol `reviewer`; el token de arranque es el de
+  `tokenUser`, rol `admin`); H por API con `api.auth: off` (comportamiento 1.0.0). La API escucha
+  solo en `127.0.0.1` en un puerto libre; los tokens se generan al correr y se pasan por variables
+  de entorno.
+- **Intentos (25: 19 indebidos y 6 legítimos)**, en runs que esperan en DECISION (gate `PASSED`
+  salvo donde se dice), cada uno con su resultado esperado leído en `docs/reference/exit-codes.md`
+  y `api/app.py`:
+  - CLI `git`, run con gate `PASSED`: A01 `--actor agent.claude-code`, A02 `validator.tests`, A03
+    `harness.core`, A04 `AGENT.fixture` (mayúsculas), A05 digest viejo (el de otro run): salida 5
+    y ninguna decisión; A06 `REQUEST_CHANGES` con `--actor agent.claude-code` (5); A07 `APPROVE
+    --actor human.reviewer`: legítimo (salida 0, decisión registrada);
+  - CLI `git`, run nuevo: A08 sin `--actor`, con identidad Git local del repositorio (nombre y
+    correo sintéticos): legítimo, decisión con `identitySource: git`;
+  - CLI `git`, run con gate fallido (`pickle.loads`): A09 `APPROVE` de una persona sobre el gate
+    fallido (5); A10 `APPROVE_EXCEPTION` con razón en blanco (5); A11 `APPROVE_EXCEPTION` con
+    `--expires-at` en el pasado (rechazado, salida distinta de 0; se espera 2 por
+    `ConfigurationError`); A12 `APPROVE_EXCEPTION --expires-in 1h --no-continue` con razón:
+    legítimo (0); A13 `run continue` con el reloj adelantado 2 h: la excepción vencida no cierra
+    el run (BLOCKED en DECISION, salida 6);
+  - CLI `default`: A14 sin `--actor`: legítimo, actor `human.local`; A15 `--actor agent.x` (5);
+  - API `token`: A16 sin `Authorization` (401); A17 token inválido (401); A18 token del `viewer`
+    (403); A19 token del `reviewer` con `actor_id: agent.claude-code` (403); A20 token del
+    `reviewer` con el `actor_id` de otra persona (403); A21 token del `reviewer` con digest viejo
+    (409); A22 token en la query string en lugar de la cabecera (401); A23 token del `reviewer`
+    con su propio id: legítimo (200, actor `human.reviewer`); A24 token de arranque (`admin`) en
+    otro run: legítimo (200);
+  - API `off`: A25 `actor_id: agent.claude-code` (403).
+- **Definiciones:** *decisión registrada* = un evento `human.decision.recorded` nuevo en el run
+  después del intento (conteo antes y después); *indebida* = registrada en un intento indebido;
+  *legítima aceptada* = registrada con el actor esperado. A13 cuenta como indebido si el run queda
+  cerrado (`PASSED`) con la excepción vencida.
+- **Métricas:** código de salida o HTTP por intento, decisión registrada sí/no, actor e
+  `identitySource` registrados; aparte, que ningún token aparezca en `.harness/` ni en el
+  directorio de estado, y las entradas del registro de auditoría de la API
+  (`.harness/audit/api-decisions.jsonl`).
+- **Criterio de éxito:** 0 decisiones registradas indebidas; 100 % de legítimas aceptadas. La
+  coincidencia del código de salida con el documentado se reporta aparte.
+- **Desviación declarada:** 25 intentos en lugar de 20 (se añaden variantes de actor, la query
+  string y la API sin autenticación) y 6 legítimos en lugar de 5.
+
+## H17 La evidencia sobrevive a retención y recolección
+
+- **Hipótesis:** `harness gc --apply` borra solo lo que la política permite; los runs conservados
+  siguen verificando.
+- **Condiciones:** H con la retención de `init` (`artifactDays` 30, `eventDays` 365,
+  `orphanArtifacts: true`).
+- **Corpus (20 runs en un mismo espacio de trabajo)**, creados con el reloj del harness desplazado
+  hacia atrás (`timeshift.py --hours -N` en `run start` y en la decisión), para que a la hora real
+  tengan edades distintas; entre run y run el árbol vuelve a `HEAD` (el cierre por rama no toca el
+  árbol de trabajo):
+  - *viejos* (−400 días): 4 aprobados, 1 rechazado, 1 abierto (esperando en DECISION);
+  - *medios* (−40 días): 4 aprobados, 1 cancelado (`run cancel`), 1 rechazado, 1 abierto;
+  - *recientes* (−1 día): 5 aprobados, 1 abierto.
+  Además, 3 artefactos huérfanos (blob y descriptor con el formato del almacén y fecha de
+  modificación de hace 2 h), que simulan una escritura interrumpida, declarados como tales.
+- **Método:** `harness gc` sin `--apply` (informe), luego `harness gc --apply` (informe), a la
+  hora real; inventario del almacén de artefactos y de los runs del registro antes, entre y
+  después; `harness verify --run` de cada run y `harness export` + `harness verify --bundle` de
+  cada run conservado.
+- **Oráculo (la política documentada, `orchestration/retention.py` y `harness gc --help`):** los
+  terminados viejos se eliminan (`removedRuns`); los terminados medios pierden los artefactos que
+  ningún run conservado usa (`prunedRuns`) y conservan eventos y registros; los recientes y todos
+  los abiertos no se tocan; los huérfanos se borran.
+- **Definiciones:** *no vencido* = run reciente, run abierto de cualquier edad o run medio (sus
+  eventos y registros no vencen hasta `eventDays`); *verifica* = `harness verify --run` sale con 0
+  (los medios, con sus artefactos podados registrados como tales). *Solo lo listado* = el conjunto
+  de artefactos que desaparecieron del almacén es exactamente `artifacts` ∪ `orphans` del informe
+  de `--apply`, los runs que desaparecieron son exactamente `removedRuns`, el informe sin
+  `--apply` coincide con el de `--apply` y sin `--apply` no cambia nada.
+- **Métricas:** runs que siguen verificando por grupo, bytes del almacén antes y después,
+  artefactos huérfanos borrados, coincidencia con el oráculo, bundles válidos de los conservados.
+- **Criterio de éxito:** 100 % de los runs no vencidos verifican; solo se borra lo listado en el
+  informe.
+- **Sonda de poda falsificada (reportada aparte, fuera del criterio).** El PR #154 (sin fusionar
+  al congelar) añade `governance.unanchoredEvents` y hace que un evento
+  `retention.artifacts.pruned` posterior a la cabeza anclada no excuse un artefacto ausente. La
+  suite **no** supone ninguno de los dos comportamientos: lee cuál tiene el harness instalado (la
+  clave en el `project.yaml` que escribe `init` y en el esquema de configuración del paquete) y lo
+  registra (`unanchoredEvents` en `environment.json` y en el registro). Después del `gc`, sobre un
+  run reciente conservado, borra un artefacto que solo ese run usa y añade a la cadena un evento
+  `retention.artifacts.pruned` bien enlazado que lo lista, sin volver a anclar (atacante con
+  acceso a `.harness/` y al registro, no al ancla), y corre `harness verify --run`. Control: el
+  mismo borrado sin el evento, en otro run reciente. Expectativa leída en el código antes de
+  correr (no es criterio): sin la clave, `verify` sale con 0 en la sonda (el ancla queda
+  `matched` con `eventsAfterAnchor` 1); con la clave, 6; el control sale con 6 en ambos.
+
+## H24 Contexto excesivo en repos grandes
+
+- **Hipótesis:** `context.manifest`, `maxFiles` y `maxBytes` acotan el contexto que viaja con
+  `implement` aunque el repo crezca.
+- **Condiciones:** H con manifiesto (`init`: `manifest: auto`, `maxFiles` 40, `maxBytes`
+  400 000); H sin manifiesto (`context.manifest: off`).
+- **Repos (5):** el proyecto de muestra; el generador de N16 (`block0_technical.large_project`:
+  archivos de texto de ~11.7 kB bajo `data/`) con 1 000 y 10 000 archivos en total, en dos
+  variantes de contenido: *neutro* (el texto de N16, que no nombra la tarea) y *relevante* (cada
+  archivo de `data/` nombra además los términos clave de la tarea y el id del requisito, para que
+  todos sean candidatos y los límites se ejerzan). Del generador de N16 se omiten `build/` y el
+  `.env` con secreto (no afectan al manifiesto).
+- **Tarea:** el descuento por umbral (`resource_support.discount_task`), con el cambio correcto.
+- **Medición:** en cada llamada `implement` que recibe el fixture: número de archivos de
+  `contextFiles`, suma de sus `sizeBytes`, `totalBytes`, candidatos y omitidos, bytes de la clave
+  serializada y de la solicitud; del harness, el evento `context.manifest.built`; tamaño del repo
+  (archivos y bytes) y segundos de `run start`.
+- **Métricas:** bytes y número de archivos de contexto frente al tamaño del repo, por condición.
+- **Criterio de éxito:** con manifiesto, bytes de contexto (suma de `sizeBytes`) ≤ `maxBytes`
+  (400 000) y archivos ≤ `maxFiles` (40) en todas las llamadas `implement` de todos los repos.
+- **Expectativa leída en el código antes de correr** (no es criterio): el manifiesto lleva rutas,
+  tamaños y digests, no el contenido de los archivos (`agents/context_manifest.py`); sin
+  manifiesto la solicitud no lleva `contextFiles`, así que la condición sin manifiesto es la
+  referencia (nada acotado se envía) y no tiene límite que cumplir.
+- **Exclusión declarada:** la mitigación del catálogo (añadir itsdangerous) queda sin evaluar:
+  necesita la descarga del proyecto.
