@@ -77,6 +77,15 @@ tabla anterior.
   llamada no define, tamaño del `result` en bytes, tamaño de cada campo de texto, y contenido de
   archivos donde solo se pide una conclusión (solo `acceptance` devuelve archivos, las pruebas que
   escribe).
+- Los revisores del panel de revisión (`review.panel`) también pasan por el contrato: cada respuesta
+  es una llamada `review`, con su presupuesto de tokens, su límite de tiempo (que acorta el tiempo
+  de los revisores) y los límites de `result`; las claves permitidas son las de la respuesta del
+  panel (`verdict`, `summary`, `findings`, `model`). Una respuesta fuera de los límites se descarta
+  (`agent.contract.violation` o `agent.limit.reached`), el panel la reenvía una vez al proveedor
+  alterno (o al mismo, si no hay uno) y, si vuelve a fallar, el revisor queda `UNKNOWN` y
+  bloquea bajo `review.panel.mode: enforce`. Cada respuesta queda en `agent.call.recorded` con el
+  revisor (`reviewer`). La solicitud del revisor no lleva el bloque `agentContract` (sigue siendo
+  la del panel, con su propio contrato de salida).
 - Un documento cualquiera se valida a mano con `harness agent-contract validate`:
 
 ```bash

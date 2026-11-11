@@ -24,6 +24,7 @@ from typing import Any, Final, cast
 from governed_harness.agents import AgentCallResult, AgentExecutionResult
 from governed_harness.agents.contract import (
     CONTRACT_VERSION,
+    PANEL_RESULT_KEYS,
     REQUEST_KEY,
     AgentCallRequestContract,
     AgentCallResponse,
@@ -377,6 +378,58 @@ class AgentContractFlow:
         )
         return outcome
 
+    def settle_reviewer(
+        self,
+        execution: Execution,
+        phase: PhaseExecution,
+        reviewer: str,
+        answer: AgentCallResult,
+        *,
+        request: dict[str, Any],
+        request_ref: str | None,
+        limits: CallLimits,
+    ) -> str | None:
+        """Judge the answer of one reviewer of the review panel as a ``review`` call (#149):
+        the limit it reached and the result limits of the kind, with the keys of the panel's
+        answer (``PANEL_RESULT_KEYS``); record what was sent and received. The reason the answer
+        must be discarded (a limit reached or the contract broken), else ``None``. The iteration
+        is the one the panel's batch began (``before_agent_call``)."""
+        config = self.config or AgentContractConfig()
+        iteration = self.used(execution, "review")
+        result = answer.execution
+        passed = result.status is ResultStatus.PASSED and isinstance(answer.response, dict)
+        outcome = AgentCallOutcome(
+            result.status,
+            result.summary,
+            answer.response if passed else None,
+            result.invocation.invocation_id,
+            (),
+        )
+        final, limit, violations, outcome = self._judge(
+            "review", outcome, answer, limits, config, iteration, keys=PANEL_RESULT_KEYS
+        )
+        summary, cut = limit_summary(outcome.summary, config.summary_chars)
+        outcome = replace(outcome, summary=summary)
+        response = self._response("review", outcome, result, final, iteration, limit, violations)
+        self._record(
+            execution,
+            phase,
+            "review",
+            response,
+            sent=SentInfo((), (), iteration),
+            limits=limits,
+            digest=request_digest(request),
+            size=request_bytes(request),
+            request_ref=request_ref,
+            keys=sorted(request),
+            answer=result,
+            truncated=cut,
+            reviewer=reviewer,
+        )
+        if final in {"LIMIT_REACHED", "CONTRACT_VIOLATION"}:
+            return summary
+        return None
+
     def _judge(
         self,
         kind: CallKind,
@@ -385,6 +438,7 @@ class AgentContractFlow:
         limits: CallLimits,
         config: AgentContractConfig,
         iteration: int,
+        keys: tuple[str, ...] | None = None,
     ) -> tuple[str, str | None, tuple[str, ...], AgentCallOutcome]:
         reached = self.judge_limit(answer.execution, limits)
         if reached is not None:
@@ -397,7 +451,7 @@ class AgentContractFlow:
                 replace(outcome, status=ResultStatus.BLOCKED, summary=message, result=None),
             )
         problems = (
-            check_answer(kind, outcome.result, config)
+            check_answer(kind, outcome.result, config, keys=keys)
             if outcome.status is ResultStatus.PASSED
             else []
         )
@@ -464,11 +518,14 @@ class AgentContractFlow:
         keys: list[str],
         answer: AgentExecutionResult,
         truncated: bool,
+        reviewer: str | None = None,
     ) -> str:
         received = response.model_dump(mode="json", by_alias=True)
+        own = {"reviewer": reviewer} if reviewer is not None else {}
         record = {
             "contractVersion": CONTRACT_VERSION,
             "callKind": kind,
+            **own,
             "iteration": sent.iteration,
             "provider": answer.invocation.provider,
             "invocationId": answer.invocation.invocation_id,
@@ -504,6 +561,7 @@ class AgentContractFlow:
             RECORD_EVENT,
             {
                 "callKind": kind,
+                **own,
                 "iteration": sent.iteration,
                 "finalStatus": response.final_status,
                 "limitReached": response.limit_reached,

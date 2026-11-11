@@ -87,6 +87,10 @@ RESULT_KEYS: Final[dict[str, tuple[str, ...]]] = {
 }
 """The keys the ``result`` object of each call kind may carry."""
 
+PANEL_RESULT_KEYS: Final[tuple[str, ...]] = ("verdict", "summary", "findings", "model")
+"""The keys a reviewer of the review panel answers with (``review.contract``): a ``review``
+call whose answer is the panel's verdict object, not the single reviewer's ``findings``."""
+
 FILE_CONTENT_KEYS: Final[frozenset[str]] = frozenset(
     {"content", "contents", "filecontent", "filecontents", "source", "sourcecode", "body"}
 )
@@ -306,15 +310,20 @@ def limit_summary(summary: str, chars: int) -> tuple[str, bool]:
 
 
 def check_answer(
-    kind: str, result: dict[str, Any] | None, config: AgentContractConfig
+    kind: str,
+    result: dict[str, Any] | None,
+    config: AgentContractConfig,
+    *,
+    keys: tuple[str, ...] | None = None,
 ) -> list[str]:
     """What a passing answer's ``result`` does against the contract of its kind: unknown keys,
     a size above the cap, a text field above its cap, file contents where only a conclusion is
-    due. Empty: the answer keeps the contract."""
+    due. ``keys``: the allowed keys when they are not the kind's (a reviewer of the panel).
+    Empty: the answer keeps the contract."""
     if result is None:
         return []
     problems: list[str] = []
-    allowed = RESULT_KEYS.get(kind, ())
+    allowed = RESULT_KEYS.get(kind, ()) if keys is None else keys
     unknown = sorted(set(result) - set(allowed))
     if unknown:
         problems.append(f"result carries keys outside the {kind} contract: {', '.join(unknown)}")

@@ -60,6 +60,14 @@
     reasoning; cache reads are recorded with the usage, the response and the metrics
     (`tokens.cacheRead`) but not counted, and the limit message gives both numbers. A provider
     that reports no cache-read split counts its whole input, as before.
+  - The reviewers of the review panel go through the contract (#149): before, their answers
+    bypassed it and an ~80 kB answer was accepted, and with `harness init` the panel replaces
+    `agentReview`, so the `review` kind was never checked. Each reviewer answer is now judged
+    as a `review` call (token budget, time limit, result bytes and field caps, with the keys of
+    the panel's answer) and recorded in `agent.call.recorded` with its reviewer; an answer
+    outside the limits is discarded and retried as any answer without a valid result, and a
+    reviewer without a valid answer blocks under `review.panel.mode: enforce`. Only under
+    `agentContract: enforce`; without it the panel reads its answers as before.
   - Scripts as black boxes: a registry of contracts for `harness check`, the gate's validator
     commands and the embedded MCP tools; the implement instructions tell the agent to use only
     that contract.
