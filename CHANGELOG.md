@@ -49,6 +49,13 @@
   measured (`invalid: quarantine-patch-not-applied`, `<out>.invalid.jsonl`, exit code 3, no rerun).
   `evaluation/remeasure_quarantine.py` measures the patch of earlier run directories again without
   a model call. Amendment of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`.
+- The evaluation is in Spanish (#70): its documentation, the result READMEs and every stimulus the
+  evaluated model receives (casual, poor and full tasks, fixture specifications, `build_prompt`,
+  the embedded instructions, the rides and longitudinal scenarios and the simulated product owner),
+  with identifiers, values and hidden tests unchanged. The simulated product owner answers as an
+  engineer who owns the product and runs with one fixed model in every cell (`--po-model`, default
+  `claude-sonnet-5-5`, recorded as `productOwnerModel`). Two dated amendments in
+  `evaluation/campaign/PREREGISTRO.md` record both changes before any campaign result.
 
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection

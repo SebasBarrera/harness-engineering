@@ -1,27 +1,28 @@
-# P24: INTENT equivalence without agents
+# P24: equivalencia de INTENT sin agentes
 
-Every task the experiments sent (or would send) to the harness, assessed with the deterministic
-INTENT rules of the harness the script runs with (`assess_intent`: C0, C1, C2, C3, T1). A task
-file is loaded as `harness task create` loads it under `intake.criteriaPolicy: enforce`
-(`load_task_file`). A free-text prompt (the one-line prompts, the casual increments and the casual
-bug-report fixes) is assessed twice: as `harness do TEXT` builds the task (`task_from_text`: the
-text is the intent and the criterion) and as a task file whose only content is the text as intent
-(no criteria: rule C0). The rules that need an agent (A1, A3) or the workspace and the answers
-(A2, P1) are not applied. No model was called.
+Cada tarea que los experimentos enviaron (o enviarían) al harness, evaluada con las reglas
+deterministas de INTENT del harness con el que corre el script (`assess_intent`: C0, C1, C2, C3, T1).
+Un archivo de tarea se carga como lo carga `harness task create` con `intake.criteriaPolicy: enforce`
+(`load_task_file`). Un prompt de texto libre (los prompts de una línea, los incrementos casual y las
+correcciones casual de reportes de bugs) se evalúa dos veces: como arma la tarea `harness do TEXT`
+(`task_from_text`: el texto es la intención y el criterio) y como un archivo de tarea cuyo único
+contenido es el texto como intención (sin criterios: regla C0). No se aplican las reglas que
+necesitan un agente (A1, A3) o el espacio de trabajo y las respuestas (A2, P1). No se llamó a ningún
+modelo.
 
-Sources: `evaluation/tasks` (3 full, 3 poor, 3 casual), the 5 increments of
-`evaluation/longitudinal/increments.yaml` (structured task and casual prompt), the 16 bug reports
-of `evaluation/longitudinal/bug_reports.yaml` (the single-report fix task `run_session.py` builds
-and its casual prompt), and the whole-project and per-step tasks of `evaluation/rides` and
-`evaluation/large` (built by their runners' `whole_task` and `step_task`).
+Fuentes: `evaluation/tasks` (3 full, 3 poor, 3 casual), los 5 incrementos de
+`evaluation/longitudinal/increments.yaml` (tarea estructurada y prompt casual), los 16 reportes de
+bugs de `evaluation/longitudinal/bug_reports.yaml` (la tarea de corrección de un solo reporte que
+arma `run_session.py` y su prompt casual), y las tareas de proyecto completo y por paso de
+`evaluation/rides` y `evaluation/large` (armadas por `whole_task` y `step_task` de sus ejecutores).
 
-Command (worktree code, 2026-10-06):
+Comando (código del worktree, 2026-10-06):
 
 ```bash
 .venv/bin/python evaluation/deterministic/intent_equivalence.py --harness "$PWD/.venv/bin/harness" \
   --out evaluation/results-2.0.0/deterministic/intent-equivalence
 ```
 
-Files: `intent-equivalence.jsonl` (one record per task and interpretation: criteria,
-requirements, questions and questions per rule), `intent-equivalence-summary.json` (per source),
+Archivos: `intent-equivalence.jsonl` (un registro por tarea e interpretación: criterios,
+requisitos, preguntas y preguntas por regla), `intent-equivalence-summary.json` (por fuente),
 `environment.json`.

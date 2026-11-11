@@ -1,23 +1,24 @@
 taskId: task_eval_brownfield_strict_base64
-title: Make base64_decode strict
+title: Hacer estricto base64_decode
 intent: >-
-  itsdangerous.encoding.base64_decode silently discards characters that are not part of the
-  URL-safe base64 alphabet (including non-ASCII characters), so several different strings decode
-  to the same bytes and a signature can be altered without being rejected. Make the decoder strict.
+  itsdangerous.encoding.base64_decode descarta en silencio los caracteres que no pertenecen al
+  alfabeto base64 seguro para URL (incluidos los caracteres no ASCII), así que varias cadenas distintas
+  se decodifican a los mismos bytes y una firma puede alterarse sin que se rechace. Haz estricto el
+  decodificador.
 requirements:
   - requirementId: req_alphabet
-    text: base64_decode raises BadData when the input contains any character outside A-Z, a-z, 0-9, '-' and '_', except '=' padding at the end.
+    text: base64_decode lanza BadData cuando la entrada contiene cualquier carácter fuera de A-Z, a-z, 0-9, '-' y '_', salvo el relleno '=' al final.
     source: brownfield-evaluation
   - requirementId: req_padding
-    text: Unpadded input and at most two trailing '=' padding characters keep being accepted.
+    text: Se siguen aceptando la entrada sin relleno y como máximo dos caracteres de relleno '=' al final.
     source: brownfield-evaluation
 acceptanceCriteria:
   - criterionId: ac_reject
-    text: Input with '+', '/', whitespace, non-ASCII characters, control characters or '=' before the end raises BadData, for both str and bytes.
+    text: Una entrada con '+', '/', espacios en blanco, caracteres no ASCII, caracteres de control o '=' antes del final lanza BadData, tanto para str como para bytes.
   - criterionId: ac_signatures
-    text: A signed value or serialized token whose signature has an inserted character outside the alphabet is rejected.
+    text: Se rechaza un valor firmado o un token serializado cuya firma tiene insertado un carácter fuera del alfabeto.
   - criterionId: ac_existing
-    text: Existing tests keep passing (python -m pytest -q) and the new behavior is covered by tests.
+    text: Las pruebas existentes siguen pasando (python -m pytest -q) y el nuevo comportamiento queda cubierto por pruebas.
 constraints:
-  - Keep the public signature of base64_decode and base64_encode.
-  - Do not add dependencies.
+  - Conserva la firma pública de base64_decode y base64_encode.
+  - No agregues dependencias.

@@ -54,7 +54,7 @@ def harness_sections(request: dict[str, Any]) -> list[str]:
     extras = native.implement_extras_lines(request)
     if extras:
         lines += ["", *extras]
-    for key, title in (("locations", "Where to intervene"), ("attachments", "Attachments")):
+    for key, title in (("locations", "Dónde intervenir"), ("attachments", "Adjuntos")):
         if request.get(key):
             lines += [
                 "",

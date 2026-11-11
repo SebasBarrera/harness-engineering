@@ -159,3 +159,34 @@ def test_the_product_owner_reply_is_read_as_a_decision() -> None:
         product_owner.parse_dispute("```yaml\ndecision: maybe\nreason: x\n```")
     with pytest.raises(ValueError, match="no reason"):
         product_owner.parse_dispute("```yaml\ndecision: UPHOLD\n```")
+
+
+def test_a_spanish_reply_is_read_as_a_decision_and_as_answers() -> None:
+    """The prompts are in Spanish since 2026-11-11; the YAML keys and decisions are not."""
+    reply = "```yaml\ndecision: UPHOLD\nreason: |\n  La prueba comprueba el redondeo que pide SPEC.md.\n```"
+    assert product_owner.parse_dispute(reply)["reason"].startswith("La prueba comprueba")
+    answers = product_owner.parse_answers(
+        "```yaml\nanswers:\n  Q-1: |\n    Un peso de 0 kg lanza ValueError; 30 kg es el máximo aceptado.\n"
+        'addCriteria:\n  - |\n    shipping_cost(30, "local", 0) devuelve Decimal("48.50").\n```',
+        ["Q-1"],
+    )
+    assert answers["answers"]["Q-1"].endswith("el máximo aceptado.")
+    assert answers["addCriteria"] == ['shipping_cost(30, "local", 0) devuelve Decimal("48.50").']
+
+
+def test_the_product_owner_prompts_ask_for_an_engineer_answer_in_spanish() -> None:
+    prompt = product_owner.PO_PROMPT.format(task="t", questions="- Q-1: ?", knowledge="k")
+    assert prompt.startswith("Eres el product owner")
+    for asked in ("en español", "casos", "seguridad", "justificación", "fuera del alcance"):
+        assert asked in prompt
+    # The format the parser reads is kept: the keys and the question ids are written as they are.
+    for key in ("answers:", "replaceCriteria:", "addCriteria:", "addRequirements:"):
+        assert key in prompt
+    dispute = product_owner.DISPUTE_PROMPT.format(task="t", disputed="d", tests="s", knowledge="k")
+    assert "decision: UPHOLD" in dispute and "REVISE" in dispute
+
+
+def test_the_product_owner_model_is_fixed_for_every_cell(tmp_path: Path) -> None:
+    assert product_owner.DEFAULT_PO_MODEL == "claude-sonnet-5-5"
+    owner = product_owner.ProductOwner("k", product_owner.DEFAULT_PO_MODEL, tmp_path)
+    assert owner.model == "claude-sonnet-5-5"

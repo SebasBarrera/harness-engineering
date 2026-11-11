@@ -1,31 +1,34 @@
-# N01-a: verification ladder on a seeded corpus
+# N01-a: escalera de verificación sobre un corpus sembrado
 
-16 seeded changes on the inventory library of block D (`evaluation/corpus/ladder`, parts A and B
-in the baseline), each one task in patch mode applied by the `simulated` provider, with the
-configuration `harness init` writes (certification under `verification.ladder` with
-`defaultLevel: L1`, light mutation under `verification.mutation` in `warn` mode). Eight changes are
-defective (the `path.endswith` defect of the Haiku sessions with its criterion at L1 and at L3, a
-save that drops the history while no test names the round-trip criterion, a `total_value` that
-returns a float with a test that does not exercise it, a test without assertions and a test that
-passes on the baseline, a command line with wrong output at L1 and at L3) and eight are correct
-(at L1, L2 and L3, four of them with evidence that does not reach the declared rung).
+16 cambios sembrados sobre la biblioteca de inventario del bloque D (`evaluation/corpus/ladder`,
+partes A y B en la línea base), cada uno una tarea en modo patch aplicada por el proveedor
+`simulated`, con la configuración que escribe `harness init` (certificación bajo
+`verification.ladder` con `defaultLevel: L1`, mutación ligera bajo `verification.mutation` en modo
+`warn`). Ocho cambios son defectuosos (el defecto `path.endswith` de las sesiones de Haiku con su
+criterio en L1 y en L3, un guardado que pierde el historial mientras ninguna prueba nombra el
+criterio de ida y vuelta, un `total_value` que devuelve un float con una prueba que no lo ejercita,
+una prueba sin aserciones y una prueba que pasa sobre la línea base, una línea de comandos con salida
+incorrecta en L1 y en L3) y ocho son correctos (en L1, L2 y L3, cuatro de ellos con evidencia que no
+alcanza el peldaño declarado).
 
-The command-line probe `cli_value` (criterion `ac_e_value` at L3) runs two variants, the stock
-file and the empty file, each value assertion narrowed to its variant. Before wave 9 only
-`differs` honoured an assertion's `variants` (#74), so the first results used the stock file
-alone; the empty-file part of the criterion is probed since.
+La sonda de línea de comandos `cli_value` (criterio `ac_e_value` en L3) corre dos variantes, el
+archivo de inventario y el archivo vacío, con cada aserción de valor acotada a su variante. Antes de
+la ola 9 solo `differs` respetaba las `variants` de una aserción (#74), así que los primeros
+resultados usaron solo el archivo de inventario; desde entonces se sondea también la parte del
+criterio con el archivo vacío.
 
-Truth per case (`cases.yaml`): `defective` (re-checked by the hidden tests of the case's part on a
-separate copy with the change applied: `oracle`, `defectiveObserved`, `truthConsistent`) and
-`evidenceAdequate` (the tests or probes really reach the declared rung). Signals per case:
-`certification` (the run is `NOT_CERTIFIED` or `PARTIAL`, or a `certification.*` finding),
-`mutation` (`tests.change-not-exercised`, `tests.weak`, `tests.broken`), `testQuality` (other
-`tests.*` findings), `gateNotPassed` (the gate is not `PASSED`, including a run that stopped before
-DECISION) and `any`. The summary gives sensitivity and specificity of each signal against both
-truths. No decision is taken; waits before DECISION are answered by the simulated person of the
-directory README (here: an `UNAVAILABLE` preflight would be continued uncertified).
+Verdad por caso (`cases.yaml`): `defective` (verificado de nuevo por las pruebas ocultas de la parte
+del caso sobre una copia aparte con el cambio aplicado: `oracle`, `defectiveObserved`,
+`truthConsistent`) y `evidenceAdequate` (las pruebas o sondas realmente alcanzan el peldaño
+declarado). Señales por caso: `certification` (la corrida queda `NOT_CERTIFIED` o `PARTIAL`, o un
+hallazgo `certification.*`), `mutation` (`tests.change-not-exercised`, `tests.weak`,
+`tests.broken`), `testQuality` (otros hallazgos `tests.*`), `gateNotPassed` (el gate no es `PASSED`,
+incluida una corrida que se detuvo antes de DECISION) y `any`. El resumen da la sensibilidad y la
+especificidad de cada señal frente a ambas verdades. No se toma ninguna decisión; las esperas antes
+de DECISION las responde la persona simulada del README del directorio (aquí: un preflight
+`UNAVAILABLE` se continuaría sin certificar).
 
-Command (worktree code):
+Comando (código del worktree):
 
 ```bash
 SCRATCH=<scratch>/scratchpad
@@ -33,6 +36,6 @@ $SCRATCH/venvs/eval-w9/bin/python evaluation/deterministic/ladder_corpus.py --ha
   --out evaluation/results-2.0.0/deterministic/ladder --work $SCRATCH/work/ladder-w9
 ```
 
-Files: `ladder-corpus.jsonl` (one record per case: run status and phase, gate, certification per
-criterion with its evidence, findings, oracle), `ladder-summary.json` (table and rates),
-`environment.json`.
+Archivos: `ladder-corpus.jsonl` (un registro por caso: estado y fase de la corrida, gate,
+certificación por criterio con su evidencia, hallazgos, oráculo), `ladder-summary.json` (tabla y
+tasas), `environment.json`.

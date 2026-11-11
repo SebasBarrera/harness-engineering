@@ -1,10 +1,10 @@
-# Ride-hailing and food delivery platform: public interface
+# Plataforma de viajes y domicilios de comida: interfaz pública
 
-The package is `rides`, under `src/rides/`, and it exposes one class: `from rides import Platform`.
-Everything else (modules, classes, storage layout) is up to you. Only the names below are fixed.
+El paquete es `rides`, en `src/rides/`, y expone una sola clase: `from rides import Platform`.
+Todo lo demás (módulos, clases, organización del almacenamiento) queda a tu criterio. Solo los nombres de abajo son fijos.
 
-Conventions: identifiers are strings; money is `decimal.Decimal`; times are naive `datetime.datetime`
-(UTC); dates are `datetime.date`; a location is a `(latitude, longitude)` tuple of floats.
+Convenciones: los identificadores son cadenas; el dinero es `decimal.Decimal`; las horas son `datetime.datetime`
+naive (UTC); las fechas son `datetime.date`; una ubicación es una tupla `(latitude, longitude)` de floats.
 
 ```python
 class Platform:

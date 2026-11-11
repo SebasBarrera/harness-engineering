@@ -2270,3 +2270,81 @@ cualquier resultado, sin quitar condiciones ni cambiar criterios:
 Se mantienen las condiciones, las métricas, las definiciones y los criterios. Además se registra
 (es una métrica, no un cambio): en H47, el detalle de lo que `harness verify` no verificó; en
 H48 y H47, los mensajes del candado sin el nombre del equipo ni el pid.
+
+## Enmiendas generales del 2026-11-11 (antes de cualquier resultado de la campaña)
+
+Las dos enmiendas de esta sección se añaden el 2026-11-11, **antes de cualquier resultado de la
+campaña**: los bloques con modelo (A, B, D, embebido y rides) no se han lanzado sobre la 2.0.0. No
+cambian hipótesis, métricas ni criterios de éxito de las suites de este registro; cambian el idioma
+de los estímulos y la persona simulada que responde las aclaraciones.
+
+### Enmienda 2026-11-11: idioma de los estímulos
+
+**Decisión del mantenedor.** Todo lo de la evaluación va en español: la documentación, los
+estímulos que recibe el modelo evaluado y los resultados. Desde esta enmienda los estímulos de la
+campaña están en español latinoamericano, con el mismo significado y el mismo nivel de detalle que
+los anteriores en inglés:
+
+- los prompts casuales (`evaluation/tasks/*-casual.txt`), las tareas completas y pobres
+  (`evaluation/tasks/*.yaml`; el criterio de la tarea pobre «It works.» pasa a «Funciona.») y las
+  especificaciones de los fixtures (`evaluation/fixtures/*/SPEC.md` y `README.md`);
+- el prompt que arma la evaluación para el agente (`evaluation/agentlib.py:build_prompt`, que usan
+  la condición directa y el adaptador `claude_provider.py` en la llamada `implement`) y las
+  instrucciones del modo embebido (`evaluation/run_embedded.py`);
+- el escenario rides (`evaluation/rides/prompts.yaml`, `SPEC.md`, `fixture/INTERFACE.md`; el
+  prompt `one_line` es «haz una app como Uber con Uber Eats, viajes y domicilios de comida,
+  siguiendo INTERFACE.md»; el texto exacto de cada nivel está en `evaluation/rides/PROMPTS.md`) y
+  el bloque longitudinal (`evaluation/longitudinal/increments.yaml`, `bug_reports.yaml`,
+  `fixture/SPEC.md`);
+- los prompts del product owner simulado y las razones que registra la persona simulada
+  (`evaluation/product_owner.py`, `evaluation/person.py`).
+
+Se mantienen sin traducir los identificadores, nombres de archivo, funciones, excepciones,
+valores, números, comandos y las pruebas ocultas. En las especificaciones se tradujo solo la prosa;
+donde una traducción podía cambiar el sentido de un requisito se conservó el término inglés entre
+paréntesis. Las claves YAML de las respuestas del product owner (`answers`, `addCriteria`, …) y
+sus decisiones (`UPHOLD`, `REVISE`) siguen en inglés, porque las lee el aparato.
+
+**Lo que no cambia, porque es el sistema bajo prueba.** El harness 2.0.0 no se modifica: sus
+propias instrucciones a las llamadas de agente (`clarify`, `review`, `plan`, `acceptance`,
+`locate`, `architecture` y lo que añade a `implement`), sus preguntas de aclaración y sus mensajes
+siguen en inglés. Sus heurísticas de intake están escritas para inglés
+(`src/governed_harness/intake/clarification.py`): la regla C1 marca un criterio de menos de 4
+palabras (`MIN_CRITERION_WORDS = 4`), así que «Funciona.» queda marcado igual que «It works.»,
+pero las listas de palabras vagas, de calidad (C2) y de verbos de resultado son inglesas, el
+patrón de palabras (`_WORD`) solo reconoce letras ASCII (una palabra con tilde o eñe se parte o se
+recorta: «contraseñas» da dos palabras), y un criterio en español que dependa solo de esas palabras puede evaluarse distinto que su equivalente
+en inglés. Se registra como condición de la campaña, no se corrige en ella (regla 1), y se reporta
+junto con los resultados de los bloques B y rides.
+
+**Piloto y resultados anteriores.** El piloto Haiku (`evaluation/launchers/pilot.sh`, corrido sobre
+`develop` en `886926e`, PR #199) y el piloto Sonnet (enmienda «modelos y repeticiones de la
+campaña», PR #198; según el mantenedor, corrido antes de esta enmienda; sus resultados no están en
+este árbol) usaron los estímulos en inglés. Son comprobaciones del aparato, no resultados de la
+campaña, y no se comparan con las corridas en español. Los resultados deterministas de
+`evaluation/results-2.0.0/deterministic/` se obtuvieron el 2026-10-06 con los textos en inglés; las
+suites que leen esos textos (`intent-equivalence`, H22 `context_bytes.py`) darán cifras distintas
+al volver a correrlas, y la re-ejecución de la fase 0 las reporta como diferencias con su causa.
+
+### Enmienda 2026-11-11: la persona simulada responde como ingeniero
+
+**Decisión del mantenedor.** Cuando el harness hace preguntas de aclaración (prompts casual y
+pobre) el product owner simulado debe responder bien, como un ingeniero con experiencia que es
+dueño del producto y piensa un poco, no con consultas escuetas. Se fijan dos cambios:
+
+1. **Prompt del product owner** (`evaluation/product_owner.py:PO_PROMPT`, en español, respuestas
+   en español): responde cada pregunta con decisiones concretas (valores, límites, comportamiento
+   ante errores, casos borde, implicaciones de seguridad y privacidad, coherencia con el resto del
+   producto), da una justificación de una línea cuando una decisión no la dicta la descripción del
+   producto, nunca contradice esa descripción y dice de forma explícita lo que está fuera del
+   alcance; después escribe los criterios comprobables y los requisitos, en el mismo formato YAML
+   de antes. El prompt de disputa (`DISPUTE_PROMPT`) se traduce con la misma figura.
+2. **Modelo fijo del product owner.** Antes el product owner corría con el modelo de la corrida
+   (en una celda Haiku, Haiku hacía de persona). Desde esta enmienda corre con el mismo modelo en
+   todas las celdas y condiciones: `claude-sonnet-5-5` (`product_owner.DEFAULT_PO_MODEL`, opción
+   `--po-model` de `run_eval.py`, `run_embedded.py`, `longitudinal/run_session.py` y
+   `rides/run_rides.py`). El juez de disputas usa el mismo modelo. Cada registro guarda
+   `productOwnerModel`.
+
+Los pilotos Haiku y Sonnet usaron el modelo de la corrida como product owner y el prompt anterior
+(en inglés, de respuestas breves): sus aclaraciones no se comparan con las de la campaña.
