@@ -2025,6 +2025,13 @@ def _decide_hint(application: HarnessApplication, path: Path, run_id: str) -> Hi
         except Exception:  # noqa: BLE001 - a hint must never hide the original error
             return None
         execution = status["execution"]
+        if "belongs to the agent, validator or harness namespace" in message:
+            # H44: the refusal named the cause but not who may decide or how.
+            return (
+                "Only a person may decide. Read the decision brief with "
+                f"`harness review --run {run_id}`, then decide yourself with gate decide and "
+                "your own --actor id (or none, so governance.deciderIdentity applies)."
+            )
         if "does not match the current ChangeSet" in message:
             prior = (
                 ""
