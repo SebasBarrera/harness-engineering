@@ -607,11 +607,14 @@ class Differential:
         # person and write-protected (#81, #94): their problems are not the agent's to fix (#183).
         harness_written = self.results.acceptance.untouched(execution)
         own = [key for key in candidate if _key_path(key) not in harness_written]
-        worse = (
-            [key for key in own if key not in known]
-            if baseline.status is ResultStatus.FAILED
-            else own or ([] if candidate else ["(failed; the baseline passes)"])
-        )
+        if baseline.status is ResultStatus.FAILED:
+            worse = [key for key in own if key not in known]
+        elif own:
+            worse = own
+        elif candidate:
+            worse = []
+        else:
+            worse = ["(failed; the baseline passes)"]
         if baseline.status is ResultStatus.FAILED and not candidate:
             return None
         if not worse:
