@@ -81,12 +81,14 @@ body = "subtotal * (1 - rate) if subtotal >= threshold else subtotal" if fixed e
 )
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
-    f"    return {body}\\n"
+    f"    return {body}\\n",
+    newline="\\n",
 )
 Path("tests/test_pricing.py").write_text(
     "from sample import apply_discount\\n\\n"
     "def test_at_threshold() -> None:\\n"
-    "    assert apply_discount(100, 100, 0.1) == 90\\n"
+    "    assert apply_discount(100, 100, 0.1) == 90\\n",
+    newline="\\n",
 )
 print(json.dumps({"status": "PASSED", "summary": "implemented"}))
 """
