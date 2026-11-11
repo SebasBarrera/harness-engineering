@@ -131,6 +131,12 @@ def apply_provider(
             "claude": {"kind": "command", "command": command, "model": model}
         }
         grant_provider_command(config, command, core=condition == "harness-core")
+    if sys.platform == "win32" and runtime.get("agentSandbox") == "enforce":
+        # Windows has no OS write sandbox (no sandbox-exec, no bwrap): under ``enforce`` the
+        # harness blocks IMPLEMENTATION by design. The Windows runs set it off, a deviation from
+        # what ``harness init`` writes, declared in environment.json and kept in every record's
+        # projectConfig.
+        runtime["agentSandbox"] = "off"
     if runtime.get("agentSandbox") == "enforce":
         paths = list(runtime.get("sandboxWritePaths") or [])
         calls = str((run_dir / "agent-calls").resolve())

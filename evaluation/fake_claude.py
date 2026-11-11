@@ -332,6 +332,10 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
 
 def main(argv: list[str]) -> int:
     prompt = _arg(argv, "-p") or sys.stdin.read()
+    if sys.platform == "win32" and prompt.startswith("--"):
+        # agentlib gives the prompt on stdin on Windows (the command line is limited to 32767
+        # characters), so "-p" is followed by the next option.
+        prompt = sys.stdin.buffer.read().decode("utf-8")
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
     if "--mcp-config" in argv:

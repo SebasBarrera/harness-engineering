@@ -621,7 +621,7 @@ def main() -> int:
     out = (
         args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out
     )
-    with out.open("a", encoding="utf-8") as handle:
+    with out.open("a", encoding="utf-8", newline="\n") as handle:
         handle.write(
             agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE, args.work) + "\n"
         )
