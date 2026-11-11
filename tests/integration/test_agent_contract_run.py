@@ -4,6 +4,7 @@ iterations, the response limits and the token budget and time limit of a call.""
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +31,8 @@ TASK = (
 
 # MODE: "good" answers well; "notes" adds a key outside the contract to the first BROKEN answers;
 # "usage" reports more tokens than any budget; "cached" reports as many, almost all of them
-# prompt-cache reads; "sleep" does not answer within the time limit.
+# prompt-cache reads; "sleep" does not answer within the time limit; "implsleep" does not
+# answer an implement call within the command timeout.
 AGENT = """\
 import json, sys, time
 from pathlib import Path
@@ -61,6 +63,8 @@ if kind == "acceptance":
         }
     print(json.dumps(answer))
     sys.exit(0)
+if MODE == "implsleep":
+    time.sleep(30)
 Path("src/sample/pricing.py").write_text(
     "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\\n"
     "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\\n"
@@ -370,3 +374,28 @@ def test_an_implement_call_records_the_bytes_it_sent(
     assert call["sentBytes"] == sent
     shown = application.agent_calls(python_workspace, run, "implement", 1)
     assert shown["call"]["record"]["sent"]["bytes"] == sent
+
+
+def test_an_implement_call_stopped_by_the_command_timeout_names_that_limit(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    # #179 (H50 M8): runtime.commandTimeoutSeconds is shorter than the time limit of the
+    # task's size (S, 600 s); the message names the limit that stopped the call.
+    configure(
+        python_workspace, tmp_path, mode="implsleep", contract={"mode": "enforce"}, acceptance=False
+    )
+    path = python_workspace / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    config["runtime"]["commandTimeoutSeconds"] = 3
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
+    began = time.monotonic()
+    application, run = start(python_workspace, tmp_path)
+    elapsed = time.monotonic() - began
+    # The 3 s command timeout acted, not the 600 s limit (nor the 30 s sleep of the agent).
+    assert 3 <= elapsed < 30
+    shown = application.agent_calls(python_workspace, run, "implement", 1)
+    received = shown["call"]["parentReceived"]
+    assert received["limitReached"] == "time"
+    assert "the command timeout (3 s), shorter than its time limit (600 s)" in received["summary"]
+    status = application.status(python_workspace, run)["execution"]
+    assert status["status"] == ResultStatus.BLOCKED

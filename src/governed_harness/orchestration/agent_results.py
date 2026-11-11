@@ -836,6 +836,7 @@ class AgentResults:
             request_ref=request_ref,
             limits=limits,
             sent=sent,
+            timeout_seconds=context.timeout_seconds,
         )
 
     def _call_timeout(self, command_timeout: int, limits: CallLimits | None) -> int:
