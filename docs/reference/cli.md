@@ -234,8 +234,9 @@ against its anchor outside .harness (`governance.chainAnchor`), every record tha
 event against that event, the execution's pointers and every referenced artifact against its
 digest. Prints a report and never repairs anything. With --bundle, verify an evidence bundle
 of `harness export` instead: its entries against the manifest, the event chain, the artifacts
-and the decision records. Exit code 0 when everything verifies, 6 when any check fails, 3 for
-an unknown run or bundle.
+and the decision records. Exit code 0 when everything verifies, 6 when any check fails (the
+report's `hint` then names the next commands for each run that does not verify), 3 for an
+unknown run or bundle.
 
 ```text
 harness verify [OPTIONS]
@@ -1096,7 +1097,8 @@ harness budget show [OPTIONS]
 
 Raise a budget limit of a run blocked with budget.exceeded; the raise is recorded on the
 run's event chain with the person and the rationale, then `harness run continue` resumes the
-run. A non-human actor, a lower limit or a missing rationale exits 5.
+run. A non-human actor, a lower limit or a missing rationale exits 5, with a hint that names
+`harness budget show` and the command to retry.
 
 ```text
 harness budget raise [OPTIONS]

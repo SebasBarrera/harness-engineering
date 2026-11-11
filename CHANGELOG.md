@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
+  `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
+  retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
+  status, `harness run cancel` and a new `harness run start` of its task).
 - A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
   as if it were within its budget (#157, found by the H20 evaluation suite): with no further
   agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before

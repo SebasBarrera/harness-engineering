@@ -9,8 +9,10 @@ from typing import Any
 
 import pytest
 import yaml
+from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
+from governed_harness.cli.main import app
 from governed_harness.configuration.agent_results import BudgetConfig
 from governed_harness.domain.enums import FindingSeverity, PhaseId, ResultStatus
 from governed_harness.domain.errors import PolicyViolationError
@@ -119,6 +121,30 @@ def test_crossing_the_run_limit_blocks_the_next_call_until_raised(
     ]
     assert exceeded
     assert exceeded[0].severity is FindingSeverity.HIGH
+    refused = CliRunner().invoke(
+        app,
+        [
+            "budget",
+            "raise",
+            "--run",
+            run,
+            "--scope",
+            "run",
+            "--metric",
+            "costUsd",
+            "--to",
+            "5",
+            "--rationale",
+            " ",
+            "--path",
+            str(python_workspace),
+        ],
+    )
+    assert refused.exit_code == 5
+    # The next step of the refusal (#157).
+    hint = json.loads(refused.stderr)["hint"]
+    assert f"`harness budget show --run {run}`" in hint
+    assert "--rationale" in hint
     with pytest.raises(PolicyViolationError):
         application.raise_budget(
             python_workspace,

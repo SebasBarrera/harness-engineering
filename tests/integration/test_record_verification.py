@@ -99,7 +99,12 @@ def test_edited_event_is_reported_by_status_not_raised(
     assert body["recordsValid"] is False
     verified = _cli("verify", "--run", run, "--path", str(python_workspace))
     assert verified.exit_code == 6
-    assert json.loads(verified.stdout)["runs"][0]["eventChain"]["valid"] is False
+    report = json.loads(verified.stdout)
+    assert report["runs"][0]["eventChain"]["valid"] is False
+    # The next step (#157): the record is not repaired; a new run starts from the task.
+    assert f"`harness status --run {run}`" in report["hint"]
+    assert "`harness run start --task task_" in report["hint"]
+    assert f"`harness run cancel --run {run}`" in report["hint"]
     trace = _cli("trace", "--run", run, "--format", "jsonl", "--path", str(python_workspace))
     assert trace.exit_code == 6
     assert "does not verify" in trace.stderr
