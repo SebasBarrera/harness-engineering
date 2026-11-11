@@ -18,7 +18,8 @@ requirement and criterion id of the task (``traceTests``). What makes it differ 
 * ``inject``: ``{"kind": k, "result": {...}}`` answers calls of kind k with that result.
 
 Each call is appended to the log **before** the sleep, so a call stopped at its time limit is in
-the log too. Usage: python budget_agent.py --spec SPEC.json
+the log too, with the request's size and a summary of the ``contextFiles`` manifest it carried
+(H24; counted, never answered). Usage: python budget_agent.py --spec SPEC.json
 """
 
 from __future__ import annotations
@@ -134,6 +135,25 @@ def usage_for(spec: dict[str, Any], contract: dict[str, Any], raw: str, number: 
     return usage
 
 
+def context_summary(manifest: Any) -> dict[str, Any]:
+    """What the call received as ``contextFiles`` (H24): only counted, never answered."""
+    if not isinstance(manifest, dict):
+        return {"present": False}
+    files = [item for item in manifest.get("files") or [] if isinstance(item, dict)]
+    return {
+        "present": True,
+        "files": len(files),
+        "sumSizeBytes": sum(int(item.get("sizeBytes") or 0) for item in files),
+        "maxFileSizeBytes": max((int(item.get("sizeBytes") or 0) for item in files), default=0),
+        "totalBytes": manifest.get("totalBytes"),
+        "candidates": manifest.get("candidates"),
+        "omitted": manifest.get("omitted"),
+        "limits": manifest.get("limits"),
+        "serializedBytes": len(json.dumps(manifest, sort_keys=True).encode("utf-8")),
+        "paths": [str(item.get("path")) for item in files][:60],
+    }
+
+
 def main() -> int:
     spec = json.loads(Path(sys.argv[sys.argv.index("--spec") + 1]).read_text(encoding="utf-8"))
     raw = sys.stdin.buffer.read().decode("utf-8")
@@ -164,6 +184,8 @@ def main() -> int:
         "usage": usage,
         "sleepSeconds": seconds,
         "requestChars": len(raw),
+        "requestBytes": len(raw.encode("utf-8")),
+        "contextFiles": context_summary(request.get("contextFiles")),
         "startedAt": time.time(),
     }
     with log.open("a", encoding="utf-8") as handle:
