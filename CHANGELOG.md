@@ -2,6 +2,54 @@
 
 ## Unreleased
 
+- Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
+  INTENT blocked by clarification questions names the rules that asked
+  (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the
+  questions, and `gate decide` refused for an `agent.*`, `validator.*` or `harness.*` actor now
+  has a `hint` (`harness review --run <run>`, then decide as a person with your own `--actor`).
+  Neither message exists in `v0.8.0`.
+- H44 reproduces the states it declares (second amendment of 2026-11-11 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). B06 expects exit 4, the code
+  `docs/reference/exit-codes.md` documents for a run that waits at DECISION for an exception of a
+  blocking risk factor; B13 leaves the `C0` questions unanswered, as B14 does, so the `C0` block
+  stays; R01 tries the `APPROVE` on B02's run in VERIFICATION, where it fails, instead of skipping
+  the case. The validators' tools of `evaluation/campaign/run_deterministic.py` are pinned to
+  exact versions (`pytest==8.3.5`, `pytest-cov==7.1.0`, `freezegun==1.4.0`, `ruff==0.17.4`,
+  `mypy==2.4.1`, `coverage==7.17.2`), so the ratchet sees the same Ruff defaults on every run. No
+  criterion changes.
+- `evaluation/dry_run.py` refuses an environment that cannot test the harness it means to (#70):
+  it exits 2 before any case when `PYTHONPATH` is set, `harness` is not on `PATH` or the measuring
+  tools lack `pytest` or `freezegun`. A dry run with a source tree mounted through `PYTHONPATH` on
+  a venv without `freezegun` failed `casual-harness` (pytest stopped while collecting the
+  brownfield suite, so the differential verification blocked the run, as #190 requires) and
+  `embedded-init` (the host session's processes drop `PYTHONPATH`, so its MCP server imported the
+  venv's installed harness and rejected the configuration `harness init` had written). With the
+  source tree in a `.pth` file of a venv with the measuring tools, both cases pass on `develop`
+  unchanged. No harness behavior changes.
+- The deterministic INTENT rules read Spanish tasks (`intake.language`, written by `harness init`
+  as `auto`; Refs #70). The rules (`C0` to `C3`, `T1`) only knew English: their words were ASCII
+  runs (`contraseñas` became `contrase` and `as`, `rápido` became `r` and `pido`), Spanish vague
+  words, result verbs, quality words and number words were unknown, and the questions were in
+  English. Under the key words are Unicode runs compared without diacritics; `es` adds Spanish
+  vocabularies to the English ones and asks the questions (and the next step of a `warn`
+  finding) in Spanish; `auto` detects the language of each task with a fixed count of Spanish
+  and English signals. Rule ids, question ids and targets do not change. Without the key the
+  rules, the questions and the configuration digest stay as they were. On the experiment tasks
+  of `evaluation/deterministic/intent_equivalence.py`, the Spanish set of the evaluation in
+  Spanish goes from `C0` 196, `C1` 6, `T1` 7 (no key) to `C0` 196, `C1` 6, `C2` 1, `T1` 6
+  (`auto`), against `C0` 196, `C1` 6, `C2` 1, `T1` 8 for the English set, which gives the same
+  questions with and without the key. See
+  `docs/reference/configuration.md` (the language of the rules) and
+  `docs/es/tareas-en-espanol.md`.
+- The risk factors (`verification.riskFactors`, #52) no longer count a line the ChangeSet removes
+  and adds again with the same text (Refs #70). A file rewritten with other line endings (a CRLF
+  file written back with LF, common on Windows) lists every line as removed and added, so the
+  lines it already had raised factors: in H44 (R02, R04, B15) the correct change of the sample
+  project reached DECISION with the gate `FAILED` by `risk.floatMoney` (`HIGH` under `block`,
+  validator `harness.risk-factors`) on the unchanged signature
+  `def apply_discount(subtotal: float, ...) -> float`. A line moved within a file is no longer a
+  new line or a deleted one either (`deletedWithoutTests`). New and changed lines raise factors
+  as before.
 - Two evaluation suites reproduce the states they declare (#157, amendment of 2026-11-11 in
   `evaluation/campaign/PREREGISTRO.md`, before any campaign result). H44 B12 started the fixture
   provider as `python ...`, which the Python profile grants (`process.execute: [python]`), so
@@ -49,6 +97,13 @@
   measured (`invalid: quarantine-patch-not-applied`, `<out>.invalid.jsonl`, exit code 3, no rerun).
   `evaluation/remeasure_quarantine.py` measures the patch of earlier run directories again without
   a model call. Amendment of 2026-11-11 to `evaluation/campaign/PREREGISTRO.md`.
+- The evaluation is in Spanish (#70): its documentation, the result READMEs and every stimulus the
+  evaluated model receives (casual, poor and full tasks, fixture specifications, `build_prompt`,
+  the embedded instructions, the rides and longitudinal scenarios and the simulated product owner),
+  with identifiers, values and hidden tests unchanged. The simulated product owner answers as an
+  engineer who owns the product and runs with one fixed model in every cell (`--po-model`, default
+  `claude-sonnet-5-5`, recorded as `productOwnerModel`). Two dated amendments in
+  `evaluation/campaign/PREREGISTRO.md` record both changes before any campaign result.
 
 - The differential verification no longer passes a test run that ran no test (#190). Under
   `verification.differential` (written by `harness init`) a pytest run stopped at collection

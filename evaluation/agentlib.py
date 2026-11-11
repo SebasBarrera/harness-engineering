@@ -109,32 +109,32 @@ def _items(task: dict[str, Any], *keys: str) -> list[str]:
 def build_prompt(task: dict[str, Any], feedback: str | None = None) -> str:
     """Render a task (camelCase task file or snake_case harness request) as the agent prompt."""
     lines = [
-        "You are working in the Git repository in the current directory.",
+        "Estás trabajando en el repositorio Git del directorio actual.",
         "",
-        f"Task: {task['title']}",
+        f"Tarea: {task['title']}",
         "",
         str(task["intent"]).strip(),
     ]
     sections = (
-        ("Requirements", _items(task, "requirements")),
-        ("Acceptance criteria", _items(task, "acceptanceCriteria", "acceptance_criteria")),
-        ("Constraints", _items(task, "constraints")),
+        ("Requisitos", _items(task, "requirements")),
+        ("Criterios de aceptación", _items(task, "acceptanceCriteria", "acceptance_criteria")),
+        ("Restricciones", _items(task, "constraints")),
     )
     for title, items in sections:
         if items:
             lines += ["", f"{title}:", *[f"- {item}" for item in items]]
     lines += [
         "",
-        "Work only inside this directory. Do not commit, do not create branches and do not install",
-        "packages. You may run the test suite with `python -m pytest -q`. When you are done, reply",
-        "with a short summary of the change.",
+        "Trabaja solo dentro de este directorio. No hagas commits, no crees ramas y no instales",
+        "paquetes. Puedes ejecutar la suite de pruebas con `python -m pytest -q`. Cuando termines,",
+        "responde con un resumen breve del cambio.",
     ]
     if feedback:
         lines += [
             "",
-            "A previous attempt was returned for changes by the reviewer. Evidence:",
+            "El revisor devolvió un intento anterior para que se hicieran cambios. Evidencia:",
             feedback.strip(),
-            "Address these points.",
+            "Atiende estos puntos.",
         ]
     return "\n".join(lines) + "\n"
 

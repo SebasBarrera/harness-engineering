@@ -20,11 +20,16 @@ The rules are deliberately conservative: a criterion is questioned only when not
 An anchor is a digit, quoted or back-quoted text, a code identifier (``name()``, a
 ``snake_case`` name, a path, a file name, a ``CamelCase`` name such as ``ValueError``) or a
 checkable result verb (returns, raises, rejects, ...).
+
+Since 2.0, ``intake.language`` (``auto``, ``en`` or ``es``, see :mod:`.language`) makes the
+words Unicode tokens, adds the Spanish vocabularies under ``es`` and asks the questions in
+Spanish. Without the key (``language=None``) the rules are the ones above, unchanged.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -38,6 +43,8 @@ from governed_harness.domain.models import (
     Task,
 )
 from governed_harness.evidence import sha256_json
+
+from . import language as lang
 
 QUESTION_TEMPLATES: dict[str, str] = {
     "C0a": (
@@ -314,11 +321,108 @@ _TRAILING_CHARS = " .!?;:,"
 _SPACE = re.compile(r"\s+")
 
 
-def _words(text: str) -> list[str]:
+def _ascii_words(text: str) -> list[str]:
     return _WORD.findall(text.lower())
 
 
-def _has_anchor(text: str) -> bool:
+def _lowered(text: str) -> str:
+    return _SPACE.sub(" ", text.lower())
+
+
+def _folded(text: str) -> str:
+    return _SPACE.sub(" ", lang.fold(text))
+
+
+@dataclass(frozen=True)
+class _Lexicon:
+    """The tokenizer, vocabularies and question texts of one intake language."""
+
+    words: Callable[[str], list[str]]
+    phrase_text: Callable[[str], str]
+    vague_phrases: tuple[str, ...]
+    vague_words: frozenset[str]
+    filler_words: frozenset[str]
+    result_verbs: frozenset[str]
+    result_phrases: tuple[str, ...]
+    quality_words: dict[str, str]
+    number_words: frozenset[str]
+    templates: dict[str, str]
+
+
+_LEGACY = _Lexicon(
+    words=_ascii_words,
+    phrase_text=_lowered,
+    vague_phrases=_VAGUE_PHRASES,
+    vague_words=_VAGUE_WORDS,
+    filler_words=_FILLER_WORDS,
+    result_verbs=_RESULT_VERBS,
+    result_phrases=_RESULT_PHRASES,
+    quality_words=_QUALITY_WORDS,
+    number_words=_NUMBER_WORDS,
+    templates=QUESTION_TEMPLATES,
+)
+_ENGLISH = _Lexicon(
+    words=lang.unicode_words,
+    phrase_text=_folded,
+    vague_phrases=_VAGUE_PHRASES,
+    vague_words=_VAGUE_WORDS,
+    filler_words=_FILLER_WORDS,
+    result_verbs=_RESULT_VERBS,
+    result_phrases=_RESULT_PHRASES,
+    quality_words=_QUALITY_WORDS,
+    number_words=_NUMBER_WORDS,
+    templates=QUESTION_TEMPLATES,
+)
+# Spanish tasks keep English code words ("returns", "fast"), so both vocabularies apply.
+_SPANISH = _Lexicon(
+    words=lang.unicode_words,
+    phrase_text=_folded,
+    vague_phrases=(*_VAGUE_PHRASES, *lang.VAGUE_PHRASES_ES),
+    vague_words=_VAGUE_WORDS | lang.VAGUE_WORDS_ES,
+    filler_words=_FILLER_WORDS | lang.FILLER_WORDS_ES,
+    result_verbs=_RESULT_VERBS | lang.RESULT_VERBS_ES,
+    result_phrases=(*_RESULT_PHRASES, *lang.RESULT_PHRASES_ES),
+    quality_words={**_QUALITY_WORDS, **lang.QUALITY_WORDS_ES},
+    number_words=_NUMBER_WORDS | lang.NUMBER_WORDS_ES,
+    templates=lang.QUESTION_TEMPLATES_ES,
+)
+
+
+def task_text(task: Task) -> str:
+    """The text language detection reads: title, intent, criteria and their hints."""
+    parts = [task.title, task.intent]
+    for criterion in task.acceptance_criteria:
+        parts.append(criterion.text)
+        if criterion.verification_hint:
+            parts.append(criterion.verification_hint)
+    return "\n".join(parts)
+
+
+def resolve_language(task: Task, setting: str | None) -> lang.Language | None:
+    """The language of a task under ``intake.language``: ``None`` without the key, the
+    detected one under ``auto``, otherwise the configured one."""
+    if setting is None:
+        return None
+    if setting == "auto":
+        return lang.detect_language(task_text(task))
+    if setting == "es":
+        return "es"
+    if setting == "en":
+        return "en"
+    raise ConfigurationError(f"unknown intake language: {setting!r}")
+
+
+def _lexicon(language: str | None) -> _Lexicon:
+    if language is None:
+        return _LEGACY
+    if language == "es":
+        return _SPANISH
+    if language == "en":
+        return _ENGLISH
+    raise ConfigurationError(f"unknown intake language: {language!r}")
+
+
+def _has_anchor(text: str, lexicon: _Lexicon = _LEGACY) -> bool:
     if (
         _DIGIT.search(text)
         or any(pattern.search(text) for pattern in _QUOTED)
@@ -329,28 +433,34 @@ def _has_anchor(text: str) -> bool:
         or _CAMEL.search(text)
     ):
         return True
-    lowered = _SPACE.sub(" ", text.lower())
-    if any(phrase in lowered for phrase in _RESULT_PHRASES):
+    lowered = lexicon.phrase_text(text)
+    if any(phrase in lowered for phrase in lexicon.result_phrases):
         return True
-    return any(word in _RESULT_VERBS for word in _words(text))
+    return any(word in lexicon.result_verbs for word in lexicon.words(text))
 
 
-def _only_vague(text: str) -> bool:
+def _only_vague(text: str, lexicon: _Lexicon = _LEGACY) -> bool:
     """True when the text holds at least one vague term and nothing else but filler."""
-    lowered = _SPACE.sub(" ", text.lower())
+    lowered = lexicon.phrase_text(text)
     found_phrase = False
-    for phrase in _VAGUE_PHRASES:
+    for phrase in lexicon.vague_phrases:
         if phrase in lowered:
             found_phrase = True
             lowered = lowered.replace(phrase, " ")
-    words = _words(lowered)
-    vague = [word for word in words if word in _VAGUE_WORDS]
-    rest = [word for word in words if word not in _VAGUE_WORDS and word not in _FILLER_WORDS]
+    words = lexicon.words(lowered)
+    vague = [word for word in words if word in lexicon.vague_words]
+    rest = [
+        word
+        for word in words
+        if word not in lexicon.vague_words and word not in lexicon.filler_words
+    ]
     return (found_phrase or bool(vague)) and not rest
 
 
-def _has_number(text: str) -> bool:
-    return bool(_DIGIT.search(text)) or any(word in _NUMBER_WORDS for word in _words(text))
+def _has_number(text: str, lexicon: _Lexicon = _LEGACY) -> bool:
+    return bool(_DIGIT.search(text)) or any(
+        word in lexicon.number_words for word in lexicon.words(text)
+    )
 
 
 def _statement(criterion: AcceptanceCriterion) -> str:
@@ -369,26 +479,30 @@ def _excerpt(text: str) -> str:
     return flat if len(flat) <= _EXCERPT else flat[: _EXCERPT - 3].rstrip() + "..."
 
 
-def no_observable_result(criterion: AcceptanceCriterion) -> bool:
-    """Rule C1."""
+def no_observable_result(criterion: AcceptanceCriterion, *, language: str | None = None) -> bool:
+    """Rule C1 (``language``: a resolved intake language, ``None`` for the original rule)."""
+    lexicon = _lexicon(language)
     statement = _statement(criterion)
-    if _has_anchor(statement):
+    if _has_anchor(statement, lexicon):
         return False
-    return len(_words(statement)) < MIN_CRITERION_WORDS or _only_vague(statement)
+    return len(lexicon.words(statement)) < MIN_CRITERION_WORDS or _only_vague(statement, lexicon)
 
 
-def unmeasured_quality(criterion: AcceptanceCriterion) -> str | None:
+def unmeasured_quality(
+    criterion: AcceptanceCriterion, *, language: str | None = None
+) -> str | None:
     """Rule C2: the first quality word of a criterion without a number, or ``None``."""
+    lexicon = _lexicon(language)
     statement = _statement(criterion)
-    if _has_number(statement):
+    if _has_number(statement, lexicon):
         return None
-    for word in _words(statement):
-        if word in _QUALITY_WORDS:
-            return _QUALITY_WORDS[word]
+    for word in lexicon.words(statement):
+        if word in lexicon.quality_words:
+            return lexicon.quality_words[word]
     return None
 
 
-def scope_without_breakdown(task: Task) -> bool:
+def scope_without_breakdown(task: Task, *, language: str | None = None) -> bool:
     """Rule T1: a short intent, no requirements and a single criterion with no anchor.
 
     A precise single criterion (one with a number, a quoted value, a code identifier or a
@@ -397,7 +511,7 @@ def scope_without_breakdown(task: Task) -> bool:
         return False
     if len(task.acceptance_criteria) != 1:
         return False
-    return not _has_anchor(_statement(task.acceptance_criteria[0]))
+    return not _has_anchor(_statement(task.acceptance_criteria[0]), _lexicon(language))
 
 
 def no_acceptance_criteria(task: Task) -> bool:
@@ -405,7 +519,7 @@ def no_acceptance_criteria(task: Task) -> bool:
     return not task.acceptance_criteria
 
 
-def assess_intent(task: Task) -> tuple[ClarificationQuestion, ...]:
+def assess_intent(task: Task, *, language: str | None = None) -> tuple[ClarificationQuestion, ...]:
     """Return the clarification questions for a task, in a stable order.
 
     A task without acceptance criteria gets the seven ``C0`` questions and nothing else: no
@@ -413,41 +527,42 @@ def assess_intent(task: Task) -> tuple[ClarificationQuestion, ...]:
     scope and what is out of scope). Otherwise criteria are examined in their order (C2, then
     C1 unless C2 already applies, then C3), followed by the task-level rule T1. Question ids
     are ``Q-1``, ``Q-2``, ... in that order.
+
+    ``language`` is the value of ``intake.language`` (``auto``, ``en``, ``es``) or ``None``
+    without the key; it changes vocabularies and question texts, never ids, rules or targets.
     """
+    resolved = resolve_language(task, language)
+    templates = _lexicon(resolved).templates
     findings: list[tuple[ClarificationRule, str, str]] = []
     if no_acceptance_criteria(task):
         title = _excerpt(task.title)
         findings = [
-            ("C0", target, QUESTION_TEMPLATES[key].format(title=title))
+            ("C0", target, templates[key].format(title=title))
             for key, target in zip(_C0_TEMPLATE_KEYS, C0_TARGETS, strict=True)
         ]
     seen: dict[str, str] = {}
     for criterion in task.acceptance_criteria:
         values = {"target": criterion.criterion_id, "text": _excerpt(criterion.text)}
-        term = unmeasured_quality(criterion)
+        term = unmeasured_quality(criterion, language=resolved)
         if term is not None:
             findings.append(
-                ("C2", criterion.criterion_id, QUESTION_TEMPLATES["C2"].format(**values, term=term))
+                ("C2", criterion.criterion_id, templates["C2"].format(**values, term=term))
             )
-        elif no_observable_result(criterion):
-            findings.append(
-                ("C1", criterion.criterion_id, QUESTION_TEMPLATES["C1"].format(**values))
-            )
+        elif no_observable_result(criterion, language=resolved):
+            findings.append(("C1", criterion.criterion_id, templates["C1"].format(**values)))
         key = _normalise(criterion.text) + "\n" + _normalise(criterion.verification_hint or "")
         if key in seen:
             findings.append(
                 (
                     "C3",
                     criterion.criterion_id,
-                    QUESTION_TEMPLATES["C3"].format(**values, other=seen[key]),
+                    templates["C3"].format(**values, other=seen[key]),
                 )
             )
         else:
             seen[key] = criterion.criterion_id
-    if scope_without_breakdown(task):
-        findings.append(
-            ("T1", TASK_TARGET, QUESTION_TEMPLATES["T1"].format(text=_excerpt(task.intent)))
-        )
+    if scope_without_breakdown(task, language=resolved):
+        findings.append(("T1", TASK_TARGET, templates["T1"].format(text=_excerpt(task.intent))))
     return tuple(
         ClarificationQuestion(question_id=f"Q-{index}", rule_id=rule, target=target, text=text)
         for index, (rule, target, text) in enumerate(findings, start=1)

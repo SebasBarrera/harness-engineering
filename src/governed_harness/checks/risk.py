@@ -6,11 +6,16 @@ factor, the file and the line so a reviewer can confirm or dismiss it. They are 
 themselves; the caller decides what a factor implies (a stricter gate, a second reviewer).
 
 Documentation files (``.md``, ``.rst``, ``.adoc``) do not raise the ``authentication`` factor: a
-README that mentions tokens changes no access control."""
+README that mentions tokens changes no access control.
+
+A line removed and added again with the same text is not a change: a file rewritten with other line
+endings (CRLF to LF, the diff lists every line) or a line moved within the file raises no factor
+for the lines it already had."""
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -353,6 +358,25 @@ def _deleted_without_tests(diff: Sequence[DiffFile]) -> Iterable[RiskSignal]:
         )
 
 
+def _net(file: DiffFile) -> DiffFile:
+    """``file`` without the lines it removes and adds again with the same text."""
+    common = Counter(line.text for line in file.added) & Counter(line.text for line in file.removed)
+    if not common:
+        return file
+
+    def kept(lines: list[DiffLine]) -> list[DiffLine]:
+        left = Counter(common)
+        result: list[DiffLine] = []
+        for line in lines:
+            if left[line.text]:
+                left[line.text] -= 1
+            else:
+                result.append(line)
+        return result
+
+    return DiffFile(file.old_path, file.new_path, kept(file.added), kept(file.removed))
+
+
 def _paths(file: DiffFile) -> list[str]:
     return [path for path in (file.old_path, file.new_path) if path]
 
@@ -362,6 +386,7 @@ def detect_risk_factors(
 ) -> list[RiskSignal]:
     """Every risk signal of ``diff``, ordered by factor (the order of ``FACTORS``), then path,
     then line."""
+    diff = [_net(file) for file in diff]
     signals = [
         *_new_dependencies(diff),
         *_authentication(diff),

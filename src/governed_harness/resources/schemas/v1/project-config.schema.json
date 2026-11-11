@@ -2270,6 +2270,23 @@
           ],
           "default": null
         },
+        "language": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "en",
+                "es"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
         "operationalContract": {
           "anyOf": [
             {

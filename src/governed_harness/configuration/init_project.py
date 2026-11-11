@@ -131,6 +131,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "stopConditions": list(STOP_CONDITIONS),
             },
             "projectSetup": "ask",
+            # 2.0: the deterministic INTENT rules follow the task's language (en or es).
+            "language": "auto",
         },
         "verification": {
             "requirementTraceability": "enforce",

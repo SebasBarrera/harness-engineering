@@ -81,6 +81,8 @@ def test_gate_decide_refuses_non_human_actor_ids(
     result = _decide(python_workspace, run, digest, "--actor", actor)
     assert result.exit_code == 5
     assert "only a person" in result.stderr
+    # The refusal says what to run next (H44, R04): the brief, then a decision by a person.
+    assert f"harness review --run {run}" in result.stderr
     status = HarnessApplication().status(python_workspace, run)
     assert status["execution"]["currentPhase"] == "DECISION"
     assert status["humanDecision"] is None

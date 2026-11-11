@@ -1029,6 +1029,55 @@ Para no ocultar nada, las mismas referencias con las pruebas ocultas tal cual se
 aparece ningún hallazgo `floatMoney` ni `constraints.float-money` en ninguna de las dos
 referencias); no se cambia nada por él.
 
+### Enmienda 2026-11-11 (2) a H44 (tras el humo local que siguió a la enmienda anterior y antes de cualquier resultado de la campaña)
+
+Un humo local de H44 en Windows con la enmienda anterior (regla 6: no es un resultado y no se cita
+aquí ninguna cifra) dejó cinco estados sin cumplir la rúbrica. Se leyó cada uno contra el código y
+`docs/reference/exit-codes.md`. Ninguna corrida de la campaña de H44 se ha hecho. El criterio
+(≥ 90 %), la rúbrica R1–R4, el denominador y las causas esperadas no cambian.
+
+**Defectos del harness (2.0.0; se corrigen en el harness, no en la suite).** Ninguno de los dos
+mensajes existe en `v0.8.0` (`git show v0.8.0:` de `orchestration/engine.py` no tiene la
+clarificación de INTENT, y `application/hints.py` y `_decide_hint` no existen), así que no tocan
+conducta evaluada.
+
+- *B13 y B14 (R1).* INTENT bloqueado por preguntas decía solo `Intent needs clarification: N
+  question(s)`: la causa (la regla `C0`, `C1`–`C3` o `T1` que preguntó) no aparecía en ninguna
+  superficie y la persona tenía que correr `harness task questions` para saber por qué. Desde esta
+  enmienda el resumen nombra las reglas: `Intent needs clarification: N question(s) (rules C1,
+  T1)`.
+- *R04 (R3).* El rechazo de `gate decide` con un actor `agent.*`, `validator.*` o `harness.*`
+  nombraba la causa pero no traía `hint`: ningún comando siguiente. Desde esta enmienda el `hint`
+  remite a `harness review --run <run>` y a decidir como persona con su propio `--actor`.
+
+**Errores del aparato (se corrigen en la suite).**
+
+- *B06 (R4).* La salida esperada 6 contradecía el documento que la rúbrica cita: un factor de
+  riesgo con acción `block` es un hallazgo de un validador no obligatorio (`risk.*`,
+  `mandatory=False`), el run se detiene en DECISION con el gate `FAILED` esperando una excepción
+  de una persona («A person must approve an exception for this change») y `exit-codes.md`
+  documenta 4 para un run detenido en DECISION (6 es «outside DECISION»). Es la conducta de
+  `v0.8.0` (`_exit_for_execution`), así que no se cambia el harness. Desde esta enmienda la salida
+  esperada de B06 es 4; causa, ubicación y R1–R3 no cambian.
+- *B13 (R1, R4).* La persona simulada respondía las preguntas `C0`; la respuesta da criterios a la
+  tarea, el bloqueo `C0` que el estado declara desaparece y el run seguía hasta DECISION (salida
+  4), donde la causa ya no era la declarada. Desde esta enmienda B13 deja las preguntas sin
+  responder, como B14; la causa (`C0`) y la salida (6, «a task without acceptance criteria (rule
+  `C0`)» en `exit-codes.md`) no cambian.
+- *R01 (no evaluado).* La acción se tomaba solo si el run llegaba a DECISION, pero el run de B02
+  (secreto) falla en VERIFICATION por un validador obligatorio y nunca llega; el caso quedaba sin
+  evaluar. Desde esta enmienda la persona intenta `APPROVE` sobre ese run cuando su ChangeSet
+  existe (en VERIFICATION `FAILED`), que es el estado que R01 declara («APPROVE sobre el gate
+  fallido de B02»); salida (5) y causa (`FAILED` o «not pass») no cambian.
+
+**Versiones exactas de las herramientas.** `TOOLS` de `evaluation/campaign/run_deterministic.py`
+instalaba `pytest`, `pytest-cov`, `ruff`, `mypy` y `coverage` sin versión, de modo que una versión
+nueva de Ruff podía cambiar las reglas por defecto que ve el ratchet (`ratchet.regressed`) entre
+dos corridas. Desde esta enmienda se fijan a las versiones del resto del repositorio:
+`pytest==8.3.5` (la de `evaluation/launchers/common.sh`), `pytest-cov==7.1.0`, `freezegun==1.4.0`,
+`ruff==0.17.4`, `mypy==2.4.1` y `coverage==7.17.2` (`requirements/dev.txt`). Bandit (1.9.4) no
+está en `TOOLS` y no se añade.
+
 ## Tercera congelación: H27, H28, H31 y H32
 
 Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
@@ -2270,3 +2319,81 @@ cualquier resultado, sin quitar condiciones ni cambiar criterios:
 Se mantienen las condiciones, las métricas, las definiciones y los criterios. Además se registra
 (es una métrica, no un cambio): en H47, el detalle de lo que `harness verify` no verificó; en
 H48 y H47, los mensajes del candado sin el nombre del equipo ni el pid.
+
+## Enmiendas generales del 2026-11-11 (antes de cualquier resultado de la campaña)
+
+Las dos enmiendas de esta sección se añaden el 2026-11-11, **antes de cualquier resultado de la
+campaña**: los bloques con modelo (A, B, D, embebido y rides) no se han lanzado sobre la 2.0.0. No
+cambian hipótesis, métricas ni criterios de éxito de las suites de este registro; cambian el idioma
+de los estímulos y la persona simulada que responde las aclaraciones.
+
+### Enmienda 2026-11-11: idioma de los estímulos
+
+**Decisión del mantenedor.** Todo lo de la evaluación va en español: la documentación, los
+estímulos que recibe el modelo evaluado y los resultados. Desde esta enmienda los estímulos de la
+campaña están en español latinoamericano, con el mismo significado y el mismo nivel de detalle que
+los anteriores en inglés:
+
+- los prompts casuales (`evaluation/tasks/*-casual.txt`), las tareas completas y pobres
+  (`evaluation/tasks/*.yaml`; el criterio de la tarea pobre «It works.» pasa a «Funciona.») y las
+  especificaciones de los fixtures (`evaluation/fixtures/*/SPEC.md` y `README.md`);
+- el prompt que arma la evaluación para el agente (`evaluation/agentlib.py:build_prompt`, que usan
+  la condición directa y el adaptador `claude_provider.py` en la llamada `implement`) y las
+  instrucciones del modo embebido (`evaluation/run_embedded.py`);
+- el escenario rides (`evaluation/rides/prompts.yaml`, `SPEC.md`, `fixture/INTERFACE.md`; el
+  prompt `one_line` es «haz una app como Uber con Uber Eats, viajes y domicilios de comida,
+  siguiendo INTERFACE.md»; el texto exacto de cada nivel está en `evaluation/rides/PROMPTS.md`) y
+  el bloque longitudinal (`evaluation/longitudinal/increments.yaml`, `bug_reports.yaml`,
+  `fixture/SPEC.md`);
+- los prompts del product owner simulado y las razones que registra la persona simulada
+  (`evaluation/product_owner.py`, `evaluation/person.py`).
+
+Se mantienen sin traducir los identificadores, nombres de archivo, funciones, excepciones,
+valores, números, comandos y las pruebas ocultas. En las especificaciones se tradujo solo la prosa;
+donde una traducción podía cambiar el sentido de un requisito se conservó el término inglés entre
+paréntesis. Las claves YAML de las respuestas del product owner (`answers`, `addCriteria`, …) y
+sus decisiones (`UPHOLD`, `REVISE`) siguen en inglés, porque las lee el aparato.
+
+**Lo que no cambia, porque es el sistema bajo prueba.** El harness 2.0.0 no se modifica: sus
+propias instrucciones a las llamadas de agente (`clarify`, `review`, `plan`, `acceptance`,
+`locate`, `architecture` y lo que añade a `implement`), sus preguntas de aclaración y sus mensajes
+siguen en inglés. Sus heurísticas de intake están escritas para inglés
+(`src/governed_harness/intake/clarification.py`): la regla C1 marca un criterio de menos de 4
+palabras (`MIN_CRITERION_WORDS = 4`), así que «Funciona.» queda marcado igual que «It works.»,
+pero las listas de palabras vagas, de calidad (C2) y de verbos de resultado son inglesas, el
+patrón de palabras (`_WORD`) solo reconoce letras ASCII (una palabra con tilde o eñe se parte o se
+recorta: «contraseñas» da dos palabras), y un criterio en español que dependa solo de esas palabras puede evaluarse distinto que su equivalente
+en inglés. Se registra como condición de la campaña, no se corrige en ella (regla 1), y se reporta
+junto con los resultados de los bloques B y rides.
+
+**Piloto y resultados anteriores.** El piloto Haiku (`evaluation/launchers/pilot.sh`, corrido sobre
+`develop` en `886926e`, PR #199) y el piloto Sonnet (enmienda «modelos y repeticiones de la
+campaña», PR #198; según el mantenedor, corrido antes de esta enmienda; sus resultados no están en
+este árbol) usaron los estímulos en inglés. Son comprobaciones del aparato, no resultados de la
+campaña, y no se comparan con las corridas en español. Los resultados deterministas de
+`evaluation/results-2.0.0/deterministic/` se obtuvieron el 2026-10-06 con los textos en inglés; las
+suites que leen esos textos (`intent-equivalence`, H22 `context_bytes.py`) darán cifras distintas
+al volver a correrlas, y la re-ejecución de la fase 0 las reporta como diferencias con su causa.
+
+### Enmienda 2026-11-11: la persona simulada responde como ingeniero
+
+**Decisión del mantenedor.** Cuando el harness hace preguntas de aclaración (prompts casual y
+pobre) el product owner simulado debe responder bien, como un ingeniero con experiencia que es
+dueño del producto y piensa un poco, no con consultas escuetas. Se fijan dos cambios:
+
+1. **Prompt del product owner** (`evaluation/product_owner.py:PO_PROMPT`, en español, respuestas
+   en español): responde cada pregunta con decisiones concretas (valores, límites, comportamiento
+   ante errores, casos borde, implicaciones de seguridad y privacidad, coherencia con el resto del
+   producto), da una justificación de una línea cuando una decisión no la dicta la descripción del
+   producto, nunca contradice esa descripción y dice de forma explícita lo que está fuera del
+   alcance; después escribe los criterios comprobables y los requisitos, en el mismo formato YAML
+   de antes. El prompt de disputa (`DISPUTE_PROMPT`) se traduce con la misma figura.
+2. **Modelo fijo del product owner.** Antes el product owner corría con el modelo de la corrida
+   (en una celda Haiku, Haiku hacía de persona). Desde esta enmienda corre con el mismo modelo en
+   todas las celdas y condiciones: `claude-sonnet-5-5` (`product_owner.DEFAULT_PO_MODEL`, opción
+   `--po-model` de `run_eval.py`, `run_embedded.py`, `longitudinal/run_session.py` y
+   `rides/run_rides.py`). El juez de disputas usa el mismo modelo. Cada registro guarda
+   `productOwnerModel`.
+
+Los pilotos Haiku y Sonnet usaron el modelo de la corrida como product owner y el prompt anterior
+(en inglés, de respuestas breves): sus aclaraciones no se comparan con las de la campaña.

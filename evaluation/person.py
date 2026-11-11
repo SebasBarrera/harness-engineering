@@ -92,13 +92,13 @@ PROJECT_SETUP = {
     "project:standards": "default",
     "project:architecture": "custom",
 }
-APPROVE_RATIONALE = "Gate passed; verification and review evidence inspected."
-CHANGES_RATIONALE = "Gate did not pass; changes requested with the findings as feedback."
-REJECT_RATIONALE = "Gate did not pass after the allowed correction cycles."
-DISPUTE_FALLBACK = "UPHOLD"
-DISPUTE_FALLBACK_REASON = (
-    "No product owner to judge the dispute against the criteria: the approved tests stand."
+APPROVE_RATIONALE = "La compuerta pasó; se revisó la evidencia de verificación y de revisión."
+CHANGES_RATIONALE = (
+    "La compuerta no pasó; se piden cambios con los hallazgos como retroalimentación."
 )
+REJECT_RATIONALE = "La compuerta no pasó tras los ciclos de corrección permitidos."
+DISPUTE_FALLBACK = "UPHOLD"
+DISPUTE_FALLBACK_REASON = "No hay product owner que juzgue la disputa contra los criterios: las pruebas aprobadas se mantienen."
 
 _DECIDE = {
     "acceptance": re.compile(
@@ -202,15 +202,15 @@ def review_acceptance_content(
             scenarios = re.split(r"(?m)^\s*Scenario(?: Outline)?:", content)[1:]
             cases += len(scenarios)
             if not scenarios:
-                problems.append(f"{path}: no scenario")
+                problems.append(f"{path}: no tiene ningún escenario")
             for number, body in enumerate(scenarios, start=1):
                 if not re.search(r"(?m)^\s*Then\b", body):
-                    problems.append(f"{path}: scenario {number} has no Then step")
+                    problems.append(f"{path}: el escenario {number} no tiene paso Then")
             continue
         try:
             module = ast.parse(content, filename=path)
         except SyntaxError as error:
-            problems.append(f"{path}: does not parse ({error.msg}, line {error.lineno})")
+            problems.append(f"{path}: no se puede analizar ({error.msg}, línea {error.lineno})")
             continue
         functions = [
             node
@@ -220,12 +220,12 @@ def review_acceptance_content(
         ]
         cases += len(functions)
         if not functions:
-            problems.append(f"{path}: no test function")
+            problems.append(f"{path}: no tiene ninguna función de prueba")
         for function in functions:
             if not _checks(function):
-                problems.append(f"{path}: {function.name} checks nothing that can fail")
+                problems.append(f"{path}: {function.name} no comprueba nada que pueda fallar")
     if criteria is not None and cases < criteria:
-        problems.append(f"{cases} test case(s) for {criteria} acceptance criteria")
+        problems.append(f"{cases} caso(s) de prueba para {criteria} criterio(s) de aceptación")
     return {"testCases": cases, "criteria": criteria, "problems": problems}
 
 
@@ -501,10 +501,10 @@ class SimulatedPerson:
             "digestMatches": shown.get("digest") == digest,
             "contentReview": review,
         }
-        why = "Acceptance tests proposed for every criterion; their content was reviewed."
-        reject_why = "The proposal is incomplete."
+        why = "Se propusieron pruebas de aceptación para cada criterio; se revisó su contenido."
+        reject_why = "La propuesta está incompleta."
         if structured and review["problems"]:
-            reject_why = "The content of the acceptance tests falls short: " + "; ".join(
+            reject_why = "El contenido de las pruebas de aceptación se queda corto: " + "; ".join(
                 review["problems"]
             )
         return self._decide_proposal(run_id, "acceptance", digest, complete, entry, why, reject_why)
@@ -585,7 +585,7 @@ class SimulatedPerson:
                 "reasons": approval.get("reasons"),
                 "digestMatches": approval.get("digest") == digest,
             }
-            why = "The plan is recorded and bound to its digest; the risk flags are listed."
+            why = "El plan está registrado y ligado a su digest; las banderas de riesgo están listadas."
         else:
             subtasks = shown.get("subtasks") or []
             complete = (
@@ -598,7 +598,7 @@ class SimulatedPerson:
                 "subtasks": len(subtasks),
                 "digestMatches": shown.get("digest") == digest,
             }
-            why = "Decomposition partitions the requirements; evidence complete."
+            why = "La descomposición reparte los requisitos; la evidencia está completa."
         return self._decide_proposal(run_id, "plan", digest, complete, entry, why)
 
     def _decide_proposal(
@@ -609,7 +609,7 @@ class SimulatedPerson:
         complete: bool,
         entry: dict[str, Any],
         why: str,
-        reject_why: str = "The proposal is incomplete.",
+        reject_why: str = "La propuesta está incompleta.",
     ) -> int | None:
         decision = "APPROVE" if complete else "REJECT"
         rationale = why if complete else reject_why
@@ -657,7 +657,7 @@ class SimulatedPerson:
             "--digest",
             digest,
             "--rationale",
-            "The option the proposal recommends.",
+            "La opción que recomienda la propuesta.",
             "--actor",
             REVIEWER_ACTOR,
             "--no-continue",
@@ -687,7 +687,7 @@ class SimulatedPerson:
             "--digest",
             digest,
             "--rationale",
-            "The inferred layer rules match the survey.",
+            "Las reglas de capas inferidas coinciden con el levantamiento de la arquitectura.",
             "--actor",
             REVIEWER_ACTOR,
             "--no-continue",
@@ -705,7 +705,7 @@ class SimulatedPerson:
             run_id,
             "--continue-uncertified",
             "--rationale",
-            "This environment cannot reach the listed rungs; continue uncertified.",
+            "Este entorno no puede alcanzar los peldaños listados; se continúa sin certificar.",
             "--actor",
             REVIEWER_ACTOR,
             "--no-continue",
@@ -785,7 +785,7 @@ class SimulatedPerson:
                 if (self.run_dir / "feedback.md").exists()
                 else CHANGES_RATIONALE
             )
-            return self.session(run_id, "The person requested changes:\n" + feedback), None
+            return self.session(run_id, "La persona pidió cambios:\n" + feedback), None
         code = self.resume(run_id)
         if decision == "APPROVE":
             return code, "approved" if code == 0 else f"approved-closure-exit-{code}"

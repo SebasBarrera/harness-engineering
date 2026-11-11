@@ -104,9 +104,11 @@ from governed_harness.intake import (
     ClarificationInput,
     assess_intent,
     no_acceptance_criteria,
+    resolve_language,
     revise_task,
     task_digest,
 )
+from governed_harness.intake.language import RECOMMENDATION_TEMPLATES
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
 from governed_harness.orchestration.corrections import EMPTY_RULE as EMPTY_CORRECTION_RULE
@@ -1220,7 +1222,9 @@ class RunEngine:
         # INTENT, whatever the policy says now: there is nothing to verify the work against.
         if no_acceptance_criteria(task):
             policy = "enforce"
-        questions = assess_intent(task) if policy != "off" else ()
+        intake_config = self.s.resolved.project.intake
+        language = intake_config.language if intake_config else None
+        questions = assess_intent(task, language=language) if policy != "off" else ()
         review_refs: tuple[str, ...] = ()
         if self.friction.active and self.friction.fast_lane is not None:
             # friction.fastLane (#58): the lane of the run, recorded with its reasons.
@@ -1315,13 +1319,20 @@ class RunEngine:
         if ladder_block is not None and not (questions and policy == "enforce"):
             return PhaseOutcome(ResultStatus.BLOCKED, ladder_block, refs)
         if policy == "enforce":
+            # The rules that asked are the cause a person reads on status and in the inbox
+            # (H44): the count alone sent them to `harness task questions` to learn why.
+            rules = ", ".join(dict.fromkeys(question.rule_id for question in questions))
             return PhaseOutcome(
                 ResultStatus.BLOCKED,
-                f"Intent needs clarification: {len(questions)} question(s)",
+                f"Intent needs clarification: {len(questions)} question(s) (rules {rules})",
                 refs,
             )
+        intake_config = self.s.resolved.project.intake
+        language = resolve_language(task, intake_config.language if intake_config else None)
         for question in questions:
-            self._record_clarification_finding(execution, question, request_evidence)
+            self._record_clarification_finding(
+                execution, question, request_evidence, language or "en"
+            )
         return PhaseOutcome(
             ResultStatus.PASSED,
             f"Intent is structured and identifiable; {len(questions)} clarification "
@@ -1378,7 +1389,11 @@ class RunEngine:
         return evidence
 
     def _record_clarification_finding(
-        self, execution: Execution, question: ClarificationQuestion, evidence: Evidence
+        self,
+        execution: Execution,
+        question: ClarificationQuestion,
+        evidence: Evidence,
+        language: Literal["en", "es"] = "en",
     ) -> None:
         finding = Finding(
             finding_id=new_id("finding"),
@@ -1389,9 +1404,8 @@ class RunEngine:
             severity=FindingSeverity.LOW,
             message=question.text,
             evidence_refs=(evidence.artifact_ref,),
-            recommendation=(
-                f"Answer {question.question_id} with harness task clarify, or set "
-                "intake.criteriaPolicy to enforce to block INTENT until it is answered."
+            recommendation=RECOMMENDATION_TEMPLATES[language].format(
+                question_id=question.question_id
             ),
             provenance=self._provenance(execution),
         )

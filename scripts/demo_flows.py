@@ -284,7 +284,7 @@ def node_project(root: Path) -> Path:
 
 
 AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
-    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup"),
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup", "language"),
     "verification": (
         "interface",
         "architecture",

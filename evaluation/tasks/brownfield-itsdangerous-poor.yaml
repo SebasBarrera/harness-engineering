@@ -1,6 +1,6 @@
 taskId: task_eval_brownfield_strict_base64_poor
-title: Stricter base64 decoding
-intent: Make base64_decode in itsdangerous stricter.
+title: Decodificación base64 más estricta
+intent: Haz más estricto base64_decode en itsdangerous.
 acceptanceCriteria:
   - criterionId: ac_works
-    text: It works.
+    text: Funciona.
