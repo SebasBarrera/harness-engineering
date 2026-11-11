@@ -38,6 +38,32 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
    aparato y **no** son resultados: no se versionan ni se citan.
 7. **Claves de configuración exactas** (§4.7): cada condición guarda su `project.yaml`.
 
+### Enmienda 2026-11-11: la persona simulada del piloto Haiku ante una disputa de pruebas de aceptación
+
+Se añade tras una **comprobación previa del aparato** (no el piloto oficial, cuyas corridas no se
+han hecho) y antes de cualquier resultado del piloto. En esa comprobación, en las condiciones
+gobernadas `harness` y `harness-anchored`, el agente disputó pruebas de aceptación congeladas
+(`verification.acceptanceTests.disputes: person`, #94) y la corrida esperó en VERIFICATION con una
+entrada `acceptance-dispute` en `harness inbox`; la persona simulada de `evaluation/person.py` no
+tenía regla para esa espera, así que la corrida terminó como `stopped` sin llegar a DECISION. Es un
+defecto del aparato, no del harness: la regla se fija ahora, antes de las corridas del piloto, y no
+se cita aquí ninguna cifra de la comprobación previa.
+
+**Regla.** Ante una espera `acceptance-dispute` la persona simulada lee la disputa con `harness
+acceptance show --run <id> --json` (las pruebas disputadas, su código y la razón del agente; nunca
+las pruebas ocultas) y pregunta al product owner simulado (`human.product-owner-simulated`, el
+mismo de las aclaraciones, `ProductOwner.judge_dispute`, una llamada registrada en `po-calls`) si
+mantiene (`UPHOLD`) o reescribe (`REVISE`) las pruebas, dados los criterios de la tarea, el código
+de las pruebas disputadas y la razón del agente. Su respuesta y su razón se envían con `harness
+acceptance dispute --decision <UPHOLD|REVISE> --digest <digest>`, ligadas al digest que muestra el
+inbox; si `acceptance show` muestra otro digest, la persona no actúa (la corrida se detiene). Sin
+product owner (corridas con `--no-product-owner`) la regla fija es `UPHOLD` (las pruebas aprobadas
+se mantienen), registrada como `judge: fallback`. Si la llamada del product owner falla (también
+tras un reintento con el error de lectura), la persona no actúa. Cada espera registra `wait:
+acceptance-dispute`, la decisión, las razones (del agente y del product owner) y `digestMatches`.
+Tras `REVISE` la corrida vuelve a SPECIFICATION y la regla ya registrada de las pruebas de
+aceptación aprueba o rechaza las pruebas reescritas.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos

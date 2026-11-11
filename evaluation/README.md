@@ -109,6 +109,7 @@ Two simulated actors, rules fixed in code before any run:
 | Architecture options | `harness architecture decide --option` the recommended option. |
 | Architecture rules | APPROVE the inferred layers. |
 | Acceptance tests | APPROVE when there is at least one file, each with path and content, under the shown digest, and its content passes the product owner's review (`review_acceptance_content`: every pytest file parses and each `test_*` function makes a check that can fail, every Gherkin scenario has a Then step, at least one test case per acceptance criterion); else REJECT, naming what falls short. |
+| Acceptance dispute (added 2026-11-11, after an apparatus precheck) | The agent disputes frozen acceptance tests and only they fail (`acceptance-dispute`). The person reads the dispute in `acceptance show` (the disputed tests' source and the agent's reasons, never the hidden tests) and the product owner (`ProductOwner.judge_dispute`, recorded in `po-calls`) answers UPHOLD or REVISE from the task's criteria; without a product owner the fixed fallback is UPHOLD. Bound to the digest the inbox shows; not sent when `acceptance show` shows another. After REVISE the acceptance-tests rule decides the rewritten tests. |
 | Plan or plan approval | APPROVE a decomposition whose sub-tasks have titles, or the recorded plan of a risky task, under the shown digest; else REJECT. |
 | Preflight UNAVAILABLE | `harness verification decide --continue-uncertified`. |
 | DECISION | The 0.9.0 rule: APPROVE when the gate PASSED (ticking the manual checklist and acknowledging the risk factors the brief requires); else REQUEST_CHANGES with the gate reasons and findings as feedback, at most two cycles; then REJECT. Never APPROVE_EXCEPTION. |
@@ -148,8 +149,8 @@ python evaluation/dry_run.py --work <dir> --cache <dir> --out <dir outside the r
 ```
 
 `fake_claude.py` stands in for Claude Code (deterministic answers for every call kind, the reference
-solution for implementations, an MCP host for the embedded mode, faults `broken`, `review-fail` and
-`malformed-acceptance`). Besides each condition's outcome, the dry run checks the wave 9 behaviour
+solution for implementations, an MCP host for the embedded mode, faults `broken`, `review-fail`,
+`malformed-acceptance` and `dispute-acceptance`). Besides each condition's outcome, the dry run checks the wave 9 behaviour
 the runner relies on: the exact provider grant (`extend`, or `grants` in `harness-core`) with no
 provider warning, every answered wait read from the inbox, the anchored routing with the cell's
 model as the anchor, `plan decide --no-continue` exiting 0, a rejected run staying closed, and the
