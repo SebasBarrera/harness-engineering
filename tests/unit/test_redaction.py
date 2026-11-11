@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from governed_harness.evidence.redaction import SecretRedactor
@@ -26,3 +28,24 @@ def test_non_secret_is_unchanged() -> None:
     result = SecretRedactor().redact(data)
     assert result.data == data
     assert not result.redacted
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        'secret = os.environ.get("ALERTS_PASSWORD") (risk factor authentication)',
+        'password="hunter2xyz" and more',
+        "token=abcd1234 z",
+    ],
+)
+def test_a_secret_inside_a_json_string_is_redacted_and_the_json_stays_valid(text: str) -> None:
+    # #157: a stored JSON artifact (the provider feedback of the H45 reference solution) was
+    # redacted into invalid JSON, and a quoted value escaped as \"...\" was not redacted at all.
+    data = json.dumps({"message": text}).encode("utf-8")
+    result = SecretRedactor().redact(data)
+    message = json.loads(result.data)["message"]
+    assert result.redacted
+    assert "<REDACTED>" in message
+    assert "hunter2xyz" not in message
+    assert "abcd1234" not in message
+    assert SecretRedactor().redact(result.data).data == result.data
