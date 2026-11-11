@@ -672,28 +672,38 @@ class GeminiCliProvider(NativeAgentProvider):
         if not isinstance(value, dict) or not ({"response", "error"} & set(value)):
             raise ValueError("gemini output is not a response object")
         error = value.get("error")
-        totals, seen = _gemini_tokens(value)
         response = str(value.get("response") or "")
-        if isinstance(error, dict):
-            message = error.get("message")
-        elif error:
-            message = str(error)
-        else:
-            message = None
+        message = _gemini_error_message(error)
         return ProviderAnswer(
             status=ResultStatus.FAILED if error else ResultStatus.PASSED,
             summary=_summary(message or response) or "gemini-cli finished",
-            usage=_usage(
-                inputTokens=totals["prompt"] if seen else None,
-                outputTokens=totals["candidates"] if seen else None,
-                reasoningTokens=totals["thoughts"] if seen and totals["thoughts"] else None,
-                # Gemini's cached tokens are prompt-cache reads, part of the prompt tokens.
-                cacheTokens=totals["cached"] if seen and totals["cached"] else None,
-                cacheReadTokens=totals["cached"] if seen and totals["cached"] else None,
-            ),
+            usage=_gemini_usage(*_gemini_tokens(value)),
             usage_limitations=("Gemini CLI reports tokens per model and no cost.",),
             self_report=self._self_report_from(response),
         )
+
+
+def _gemini_error_message(error: Any) -> Any:
+    """The message of Gemini's ``error`` field (an object with ``message`` or any value)."""
+    if isinstance(error, dict):
+        return error.get("message")
+    if error:
+        return str(error)
+    return None
+
+
+def _gemini_usage(totals: dict[str, int], seen: bool) -> dict[str, int | float] | None:
+    """The usage of :func:`_gemini_tokens`' totals; nothing when no model reported tokens."""
+    if not seen:
+        return None
+    return _usage(
+        inputTokens=totals["prompt"],
+        outputTokens=totals["candidates"],
+        reasoningTokens=totals["thoughts"] or None,
+        # Gemini's cached tokens are prompt-cache reads, part of the prompt tokens.
+        cacheTokens=totals["cached"] or None,
+        cacheReadTokens=totals["cached"] or None,
+    )
 
 
 def _gemini_tokens(value: dict[str, Any]) -> tuple[dict[str, int], bool]:
