@@ -8,6 +8,8 @@ import pytest
 
 from governed_harness.evidence import artifact_store
 from governed_harness.evidence.artifact_store import LocalArtifactStore
+from governed_harness.orchestration.workspace_ops import snapshot_contents
+from governed_harness.runtime.snapshots import SnapshotSettings, SnapshotStore
 
 
 def test_roundtrip_and_deduplication(tmp_path: Path) -> None:
@@ -71,6 +73,54 @@ def test_private_key_split_across_strings_in_a_document_redacted_string_by_strin
     assert b"os.environ.get(" not in stored
     json.loads(stored)
     assert ref.redacted
+
+
+def test_quoted_secret_inside_a_json_string_is_redacted(tmp_path: Path) -> None:
+    # #178: escaped in the JSON text (password = \"...\"), the quoted value was not matched by
+    # the text redaction, the document still parsed, and the value was stored in clear.
+    store = LocalArtifactStore(tmp_path)
+    source = 'def f() -> None:\n    password = "supersecret123"\n\tx = "a\\\\b"\n'
+    ref = store.put_json({"patches": [{"content": source, "path": "src/a.py"}], "n": 1})
+    stored = store.get(ref)
+    assert b"supersecret123" not in stored
+    value = json.loads(stored)
+    content = value["patches"][0]["content"]
+    assert content == 'def f() -> None:\n    password = <REDACTED>\n\tx = "a\\\\b"\n'
+    assert value["patches"][0]["path"] == "src/a.py"
+    assert value["n"] == 1
+    assert ref.redacted
+    assert ref.metadata == {"redactionRuleIds": ["generic_secret_assignment"]}
+    assert store.describe(ref.uri).redacted
+
+
+def test_json_document_with_escapes_and_nothing_to_redact_keeps_its_bytes(
+    tmp_path: Path,
+) -> None:
+    store = LocalArtifactStore(tmp_path)
+    value = {"text": 'line one\nsay "hi"\ta\\b\r\né ☃', "keys": {"token": "ok"}}
+    ref = store.put_json(value)
+    expected = json.dumps(value, sort_keys=True, indent=2, ensure_ascii=False).encode("utf-8")
+    assert store.get(ref) == expected
+    assert json.loads(store.get(ref)) == value
+    assert not ref.redacted
+
+
+def test_a_snapshot_read_back_redacted_never_gives_its_text_back(tmp_path: Path) -> None:
+    # #178: a restore or a materialized copy must not write <REDACTED> into a file.
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    (workspace / "a.py").write_bytes(b'password = "supersecret123"\n')
+    (workspace / "b.py").write_bytes(b"x = 1\n")
+    snapshots = SnapshotStore(workspace, LocalArtifactStore(tmp_path / "store"), SnapshotSettings())
+    snapshot = snapshots.take(for_storage=True)
+    ref = snapshots.store(snapshot, {"kind": "test"})
+    assert ref.redacted
+    stored = snapshots.load(ref.uri)
+    assert stored.snapshot.files["a.py"].text == "password = <REDACTED>\n"
+    assert snapshots.content(stored, "a.py") is None
+    assert snapshot_contents(stored.snapshot).content("a.py") is None
+    assert snapshots.content(stored, "b.py") == b"x = 1\n"
+    assert snapshot_contents(snapshot).content("a.py") == b'password = "supersecret123"\n'
 
 
 def _on_windows(monkeypatch: pytest.MonkeyPatch) -> None:

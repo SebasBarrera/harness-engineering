@@ -22,6 +22,9 @@ from governed_harness.evidence import LocalArtifactStore, SecretRedactor
 from governed_harness.runtime.state_location import resolve_state_location
 from governed_harness.storage import SQLiteStateStore
 
+TASK_REVISION_DIGEST_FLAG = "taskrevdigest:"
+"""State flag prefix (+ execution id) of the digest of the task revision pinned to a run."""
+
 
 @dataclass(frozen=True)
 class EnginePaths:
@@ -83,6 +86,13 @@ class EngineServices:
                 ),
             ),
         )
+
+    def pin_task_revision(self, execution_id: str, uri: str, digest: str) -> None:
+        """Pin the stored task revision ``uri`` to a run (``governance.pinTaskRevision``) with
+        the digest of the task as it was given: when the stored revision is redacted (#178),
+        the run works on the stored task only while it still has that digest."""
+        self.state.set_flag(f"taskrev:{execution_id}", uri)
+        self.state.set_flag(f"{TASK_REVISION_DIGEST_FLAG}{execution_id}", digest)
 
     def close(self) -> None:
         self.state.close()
@@ -151,6 +161,7 @@ class Strategy:
 
 __all__ = [
     "READ_ONLY_RULE",
+    "TASK_REVISION_DIGEST_FLAG",
     "AgentCallOutcome",
     "EnginePaths",
     "EngineServices",
