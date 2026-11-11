@@ -1,0 +1,22 @@
+pack: node
+detect:
+  markers: [package.json]
+runner:
+  test: [npm, test, --silent]
+  testFiles: false
+  bdd: [npx, cucumber-js]
+bddFrameworks:
+  - name: cucumber-js
+    markers: [cucumber.js, cucumber.json]
+    dependencies: ["@cucumber/cucumber"]
+tools:
+  - id: eslint-plugin-n
+    title: eslint-plugin-n
+    configFiles: [eslint.config.js, eslint.config.mjs, .eslintrc.json, .eslintrc.cjs]
+    command: [npx, --no-install, eslint, -f, json, .]
+    parser: eslint
+    coveredBy: [node.lint, standards.javascript.eslint, standards.typescript.typescript-eslint]
+    recommended: |
+      // eslint.config.js
+      import n from "eslint-plugin-n";
+      export default [n.configs["flat/recommended"], { rules: { "n/no-sync": "error" } }];

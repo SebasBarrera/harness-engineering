@@ -1,0 +1,36 @@
+pack: vue
+title: Vue
+extends: [javascript]
+cards:
+  - id: vue.no-mutating-props
+    title: Do not mutate props
+    rule: Never assign to a prop; emit an event or copy the value into local state.
+    rationale: The parent owns the prop and overwrites the change.
+    appliesTo: ["**/*.vue"]
+    verifiedBy: ["eslint:vue/no-mutating-props"]
+  - id: vue.v-for-key
+    title: Keys with v-for
+    rule: Bind a stable, unique key on every v-for element, and do not combine v-if with v-for on the same element.
+    rationale: Without keys Vue reuses elements and mixes their state.
+    appliesTo: ["**/*.vue"]
+    verifiedBy: ["eslint:vue/require-v-for-key", "eslint:vue/no-use-v-if-with-v-for"]
+  - id: vue.typed-props-emits
+    title: Declare props and emits
+    rule: Declare every prop with its type and every emitted event (defineProps, defineEmits).
+    rationale: Declared contracts are checked and documented.
+    appliesTo: ["**/*.vue"]
+    verifiedBy: ["eslint:vue/require-prop-types", "eslint:vue/require-explicit-emits"]
+    principle: least-astonishment
+  - id: vue.no-v-html
+    title: No v-html with untrusted content
+    rule: Do not render untrusted content with v-html.
+    rationale: v-html is a cross-site scripting vector.
+    appliesTo: ["**/*.vue"]
+    verifiedBy: ["eslint:vue/no-v-html"]
+  - id: vue.composables
+    title: Shared logic in composables
+    rule: Share stateful logic through composables, not mixins or deep component hierarchies.
+    rationale: Composables make dependencies explicit.
+    appliesTo: ["**/*.vue", "**/composables/**/*.js", "**/composables/**/*.ts"]
+    verifiedBy: ["review"]
+    principle: composition-over-inheritance

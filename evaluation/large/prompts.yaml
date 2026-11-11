@@ -1,0 +1,122 @@
+# Large-project scenario: the backend of a small online store (package `shop`, see fixture/INTERFACE.md).
+# Four instruction levels, from a one-line wish to a super prompt with a plan and approval conditions.
+# rules: the requirements that the hidden checks verify, by part (a to j).
+# increments: the plan of the super prompt; with the harness each one is a short governed task.
+
+one_line: build the backend of an online store, like a small Amazon, following INTERFACE.md
+
+paragraph: >-
+  Build the backend of a small online store in Python following INTERFACE.md. It needs a product
+  catalog, stock control, orders with taxes and shipping, discount coupons, payments, refunds and
+  returns, a sales report and saving everything to a JSON file. Keep the code clean and add some tests.
+
+rules:
+  a:
+  - 'add_product: the SKU must match ^[A-Z]{3}-\d{4}$ and be unique; the name is stripped and must not be
+    empty; price accepts int, str or Decimal (a float raises ValueError), must be greater than 0 and is stored
+    as Decimal rounded half up to 2 places; category is one of general, food, books; weight_kg accepts int, str
+    or Decimal, must be greater than 0 and is stored as Decimal rounded half up to 3 places. Every violation
+    raises ValueError.'
+  - get_product returns a dict with sku, name, price, category and weight_kg, and raises KeyError for an
+    unknown SKU; list_products(category=None) returns the products sorted by SKU, filtered by category when
+    one is given.
+  b:
+  - 'receive_stock(sku, quantity): quantity must be a positive int (0, negatives, floats, strings and bools
+    raise ValueError); unknown SKUs raise KeyError in receive_stock and stock.'
+  - 'stock(sku) is the available quantity: received minus the quantities held by orders that are not cancelled, plus returned units.'
+  - create_order reserves the stock of every line atomically. If any line asks for more than is available it
+    raises ValueError and nothing is reserved, no order is created and no order id is consumed. Cancelling an
+    order releases its stock.
+  c:
+  - 'create_order(customer_email, items, coupon=None, on=None): items is {sku: quantity}; it must not be
+    empty, quantities are positive ints (ValueError otherwise) and unknown SKUs raise KeyError. on is the order
+    date (default today).'
+  - Each line has sku, quantity, unit_price (the catalog price at order time), net = unit_price x quantity,
+    discount and tax. Lines are sorted by SKU.
+  - Tax rates are general 19 %, food 5 % and books 0 %. The tax of a line is (net - discount) x rate, rounded
+    half up to 2 places. The order tax is the sum of the line taxes.
+  - subtotal is the sum of the line nets; total = subtotal - discount + tax + shipping. All money is Decimal.
+  d:
+  - 'add_coupon(code, percent, min_subtotal="0", expires=None, max_uses=None): the code is stripped and
+    uppercased and must then match ^[A-Z0-9]{4,12}$; duplicate codes raise ValueError; percent is an int
+    from 1 to 50; codes passed to create_order are matched case-insensitively.'
+  - An order takes at most one coupon. The discount of each line is net x percent / 100, rounded half up to 2
+    places; the order discount is the sum of the line discounts.
+  - 'A coupon applies only if the subtotal is at least min_subtotal, the order date is not after expires
+    (when set) and the number of paid orders that used it is below max_uses (when set). An unknown, expired,
+    exhausted or below-minimum coupon makes create_order raise ValueError, and nothing is reserved.'
+  e:
+  - 'Shipping depends on the total weight (weight_kg x quantity of every line): up to 1 kg costs 5.00, up to
+    5 kg 9.00, up to 20 kg 15.00, and above 20 kg 15.00 plus 1.00 for every started kilogram above 20.'
+  - Shipping is free (0.00) when subtotal - discount is at least 150.00. Shipping is not taxed.
+  f:
+  - The customer email is stripped, must match ^[^@\s]+@[^@\s]+\.[^@\s]+$ (ValueError otherwise) and is
+    stored in lowercase.
+  - Order ids are ORD-000001, ORD-000002 and so on, in creation order. order(order_id) raises KeyError for an
+    unknown id.
+  - 'Statuses: created -> paid -> shipped, created -> cancelled and paid -> cancelled. Any other transition
+    (shipping an unpaid order, cancelling a shipped one, paying or cancelling a cancelled one) raises
+    ValueError.'
+  g:
+  - 'pay(order_id, amount, idempotency_key): amount (int, str or Decimal; floats raise ValueError) must equal
+    the order total exactly; it moves the order to paid, sets paid to the total and returns a payment id
+    PAY-000001, PAY-000002 and so on.'
+  - Paying again with the same key and order returns the same payment id and changes nothing; a different key
+    on a paid order raises ValueError; a key already used for another order raises ValueError.
+  h:
+  - refund(order_id, amount) is allowed only for paid or shipped orders; the amount must be positive and the
+    sum of refunds must not exceed the paid amount (ValueError otherwise). order(...)["refunded"] is the sum
+    of refunds.
+  - Cancelling a paid order refunds the whole paid amount (refunded becomes equal to paid) and releases the
+    stock.
+  - return_items(order_id, sku, quantity) is allowed only for shipped orders; the quantity is a positive int
+    and the total returned for a SKU cannot exceed the shipped quantity (ValueError otherwise). Returned units
+    go back to stock.
+  i:
+  - 'sales_report(start, end) covers the orders whose date is between start and end, both included, and whose
+    status is paid or shipped. It returns orders (count), revenue (sum of totals minus refunds), tax (sum of
+    taxes) and units (units sold minus units returned). start after end raises ValueError.'
+  j:
+  - save(path) writes the whole store to a JSON file and Shop.load(path) restores it, including stock,
+    coupons and their uses, orders, payments, idempotency keys and the id counters; Decimal and date values
+    survive exactly.
+  - Both raise ValueError for a path that does not end in .json; load raises ValueError for a file that is not
+    valid JSON or is not a saved store.
+
+common_constraints:
+- Use only the Python standard library.
+- Follow INTERFACE.md exactly; it is the public API.
+
+increments:
+- id: I1
+  parts: [a]
+  title: Product catalog
+  intent: Implement the product catalog of the shop package, with pytest tests.
+- id: I2
+  parts: [b]
+  title: Stock control
+  intent: Implement stock reception and the available-stock query, with pytest tests.
+- id: I3
+  parts: [c, e, f]
+  title: Orders, prices, taxes and shipping
+  intent: Implement order creation with prices, taxes and shipping, the order lifecycle and stock reservation, with pytest tests.
+- id: I4
+  parts: [d]
+  title: Discount coupons
+  intent: Implement discount coupons and their use in orders, with pytest tests.
+- id: I5
+  parts: [g]
+  title: Payments
+  intent: Implement payments with exact amounts and idempotency keys, with pytest tests.
+- id: I6
+  parts: [h]
+  title: Refunds, cancellations and returns
+  intent: Implement refunds, cancellation of paid orders and returns of shipped items, with pytest tests.
+- id: I7
+  parts: [i]
+  title: Sales report
+  intent: Implement the sales report, with pytest tests.
+- id: I8
+  parts: [j]
+  title: Persistence
+  intent: Implement saving the whole store to JSON and loading it back, with pytest tests.

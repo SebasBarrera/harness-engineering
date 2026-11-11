@@ -1,0 +1,27 @@
+# Review metadata of the swift pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: swift
+domains:
+  swift.memory: resilience
+  swift.value-types: concurrency
+  swift.ui-state: architecture
+blocking: []
+signals:
+  concurrency:
+  - \bDispatchQueue\b
+  - \bTask\s*\{
+  - \bactor\s+\w+
+  - '@MainActor'
+  - \bNSLock\b
+  - \bOperationQueue\b
+  external-calls:
+  - \bURLSession\b
+  - \bURLRequest\b
+  - \bProcess\(\)
+  structure:
+  - ^\s*import\s
+  - ^\s*(?:public|open)\s
+  - ^\s*(?:protocol|class|struct|enum|extension)\s+\w
+pipeline:
+- fastlane/**

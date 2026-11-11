@@ -6,15 +6,56 @@ from typing import Any, Literal, cast
 
 import yaml
 
+from governed_harness.configuration.models import CriteriaPolicy
 from governed_harness.domain.errors import ConfigurationError
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import (
     AcceptanceCriterion,
+    ChecklistItem,
+    CriterionVerification,
     FilePatch,
     ImplementationInstruction,
+    OperationalContract,
+    ProbeDefinition,
     Requirement,
     Task,
 )
+
+
+def _verification(item: dict[str, Any], where: str) -> CriterionVerification | None:
+    """The ``verification`` of a criterion (since #55): its rung and how it is reached."""
+    raw = item.get("verification")
+    if raw is None:
+        return None
+    if not isinstance(raw, dict):
+        raise ConfigurationError(f"{where}: verification must be an object with a level")
+    try:
+        return CriterionVerification.model_validate(raw)
+    except Exception as error:
+        raise ConfigurationError(f"{where}: invalid verification: {error}") from error
+
+
+def _ladder_fields(raw: dict[str, Any]) -> dict[str, Any]:
+    """The probes, checklist and operational contract of a task file (since #55)."""
+    fields: dict[str, Any] = {}
+    try:
+        if raw.get("probes"):
+            fields["probes"] = tuple(
+                ProbeDefinition.model_validate(item) for item in raw["probes"] or []
+            )
+        if raw.get("checklist"):
+            fields["checklist"] = tuple(
+                ChecklistItem.model_validate(
+                    {"id": f"CL-{index}", "text": item} if isinstance(item, str) else item
+                )
+                for index, item in enumerate(raw["checklist"] or [], start=1)
+            )
+        if raw.get("contract"):
+            fields["contract"] = OperationalContract.model_validate(raw["contract"])
+    except Exception as error:
+        raise ConfigurationError(f"invalid task definition: {error}") from error
+    return fields
+
 
 _KNOWN_FIELDS = frozenset(
     {
@@ -30,6 +71,9 @@ _KNOWN_FIELDS = frozenset(
         "acceptance_criteria",
         "implementation",
         "metadata",
+        "probes",
+        "checklist",
+        "contract",
     }
 )
 
@@ -50,74 +94,61 @@ def _required_text(value: dict[str, Any], name: str, where: str) -> str:
     return str(text)
 
 
-def load_task_file(path: Path, *, project_id: str) -> Task:
+def _parse_task_file(path: Path) -> Any:
     try:
         if path.suffix.lower() == ".json":
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        else:
-            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+            return json.loads(path.read_text(encoding="utf-8"))
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
     except Exception as error:
         raise ConfigurationError(f"cannot parse task file {path}: {error}") from error
-    if not isinstance(raw, dict):
-        raise ConfigurationError("task file must contain an object")
-    unknown = sorted(set(raw) - _KNOWN_FIELDS)
-    if unknown:
-        raise ConfigurationError(f"unknown task field(s): {', '.join(unknown)}")
-    title = _required_text(raw, "title", "a task")
-    intent = _required_text(raw, "intent", "a task")
-    requirements = []
-    for item in _first(raw, "requirements", default=[]) or []:
-        if isinstance(item, str):
-            requirements.append(
-                Requirement(requirement_id=new_id("req"), text=item, source="human")
-            )
-        elif isinstance(item, dict):
-            requirements.append(
-                Requirement(
-                    requirement_id=_first(
-                        item, "requirementId", "requirement_id", "id", default=new_id("req")
-                    ),
-                    text=_required_text(item, "text", "a requirement"),
-                    source=str(_first(item, "source", default="human")),
-                )
-            )
-        else:
-            raise ConfigurationError("requirements must be strings or objects")
-    criteria = []
-    for item in _first(raw, "acceptanceCriteria", "acceptance_criteria", default=[]) or []:
-        if isinstance(item, str):
-            criteria.append(AcceptanceCriterion(criterion_id=new_id("ac"), text=item))
-        elif isinstance(item, dict):
-            criteria.append(
-                AcceptanceCriterion(
-                    criterion_id=_first(
-                        item, "criterionId", "criterion_id", "id", default=new_id("ac")
-                    ),
-                    text=_required_text(item, "text", "an acceptance criterion"),
-                    verification_hint=_first(item, "verificationHint", "verification_hint"),
-                    priority=cast(
-                        Literal["MUST", "SHOULD", "COULD"],
-                        str(_first(item, "priority", default="MUST")).upper(),
-                    ),
-                )
-            )
-        else:
-            raise ConfigurationError("acceptance criteria must be strings or objects")
-    implementation_raw = _first(raw, "implementation", default={}) or {}
-    patches = []
-    for patch in _first(implementation_raw, "patches", default=[]) or []:
-        patches.append(
-            FilePatch(
-                path=str(_first(patch, "path")),
-                operation=cast(
-                    Literal["create", "replace", "append", "delete"],
-                    str(_first(patch, "operation")),
-                ),
-                content=_first(patch, "content"),
-                expected_sha256=_first(patch, "expectedSha256", "expected_sha256"),
-            )
+
+
+def _requirement(item: Any) -> Requirement:
+    if isinstance(item, str):
+        return Requirement(requirement_id=new_id("req"), text=item, source="human")
+    if isinstance(item, dict):
+        return Requirement(
+            requirement_id=_first(
+                item, "requirementId", "requirement_id", "id", default=new_id("req")
+            ),
+            text=_required_text(item, "text", "a requirement"),
+            source=str(_first(item, "source", default="human")),
         )
-    implementation = ImplementationInstruction(
+    raise ConfigurationError("requirements must be strings or objects")
+
+
+def _criterion(item: Any) -> AcceptanceCriterion:
+    if isinstance(item, str):
+        return AcceptanceCriterion(criterion_id=new_id("ac"), text=item)
+    if isinstance(item, dict):
+        return AcceptanceCriterion(
+            criterion_id=_first(item, "criterionId", "criterion_id", "id", default=new_id("ac")),
+            text=_required_text(item, "text", "an acceptance criterion"),
+            verification_hint=_first(item, "verificationHint", "verification_hint"),
+            priority=cast(
+                Literal["MUST", "SHOULD", "COULD"],
+                str(_first(item, "priority", default="MUST")).upper(),
+            ),
+            verification=_verification(item, "an acceptance criterion"),
+        )
+    raise ConfigurationError("acceptance criteria must be strings or objects")
+
+
+def _implementation(raw: dict[str, Any]) -> ImplementationInstruction:
+    implementation_raw = _first(raw, "implementation", default={}) or {}
+    patches = [
+        FilePatch(
+            path=str(_first(patch, "path")),
+            operation=cast(
+                Literal["create", "replace", "append", "delete"],
+                str(_first(patch, "operation")),
+            ),
+            content=_first(patch, "content"),
+            expected_sha256=_first(patch, "expectedSha256", "expected_sha256"),
+        )
+        for patch in _first(implementation_raw, "patches", default=[]) or []
+    ]
+    return ImplementationInstruction(
         mode=cast(
             Literal["none", "patch", "command"],
             str(_first(implementation_raw, "mode", default="none")),
@@ -126,6 +157,30 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
         argv=tuple(str(item) for item in (_first(implementation_raw, "argv", default=[]) or [])),
         cwd=str(_first(implementation_raw, "cwd", default=".")),
     )
+
+
+def load_task_file(
+    path: Path, *, project_id: str, criteria_policy: CriteriaPolicy | None = None
+) -> Task:
+    """Read a task file (YAML or JSON) into a task.
+
+    A task needs at least one acceptance criterion. Only when ``criteria_policy`` is
+    ``enforce`` is a task without criteria accepted: it is marked ``criteria_pending`` and
+    INTENT asks for its criteria (rule ``C0``). Any other policy, or none, keeps the refusal."""
+    raw = _parse_task_file(path)
+    if not isinstance(raw, dict):
+        raise ConfigurationError("task file must contain an object")
+    unknown = sorted(set(raw) - _KNOWN_FIELDS)
+    if unknown:
+        raise ConfigurationError(f"unknown task field(s): {', '.join(unknown)}")
+    title = _required_text(raw, "title", "a task")
+    intent = _required_text(raw, "intent", "a task")
+    requirements = [_requirement(item) for item in _first(raw, "requirements", default=[]) or []]
+    criteria = [
+        _criterion(item)
+        for item in _first(raw, "acceptanceCriteria", "acceptance_criteria", default=[]) or []
+    ]
+    implementation = _implementation(raw)
     try:
         return Task(
             task_id=str(_first(raw, "taskId", "task_id", default=new_id("task"))),
@@ -134,9 +189,13 @@ def load_task_file(path: Path, *, project_id: str) -> Task:
             intent=intent,
             constraints=tuple(str(item) for item in (_first(raw, "constraints", default=[]) or [])),
             requirements=tuple(requirements),
+            criteria_pending=not criteria and criteria_policy == "enforce",
             acceptance_criteria=tuple(criteria),
             implementation=implementation,
             metadata=dict(_first(raw, "metadata", default={}) or {}),
+            **_ladder_fields(raw),
         )
+    except ConfigurationError:
+        raise
     except Exception as error:
         raise ConfigurationError(f"invalid task definition: {error}") from error

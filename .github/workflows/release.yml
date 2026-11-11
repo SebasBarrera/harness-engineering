@@ -1,7 +1,12 @@
 # Release pipeline for tags v* (from v0.8.1; v0.8.0 is the thesis cut released with its original
-# artifacts). Builds sdist and wheel, generates an SPDX SBOM, attests build provenance, writes
-# SHA256SUMS and creates the GitHub release with notes generated from Conventional Commits.
-# Publication to PyPI is disabled (PUBLISH_TO_PYPI: false in the publication plan).
+# artifacts). Builds sdist and wheel, generates an SPDX SBOM, attests build provenance, signs the
+# distributions with Sigstore (keyless), writes SHA256SUMS and creates the GitHub release with
+# notes generated from Conventional Commits. The release assets carry a `<file>.sigstore.json`
+# bundle per distribution and the provenance attestation as `<name>.intoto.jsonl`, so a verifier
+# (and the OpenSSF Scorecard Signed-Releases check) finds them without the GitHub attestations API.
+# PyPI: the publish-pypi job uploads the same distributions through a Trusted Publisher (OIDC, no
+# token) and runs only when the repository variable PYPI_PUBLISH is 'true'; without it the release
+# is created as before (docs/maintainer-setup.md).
 name: release
 
 on:
@@ -25,7 +30,7 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
       - name: Check that the tag matches the package version
@@ -36,11 +41,11 @@ jobs:
           test "v${version}" = "${TAG}" || { echo "::error::tag ${TAG} does not match version ${version}"; exit 1; }
       - name: Build sdist and wheel
         run: |
-          python -m pip install build twine
-          python -m build
+          python -m pip install --require-hashes -r requirements/tools-build.txt
+          python -m build --no-isolation
           python -m twine check --strict dist/*
       - name: Generate the SBOM (SPDX JSON)
-        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           path: .
           format: spdx-json
@@ -48,9 +53,34 @@ jobs:
           upload-artifact: false
           upload-release-assets: false
       - name: Attest build provenance of the distributions
+        id: provenance
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/*
+      - name: Sign the distributions with Sigstore (keyless)
+        uses: sigstore/gh-action-sigstore-python@790bc6befb9d733738f18d8f895854b453640ec9 # v3.5.0
+        with:
+          inputs: ./dist/*.whl ./dist/*.tar.gz
+          verify: true
+          verify-cert-identity: https://github.com/${{ github.workflow_ref }}
+          verify-oidc-issuer: https://token.actions.githubusercontent.com
+          release-signing-artifacts: false
+      - name: Publish the provenance attestation as a release asset
+        env:
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          jq -c . "${BUNDLE}" > "dist/governed-agent-harness-${TAG#v}.intoto.jsonl"
+          ls dist/*.whl.sigstore.json dist/*.tar.gz.sigstore.json
+      - name: Keep the attested distributions for the PyPI job
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: python-distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
       - name: Checksums and release notes
         env:
           TAG: ${{ github.ref_name }}
@@ -66,6 +96,8 @@ jobs:
             echo '```bash'
             echo "sha256sum -c SHA256SUMS"
             echo "gh attestation verify governed_agent_harness-${TAG#v}-py3-none-any.whl --repo ${GITHUB_REPOSITORY}"
+            echo "gh attestation verify governed_agent_harness-${TAG#v}-py3-none-any.whl --repo ${GITHUB_REPOSITORY} --bundle governed-agent-harness-${TAG#v}.intoto.jsonl"
+            echo "python -m sigstore verify identity governed_agent_harness-${TAG#v}-py3-none-any.whl --cert-identity https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${TAG} --cert-oidc-issuer https://token.actions.githubusercontent.com"
             echo '```'
           } >> notes.md
       - name: Create the GitHub release
@@ -73,3 +105,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: gh release create "${TAG}" dist/* --verify-tag --title "${TAG}" --notes-file notes.md
+
+  publish-pypi:
+    name: publish to PyPI (Trusted Publisher)
+    # Only after the build job, only on a tag, and only when the maintainer enabled it by setting
+    # the repository variable PYPI_PUBLISH to 'true' (after configuring the Trusted Publisher on
+    # pypi.org). Without the variable the job is skipped and the release does not depend on it.
+    if: vars.PYPI_PUBLISH == 'true' && startsWith(github.ref, 'refs/tags/v')
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: pypi
+      url: https://pypi.org/project/governed-agent-harness/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the distributions built and attested by the release job
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: python-distributions
+          path: dist
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
+        with:
+          packages-dir: dist/

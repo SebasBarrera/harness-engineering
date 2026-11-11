@@ -16,7 +16,7 @@ import argparse
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 import typer
 
@@ -37,6 +37,9 @@ def context(command: Command) -> Any:
 
 def walk(command: Command, path: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], Command]]:
     if hasattr(command, "list_commands"):
+        if path and getattr(command, "invoke_without_command", False):
+            # A group whose callback runs on its own (``harness review --run``) is a command too.
+            yield path, command
         for name in command.list_commands(context(command)):
             sub = command.get_command(context(command), name)
             if sub is not None and not sub.hidden:
@@ -61,10 +64,45 @@ def describe_default(param: Any) -> str:
 def param_type(param: Any) -> str:
     if getattr(param, "is_flag", False):
         return "flag"
+    if not hasattr(param, "type"):
+        # Typer >= 0.29 describes a parameter with ``type_descriptor`` instead of a Click type.
+        descriptor = param.type_descriptor
+        if descriptor.is_choice:
+            return " \\| ".join(f"`{_choice(c)}`" for c in descriptor.choices or ())
+        if descriptor.is_list:
+            # A repeatable option is documented by its element type, as earlier Typer releases did.
+            (element,) = get_args(descriptor.annotation)
+            return "path" if issubclass(element, Path) else str(element.__name__)
+        return str(param.display_type(None)).removeprefix("<").removesuffix(">")
     kind = param.type
     if hasattr(kind, "choices"):
         return " \\| ".join(f"`{c}`" for c in kind.choices)
     return kind.name.lower()
+
+
+def _choice(value: Any) -> str:
+    return str(getattr(value, "value", value))
+
+
+def option_rows(params: list[Any]) -> list[str]:
+    rows = [
+        "| Option | Type | Required | Default | Description |",
+        "|---|---|---|---|---|",
+    ]
+    for param in params:
+        if param.param_type_name == "option":
+            flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])
+            help_text = (param.help or "").replace("|", "\\|")
+        else:
+            # ``display_name_raw`` is the Typer >= 0.29 name of ``human_readable_name``.
+            name = getattr(param, "human_readable_name", None) or param.display_name_raw
+            flags = f"`{name}`"
+            help_text = ""
+        required = "yes" if param.required else "no"
+        rows.append(
+            f"| {flags} | {param_type(param)} | {required} | {describe_default(param)} | {help_text} |"
+        )
+    return rows
 
 
 def render() -> str:
@@ -77,6 +115,16 @@ def render() -> str:
         "",
         f"`harness` {__version__} exposes {len(commands)} commands. Every command accepts `--help`.",
         "Exit codes are documented in [exit codes](exit-codes.md).",
+    ]
+    global_params = [p for p in root.params if p.name != "help"]
+    if global_params:
+        lines += [
+            "",
+            "Global options go before the command name (`harness --no-json run list`):",
+            "",
+            *option_rows(global_params),
+        ]
+    lines += [
         "",
         "| Command | Summary |",
         "|---|---|",
@@ -96,22 +144,7 @@ def render() -> str:
         params = [p for p in command.params if p.name != "help"]
         if not params:
             continue
-        lines += [
-            "",
-            "| Option | Type | Required | Default | Description |",
-            "|---|---|---|---|---|",
-        ]
-        for param in params:
-            if param.param_type_name == "option":
-                flags = ", ".join(f"`{opt}`" for opt in [*param.opts, *param.secondary_opts])
-                help_text = (param.help or "").replace("|", "\\|")
-            else:
-                flags = f"`{param.human_readable_name}`"
-                help_text = ""
-            required = "yes" if param.required else "no"
-            lines.append(
-                f"| {flags} | {param_type(param)} | {required} | {describe_default(param)} | {help_text} |"
-            )
+        lines += ["", *option_rows(params)]
     return "\n".join(lines) + "\n"
 
 
@@ -135,7 +168,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{TARGET.relative_to(ROOT)} is up to date")
         return 0
     TARGET.parent.mkdir(parents=True, exist_ok=True)
-    TARGET.write_text(content, encoding="utf-8")
+    TARGET.write_text(content, encoding="utf-8", newline="\n")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 

@@ -86,6 +86,12 @@ def render() -> str:
         "`title` or `intent` is currently stored as the text `None` instead of being rejected",
         "(issue #29), so always provide both.",
         "",
+        "At least one acceptance criterion is required, except when the project sets",
+        "`intake.criteriaPolicy: enforce`: then a task without criteria is accepted and stored",
+        "with `criteriaPending: true`, and INTENT asks for its criteria (rule `C0`). Only the",
+        "harness sets `criteriaPending`, and it removes the field once `harness task clarify`",
+        "adds the first criterion.",
+        "",
         "## Task",
         "",
         *table(schema),
@@ -109,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print(f"{TARGET.relative_to(ROOT)} is up to date")
         return 0
-    TARGET.write_text(content, encoding="utf-8")
+    TARGET.write_text(content, encoding="utf-8", newline="\n")
     print(f"wrote {TARGET.relative_to(ROOT)}")
     return 0
 

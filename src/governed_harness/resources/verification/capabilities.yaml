@@ -1,0 +1,145 @@
+# Verification capabilities of the built-in profiles (#55): what each technology offers at
+# each rung of the ladder, how the harness detects (never installs) that a rung is available
+# here, and the rung to fall back to. A project profile (toolchain.profilePaths) declares its
+# own under `verification:`. L4 is always reachable through deferred evidence (CI, staging, a
+# device lab) and L5 through the manual checklist; they are not listed per profile.
+python_default:
+  mutationCommand: [python, -m, pytest, -q, -x, -p, no:cacheprovider, "{paths}"]
+  capabilities:
+    - level: L0
+      provides: Static checks (Ruff and Mypy when installed) and the harness's own diff checks
+      validators: [python.ruff, python.mypy]
+    - level: L1
+      provides: Unit tests run by pytest
+      validators: [python.pytest]
+      detect:
+        - command: [python, -m, pytest, --version]
+    - level: L2
+      provides: Integration tests with the repository's own doubles under tests/integration
+      validators: [python.pytest]
+      detect:
+        - path: tests/integration
+      fallback: L1 (unit tests)
+    - level: L3
+      provides: Executable behaviour through declared probes (CLI, scripts, a local server)
+      probes: true
+      fallback: L2 or L1, or L4 through deferred evidence
+node_default:
+  mutationCommand: [node, --test, "{paths}"]
+  capabilities:
+    - level: L0
+      provides: Lint and type check scripts when the package declares them
+      validators: [node.lint, node.typecheck]
+    - level: L1
+      provides: Unit tests run by the package's test script
+      validators: [node.test]
+      detect:
+        - command: [node, --version]
+    - level: L2
+      provides: Integration tests with the repository's own doubles under test/integration
+      validators: [node.test]
+      detect:
+        - path: test/integration
+      fallback: L1 (unit tests)
+    - level: L3
+      provides: Executable behaviour through declared probes (CLI, scripts, a local server)
+      probes: true
+      fallback: L2 or L1, or L4 through deferred evidence
+go_default:
+  capabilities:
+    - level: L0
+      provides: go vet
+      validators: [go.vet]
+    - level: L1
+      provides: Unit tests run by go test
+      validators: [go.test]
+      detect:
+        - command: [go, version]
+    - level: L3
+      provides: Executable behaviour through declared probes (go run, a built binary)
+      probes: true
+      fallback: L1, or L4 through deferred evidence
+rust_default:
+  capabilities:
+    - level: L0
+      provides: cargo check and clippy
+      validators: [rust.check, rust.clippy]
+    - level: L1
+      provides: Unit and integration tests run by cargo test
+      validators: [rust.test]
+      detect:
+        - command: [cargo, --version]
+    - level: L3
+      provides: Executable behaviour through declared probes (cargo run, a built binary)
+      probes: true
+      fallback: L1, or L4 through deferred evidence
+jvm_gradle:
+  capabilities:
+    - level: L0
+      provides: Compilation and the checks of the Gradle build without tests
+      validators: [gradle.check]
+    - level: L1
+      provides: Unit tests run by Gradle (JUnit, Kotest)
+      validators: [gradle.test]
+      detect:
+        - path: gradlew
+    - level: L3
+      provides: Executable behaviour through declared probes
+      probes: true
+      fallback: L1, or L4 through deferred evidence
+jvm_maven:
+  capabilities:
+    - level: L0
+      provides: Compilation
+      validators: [maven.compile]
+    - level: L1
+      provides: Unit tests run by Maven Surefire
+      validators: [maven.test]
+      detect:
+        - command: [mvn, --version]
+    - level: L3
+      provides: Executable behaviour through declared probes
+      probes: true
+      fallback: L1, or L4 through deferred evidence
+swift_default:
+  capabilities:
+    - level: L0
+      provides: Compilation with swift build
+      validators: [swift.build]
+    - level: L1
+      provides: Unit tests run by swift test (XCTest)
+      validators: [swift.test]
+      detect:
+        - command: [swift, --version]
+    - level: L3
+      provides: UI or app behaviour on an iOS simulator through declared probes
+      probes: true
+      detect:
+        - command: [xcrun, simctl, list, devices, available]
+          expect: "\\(([0-9A-F-]{36})\\)"
+      fallback: L1 locally, L4 through deferred evidence from a device lab or CI
+android_default:
+  capabilities:
+    - level: L0
+      provides: Android lint
+      validators: [android.lint]
+    - level: L1
+      provides: Local unit tests (testDebugUnitTest)
+      validators: [android.unit]
+      detect:
+        - path: gradlew
+    - level: L3
+      provides: Instrumented behaviour on a connected device or emulator through declared probes
+      probes: true
+      detect:
+        - command: [adb, devices]
+          expect: "\\tdevice$"
+      fallback: L1 locally, L4 through deferred evidence from a device lab or CI
+"*":
+  capabilities:
+    - level: L4
+      provides: Services in local containers for probes that need them
+      probes: true
+      detect:
+        - command: [docker, info]
+      fallback: L4 through deferred evidence (CI, staging)

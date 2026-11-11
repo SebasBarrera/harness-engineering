@@ -73,7 +73,11 @@ thesis. `v0.9.0` fixes seven behavioral defects of the cut (#1, #2, #9, #19, #29
 [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md) and the
 [brownfield guide](guides/brownfield.md) state where the results differ from the thesis. `v1.0.0` adds
 governed memory operations, decisions on retrospective recommendations and reported usage without
-changing the run path evaluated on `v0.9.0`. The
+changing the run path of earlier versions. `v2.0.0` adds the governance features of the
+changelog behind configuration keys that `harness init` writes; a `project.yaml` without them keeps
+the earlier behaviour and configuration digest. The evaluation reports only version 2.0.0 (campaign in
+progress); results of earlier versions are in the git history and the `v0.8.0` tag and are not part of
+that analysis. The
 remaining defects stay in the milestone *backlog — thesis-impact*. `v0.8.1` and later releases are built by CI with an SPDX SBOM and a build
 provenance attestation (`gh attestation verify`); the `v0.8.0` binaries are the original ones and
 have no attestation.

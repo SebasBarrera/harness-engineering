@@ -1,0 +1,20 @@
+pack: angular
+detect:
+  markers: [angular.json]
+  dependencies: ["@angular/core"]
+  requires: [node]
+runner:
+  test: [npx, --no-install, ng, test, --watch=false]
+  testFiles: false
+tools:
+  - id: angular-eslint
+    title: angular-eslint
+    configFiles: [eslint.config.js, eslint.config.mjs, .eslintrc.json]
+    command: [npx, --no-install, ng, lint, --format, json]
+    parser: eslint
+    coveredBy: [node.lint]
+    recommended: |
+      // eslint.config.js with angular-eslint
+      const angular = require("angular-eslint");
+      module.exports = [{ files: ["**/*.ts"], extends: [...angular.configs.tsRecommended],
+        rules: { "@angular-eslint/prefer-on-push-component-change-detection": "error" } }];

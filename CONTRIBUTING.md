@@ -32,7 +32,7 @@ Node.js LTS and npm are needed only for the Node.js end-to-end test.
 | One family | `python -m pytest tests/unit` (also `contract`, `integration`, `security`, `e2e`, `performance`) |
 | Coverage (XML, JSON, JUnit under `reports/`) | `make coverage` |
 | Lint and format | `ruff check src tests scripts` and `ruff format --check src tests scripts` |
-| Types | `mypy` (strict, package mode) |
+| Types | `mypy` (strict, package mode). It needs both extras of the setup above: without the type stubs of `dev` and the FastAPI and Uvicorn of `api` it reports import errors and untyped decorators in `api/app.py` (34 errors in 12 files with mypy 2.3.1, which is clean with both extras, as 1.20.2 is) |
 | Schemas after a model change | `make schemas`, then `git diff -- schemas src/governed_harness/resources/schemas` |
 | Generated references | `python scripts/gen_cli_docs.py`, `python scripts/gen_schema_docs.py` |
 | Documented flows and exit codes | `python scripts/demo_flows.py all` |
@@ -51,11 +51,12 @@ CI runs all of these; see [monitoring](docs/monitoring.md) for which checks bloc
 - Releases: `release/x.y.z` from `develop`, merged into `main`, tagged, then `main` is merged back
   into `develop`. Hotfixes: `hotfix/*` from `main`, merged into `main` and `develop`.
 
-**Single maintainer.** The repository has one maintainer and GitHub does not allow approving your
-own pull request, so the maintainer pushes the work branch, waits until **every blocking CI job on
-the branch is green**, and merges it into `develop` with a merge commit (`git merge --no-ff`) whose
-message summarizes the change, the verification and the issues it closes. Work branches are kept
-after merging. Rulesets on `main` and `develop` block force pushes and deletion.
+**Single maintainer.** The maintainer also integrates through pull requests: push the work branch,
+open a pull request against `develop` whose description summarizes the change and references its
+issues, wait until **every blocking check of the pull request is green**, and merge it with a merge
+commit (no squash, no rebase). GitHub does not allow approving your own pull request, so no review
+approval is required. Work branches are kept after merging. Rulesets on `main` and `develop` block
+force pushes and deletion.
 
 **External contributors** open a pull request against `develop`: the title must follow Conventional
 Commits, the description must reference an issue (`Closes #n` or `Refs #n`) and state whether the

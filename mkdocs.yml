@@ -72,8 +72,33 @@ nav:
       - Greenfield project: guides/greenfield.md
       - Brownfield repository: guides/brownfield.md
       - External agents: guides/external-agents.md
+      - Better agent results: guides/agent-results.md
+      - Verification ladder: guides/verification-ladder.md
+      - Low friction for small changes: guides/low-friction.md
+      - Local metrics: guides/local-metrics.md
       - Memory and retrospective decisions: guides/memory.md
       - CI integration: guides/ci-integration.md
+      - Forges and CI templates: guides/forges.md
+      - Standards, principles, testing and architecture: guides/engineering.md
+      - Embedded mode: guides/embedded-mode.md
+      - Review panel: guides/review-panel.md
+  - Español:
+      - Primeros pasos: es/primeros-pasos.md
+      - Tareas en español: es/tareas-en-espanol.md
+      - Proyecto nuevo: es/proyecto-nuevo.md
+      - Proyecto existente: es/proyecto-existente.md
+      - Estructura generada: es/estructura-generada.md
+      - Seguimiento de una ejecución: es/seguimiento.md
+      - Contrato entre agentes: es/contrato-de-agentes.md
+      - Límites de iteraciones, tokens y tiempo: es/limites-de-agentes.md
+      - Scripts como cajas negras: es/scripts-caja-negra.md
+      - Arquitecturas para proyectos nuevos: es/arquitecturas.md
+      - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
+      - Reporte de métricas: es/reporte-de-metricas.md
+      - Trabajo simultáneo: es/trabajo-simultaneo.md
+      - Instalación: es/instalacion.md
+      - Instalación avanzada: es/instalacion-avanzada.md
+      - Publicación de versiones: es/publicacion.md
   - Reference:
       - CLI: reference/cli.md
       - Task file: reference/task-file.md
@@ -85,6 +110,7 @@ nav:
       - Metrics: metrics.md
       - Monitoring: monitoring.md
       - Benchmarks: benchmarks.md
+      - Maintainer setup: maintainer-setup.md
   - Architecture:
       - Phases: architecture/phases.md
       - Traceability: architecture/traceability.md
@@ -98,7 +124,7 @@ nav:
   - Thesis:
       - Context: thesis.md
       - Provenance: provenance.md
-      - Controlled evaluation of v0.9.0: evaluation/results.md
+      - Controlled evaluation of v2.0.0: evaluation/results.md
       - Documents of the v0.8.0 cut:
           - Implementation status: implementation-status.md
           - Validation report: validation-report.md

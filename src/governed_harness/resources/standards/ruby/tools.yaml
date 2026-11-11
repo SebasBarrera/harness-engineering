@@ -1,0 +1,27 @@
+pack: ruby
+detect:
+  markers: [Gemfile]
+  extensions: [.rb]
+runner:
+  test: [bundle, exec, rspec]
+  testFiles: true
+  bdd: [bundle, exec, cucumber]
+bddFrameworks:
+  - name: cucumber
+    markers: [features/step_definitions, features/support/env.rb]
+    dependencies: [cucumber, cucumber-rails]
+tools:
+  - id: rubocop
+    title: RuboCop
+    configFiles: [.rubocop.yml]
+    command: [bundle, exec, rubocop, --format, json]
+    parser: rubocop
+    principles: [kiss, least-astonishment]
+    recommended: |
+      # .rubocop.yml
+      AllCops:
+        NewCops: enable
+      Metrics/MethodLength:
+        Max: 20
+      Security/Eval:
+        Enabled: true

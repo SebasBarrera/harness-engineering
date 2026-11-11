@@ -6,13 +6,12 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from governed_harness.capabilities.denial import CapabilityDenied as CapabilityDenied
+from governed_harness.capabilities.denial import command_in_scope as command_in_scope
+from governed_harness.capabilities.phase import current_policy
 from governed_harness.configuration.models import CapabilityRule
 from governed_harness.domain.ids import new_id
 from governed_harness.domain.models import Actor, CapabilityGrant
-
-
-class CapabilityDenied(PermissionError):
-    pass
 
 
 class CapabilityAuthorizer:
@@ -59,14 +58,8 @@ class CapabilityAuthorizer:
                 or not grant.active_at(instant)
             ):
                 continue
-            for scope in grant.scope:
-                if (
-                    scope == "**"
-                    or argv[0] == scope
-                    or resource == scope
-                    or resource.startswith(f"{scope} ")
-                ):
-                    return grant
+            if any(command_in_scope(argv, scope) for scope in grant.scope):
+                return grant
         raise CapabilityDenied(f"{actor.actor_id} lacks process.execute for {resource}")
 
     @staticmethod
@@ -90,6 +83,10 @@ def grants_from_rules(
     *,
     lifetime: timedelta = timedelta(hours=8),
 ) -> list[CapabilityGrant]:
+    policy = current_policy()
+    if policy is not None:
+        # governance.phaseCapabilities (#4): only what the running phase allows.
+        rules = policy.apply(actor, rules)
     issued = datetime.now(UTC)
     return [
         CapabilityGrant(

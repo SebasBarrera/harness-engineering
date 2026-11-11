@@ -1,0 +1,22 @@
+pack: swift
+detect:
+  markers: [Package.swift, "*.xcodeproj"]
+  extensions: [.swift]
+runner:
+  test: [swift, test]
+  testFiles: false
+bddFrameworks:
+  - name: cucumberish
+    dependencies: [Cucumberish]
+tools:
+  - id: swiftlint
+    title: SwiftLint
+    configFiles: [.swiftlint.yml, .swiftlint.yaml]
+    command: [swiftlint, lint, --reporter, checkstyle]
+    parser: checkstyle
+    principles: [kiss, least-astonishment]
+    recommended: |
+      # .swiftlint.yml
+      opt_in_rules: [force_unwrapping, weak_delegate]
+      function_body_length: {warning: 40, error: 80}
+      cyclomatic_complexity: {warning: 10, error: 20}

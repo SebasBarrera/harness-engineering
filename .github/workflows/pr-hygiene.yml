@@ -1,5 +1,5 @@
-# Pull-request hygiene for external contributions: Conventional Commits title, area labels by
-# path and a reference to an issue. (The maintainer integrates work branches directly.)
+# Pull-request hygiene for every pull request (maintainer and external): Conventional Commits
+# title, area labels by path and a reference to an issue.
 name: pr-hygiene
 
 on:
@@ -18,7 +18,7 @@ jobs:
     permissions:
       pull-requests: read
     steps:
-      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+      - uses: amannn/action-semantic-pull-request@2252a14e810aa9b85c2d560bd7070c802206ecf6 # v6.1.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:

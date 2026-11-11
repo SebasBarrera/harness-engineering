@@ -1,0 +1,32 @@
+pack: javascript
+detect:
+  extensions: [.js, .mjs, .cjs, .jsx]
+runner:
+  test: [npm, test, --silent]
+  testFiles: false
+  bdd: [npx, cucumber-js]
+bddFrameworks:
+  - name: cucumber-js
+    markers: [cucumber.js, cucumber.json, .cucumber.js]
+    dependencies: ["@cucumber/cucumber"]
+tools:
+  - id: eslint
+    title: ESLint
+    configFiles: [eslint.config.js, eslint.config.mjs, eslint.config.cjs, .eslintrc, .eslintrc.js, .eslintrc.cjs, .eslintrc.json, .eslintrc.yml]
+    command: [npx, --no-install, eslint, -f, json, .]
+    parser: eslint
+    coveredBy: [node.lint]
+    principles: [kiss, yagni, least-astonishment]
+    recommended: |
+      // eslint.config.js
+      export default [{ rules: {
+        eqeqeq: "error", "no-var": "error", "prefer-const": "error",
+        "no-unused-vars": "error", "no-eval": "error",
+        complexity: ["error", 10], "max-params": ["error", 4]
+      } }];
+  - id: prettier
+    title: Prettier
+    configFiles: [.prettierrc, .prettierrc.json, .prettierrc.yml, .prettierrc.js, prettier.config.js, prettier.config.mjs]
+    command: [npx, --no-install, prettier, --check, .]
+    parser: none
+    principles: [boy-scout]

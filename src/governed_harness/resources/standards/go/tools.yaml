@@ -1,0 +1,23 @@
+pack: go
+detect:
+  markers: [go.mod]
+  extensions: [.go]
+runner:
+  test: [go, test, -race, ./...]
+  testFiles: false
+  bdd: [go, test, ./...]
+bddFrameworks:
+  - name: godog
+    dependencies: [github.com/cucumber/godog]
+tools:
+  - id: golangci-lint
+    title: golangci-lint
+    configFiles: [.golangci.yml, .golangci.yaml, .golangci.toml, .golangci.json]
+    command: [golangci-lint, run, --output.checkstyle.path=stdout]
+    parser: checkstyle
+    principles: [kiss, yagni, least-astonishment]
+    recommended: |
+      # .golangci.yml (version 2)
+      version: "2"
+      linters:
+        enable: [errcheck, govet, staticcheck, revive, gocyclo, funlen, wrapcheck, unused]

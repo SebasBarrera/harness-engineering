@@ -1,0 +1,2 @@
+# Brownfield example: installed after the first run, to repair the environment.
+freezegun==1.4.0

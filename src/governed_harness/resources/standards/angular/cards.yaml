@@ -1,0 +1,38 @@
+pack: angular
+title: Angular
+extends: [typescript]
+cards:
+  - id: angular.onpush
+    title: OnPush change detection
+    rule: Use ChangeDetectionStrategy.OnPush in components and pass data in through inputs and signals.
+    rationale: Default change detection re-renders the whole tree on every event.
+    exceptions:
+      - Root and layout components that only host others.
+    appliesTo: ["**/*.component.ts"]
+    verifiedBy: ["eslint:@angular-eslint/prefer-on-push-component-change-detection"]
+  - id: angular.lifecycle
+    title: Correct lifecycle hooks
+    rule: Implement the interface of every lifecycle hook you use and leave no empty lifecycle method.
+    rationale: The interface catches misspelled hooks; empty hooks are noise.
+    appliesTo: ["**/*.ts"]
+    verifiedBy: ["eslint:@angular-eslint/use-lifecycle-interface", "eslint:@angular-eslint/no-empty-lifecycle-method"]
+  - id: angular.unsubscribe
+    title: End subscriptions
+    rule: End every observable subscription with the component (async pipe, takeUntilDestroyed or toSignal), never leave it open.
+    rationale: Open subscriptions leak memory and run handlers on destroyed views.
+    appliesTo: ["**/*.component.ts", "**/*.directive.ts", "**/*.service.ts"]
+    verifiedBy: ["review"]
+  - id: angular.thin-components
+    title: Logic in services, views in components
+    rule: Keep components to presentation; put data access and business rules in injectable services.
+    rationale: Separation of concerns keeps rules testable without the DOM.
+    appliesTo: ["**/*.component.ts"]
+    verifiedBy: ["review"]
+    principle: srp
+  - id: angular.selector-prefix
+    title: Prefixed selectors
+    rule: Prefix component and directive selectors with the application prefix, in kebab-case for elements and camelCase for attributes.
+    rationale: Prefixes avoid collisions with native and library elements.
+    appliesTo: ["**/*.component.ts", "**/*.directive.ts"]
+    verifiedBy: ["eslint:@angular-eslint/component-selector", "eslint:@angular-eslint/directive-selector"]
+    principle: least-astonishment

@@ -1,0 +1,53 @@
+pack: javascript
+title: JavaScript
+cards:
+  - id: javascript.strict-equality
+    title: Strict equality
+    rule: Compare with === and !==; never rely on == coercion.
+    rationale: Coercion rules make == comparisons surprising.
+    exceptions:
+      - "value == null to test null or undefined together."
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:eqeqeq"]
+    principle: least-astonishment
+  - id: javascript.const-let
+    title: const by default, never var
+    rule: Declare with const; use let only for a binding that is reassigned; never use var.
+    rationale: Block scope and immutable bindings prevent accidental reuse.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:no-var", "eslint:prefer-const"]
+  - id: javascript.no-unused
+    title: No unused code
+    rule: Remove unused variables, parameters, imports and exports instead of keeping them for later.
+    rationale: Dead code misleads readers and hides real dependencies.
+    exceptions:
+      - Parameters required by a callback signature, prefixed with an underscore.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:no-unused-vars"]
+    principle: yagni
+  - id: javascript.handle-promises
+    title: Await or handle every promise
+    rule: Await every promise or attach a rejection handler; never leave a promise floating.
+    rationale: An unhandled rejection loses the error or crashes the process later.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:no-async-promise-executor", "review"]
+  - id: javascript.no-eval
+    title: No eval or dynamic code
+    rule: Do not use eval, new Function or string arguments to setTimeout and setInterval.
+    rationale: Dynamic code execution is an injection vector.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:no-eval", "eslint:no-new-func", "eslint:no-implied-eval"]
+  - id: javascript.small-functions
+    title: Small, simple functions
+    rule: Keep functions short and their branching low; extract named helpers.
+    rationale: Complexity predicts defects.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx"]
+    verifiedBy: ["eslint:complexity", "eslint:max-lines-per-function", "eslint:max-params"]
+    principle: kiss
+  - id: javascript.formatting
+    title: One formatter
+    rule: Leave formatting to the repository's formatter (Prettier); do not hand-format or reformat untouched code.
+    rationale: Formatting churn hides the real change in the diff.
+    appliesTo: ["**/*.js", "**/*.mjs", "**/*.cjs", "**/*.jsx", "**/*.json"]
+    verifiedBy: ["prettier:check"]
+    principle: boy-scout

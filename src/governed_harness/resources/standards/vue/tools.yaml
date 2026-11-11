@@ -1,0 +1,19 @@
+pack: vue
+detect:
+  markers: [package.json]
+  dependencies: [vue]
+  requires: [node]
+runner:
+  test: [npm, test, --silent]
+  testFiles: false
+tools:
+  - id: eslint-vue
+    title: eslint-plugin-vue
+    configFiles: [eslint.config.js, eslint.config.mjs, .eslintrc.json, .eslintrc.cjs]
+    command: [npx, --no-install, eslint, -f, json, .]
+    parser: eslint
+    coveredBy: [node.lint, standards.javascript.eslint, standards.typescript.typescript-eslint]
+    recommended: |
+      // eslint.config.js
+      import vue from "eslint-plugin-vue";
+      export default [...vue.configs["flat/recommended"]];

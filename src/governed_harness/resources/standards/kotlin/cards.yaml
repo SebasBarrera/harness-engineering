@@ -1,0 +1,48 @@
+pack: kotlin
+title: Kotlin
+cards:
+  - id: kotlin.null-safety
+    title: No forced unwrapping
+    rule: Do not use the !! operator; handle null with ?., ?:, let or a precondition with a message.
+    rationale: "The !! operator turns a type-checked null into a runtime crash."
+    appliesTo: ["**/*.kt", "**/*.kts"]
+    verifiedBy: ["detekt:UnsafeCallOnNullableType"]
+  - id: kotlin.immutability
+    title: val and read-only collections
+    rule: Prefer val and read-only collection types; expose MutableList or var only where mutation is the purpose.
+    rationale: Immutable data is safe to share between coroutines.
+    appliesTo: ["**/*.kt"]
+    verifiedBy: ["detekt:VarCouldBeVal", "review"]
+  - id: kotlin.specific-exceptions
+    title: Catch specific exceptions
+    rule: Catch specific exceptions; do not catch Exception or Throwable to continue, and do not swallow CancellationException in coroutines.
+    rationale: Generic catches hide defects and break structured concurrency.
+    appliesTo: ["**/*.kt"]
+    verifiedBy: ["detekt:TooGenericExceptionCaught", "detekt:SwallowedException"]
+  - id: kotlin.structured-concurrency
+    title: Structured concurrency
+    rule: Launch coroutines in a lifecycle-bound scope; never use GlobalScope.
+    rationale: Unscoped coroutines outlive their owner and leak work.
+    appliesTo: ["**/*.kt"]
+    verifiedBy: ["detekt:GlobalCoroutineUsage"]
+  - id: kotlin.small-functions
+    title: Small, simple functions
+    rule: Keep functions short with few parameters and low complexity.
+    rationale: Complexity predicts defects.
+    appliesTo: ["**/*.kt"]
+    verifiedBy: ["detekt:LongMethod", "detekt:CyclomaticComplexMethod", "detekt:LongParameterList"]
+    principle: kiss
+  - id: kotlin.style
+    title: Official Kotlin style
+    rule: Follow the official Kotlin coding conventions as ktlint enforces them; no wildcard imports.
+    rationale: One style keeps diffs about behaviour.
+    appliesTo: ["**/*.kt", "**/*.kts"]
+    verifiedBy: ["ktlint:standard:no-wildcard-imports", "ktlint:standard:indent"]
+    principle: least-astonishment
+  - id: kotlin.mvvm-state
+    title: Unidirectional UI state
+    rule: In Android UI code, expose immutable UI state from the ViewModel and send user events to it; views do not hold business logic.
+    rationale: One source of truth makes the screen reproducible and testable.
+    appliesTo: ["**/ui/**/*.kt", "**/*ViewModel.kt", "**/*Screen.kt", "**/*Fragment.kt", "**/*Activity.kt"]
+    verifiedBy: ["review"]
+    principle: srp

@@ -21,20 +21,23 @@ def test_missing_required_field_is_rejected(tmp_path: Path, missing: str) -> Non
     fields = {"title": "t", "intent": "i"}
     fields.pop(missing)
     body = "".join(f"{key}: {value}\n" for key, value in fields.items())
+    task_file = write(tmp_path, body + "acceptanceCriteria: [x]\n")
     with pytest.raises(ConfigurationError, match=missing):
-        load_task_file(write(tmp_path, body + "acceptanceCriteria: [x]\n"), project_id="p")
+        load_task_file(task_file, project_id="p")
 
 
 def test_criterion_object_without_text_is_rejected(tmp_path: Path) -> None:
     content = "title: t\nintent: i\nacceptanceCriteria:\n  - criterionId: ac_1\n"
+    task_file = write(tmp_path, content)
     with pytest.raises(ConfigurationError, match="text"):
-        load_task_file(write(tmp_path, content), project_id="p")
+        load_task_file(task_file, project_id="p")
 
 
 def test_unknown_top_level_key_is_rejected(tmp_path: Path) -> None:
     content = "title: t\nintent: i\nacceptanceCriteria: [x]\nacceptance: [typo]\n"
+    task_file = write(tmp_path, content)
     with pytest.raises(ConfigurationError, match="acceptance"):
-        load_task_file(write(tmp_path, content), project_id="p")
+        load_task_file(task_file, project_id="p")
 
 
 def test_valid_task_still_loads(tmp_path: Path) -> None:

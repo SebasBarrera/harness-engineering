@@ -1,0 +1,275 @@
+{
+  "$defs": {
+    "Actor": {
+      "additionalProperties": false,
+      "properties": {
+        "actorId": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Actorid",
+          "type": "string"
+        },
+        "actorType": {
+          "$ref": "#/$defs/ActorType"
+        },
+        "displayName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Displayname"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "actorType",
+        "actorId"
+      ],
+      "title": "Actor",
+      "type": "object"
+    },
+    "ActorType": {
+      "enum": [
+        "HUMAN",
+        "AGENT",
+        "TOOL",
+        "PLUGIN",
+        "HARNESS",
+        "CI"
+      ],
+      "title": "ActorType",
+      "type": "string"
+    },
+    "Provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "actor": {
+          "$ref": "#/$defs/Actor"
+        },
+        "configurationDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Configurationdigest"
+        },
+        "coreVersion": {
+          "title": "Coreversion",
+          "type": "string"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "pluginId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginid"
+        },
+        "pluginVersion": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Pluginversion"
+        },
+        "policyDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Policydigest"
+        },
+        "promptDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Promptdigest"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "sourceRefs": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Sourcerefs",
+          "type": "array"
+        },
+        "workflowDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Workflowdigest"
+        }
+      },
+      "required": [
+        "actor",
+        "coreVersion"
+      ],
+      "title": "Provenance",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/outcome.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Something that happened to a change after its run: an incident, a revert, a hotfix or a\nregression, linked to the run by a person. It feeds the rule health across runs; nothing\nis applied automatically.",
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/Actor"
+    },
+    "changeSetDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Changesetdigest"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "INCIDENT",
+        "REVERT",
+        "HOTFIX",
+        "REGRESSION",
+        "OTHER"
+      ],
+      "title": "Kind",
+      "type": "string"
+    },
+    "observedAt": {
+      "format": "date-time",
+      "title": "Observedat",
+      "type": "string"
+    },
+    "outcomeId": {
+      "title": "Outcomeid",
+      "type": "string"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "provenance": {
+      "$ref": "#/$defs/Provenance"
+    },
+    "recordedAt": {
+      "format": "date-time",
+      "title": "Recordedat",
+      "type": "string"
+    },
+    "reference": {
+      "anyOf": [
+        {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Reference"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "summary": {
+      "maxLength": 4000,
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    }
+  },
+  "required": [
+    "outcomeId",
+    "projectId",
+    "executionId",
+    "kind",
+    "summary",
+    "observedAt",
+    "actor",
+    "provenance"
+  ],
+  "title": "OutcomeRecord",
+  "type": "object"
+}

@@ -8,7 +8,10 @@ from governed_harness.domain.models import (
     Recommendation,
     Retrospective,
     RetrospectiveObservation,
+    RetrospectiveTrigger,
 )
+from governed_harness.retrospective.causal import causal_retrospective
+from governed_harness.retrospective.causes import CauseAnalysis
 from governed_harness.telemetry.metrics import MetricValue
 
 
@@ -22,7 +25,23 @@ class RetrospectiveEngine:
         metrics: dict[str, MetricValue],
         evidence_refs: tuple[str, ...],
         provenance: Provenance,
+        analysis: CauseAnalysis | None = None,
+        trigger: RetrospectiveTrigger | None = None,
     ) -> Retrospective:
+        """Without ``analysis`` this is the 1.0.0 retrospective. With it (``retrospective.causal``)
+        the recommendations come from the causes: one per mandatory validator that stopped
+        VERIFICATION, per rule that failed a gate, per decision that redirected or ended the run
+        and per outcome recorded after it, never from optional validators without effect on the
+        gate."""
+        if analysis is not None:
+            return causal_retrospective(
+                execution_id=execution_id,
+                metrics=metrics,
+                evidence_refs=evidence_refs,
+                provenance=provenance,
+                analysis=analysis,
+                trigger=trigger or "ON_DEMAND",
+            )
         observations: list[RetrospectiveObservation] = []
         recommendations: list[Recommendation] = []
 
@@ -38,13 +57,22 @@ class RetrospectiveEngine:
             return observation_id
 
         non_passed = int(metrics["validation.non_passed"].value or 0)
-        corrections = int(metrics["correction.cycles"].value or 0)
+        automatic = metrics.get("correction.verification_cycles")
+        automatic_cycles = int(automatic.value or 0) if automatic else 0
+        # correction.cycles also counts automatic corrections; the observation and the
+        # specification recommendation are about the ones a person authorized.
+        corrections = int(metrics["correction.cycles"].value or 0) - automatic_cycles
         attempts = int(metrics["implementation.attempts"].value or 0)
         reviews = int(metrics["review.cycles"].value or 0)
         files = int(metrics["changeset.files"].value or 0)
         observe(f"The execution recorded {attempts} implementation attempt(s).")
         observe(f"The execution recorded {non_passed} non-passed validation result(s).")
         observe(f"The execution recorded {corrections} human-authorized correction cycle(s).")
+        if automatic_cycles:
+            observe(
+                f"The execution recorded {automatic_cycles} automatic correction cycle(s) "
+                "after a failed verification."
+            )
         if non_passed >= 2:
             recommendations.append(
                 Recommendation(

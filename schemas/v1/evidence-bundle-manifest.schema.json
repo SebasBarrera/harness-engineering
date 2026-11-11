@@ -1,0 +1,168 @@
+{
+  "$defs": {
+    "BundleEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "title": "Digest",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "minimum": 0,
+          "title": "Sizebytes",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "digest",
+        "sizeBytes"
+      ],
+      "title": "BundleEntry",
+      "type": "object"
+    },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    },
+    "ResultStatus": {
+      "enum": [
+        "PENDING",
+        "RUNNING",
+        "PASSED",
+        "FAILED",
+        "BLOCKED",
+        "SKIPPED",
+        "NOT_APPLICABLE",
+        "CANCELLED",
+        "TIMED_OUT",
+        "ERROR",
+        "INCONCLUSIVE",
+        "INTERRUPTED"
+      ],
+      "title": "ResultStatus",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/evidence-bundle-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "``manifest.json`` of a portable evidence bundle (``harness export --bundle``): what the\narchive holds and the digest of every entry. ``harness verify --bundle`` checks it without\nthe workspace.",
+  "properties": {
+    "bundleFormat": {
+      "const": "governed-harness-bundle/1",
+      "default": "governed-harness-bundle/1",
+      "title": "Bundleformat",
+      "type": "string"
+    },
+    "changeSetDigest": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Changesetdigest"
+    },
+    "coreVersion": {
+      "title": "Coreversion",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "currentPhase": {
+      "$ref": "#/$defs/PhaseId"
+    },
+    "decisionId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Decisionid"
+    },
+    "entries": {
+      "items": {
+        "$ref": "#/$defs/BundleEntry"
+      },
+      "title": "Entries",
+      "type": "array"
+    },
+    "eventChainHead": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Eventchainhead"
+    },
+    "eventCount": {
+      "minimum": 0,
+      "title": "Eventcount",
+      "type": "integer"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "projectId": {
+      "title": "Projectid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "status": {
+      "$ref": "#/$defs/ResultStatus"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "executionId",
+    "projectId",
+    "taskId",
+    "status",
+    "currentPhase",
+    "eventCount",
+    "coreVersion",
+    "entries"
+  ],
+  "title": "EvidenceBundleManifest",
+  "type": "object"
+}

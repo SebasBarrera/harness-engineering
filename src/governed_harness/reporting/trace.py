@@ -14,7 +14,53 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.events import StoredEvent
+from governed_harness.reporting.fingerprint import FINGERPRINT_VERSION, finding_fingerprint
 from governed_harness.telemetry import MetricValue
+
+
+def _finding_lines(findings: list[dict[str, Any]]) -> list[str]:
+    if not findings:
+        return ["No findings were recorded."]
+    lines = []
+    for finding in findings:
+        location = finding.get("location") or {}
+        where = location.get("path") or "execution"
+        if location.get("startLine"):
+            where += f":{location['startLine']}"
+        lines.append(
+            f"- **{finding['severity']}** `{finding['ruleId']}` at `{where}`: {finding['message']}"
+        )
+    return lines
+
+
+def _gate_lines(gate: dict[str, Any] | None) -> list[str]:
+    if not gate:
+        return ["No gate evaluation has been recorded."]
+    return [
+        f"Automatic gate `{gate['gateEvaluationId']}`: **{gate['status']}**.",
+        "Reasons: " + ", ".join(f"`{item}`" for item in gate["reasonCodes"]),
+    ]
+
+
+def _decision_lines(decision: dict[str, Any] | None) -> list[str]:
+    if not decision:
+        return ["No human decision has been recorded."]
+    return [
+        f"Human decision: **{decision['decision']}** by `{decision['actor']['actorId']}` for `{decision['changeSetDigest']}`."
+    ]
+
+
+def _retrospective_lines(retrospective: dict[str, Any] | None) -> list[str]:
+    if not retrospective:
+        return ["No retrospective has been generated yet."]
+    return [
+        *(
+            f"- **{recommendation['category']}** ({recommendation['confidence']:.2f}): {recommendation['statement']}"
+            for recommendation in retrospective["recommendations"]
+        ),
+        "",
+        "Recommendations require human review and were not applied automatically.",
+    ]
 
 
 class TraceReporter:
@@ -93,34 +139,10 @@ class TraceReporter:
                 f"| `{result['validatorId']}` | {result['mandatory']} | `{result['status']}` | `{result['kind']}` | {summary} |"
             )
         lines.extend(["", "## Findings", ""])
-        if data["findings"]:
-            for finding in data["findings"]:
-                location = finding.get("location") or {}
-                where = location.get("path") or "execution"
-                if location.get("startLine"):
-                    where += f":{location['startLine']}"
-                lines.append(
-                    f"- **{finding['severity']}** `{finding['ruleId']}` at `{where}`: {finding['message']}"
-                )
-        else:
-            lines.append("No findings were recorded.")
+        lines.extend(_finding_lines(data["findings"]))
         lines.extend(["", "## Gate and human decision", ""])
-        if data["gate"]:
-            lines.append(
-                f"Automatic gate `{data['gate']['gateEvaluationId']}`: **{data['gate']['status']}**."
-            )
-            lines.append(
-                "Reasons: " + ", ".join(f"`{item}`" for item in data["gate"]["reasonCodes"])
-            )
-        else:
-            lines.append("No gate evaluation has been recorded.")
-        if data["humanDecision"]:
-            decision = data["humanDecision"]
-            lines.append(
-                f"Human decision: **{decision['decision']}** by `{decision['actor']['actorId']}` for `{decision['changeSetDigest']}`."
-            )
-        else:
-            lines.append("No human decision has been recorded.")
+        lines.extend(_gate_lines(data["gate"]))
+        lines.extend(_decision_lines(data["humanDecision"]))
         lines.extend(
             [
                 "",
@@ -134,15 +156,7 @@ class TraceReporter:
             value = "N/A" if metric["value"] is None else metric["value"]
             lines.append(f"| `{key}` | {value} | {metric['unit']} | `{metric['quality']}` |")
         lines.extend(["", "## Retrospective", ""])
-        if data["retrospective"]:
-            for recommendation in data["retrospective"]["recommendations"]:
-                lines.append(
-                    f"- **{recommendation['category']}** ({recommendation['confidence']:.2f}): {recommendation['statement']}"
-                )
-            lines.append("")
-            lines.append("Recommendations require human review and were not applied automatically.")
-        else:
-            lines.append("No retrospective has been generated yet.")
+        lines.extend(_retrospective_lines(data["retrospective"]))
         lines.extend(["", "## Event chain", ""])
         for event in data["events"]:
             lines.append(f"{event['sequence']}. `{event['eventType']}` — `{event['eventDigest']}`")
@@ -172,6 +186,16 @@ class TraceReporter:
                 "ruleId": finding.rule_id,
                 "level": level_map[finding.severity],
                 "message": {"text": finding.message},
+                # Stable across attempts and runs (rule, validator, path and message without
+                # positions), so code-scanning tools can track one problem over time.
+                "partialFingerprints": {FINGERPRINT_VERSION: finding_fingerprint(finding)},
+                "properties": {
+                    "findingId": finding.finding_id,
+                    "executionId": finding.execution_id,
+                    "validatorId": finding.validator_id,
+                    "severity": finding.severity.value,
+                    "category": finding.category,
+                },
             }
             if finding.location and finding.location.path:
                 result["locations"] = [

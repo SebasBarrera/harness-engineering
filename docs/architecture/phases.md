@@ -13,3 +13,101 @@
 | CLOSURE | Freeze the run, release resources and render trace | Terminal event, final report, cleanup result |
 
 Retrospective runs after closure and only produces recommendations. It never mutates policy automatically.
+
+## Clarifying the intent
+
+`INTENT` also checks that the acceptance criteria say something that can be observed. A
+deterministic assessment (fixed vocabularies and patterns, no language model) raises a question
+for a criterion without an observable result (`C1`), a quality without a measure (`C2`), a
+duplicate criterion (`C3`) and a short intent with no requirements and a single criterion that has
+no anchor (`T1`).
+With `intake.criteriaPolicy: enforce` the phase is `BLOCKED` until a person answers with
+`harness task clarify`; the answers produce a new task revision, and `harness run continue`
+re-runs `INTENT` on it. The run never leaves `INTENT` with open questions, and no phase is added:
+the questions, the answers, the actor and the previous and new task digests are evidence and
+events of the same run. With `warn` the questions are recorded as evidence and `LOW` findings and
+the phase passes; with `off` the check is skipped. See the
+[configuration reference](../reference/configuration.md#acceptance-criteria-policy).
+
+Under `enforce`, `harness task create` also accepts a task without acceptance criteria (for
+example a single sentence of intent) and marks it `criteriaPending`; the other policies refuse
+it with exit code 2. For such a task `INTENT` asks rule `C0` instead of the other rules: seven
+separate questions about the observable results and how each is checked, the inputs and outputs,
+the limits, the errors for invalid input, the behaviours in scope, what is out of scope and the
+non-functional constraints. The answer about results becomes the acceptance criteria. A task
+without criteria never passes `INTENT`, whatever the policy is when the run starts: the phase
+stays `BLOCKED` (exit 6) until a revision has at least one criterion. See
+[tasks without acceptance criteria](../reference/configuration.md#tasks-without-acceptance-criteria).
+
+## Engineering settings (#56)
+
+No phase is added. Under the optional wave 6 settings (see
+[standards, principles, testing and architecture](../guides/engineering.md)):
+
+- `INTENT` decides deterministically whether the project is new or existing and, under
+  `intake.projectSetup: ask`, asks once per project the architecture, the testing strategy and
+  the standards it cannot establish (rule `P1`); for a new project with `architecture.mode:
+  agent` it asks one architecture call for options and waits until a person chooses one, which
+  is recorded as an ADR.
+- `DISCOVERY` surveys an existing project once with one architecture call, cached in
+  `.harness/architecture.md`, and waits until a person approves or rejects the layer rules it
+  inferred.
+- `SPECIFICATION` writes the criteria as Gherkin scenarios under `testing.strategy: bdd`.
+- `IMPLEMENTATION` gives the agent the standards cards of its files, the testing strategy and the
+  layers; with the `session` provider it waits for the agent session that drives the harness
+  (embedded mode).
+- `VERIFICATION` adds the principles proxies, the layer rules and, under `tdd`, the red, green
+  and refactor evidence; `INDEPENDENT_REVIEW` gives the reviewer the checklist of what no tool
+  verifies.
+
+## Tracing requirements to tests
+
+After the technology validators, `VERIFICATION` relates every identified requirement of the task to
+the tests of the workspace (validator `traceability.requirements`, no language model, nothing
+executed). A requirement is identified by the token that starts its text (`A1.`, `[B12]` or `X8:`
+followed by a space) or by a `requirementId` written in the task file; requirements without one are skipped
+and counted. A test names a requirement when its file, class or function name contains the
+identifier as a token (`test_a1_rounding`, `TestA1`) or when its source, docstring or string
+constants (a `parametrize` id) contain the identifier as a whole word. The mapping is recorded as
+`VERIFICATION` evidence (`requirement-traceability.schema.json`) and the check appears in the
+validation summary like any validator. With `verification.requirementTraceability: enforce`
+(written by `init`) each untraced requirement is a `HIGH` finding, so the gate is `FAILED` and the
+person deciding sees which requirement lacks a test before approving or requesting changes; with
+`warn` it is a `LOW` finding; with `off` the check does not run. See the
+[configuration reference](../reference/configuration.md#requirement-traceability).
+
+## The verification ladder
+
+Since #55 every acceptance criterion may declare the rung of the ladder it requires (`L0` static,
+`L1` unit, `L2` integration with the repository's own doubles, `L3` executable behaviour, `L4`
+external environment, `L5` human). No phase is added; each phase does a part:
+
+| Phase | What it adds |
+|---|---|
+| INTENT | The operational contract in the one clarification message, the interruption budget, and a read-only `locate` call for M and L tasks. |
+| DISCOVERY | The environment preflight: tools, variables, Git hooks, the dirty tree and the baseline's validators. |
+| PLANNING | The verification plan (required and reachable rungs per criterion, and why) and the preflight of probes and frozen acceptance tests on the baseline: `READY`, `PARTIAL` or `UNAVAILABLE`, which waits for a person. |
+| VERIFICATION | Behaviour probes, discriminating evidence and light mutation, and the certification of the ChangeSet (a declared rung not reached fails the verification). |
+| DECISION | The manual checklist, ticked by the person who decides; the gate carries the certification. |
+| CLOSURE | Deferred items bound to the closure commit; staging, push, pull request and comment as the contract authorises. |
+
+A rung is reached only by evidence recorded for the criterion, never by omission; an unavailable
+check is `BLOCKED`, never `PASSED`. See the
+[configuration reference](../reference/configuration.md#verification-ladder) and the
+[guide](../guides/verification-ladder.md).
+
+## Correcting a failed verification
+
+A `REQUEST_CHANGES` decision has always returned the run from `DECISION` to `IMPLEMENTATION`. With
+`runtime.verificationCorrections: N` (written by `harness init` as 2) a command provider's change
+that fails `VERIFICATION` because a mandatory validator failed also returns to `IMPLEMENTATION`,
+up to N times per run, instead of stopping. No phase is added and the workflow file is unchanged:
+the state machine authorizes the transition from `VERIFICATION` only, the failed verification is
+invalidated as a `REQUEST_CHANGES` invalidates the gate, and the next candidate goes through
+`VERIFICATION` again, so a run never leaves the phase with a failing mandatory validator. Each
+cycle is a `correction.authorized` event (`trigger: VERIFICATION_FAILED`); when the cycles are
+used up the run stops in `VERIFICATION` as before. With `runtime.providerFeedback` the next
+request tells the agent why (validator output, findings, reason codes and, after
+`REQUEST_CHANGES`, the rationale); an agent that reported success on a change that then failed
+verification gets an `agent.unsupported-claim` finding. See the
+[provider feedback loop](../reference/configuration.md#provider-feedback-loop).

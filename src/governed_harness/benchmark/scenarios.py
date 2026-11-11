@@ -4,7 +4,7 @@ import os
 import platform
 import shutil
 import statistics
-import subprocess
+import subprocess  # nosec B404 - fixed git, node and fixture argv, no shell
 import sys
 import tempfile
 import time
@@ -25,7 +25,7 @@ def _git_init(root: Path) -> None:
     env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
     def git(*args: str) -> None:
-        subprocess.run(["git", *_GIT_ISOLATION, *args], cwd=root, check=True, env=env)
+        subprocess.run(["git", *_GIT_ISOLATION, *args], cwd=root, check=True, env=env)  # nosec B603 B607 - git from PATH, fixed fixture argv, no shell
 
     git("init", "-q")
     git("config", "user.email", "benchmark@example.invalid")
@@ -38,24 +38,27 @@ def _python_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "src" / "sample" / "__init__.py").write_text(
-        "from .pricing import apply_discount\n", encoding="utf-8"
+        "from .pricing import apply_discount\n", encoding="utf-8", newline="\n"
     )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
         "    return subtotal\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from sample import apply_discount\n\n"
         "def test_below_threshold() -> None:\n"
         "    assert apply_discount(99, 100, 0.1) == 99\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         "[build-system]\nrequires=[]\nbuild-backend='setuptools.build_meta'\n\n"
         "[project]\nname='benchmark-python-fixture'\nversion='0.1.0'\n\n"
         "[tool.pytest.ini_options]\ntestpaths=['tests']\npythonpath=['src']\n",
         encoding="utf-8",
+        newline="\n",
     )
     task = root / "task.yaml"
     task.write_text(
@@ -79,6 +82,7 @@ def _python_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
         "        def test_at_threshold() -> None:\n"
         "            assert apply_discount(100, 100, 0.1) == 90\n",
         encoding="utf-8",
+        newline="\n",
     )
     _git_init(root)
     return task, (sys.executable, "-m", "pytest", "-q")
@@ -92,6 +96,7 @@ def _node_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
         "  return { ...defaults, ...task, ...repository };\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "test" / "resolve-config.test.js").write_text(
         "import assert from 'node:assert/strict';\n"
@@ -101,6 +106,7 @@ def _node_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
         "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n"
         "});\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "package.json").write_text(
         "{\n"
@@ -115,6 +121,7 @@ def _node_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
         "  }\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     task = root / "task.yaml"
     task.write_text(
@@ -140,6 +147,7 @@ def _node_fixture(root: Path) -> tuple[Path, tuple[str, ...]]:
         "          assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {mode:'task'}), {mode:'task'});\n"
         "        });\n",
         encoding="utf-8",
+        newline="\n",
     )
     _git_init(root)
     return task, ("npm", "test", "--silent")
@@ -151,8 +159,11 @@ def _apply_direct_change(stack: str, root: Path) -> None:
             "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
             "    return subtotal * (1 - rate) if subtotal >= threshold else subtotal\n",
             encoding="utf-8",
+            newline="\n",
         )
-        with (root / "tests" / "test_pricing.py").open("a", encoding="utf-8") as handle:
+        with (root / "tests" / "test_pricing.py").open(
+            "a", encoding="utf-8", newline="\n"
+        ) as handle:
             handle.write(
                 "\n\ndef test_at_threshold() -> None:\n"
                 "    assert apply_discount(100, 100, 0.1) == 90\n"
@@ -163,8 +174,11 @@ def _apply_direct_change(stack: str, root: Path) -> None:
             "  return { ...defaults, ...repository, ...task };\n"
             "}\n",
             encoding="utf-8",
+            newline="\n",
         )
-        with (root / "test" / "resolve-config.test.js").open("a", encoding="utf-8") as handle:
+        with (root / "test" / "resolve-config.test.js").open(
+            "a", encoding="utf-8", newline="\n"
+        ) as handle:
             handle.write(
                 "\n\ntest('task overrides repository', () => {\n"
                 "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {mode:'task'}), {mode:'task'});\n"
@@ -194,7 +208,7 @@ def _run_direct(
         start = time.perf_counter_ns()
         _apply_direct_change(stack, root)
         argv = [resolve_executable(command[0]), *command[1:]]
-        result = subprocess.run(argv, cwd=root, capture_output=True, check=False)
+        result = subprocess.run(argv, cwd=root, capture_output=True, check=False)  # nosec B603 - the fixture's own resolved command, no shell
         elapsed_ms = (time.perf_counter_ns() - start) / 1_000_000
         if result.returncode != 0:
             raise RuntimeError(
@@ -284,7 +298,7 @@ def run_scenario_benchmarks(*, iterations: int = 3) -> dict[str, object]:
         "generatedAt": datetime.now(UTC).isoformat(),
         "environment": {
             "python": sys.version.split()[0],
-            "node": subprocess.run(
+            "node": subprocess.run(  # nosec B603 B607 - node --version from PATH, no shell
                 ["node", "--version"], capture_output=True, text=True
             ).stdout.strip()
             if shutil.which("node")

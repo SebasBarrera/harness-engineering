@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 - git with a fixed argv, no shell
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -35,8 +35,22 @@ class GitAdapter:
             lines,
         )
 
+    def user_identity(self) -> tuple[str | None, str | None]:
+        """The ``user.name`` and ``user.email`` Git resolves for the workspace (repository,
+        global and system configuration), ``None`` for each one that is not set."""
+        values: list[str | None] = []
+        for key in ("user.name", "user.email"):
+            try:
+                result = self._run("config", "--get", key)
+            except (OSError, subprocess.SubprocessError):
+                values.append(None)
+                continue
+            text = result.stdout.decode("utf-8", "replace").strip()
+            values.append(text if result.returncode == 0 and text else None)
+        return values[0], values[1]
+
     def _run(self, *args: str) -> subprocess.CompletedProcess[bytes]:
-        return subprocess.run(
+        return subprocess.run(  # nosec B603 B607 - git from PATH, argv built here, no shell
             ["git", *args],
             cwd=self.workspace,
             stdin=subprocess.DEVNULL,

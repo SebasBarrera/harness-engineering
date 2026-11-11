@@ -1,0 +1,39 @@
+profileVersion: '1.0'
+profileId: jvm_gradle
+technology: jvm
+detectors:
+  - marker: build.gradle
+    weight: 0.70
+  - marker: build.gradle.kts
+    weight: 0.70
+  - marker: settings.gradle
+    weight: 0.20
+  - marker: settings.gradle.kts
+    weight: 0.20
+  - marker: gradlew
+    weight: 0.10
+defaultCommands:
+  test: [./gradlew, test, --quiet]
+  lint: [./gradlew, check, -x, test, --quiet]
+defaultValidators:
+  - gradle.test
+  - gradle.check
+validators:
+  - id: gradle.test
+    command: [./gradlew, test, --quiet]
+    mandatory: true
+    timeoutSeconds: 1800
+  - id: gradle.check
+    command: [./gradlew, check, -x, test, --quiet]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 1800
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['src/**', '**/src/**', 'build.gradle', 'build.gradle.kts', '**/build.gradle', '**/build.gradle.kts']
+  process.execute: [./gradlew]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

@@ -1,0 +1,546 @@
+"""Shared helpers of the deterministic evaluation suites (2.0.0): no model is ever called.
+
+Every suite takes the harness executable as a parameter (``--harness``, else ``$HARNESS_BIN``,
+else ``harness`` on ``PATH``) so the same scripts run on the worktree code now and on the
+``v2.0.0`` wheel later; ``environment()`` records its version and, when ``--wheel`` (or
+``$HARNESS_WHEEL``) names the wheel it was installed from, the wheel's SHA-256.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import platform
+import shutil
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import time
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+import yaml
+
+HERE = Path(__file__).resolve().parent
+EVALUATION = HERE.parent
+REPO = EVALUATION.parent
+RESULTS = EVALUATION / "results-2.0.0" / "deterministic"
+GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+# Windows has no agent sandbox mechanism (src/governed_harness/runtime/sandbox.py): the suites run
+# the governed conditions with runtime.agentSandbox: off there and record it as a deviation
+# (PREREGISTRO.md, H46). Every other platform keeps what harness init writes.
+WINDOWS = sys.platform == "win32"
+POSIX_SYSTEM_PATH = ("/usr/bin", "/bin", "/usr/sbin", "/sbin")
+# The variables a Windows process needs to start (SYSTEMROOT, COMSPEC, PATHEXT) or to find its
+# temporary and profile directories; kept from the caller's environment.
+WINDOWS_KEPT = (
+    "SYSTEMROOT",
+    "SYSTEMDRIVE",
+    "WINDIR",
+    "COMSPEC",
+    "PATHEXT",
+    "TEMP",
+    "TMP",
+    "USERPROFILE",
+    "LOCALAPPDATA",
+    "APPDATA",
+    "PROGRAMDATA",
+)
+GIT = [
+    "git",
+    "-c",
+    "user.name=eval",
+    "-c",
+    "user.email=eval@example.invalid",
+    "-c",
+    "commit.gpgsign=false",
+]
+
+
+def venv_bin(venv: Path) -> Path:
+    """The executables directory of a virtual environment (``bin``, ``Scripts`` on Windows)."""
+    return venv / ("Scripts" if WINDOWS else "bin")
+
+
+def venv_python(venv: Path) -> Path:
+    return venv_bin(venv) / ("python.exe" if WINDOWS else "python")
+
+
+def venv_site_packages(venv: Path) -> Path:
+    if WINDOWS:
+        return venv / "Lib" / "site-packages"
+    return next((venv / "lib").glob("python3*/site-packages"))
+
+
+def system_path() -> list[str]:
+    """The system directories of the suites' minimal PATH. On Windows: the system directories,
+    and those of ``git`` and of Git for Windows' ``sh`` (POSIX has both in ``/usr/bin``)."""
+    if not WINDOWS:
+        return list(POSIX_SYSTEM_PATH)
+    root = os.environ.get("SYSTEMROOT", r"C:\Windows")
+    dirs = [str(Path(root) / "System32"), root, str(Path(root) / "System32" / "Wbem")]
+    git_exe = shutil.which("git")
+    if git_exe:
+        dirs.append(str(Path(git_exe).parent))
+        # <Git>/cmd/git.exe: <Git>/bin holds sh.exe and bash.exe only.
+        dirs.append(str(Path(git_exe).parent.parent / "bin"))
+    sh = shutil.which("sh")
+    if sh:
+        dirs.append(str(Path(sh).parent))
+    return list(dict.fromkeys(dirs))
+
+
+def search_path(path_dirs: Sequence[Path | str]) -> str:
+    """A minimal PATH: ``path_dirs`` first, then the system directories (``:``, ``;`` on Windows)."""
+    return os.pathsep.join([*(str(p) for p in path_dirs), *system_path()])
+
+
+def platform_env() -> dict[str, str]:
+    """The variables a process of this platform needs besides PATH (none on POSIX)."""
+    if not WINDOWS:
+        return {}
+    return {name: os.environ[name] for name in WINDOWS_KEPT if name in os.environ}
+
+
+def platform_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Adapt a project configuration to the platform: on Windows, ``runtime.agentSandbox: off``
+    (no sandbox mechanism exists there); elsewhere the configuration is returned unchanged."""
+    if WINDOWS:
+        config.setdefault("runtime", {})["agentSandbox"] = "off"
+    return config
+
+
+def platform_deviations() -> list[str]:
+    """The deviations from ``harness init`` this platform imposes (recorded in environment.json)."""
+    if WINDOWS:
+        return ["runtime.agentSandbox: off (Windows has no agent sandbox mechanism)"]
+    return []
+
+
+def as_shell_path(path: Path | str) -> str:
+    """A path written inside a ``sh -c`` script: ``C:/...`` on Windows, where ``shlex`` (POSIX
+    mode) would read the backslashes as escapes; unchanged elsewhere."""
+    return Path(path).as_posix() if WINDOWS else str(path)
+
+
+def add_common_arguments(parser: Any) -> None:
+    parser.add_argument(
+        "--harness",
+        default=os.environ.get("HARNESS_BIN") or shutil.which("harness") or "harness",
+        help="harness executable (default: $HARNESS_BIN, else harness on PATH)",
+    )
+    parser.add_argument(
+        "--wheel",
+        default=os.environ.get("HARNESS_WHEEL", ""),
+        help="the wheel the harness was installed from (its SHA-256 is recorded)",
+    )
+
+
+def now() -> str:
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def stamp() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def sha256_json(value: Any) -> str:
+    """The harness's canonical JSON digest (``governed_harness.evidence.hashing.sha256_json``)."""
+    data = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str)
+    return "sha256:" + hashlib.sha256(data.encode("utf-8")).hexdigest()
+
+
+def harness_version(harness: str) -> str:
+    proc = subprocess.run([harness, "--version"], capture_output=True, text=True, check=False)
+    return (proc.stdout or proc.stderr).strip()
+
+
+def evaluation_code_digest() -> str:
+    """Digest of the evaluation scripts of this directory, as earlier evaluations recorded."""
+    digest = hashlib.sha256()
+    for path in sorted([*HERE.glob("*.py"), *(EVALUATION / "corpus").rglob("*")]):
+        if path.is_file() and "__pycache__" not in path.parts:
+            digest.update(path.relative_to(EVALUATION).as_posix().encode())
+            digest.update(path.read_bytes())
+    for name in ("fault_probes.py", "fault_provider.py"):
+        path = EVALUATION / name
+        digest.update(name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
+
+
+def git_head() -> str:
+    proc = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=False
+    )
+    dirty = subprocess.run(
+        [
+            "git",
+            "status",
+            "--porcelain",
+            "--",
+            "src",
+            "evaluation/deterministic",
+            "evaluation/corpus",
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.strip()
+    return proc.stdout.strip() + ("+dirty" if dirty else "")
+
+
+def tool_version(command: Sequence[str]) -> str:
+    try:
+        proc = subprocess.run(
+            list(command), capture_output=True, text=True, check=False, timeout=60
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unavailable"
+    return (
+        (proc.stdout or proc.stderr).strip().splitlines()[0]
+        if (proc.stdout or proc.stderr).strip()
+        else ""
+    )
+
+
+def environment(
+    harness: str, wheel: str = "", extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "recordedAt": now(),
+        "harnessExecutable": harness,
+        "harnessVersion": harness_version(harness),
+        "wheel": Path(wheel).name if wheel else None,
+        "wheelSha256": sha256_file(Path(wheel)) if wheel and Path(wheel).is_file() else None,
+        "repositoryHead": git_head(),
+        "evaluationCodeDigest": evaluation_code_digest(),
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+        "git": tool_version(["git", "--version"]),
+        "modelCalls": 0,
+    }
+    if WINDOWS:
+        record["platformDeviations"] = platform_deviations()
+    record.update(extra or {})
+    return record
+
+
+def write_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
+    print(f"wrote {path}", flush=True)
+
+
+def write_jsonl(path: Path, records: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for record in records:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    print(f"wrote {path} ({len(records)} records)", flush=True)
+
+
+def git(cwd: Path, *args: str) -> str:
+    env = {**os.environ, **GIT_ENV}
+    return subprocess.run(
+        [*GIT, *args], cwd=cwd, env=env, check=True, capture_output=True, text=True
+    ).stdout
+
+
+def init_repo(root: Path, message: str = "baseline") -> str:
+    git(root, "init", "-q")
+    git(root, "add", "-A")
+    git(root, "commit", "-qm", message)
+    return git(root, "rev-parse", "HEAD").strip()
+
+
+class Harness:
+    """Runs one harness executable with a fixed environment and records every command."""
+
+    def __init__(self, executable: str, env: dict[str, str]) -> None:
+        self.executable = executable
+        self.env = env
+        self.steps: list[dict[str, Any]] = []
+
+    def run(
+        self, cwd: Path, *args: str, label: str = "", timeout: float | None = None
+    ) -> tuple[int, Any, float]:
+        started = time.monotonic()
+        try:
+            proc = subprocess.run(
+                [self.executable, *args],
+                cwd=cwd,
+                env=self.env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+            )
+            code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
+        except subprocess.TimeoutExpired as expired:
+            code = -9
+            stdout = (
+                expired.stdout.decode()
+                if isinstance(expired.stdout, bytes)
+                else (expired.stdout or "")
+            )
+            stderr = "TIMEOUT"
+        seconds = time.monotonic() - started
+        payload: Any = {"stdout": stdout[-800:], "stderr": stderr[-800:]}
+        for stream in (stdout, stderr):
+            try:
+                payload = json.loads(stream)
+                break
+            except (json.JSONDecodeError, TypeError):
+                continue
+        self.steps.append(
+            {"step": label or " ".join(args[:2]), "exitCode": code, "seconds": round(seconds, 3)}
+        )
+        return code, payload, seconds
+
+
+def isolated_env(path_dirs: Sequence[Path | str], state_root: Path) -> dict[str, str]:
+    """The environment of the harness: a minimal PATH, no global Git configuration, and the run
+    registry and chain anchors kept under ``state_root`` (never the user's data directory)."""
+    state_root.mkdir(parents=True, exist_ok=True)
+    (state_root / "anchors").mkdir(exist_ok=True)
+    (state_root / "state").mkdir(exist_ok=True)
+    return {
+        "PATH": search_path(path_dirs),
+        "HOME": os.environ.get("HOME", str(Path.home())) if WINDOWS else os.environ["HOME"],
+        "LANG": "en_US.UTF-8",
+        "TMPDIR": os.environ.get("TEMP", tempfile.gettempdir())
+        if WINDOWS
+        else os.environ.get("TMPDIR", "/tmp"),
+        **platform_env(),
+        "HARNESS_ANCHOR_DIR": str(state_root / "anchors"),
+        "HARNESS_STATE_DIR": str(state_root / "state"),
+        **GIT_ENV,
+    }
+
+
+def state_database(h: Harness, workspace: Path) -> Path:
+    """The run registry database (``runtime.stateDir: auto`` keeps it outside the workspace)."""
+    code, validated, _ = h.run(
+        workspace, "config", "validate", "--path", ".", label="config validate"
+    )
+    try:
+        return Path(validated["ladder"]["state"]["database"])
+    except (KeyError, TypeError):
+        return workspace / ".harness" / "state.db"
+
+
+def query(database: Path, sql: str, params: Sequence[Any] = ()) -> list[tuple[Any, ...]]:
+    connection = sqlite3.connect(database)
+    try:
+        return list(connection.execute(sql, tuple(params)))
+    finally:
+        connection.close()
+
+
+SIMULATED_PERSON = "human.reviewer-simulated"
+# The inbox kinds (#73) the simulated person answers; any other stop is returned as it is.
+ANSWERED_KINDS = (
+    "clarification",
+    "acceptance",
+    "plan",
+    "decomposition",
+    "preflight",
+    "architecture",
+)
+
+
+def simulated_person(
+    h: Harness,
+    ws: Path,
+    run_id: str,
+    task_id: str,
+    scratch: Path,
+    waits: list[str],
+    code: int,
+    max_rounds: int = 6,
+) -> int:
+    """The declared simulated person (``human.reviewer-simulated``, a simulation stated in every
+    README) answers the waits before DECISION when ``run start``/``run continue`` exits with 6:
+    INTENT questions (answered "keep the behaviour the task describes"), acceptance tests, a plan
+    approval, an unavailable preflight (continued uncertified) and the layer rules a survey
+    inferred in DISCOVERY (approved with their digest, H06). Any other stop is returned as it
+    is. Each wait is appended to ``waits`` as ``PHASE:kind``."""
+    for _ in range(max_rounds):
+        if code != 6:
+            return code
+        _, status, _ = h.run(ws, "status", "--path", ".", "--run", run_id, label="status")
+        execution = status.get("execution", {}) if isinstance(status, dict) else {}
+        phase, state = execution.get("currentPhase"), execution.get("status")
+        _, inbox, _ = h.run(ws, "inbox", "--path", ".", "--json", label="inbox")
+        pending = (
+            [item for item in inbox if item.get("executionId") == run_id]
+            if isinstance(inbox, list)
+            else []
+        )
+        # Since wave 9 (#73) the inbox lists every wait before DECISION with its digest.
+        handled = [i for i in pending if i.get("kind") in ANSWERED_KINDS]
+        kind = str(handled[0].get("kind")) if handled else ""
+        plan_digest = str(handled[0].get("digest") or "") if handled else ""
+        if not kind and state == "BLOCKED" and phase == "PLANNING":
+            # Fallback for a harness whose inbox does not list a plan wait (2.0.0 before wave 9):
+            # either the plan-approval checkpoint (friction.planApproval, `approval` PENDING) or
+            # a decomposition into sub-tasks (planning.decomposition, `status` PROPOSED).
+            _, shown, _ = h.run(
+                ws, "plan", "show", "--path", ".", "--run", run_id, label="plan show"
+            )
+            shown = shown if isinstance(shown, dict) else {}
+            approval = shown.get("approval")
+            if isinstance(approval, dict) and approval.get("status") == "PENDING":
+                kind, plan_digest = "plan", str(approval.get("digest"))
+            elif shown.get("status") == "PROPOSED" and shown.get("digest"):
+                kind, plan_digest = "decomposition", str(shown.get("digest"))
+        if not kind and state == "BLOCKED" and phase == "SPECIFICATION":
+            kind = "acceptance"
+        questions: list[dict[str, Any]] = []
+        if state == "BLOCKED" and phase == "INTENT":
+            _, listed, _ = h.run(
+                ws, "task", "questions", "--path", ".", "--task", task_id, label="task questions"
+            )
+            open_request = listed.get("openRequest") if isinstance(listed, dict) else None
+            questions = list((open_request or {}).get("questions") or [])
+            kind = "clarification" if questions else ""
+        if not kind or (kind == "architecture" and phase != "DISCOVERY"):
+            # Architecture options of a new project (INTENT) need a chosen option: not answered.
+            return code
+        waits.append(f"{phase}:{kind}")
+        if kind == "architecture":
+            code, _, _ = h.run(
+                ws,
+                "architecture",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--decision",
+                "APPROVE",
+                "--digest",
+                plan_digest,
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated approval of the inferred layer rules",
+                label="architecture decide",
+            )
+        elif kind == "clarification":
+            answers = {
+                "answers": {
+                    q[
+                        "questionId"
+                    ]: "Keep the behaviour the task describes; nothing else is in scope."
+                    for q in questions
+                    if q.get("questionId")
+                }
+            }
+            waits.append("questions:" + ",".join(str(q.get("ruleId")) for q in questions))
+            answers_path = scratch / f"answers-{len(waits)}.yaml"
+            answers_path.write_text(yaml.safe_dump(answers), newline="\n")
+            h.run(
+                ws,
+                "task",
+                "clarify",
+                "--path",
+                ".",
+                "--task",
+                task_id,
+                "--file",
+                str(answers_path),
+                "--actor",
+                SIMULATED_PERSON,
+                label="task clarify",
+            )
+            code, _, _ = h.run(
+                ws, "run", "continue", "--path", ".", "--run", run_id, label="run continue"
+            )
+        elif kind == "acceptance":
+            _, shown, _ = h.run(
+                ws, "acceptance", "show", "--path", ".", "--run", run_id, label="acceptance show"
+            )
+            digest = shown.get("digest") if isinstance(shown, dict) else ""
+            code, _, _ = h.run(
+                ws,
+                "acceptance",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--decision",
+                "APPROVE",
+                "--digest",
+                str(digest),
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated approval",
+                label="acceptance decide",
+            )
+        elif kind in {"plan", "decomposition"}:
+            digest = plan_digest
+            if not digest:
+                _, shown, _ = h.run(
+                    ws, "plan", "show", "--path", ".", "--run", run_id, label="plan show"
+                )
+                digest = (
+                    ((shown.get("approval") or {}).get("digest") or shown.get("digest"))
+                    if isinstance(shown, dict)
+                    else ""
+                )
+            code, _, _ = h.run(
+                ws,
+                "plan",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--decision",
+                "APPROVE",
+                "--digest",
+                str(digest),
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated approval",
+                label="plan decide",
+            )
+        elif kind in {"preflight", "verification"}:
+            code, _, _ = h.run(
+                ws,
+                "verification",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--continue-uncertified",
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated: continue uncertified",
+                label="verification decide",
+            )
+        else:
+            return code
+    return code

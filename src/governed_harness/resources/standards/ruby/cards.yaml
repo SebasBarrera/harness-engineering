@@ -1,0 +1,42 @@
+pack: ruby
+title: Ruby
+cards:
+  - id: ruby.frozen-strings
+    title: Frozen string literals
+    rule: Start every file with the frozen_string_literal magic comment and do not mutate string literals.
+    rationale: Frozen literals avoid accidental shared mutation.
+    appliesTo: ["**/*.rb"]
+    verifiedBy: ["rubocop:Style/FrozenStringLiteralComment"]
+  - id: ruby.specific-rescue
+    title: Rescue specific errors
+    rule: Rescue specific StandardError subclasses; never rescue Exception, and never rescue to nil silently.
+    rationale: Rescuing Exception traps interrupts and hides defects.
+    appliesTo: ["**/*.rb"]
+    verifiedBy: ["rubocop:Lint/RescueException", "rubocop:Style/RescueModifier", "rubocop:Lint/SuppressedException"]
+  - id: ruby.no-eval
+    title: No eval or unsafe loading
+    rule: Do not use eval, send with user input, Marshal.load or YAML.load on untrusted data; use YAML.safe_load.
+    rationale: Dynamic evaluation and unsafe loading execute attacker code.
+    appliesTo: ["**/*.rb"]
+    verifiedBy: ["rubocop:Security/Eval", "rubocop:Security/MarshalLoad", "rubocop:Security/YAMLLoad"]
+  - id: ruby.small-methods
+    title: Small methods
+    rule: Keep methods short and their ABC size and complexity low.
+    rationale: Size and branching predict defects.
+    appliesTo: ["**/*.rb"]
+    verifiedBy: ["rubocop:Metrics/MethodLength", "rubocop:Metrics/AbcSize", "rubocop:Metrics/CyclomaticComplexity"]
+    principle: kiss
+  - id: ruby.naming
+    title: Ruby naming
+    rule: Use snake_case for methods and variables, CamelCase for classes and modules, and a ? suffix for predicates.
+    rationale: Conventional names make intent obvious.
+    appliesTo: ["**/*.rb"]
+    verifiedBy: ["rubocop:Naming/MethodName", "rubocop:Naming/PredicateName"]
+    principle: least-astonishment
+  - id: ruby.thin-controllers
+    title: Thin controllers and models
+    rule: Keep Rails controllers to request handling; put business rules in plain objects or services, not callbacks.
+    rationale: Callbacks and fat controllers hide behaviour and couple layers.
+    appliesTo: ["app/controllers/**/*.rb", "app/models/**/*.rb"]
+    verifiedBy: ["review"]
+    principle: srp

@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "FileProvenance": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Digest"
+        },
+        "invocationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Invocationid"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "AGENT",
+            "OUT_OF_BAND"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ADDED",
+            "MODIFIED",
+            "DELETED",
+            "RENAMED",
+            "UNTRACKED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "source"
+      ],
+      "title": "FileProvenance",
+      "type": "object"
+    },
+    "OutOfBandEdit": {
+      "additionalProperties": false,
+      "description": "A ChangeSet file that changed after the last agent invocation without one.",
+      "properties": {
+        "afterInvocationId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Afterinvocationid"
+        },
+        "agentDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Agentdigest"
+        },
+        "currentDigest": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Currentdigest"
+        },
+        "detectedIn": {
+          "$ref": "#/$defs/PhaseId"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ADDED",
+            "MODIFIED",
+            "DELETED"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "detectedIn"
+      ],
+      "title": "OutOfBandEdit",
+      "type": "object"
+    },
+    "PhaseId": {
+      "enum": [
+        "INTENT",
+        "DISCOVERY",
+        "SPECIFICATION",
+        "PLANNING",
+        "IMPLEMENTATION",
+        "VERIFICATION",
+        "INDEPENDENT_REVIEW",
+        "DECISION",
+        "CLOSURE",
+        "RETROSPECTIVE"
+      ],
+      "title": "PhaseId",
+      "type": "string"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/component-provenance.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Who produced each file of a ChangeSet (``provenance.agentSnapshots``).",
+  "properties": {
+    "agentSnapshotRefs": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Agentsnapshotrefs",
+      "type": "array"
+    },
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "detectedIn": {
+      "$ref": "#/$defs/PhaseId"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "files": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/FileProvenance"
+      },
+      "title": "Files",
+      "type": "array"
+    },
+    "outOfBandEdits": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/OutOfBandEdit"
+      },
+      "title": "Outofbandedits",
+      "type": "array"
+    },
+    "provenanceId": {
+      "title": "Provenanceid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    }
+  },
+  "required": [
+    "provenanceId",
+    "executionId",
+    "changeSetDigest",
+    "detectedIn"
+  ],
+  "title": "ComponentProvenance",
+  "type": "object"
+}

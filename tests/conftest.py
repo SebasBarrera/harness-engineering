@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+import yaml
 
 from governed_harness.application import HarnessApplication
 
@@ -12,6 +14,123 @@ from governed_harness.application import HarnessApplication
 # signing or a global core.hooksPath would make the baseline commit fail or prompt.
 GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 GIT_ISOLATION = ("-c", "commit.gpgsign=false", "-c", f"core.hooksPath={os.devnull}")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_git_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Git commands the harness itself runs (the closure commit, decider identity) must not
+    read the developer's global or system configuration either."""
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+
+@pytest.fixture(autouse=True)
+def _anchor_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    # governance.chainAnchor: file (written by init) keeps chain anchors under the user's data
+    # directory; tests keep them in a temporary one.
+    monkeypatch.setenv("HARNESS_ANCHOR_DIR", str(tmp_path_factory.mktemp("anchors")))
+
+
+@pytest.fixture(autouse=True)
+def _state_dir(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    # runtime.stateDir: auto (written by init, #55) keeps the run registry under the user's data
+    # directory; tests keep it in a temporary one.
+    monkeypatch.setenv("HARNESS_STATE_DIR", str(tmp_path_factory.mktemp("state")))
+
+
+AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
+    "intake": ("ambiguityReview", "clarifyAgent", "validateAnswers", "projectSetup", "language"),
+    "verification": (
+        "interface",
+        "architecture",
+        "securityPatterns",
+        "constraints",
+        "ratchet",
+        "invariants",
+        "differential",
+        "weakenedControls",
+        "testQuality",
+        "secrets",
+        "sarif",
+        "riskFactors",
+        "acceptanceTests",
+        "reverifyOnChange",
+        "principles",
+    ),
+    "review": ("agentReview", "reviewer", "structuredChanges", "panel"),
+    "runtime": ("gateContract", "reproduceFirst", "contractRetry"),
+    "governance": (
+        "stopTheLine",
+        "phasePermissions",
+        "phaseCapabilities",
+        "applyRepositoryPolicies",
+        "enforceWorkflow",
+    ),
+}
+AGENT_RESULTS_SECTIONS = (
+    "planning",
+    "context",
+    "budget",
+    "memory",
+    "agentRouting",
+    "agentContract",
+    "standards",
+    "testing",
+    "architecture",
+)
+LADDER_KEYS: dict[str, tuple[str, ...]] = {
+    "workspace": ("isolation",),
+    "runtime": ("stateDir",),
+    "intake": ("operationalContract", "interruptions"),
+    "verification": ("ladder", "probes", "mutation"),
+    "review": ("manualChecklist",),
+    "toolchain": ("extendedProfiles",),
+    "delivery": ("stage", "push", "pullRequest", "comment", "forge"),
+}
+LADDER_SECTIONS = ("environment", "instructions")
+FRICTION_SECTIONS = ("friction", "metrics")
+"""Wave 8 (#58): tests of the fast lane, the pre-authorised approval, the change types, the
+plan-approval checkpoint and the metrics settings turn on what they need."""
+API_SECTIONS = ("api",)
+"""API authentication (#18): fixture projects serve the API without a token, as in 1.0.0."""
+
+
+def without_agent_results(root: Path) -> None:
+    """Remove the agent-results settings (#37-#44, #52), the verification-ladder settings
+    (#55), the friction settings (#58) and the API authentication (#18) that ``harness init``
+    writes, so a fixture project behaves as before them; tests of those settings turn on what
+    they need."""
+    path = root / ".harness" / "project.yaml"
+    config = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for section, keys in (*AGENT_RESULTS_KEYS.items(), *LADDER_KEYS.items()):
+        for key in keys:
+            config.get(section, {}).pop(key, None)
+    for section in (
+        *AGENT_RESULTS_SECTIONS,
+        *LADDER_SECTIONS,
+        *FRICTION_SECTIONS,
+        *API_SECTIONS,
+    ):
+        config.pop(section, None)
+    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
+
+
+WINDOWS_SYMLINK_PRIVILEGE = 1314
+"""ERROR_PRIVILEGE_NOT_HELD: Windows creates symbolic links only with the
+SeCreateSymbolicLinkPrivilege (an administrator or Developer Mode)."""
+
+
+def make_symlink(link: Path, target: Path | str, *, target_is_directory: bool = False) -> None:
+    """Create ``link`` pointing to ``target``; on Windows without the privilege to create
+    symbolic links the calling test is skipped, since the capability does not exist there."""
+    try:
+        link.symlink_to(target, target_is_directory=target_is_directory)
+    except OSError as error:
+        if sys.platform == "win32" and getattr(error, "winerror", None) == (
+            WINDOWS_SYMLINK_PRIVILEGE
+        ):
+            pytest.skip("creating symbolic links needs a privilege this Windows user lacks")
+        raise
 
 
 def git_init(path: Path) -> None:
@@ -31,27 +150,31 @@ def python_workspace(tmp_path: Path) -> Path:
     (root / "src" / "sample").mkdir(parents=True)
     (root / "tests").mkdir()
     (root / "src" / "sample" / "__init__.py").write_text(
-        "from .pricing import apply_discount\n", encoding="utf-8"
+        "from .pricing import apply_discount\n", encoding="utf-8", newline="\n"
     )
     (root / "src" / "sample" / "pricing.py").write_text(
         "def apply_discount(subtotal: float, threshold: float, rate: float) -> float:\n"
         "    return subtotal\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "tests" / "test_pricing.py").write_text(
         "from sample import apply_discount\n\n"
         "def test_below_threshold() -> None:\n"
         "    assert apply_discount(99, 100, 0.1) == 99\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "pyproject.toml").write_text(
         "[build-system]\nrequires=[]\nbuild-backend='setuptools.build_meta'\n\n"
         "[project]\nname='sample-fixture'\nversion='0.1.0'\n\n"
         "[tool.pytest.ini_options]\ntestpaths=['tests']\npythonpath=['src']\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
+    without_agent_results(root)
     return root
 
 
@@ -65,6 +188,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  return { ...defaults, ...task, ...repository };\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "test" / "resolve-config.test.js").write_text(
         "import assert from 'node:assert/strict';\n"
@@ -74,6 +198,7 @@ def node_workspace(tmp_path: Path) -> Path:
         "  assert.deepEqual(resolveConfig({mode:'safe'}, {mode:'strict'}, {}), {mode:'strict'});\n"
         "});\n",
         encoding="utf-8",
+        newline="\n",
     )
     (root / "package.json").write_text(
         "{\n"
@@ -88,13 +213,15 @@ def node_workspace(tmp_path: Path) -> Path:
         "  }\n"
         "}\n",
         encoding="utf-8",
+        newline="\n",
     )
     git_init(root)
     HarnessApplication().init(root)
+    without_agent_results(root)
     return root
 
 
 def write_task(path: Path, content: str) -> Path:
     task = path / "task-input.yaml"
-    task.write_text(content, encoding="utf-8")
+    task.write_text(content, encoding="utf-8", newline="\n")
     return task

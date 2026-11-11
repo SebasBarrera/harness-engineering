@@ -1,0 +1,2 @@
+# The scenario benchmark and the documented flows run the fixture projects' tests.
+pytest>=8,<10

@@ -3,6 +3,10 @@
 version: 2
 updates:
   - package-ecosystem: pip
+    # pyproject.toml and docs/requirements.txt. The hash-pinned files under requirements/ are left
+    # out: Dependabot cannot regenerate the universal uv locks (it drops the pyproject.toml part),
+    # so they are refreshed with `python scripts/lock_requirements.py --upgrade`. Security alerts
+    # still cover them through the dependency graph.
     directory: /
     target-branch: develop
     schedule:

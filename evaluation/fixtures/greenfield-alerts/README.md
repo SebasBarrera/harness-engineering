@@ -1,3 +1,3 @@
 # alerts
 
-Client for the internal alerts service. The behavior is specified in [SPEC.md](SPEC.md).
+Cliente del servicio interno de alertas. El comportamiento se especifica en [SPEC.md](SPEC.md).

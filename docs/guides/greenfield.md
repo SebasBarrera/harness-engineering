@@ -111,7 +111,7 @@ implementation:
       content: |
 
 
-        def test_at_threshold() -> None:
+        def test_req_discount_at_threshold() -> None:
             assert apply_discount(100, 100, 0.1) == 90
 ```
 
@@ -132,13 +132,13 @@ $ echo $?
 
 Exit code **4** is the expected result: the automated phases passed and the run stopped at
 `DECISION`, waiting for a person. The run printed `executionId`
-`run_fe0fb47e63fc4fffbdae0b6e704bf034`, `status: BLOCKED`, `currentPhase: DECISION` and the
-ChangeSet digest `sha256:b9c0c262e9466ed8b91ffa9fc24363ba3eec65465300af5b5c8ac6927c5e0e18`.
+`run_f7e20c4ba06a4346b3d1659d9ae82b65`, `status: BLOCKED`, `currentPhase: DECISION` and the
+ChangeSet digest `sha256:c1bed3330fbed41155a1b05ee6e6c44e8200bfc68829491764e01266b301b47a`.
 
 Inspect what the harness observed:
 
 ```bash
-harness status --run run_fe0fb47e63fc4fffbdae0b6e704bf034
+harness status --run run_f7e20c4ba06a4346b3d1659d9ae82b65
 ```
 
 In this run the status projection showed:
@@ -146,10 +146,10 @@ In this run the status projection showed:
 | Item | Value |
 |---|---|
 | Phases | `INTENT` … `INDEPENDENT_REVIEW` `PASSED`, `DECISION` `BLOCKED` |
-| Validations | 4 results, all `PASSED`: `python.pytest`, `python.ruff` and `python.mypy` (Ruff and mypy were installed; without them they are `NOT_APPLICABLE`) and the independent review |
+| Validations | 5 results, all `PASSED`: `python.pytest`, `python.ruff` and `python.mypy` (Ruff and mypy were installed; without them they are `NOT_APPLICABLE`), `traceability.requirements` (requirement `req_discount` is named by `test_req_discount_at_threshold`) and the independent review |
 | Findings | 0 |
 | Gate | `PASSED`, reason `ALL_MANDATORY_VALIDATIONS_PASSED` |
-| Event chain | 32 events, valid |
+| Event chain | 34 events, valid |
 
 `harness findings list --run …` printed `[]`, and `harness evidence list --run …` lists the
 evidence records with their content-addressed artifacts (`artifact://sha256/…`).
@@ -160,9 +160,9 @@ A decision is bound to the exact ChangeSet digest shown by `status`. If the owne
 after the gate was evaluated, the old digest is rejected with exit code 5 (see step 7).
 
 ```console
-$ harness gate decide --run run_fe0fb47e63fc4fffbdae0b6e704bf034 \
+$ harness gate decide --run run_f7e20c4ba06a4346b3d1659d9ae82b65 \
     --decision APPROVE \
-    --change-set-digest sha256:b9c0c262e9466ed8b91ffa9fc24363ba3eec65465300af5b5c8ac6927c5e0e18 \
+    --change-set-digest sha256:c1bed3330fbed41155a1b05ee6e6c44e8200bfc68829491764e01266b301b47a \
     --actor human.reviewer \
     --rationale "Both acceptance criteria are covered by passing tests"
 $ echo $?
@@ -183,16 +183,16 @@ status `PASSED`.
 ## 6. Trace and retrospective
 
 ```console
-$ harness trace --run run_fe0fb47e63fc4fffbdae0b6e704bf034 --format markdown --output trace.md
+$ harness trace --run run_f7e20c4ba06a4346b3d1659d9ae82b65 --format markdown --output trace.md
 trace.md
 $ head -16 trace.md
-# Execution trace `run_fe0fb47e63fc4fffbdae0b6e704bf034`
+# Execution trace `run_f7e20c4ba06a4346b3d1659d9ae82b65`
 
 - **Task:** Apply a percentage discount above a threshold (`task_discount_rule`)
 - **Status:** `PASSED`
 - **Current phase:** `CLOSURE`
-- **ChangeSet digest:** `sha256:b9c0c262e9466ed8b91ffa9fc24363ba3eec65465300af5b5c8ac6927c5e0e18`
-- **Configuration digest:** `sha256:605470ebb06056b62cd4718cec079b0c962261ddb644ad956504ab5b47e2503a`
+- **ChangeSet digest:** `sha256:c1bed3330fbed41155a1b05ee6e6c44e8200bfc68829491764e01266b301b47a`
+- **Configuration digest:** `sha256:51c583471f7961b308bb8bf4f1f62432a0a1a0591d1e61b15be31d0d3f2967c1`
 - **Workflow digest:** `sha256:5cc582e7e4c8ffac23a1f50c4fcf36715c1c71d11bb3ea3fa95c6c00eb653732`
 - **Policy digest:** `sha256:6163dac529e268a82d0c1bea5c1be272bb5984711dc7512ca8e1d87eb769da07`
 

@@ -62,6 +62,11 @@ RULES = (
 class IndependentReviewValidator:
     validator_id = "review.independent"
 
+    def __init__(self, skip_rules: frozenset[str] = frozenset()) -> None:
+        # verification.secrets: context replaces the style-dependent secret pattern with the
+        # context-aware check of VERIFICATION, so the review does not report it twice.
+        self.skip_rules = skip_rules
+
     def execute(self, context: ValidationContext) -> ValidatorOutput:
         actor = Actor(
             actor_type=ActorType.TOOL, actor_id="validator.independent-review", version="1"
@@ -106,7 +111,9 @@ class IndependentReviewValidator:
                 "validatorId": self.validator_id,
                 "changeSetDigest": context.change_set.digest,
                 "findingIds": [finding.finding_id for finding in findings],
-                "rulesEvaluated": [rule.rule_id for rule in RULES]
+                "rulesEvaluated": [
+                    rule.rule_id for rule in RULES if rule.rule_id not in self.skip_rules
+                ]
                 + ["review.source-without-test-change"],
             },
             metadata={"kind": "independent-review"},
@@ -136,31 +143,50 @@ class IndependentReviewValidator:
                 current_path = raw_line[6:]
                 continue
             if raw_line.startswith("@@"):
-                match = re.search(r"\+(\d+)", raw_line)
-                current_line = int(match.group(1)) if match else 0
+                current_line = _hunk_start(raw_line)
                 continue
             if raw_line.startswith("+") and not raw_line.startswith("+++"):
-                content = raw_line[1:]
-                for rule in RULES:
-                    if rule.pattern.search(content):
-                        yield Finding(
-                            finding_id=new_id("finding"),
-                            execution_id=context.execution_id,
-                            validator_id=self.validator_id,
-                            rule_id=rule.rule_id,
-                            category=rule.category,
-                            severity=rule.severity,
-                            message=rule.message,
-                            location=FindingLocation(
-                                path=current_path,
-                                start_line=current_line or None,
-                                end_line=current_line or None,
-                            ),
-                            evidence_refs=(context.change_set.diff_ref,),
-                            recommendation=rule.recommendation,
-                            introduced=True,
-                            provenance=context.provenance.model_copy(update={"actor": actor}),
-                        )
+                yield from self._line_findings(
+                    raw_line[1:], current_path, current_line, context, actor
+                )
                 current_line += 1
             elif raw_line.startswith(" "):
                 current_line += 1
+
+    def _line_findings(
+        self,
+        content: str,
+        path: str | None,
+        line: int,
+        context: ValidationContext,
+        actor: Actor,
+    ) -> Iterator[Finding]:
+        """The findings of the rules that match one added line."""
+        for rule in RULES:
+            if rule.rule_id in self.skip_rules:
+                continue
+            if rule.pattern.search(content):
+                yield Finding(
+                    finding_id=new_id("finding"),
+                    execution_id=context.execution_id,
+                    validator_id=self.validator_id,
+                    rule_id=rule.rule_id,
+                    category=rule.category,
+                    severity=rule.severity,
+                    message=rule.message,
+                    location=FindingLocation(
+                        path=path,
+                        start_line=line or None,
+                        end_line=line or None,
+                    ),
+                    evidence_refs=(context.change_set.diff_ref,),
+                    recommendation=rule.recommendation,
+                    introduced=True,
+                    provenance=context.provenance.model_copy(update={"actor": actor}),
+                )
+
+
+def _hunk_start(header: str) -> int:
+    """The first new-file line of a ``@@`` hunk header; 0 without one."""
+    match = re.search(r"\+(\d+)", header)
+    return int(match.group(1)) if match else 0

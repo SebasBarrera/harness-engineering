@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
-"""One longitudinal session: the same five increments of a small library, built either with
-one-line casual prompts (baseline) or with structured tasks through the harness (harness).
+"""One longitudinal session: the same five increments of a small library, built with one-line
+casual prompts (baseline), with the structured tasks sent directly to the agent (structured), or
+with the structured tasks through the harness (harness). The structured condition receives exactly
+the prompt that the harness adapter builds from the task, so it isolates the effect of the harness
+from the effect of structuring the task.
 
 After every increment an external oracle (the hidden tests of the parts delivered so far) plays the
 user who notices defects: if checks fail, a fix request with the bug report of each failing check
@@ -29,9 +32,10 @@ import yaml
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
-from agentlib import run_claude  # noqa: E402
+import agentlib  # noqa: E402
+import run_eval  # noqa: E402
 from measure import _bandit, _ruff  # noqa: E402
-from run_eval import git, run_harness  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
 
 INCREMENTS = yaml.safe_load((HERE / "increments.yaml").read_text(encoding="utf-8"))
 HIDDEN = HERE / "hidden" / "test_hidden_inventory.py"
@@ -42,11 +46,15 @@ MAX_FIX_ROUNDS = 2
 def prepare(workspace: Path, site_packages: Path) -> None:
     workspace.mkdir(parents=True)
     for item in (HERE / "fixture").iterdir():
-        shutil.copy2(item, workspace / (".gitignore" if item.name == "gitignore.template" else item.name))
-    (site_packages / "zz_eval_workspace.pth").write_text(str(workspace / "src") + "\n", encoding="utf-8")
-    git(workspace, "init", "-q")
-    git(workspace, "add", "-A")
-    git(workspace, "commit", "-qm", "baseline")
+        shutil.copy2(
+            item, workspace / (".gitignore" if item.name == "gitignore.template" else item.name)
+        )
+    (site_packages / "zz_eval_workspace.pth").write_text(
+        str(workspace / "src") + "\n", encoding="utf-8"
+    )
+    run_eval.git(workspace, "init", "-q")
+    run_eval.git(workspace, "add", "-A")
+    run_eval.git(workspace, "commit", "-qm", "baseline")
 
 
 def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
@@ -54,8 +62,22 @@ def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
     target.mkdir(exist_ok=True)
     shutil.copy2(HIDDEN, target)
     junit = scratch / f"oracle-{label}.xml"
-    subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={junit}", str(target)],
-                   cwd=workspace, capture_output=True, text=True, timeout=600)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+            f"--junitxml={junit}",
+            str(target),
+        ],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
     shutil.rmtree(target)
     cases: dict[str, bool] = {}
     messages: dict[str, str] = {}
@@ -65,7 +87,9 @@ def oracle(workspace: Path, scratch: Path, label: str) -> dict[str, Any]:
             cases[case.get("name", "")] = not problems
             if problems:
                 text = (problems[0].get("message") or "").strip().splitlines()
-                messages[re.sub(r"\[.*\]$", "", case.get("name", ""))] = (text[0] if text else "")[:160]
+                messages[re.sub(r"\[.*\]$", "", case.get("name", ""))] = (text[0] if text else "")[
+                    :160
+                ]
     if not cases:  # collection failed: every check counts as failing
         cases = {"collection": False}
     by_part: dict[str, list[int]] = {}
@@ -93,39 +117,75 @@ def failing(result: dict[str, Any], parts: list[str]) -> list[str]:
 
 
 def calls_since(calls_dir: Path, start: int) -> list[dict[str, Any]]:
-    files = sorted(calls_dir.glob("call-*.json"), key=lambda p: int(p.stem.split("-")[1]))
-    return [json.loads(p.read_text()) for p in files[start:]]
+    return agentlib.load_calls(calls_dir)[start:]
 
 
 def usage(calls: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "calls": len(calls),
         "costUsd": round(sum(c["costUsd"] or 0 for c in calls), 6),
-        "inputTokens": sum((c["inputTokens"] or 0) + (c["cacheReadTokens"] or 0) + (c["cacheCreationTokens"] or 0)
-                           for c in calls),
+        "inputTokens": sum(
+            (c["inputTokens"] or 0) + (c["cacheReadTokens"] or 0) + (c["cacheCreationTokens"] or 0)
+            for c in calls
+        ),
         "outputTokens": sum(c["outputTokens"] or 0 for c in calls),
         "turns": sum(c["numTurns"] or 0 for c in calls),
         "agentSeconds": round(sum(c["wallSeconds"] for c in calls), 3),
         "errors": sum(1 for c in calls if c["isError"]),
+        # 2.0.0: the calls the harness made besides the implementation (read-only call kinds).
+        "governanceCalls": sum(1 for c in calls if c.get("kind") not in (None, "implement")),
+        "governanceCostUsd": round(
+            sum(c["costUsd"] or 0 for c in calls if c.get("kind") not in (None, "implement")), 6
+        ),
     }
 
 
 def final_measures(workspace: Path, scratch: Path) -> dict[str, Any]:
     src = sorted((workspace / "src").rglob("*.py")) if (workspace / "src").exists() else []
-    tests = sorted((workspace / "tests").rglob("test*.py")) if (workspace / "tests").exists() else []
+    tests = (
+        sorted((workspace / "tests").rglob("test*.py")) if (workspace / "tests").exists() else []
+    )
     junit = scratch / "visible.xml"
-    proc = subprocess.run([sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={junit}"],
-                          cwd=workspace, capture_output=True, text=True, timeout=600)
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", f"--junitxml={junit}"],
+        cwd=workspace,
+        capture_output=True,
+        text=True,
+        timeout=600,
+    )
     visible = 0
     if junit.exists():
         root = ET.parse(junit).getroot()
-        visible = sum(int(s.get("tests", 0)) for s in ([root] if root.tag == "testsuite" else list(root)))
+        visible = sum(
+            int(s.get("tests", 0)) for s in ([root] if root.tag == "testsuite" else list(root))
+        )
     env = {**os.environ, "COVERAGE_FILE": str(scratch / ".coverage")}
-    subprocess.run([sys.executable, "-m", "coverage", "run", "--branch", "--source=src", "-m", "pytest", "-q",
-                    "-p", "no:cacheprovider"], cwd=workspace, env=env, capture_output=True, timeout=600)
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "coverage",
+            "run",
+            "--branch",
+            "--source=src",
+            "-m",
+            "pytest",
+            "-q",
+            "-p",
+            "no:cacheprovider",
+        ],
+        cwd=workspace,
+        env=env,
+        capture_output=True,
+        timeout=600,
+    )
     report = scratch / "coverage.json"
-    subprocess.run([sys.executable, "-m", "coverage", "json", "-q", "-o", str(report)], cwd=workspace, env=env,
-                   capture_output=True)
+    subprocess.run(
+        [sys.executable, "-m", "coverage", "json", "-q", "-o", str(report)],
+        cwd=workspace,
+        env=env,
+        capture_output=True,
+    )
     coverage = json.loads(report.read_text())["totals"] if report.exists() else {}
     return {
         "sourceFiles": len(src),
@@ -134,9 +194,11 @@ def final_measures(workspace: Path, scratch: Path) -> dict[str, Any]:
         "visibleTests": visible,
         "visibleSuiteExit": proc.returncode,
         "lineCoverage": round(coverage["covered_lines"] / coverage["num_statements"], 4)
-        if coverage.get("num_statements") else None,
+        if coverage.get("num_statements")
+        else None,
         "branchCoverage": round(coverage["covered_branches"] / coverage["num_branches"], 4)
-        if coverage.get("num_branches") else None,
+        if coverage.get("num_branches")
+        else None,
         "ruffFindings": _ruff(src, workspace),
         "bandit": _bandit(src, workspace),
     }
@@ -144,38 +206,139 @@ def final_measures(workspace: Path, scratch: Path) -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--condition", choices=["baseline", "harness"], required=True)
+    parser.add_argument(
+        "--condition",
+        choices=[
+            "baseline",
+            "structured",
+            "harness",
+            "harness-core",
+            "harness-anchored",
+            "harness-legacy",
+        ],
+        required=True,
+        help="baseline: casual prompts; structured: the structured tasks without the harness; harness, "
+        "harness-core, harness-anchored: the 2.0.0 conditions of run_eval.py; harness-legacy: the "
+        "configuration of the 0.9.0 sessions (harness init + provider)",
+    )
     parser.add_argument("--model", required=True)
     parser.add_argument("--rep", type=int, required=True)
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument(
+        "--dry-run", action="store_true", help="fake_claude.py instead of Claude Code"
+    )
+    parser.add_argument(
+        "--po-model",
+        default=DEFAULT_PO_MODEL,
+        help="the simulated product owner's model, the same in every cell (amendment of 2026-11-11)",
+    )
     args = parser.parse_args()
+    claude_bin = None
+    if args.dry_run:
+        claude_bin = str(agentlib.FAKE_CLAUDE)
+        agentlib.CLAUDE_BIN = claude_bin
+    else:
+        agentlib.ensure_account()
     site_packages = Path(next(p for p in sys.path if p.endswith("site-packages")))
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     run_dir = args.work / f"longitudinal-{args.condition}-{args.model}-r{args.rep}-{stamp}"
     workspace, scratch = run_dir / "ws", run_dir / "measure"
     prepare(workspace, site_packages)
     scratch.mkdir(parents=True)
+    # The run registry of the governed conditions lives in the session directory (one project for
+    # the five increments, so project setup, architecture and lessons carry over between them).
+    run_eval.HARNESS_ENV["HARNESS_STATE_DIR"] = str((run_dir / "state").resolve())
+    spec_text = (HERE / "fixture" / "SPEC.md").read_text(encoding="utf-8")
     calls_dir = run_dir / "agent-calls"
     calls_dir.mkdir()
     started = time.monotonic()
     steps: list[dict[str, Any]] = []
 
-    def act(kind: str, increment: dict[str, Any], text: str | None, task: dict[str, Any] | None) -> dict[str, Any]:
+    def act(
+        kind: str, increment: dict[str, Any], text: str | None, task: dict[str, Any] | None
+    ) -> dict[str, Any]:
         (run_dir / "feedback.md").unlink(missing_ok=True)
-        before = len(list(calls_dir.glob("call-*.json")))
+        before = len(agentlib.call_records(calls_dir))
         t0 = time.monotonic()
         step: dict[str, Any] = {"increment": increment["id"], "kind": kind}
         if args.condition == "baseline":
-            run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
+            agentlib.run_claude(text or "", workspace, args.model, calls_dir / f"call-{before + 1}.json")
+        elif args.condition == "structured":
+            prompt = agentlib.build_prompt(
+                {"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})}
+            )
+            agentlib.run_claude(prompt, workspace, args.model, calls_dir / f"call-{before + 1}.json")
         else:
             task_file = run_dir / f"task-{increment['id']}-{kind}.yaml"
-            task_file.write_text(yaml.safe_dump({"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})},
-                                                sort_keys=False), encoding="utf-8")
-            outcome = run_harness(workspace, run_dir, task_file, args.model)
-            step["harness"] = {k: outcome[k] for k in ("outcome", "delivered", "corrections", "gateHistory",
-                                                        "finalStatus", "finalPhase", "eventCount", "eventChainValid")}
-            step["harness"]["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
+            task_file.write_text(
+                yaml.safe_dump(
+                    {"taskId": f"task_{increment['id'].lower()}_{kind}", **(task or {})},
+                    sort_keys=False,
+                ),
+                encoding="utf-8",
+                newline="\n",
+            )
+            if args.condition == "harness-legacy":
+                outcome = run_eval.run_harness(workspace, run_dir, task_file, args.model)
+            else:
+                # The simulated product owner knows the increment's structured task and SPEC.md.
+                owner = ProductOwner(
+                    "Tarea estructurada:\n"
+                    + yaml.safe_dump(task or {}, sort_keys=False, allow_unicode=True)
+                    + "\nSPEC.md:\n"
+                    + spec_text,
+                    args.po_model,
+                    run_dir,
+                )
+                outcome = run_eval.run_harness(
+                    workspace,
+                    run_dir,
+                    task_file,
+                    args.model,
+                    clarifier=owner,
+                    condition=args.condition,
+                    claude_bin=claude_bin,
+                )
+                (run_dir / f"project-{increment['id']}-{kind}.yaml").write_text(
+                    (run_dir / "project.yaml").read_text(encoding="utf-8"),
+                    encoding="utf-8",
+                    newline="\n",
+                )
+                step["productOwner"] = owner.rounds
+            keys = (
+                "outcome",
+                "delivered",
+                "corrections",
+                "gateHistory",
+                "finalStatus",
+                "finalPhase",
+                "eventCount",
+                "eventChainValid",
+                "waits",
+                "clarification",
+                "decisions",
+            )
+            step["harness"] = {k: outcome.get(k) for k in keys}
+            step["harness"]["trace"] = {
+                k: outcome.get("trace", {}).get(k)
+                for k in ("present", "requiredCount", "present2", "requiredCount2")
+            }
+            measures = (outcome.get("state") or {}).get("measures") or {}
+            step["harness"]["measures"] = {
+                k: measures.get(k)
+                for k in (
+                    "invocationsByKind",
+                    "routingDecisions",
+                    "certification",
+                    "reviewFindings",
+                    "unsupportedClaims",
+                    "writeFindings",
+                    "laneEvents",
+                    "quarantine",
+                    "phaseSeconds",
+                )
+            }
         step["seconds"] = round(time.monotonic() - t0, 3)
         step["usage"] = usage(calls_since(calls_dir, before))
         return step
@@ -190,14 +353,22 @@ def main() -> int:
         for round_number in range(1, MAX_FIX_ROUNDS + 1):
             if not bad:
                 break
-            reports = [BUG_REPORTS.get(name, f"{name} fails") for name in bad]
-            fix_text = "some things are broken:\n" + "\n".join(f"- {r}" for r in reports) + "\nfix them"
+            # The texts the model receives are in Spanish (maintainer decision of 2026-11-11).
+            reports = [BUG_REPORTS.get(name, f"{name} falla") for name in bad]
+            fix_text = (
+                "algunas cosas están rotas:\n"
+                + "\n".join(f"- {r}" for r in reports)
+                + "\narréglalas"
+            )
             fix_task = {
-                "title": f"Fix reported defects after {increment['id']} (round {round_number})",
-                "intent": "Fix the reported defects without breaking other behavior, and add tests for them.",
+                "title": f"Corregir los defectos reportados después de {increment['id']} "
+                f"(ronda {round_number})",
+                "intent": "Corregir los defectos reportados sin romper otro comportamiento, y agregar "
+                "pruebas para ellos.",
                 "requirements": reports,
-                "acceptanceCriteria": [f"Fixed: {r}" for r in reports] + ["All tests in tests/ pass."],
-                "constraints": ["Use only the Python standard library."],
+                "acceptanceCriteria": [f"Corregido: {r}" for r in reports]
+                + ["Todas las pruebas de tests/ pasan."],
+                "constraints": ["Usar solo la biblioteca estándar de Python."],
             }
             fix = act(f"fix{round_number}", increment, fix_text, fix_task)
             check = oracle(workspace, scratch, f"{increment['id']}-fix{round_number}")
@@ -212,21 +383,30 @@ def main() -> int:
         "condition": args.condition,
         "model": args.model,
         "rep": args.rep,
+        "productOwnerModel": args.po_model if args.condition.startswith("harness") else None,
+        "dryRun": args.dry_run,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "wallSeconds": round(time.monotonic() - started, 3),
         "steps": steps,
         "usage": usage(calls_since(calls_dir, 0)),
         "prompts": len(steps),
         "fixRequests": sum(1 for s in steps if s["kind"].startswith("fix")),
-        "final": {"oracle": final_oracle["byPart"],
-                  "hiddenPassed": sum(v[0] for v in final_oracle["byPart"].values()),
-                  "hiddenTotal": sum(v[1] for v in final_oracle["byPart"].values()),
-                  **final_measures(workspace, scratch)},
+        "final": {
+            "oracle": final_oracle["byPart"],
+            "hiddenPassed": sum(v[0] for v in final_oracle["byPart"].values()),
+            "hiddenTotal": sum(v[1] for v in final_oracle["byPart"].values()),
+            **final_measures(workspace, scratch),
+        },
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, sort_keys=True) + "\n")
-    print(json.dumps({k: record[k] for k in ("condition", "model", "rep", "wallSeconds", "prompts")}))
+    with args.out.open("a", encoding="utf-8", newline="\n") as handle:
+        handle.write(
+            agentlib.anonymize(json.dumps(record, sort_keys=True), run_dir, HERE.parent, args.work)
+            + "\n"
+        )
+    print(
+        json.dumps({k: record[k] for k in ("condition", "model", "rep", "wallSeconds", "prompts")})
+    )
     return 0
 
 

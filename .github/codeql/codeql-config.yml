@@ -1,0 +1,13 @@
+# CodeQL configuration (codeql.yml). The query suite stays security-and-quality; one quality
+# query is filtered out, with the reason, so the exclusion is reviewed with the code.
+name: governed-harness
+queries:
+  - uses: security-and-quality
+query-filters:
+  # py/import-of-mutable-attribute fires on every `from datetime import datetime` because one
+  # evaluation helper, evaluation/deterministic/timeshift.py, replaces datetime.datetime on
+  # purpose (the expired-decision probe moves the harness's clock forward before importing it).
+  # No code of the package mutates an imported module attribute; the query reported 80 such
+  # imports and no other kind of finding.
+  - exclude:
+      id: py/import-of-mutable-attribute

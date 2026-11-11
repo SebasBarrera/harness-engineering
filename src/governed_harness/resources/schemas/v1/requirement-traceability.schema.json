@@ -1,0 +1,183 @@
+{
+  "$defs": {
+    "RequirementTrace": {
+      "additionalProperties": false,
+      "properties": {
+        "excerpt": {
+          "title": "Excerpt",
+          "type": "string"
+        },
+        "identifier": {
+          "title": "Identifier",
+          "type": "string"
+        },
+        "identifierSource": {
+          "enum": [
+            "text",
+            "requirementId"
+          ],
+          "title": "Identifiersource",
+          "type": "string"
+        },
+        "requirementId": {
+          "title": "Requirementid",
+          "type": "string"
+        },
+        "tests": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TracedTest"
+          },
+          "title": "Tests",
+          "type": "array"
+        },
+        "traced": {
+          "title": "Traced",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requirementId",
+        "identifier",
+        "identifierSource",
+        "excerpt",
+        "traced"
+      ],
+      "title": "RequirementTrace",
+      "type": "object"
+    },
+    "TracedTest": {
+      "additionalProperties": false,
+      "description": "A test that names a requirement, and how it names it.",
+      "properties": {
+        "match": {
+          "enum": [
+            "name",
+            "string",
+            "text"
+          ],
+          "title": "Match",
+          "type": "string"
+        },
+        "nodeId": {
+          "title": "Nodeid",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "nodeId",
+        "path",
+        "match"
+      ],
+      "title": "TracedTest",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/requirement-traceability.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "VERIFICATION evidence: the requirement to test mapping of one ChangeSet.",
+  "properties": {
+    "changeSetDigest": {
+      "title": "Changesetdigest",
+      "type": "string"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "policy": {
+      "enum": [
+        "enforce",
+        "warn"
+      ],
+      "title": "Policy",
+      "type": "string"
+    },
+    "requirements": {
+      "items": {
+        "$ref": "#/$defs/RequirementTrace"
+      },
+      "title": "Requirements",
+      "type": "array"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "skippedCount": {
+      "minimum": 0,
+      "title": "Skippedcount",
+      "type": "integer"
+    },
+    "skippedRequirementIds": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Skippedrequirementids",
+      "type": "array"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    },
+    "technologies": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Technologies",
+      "type": "array"
+    },
+    "testFiles": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Testfiles",
+      "type": "array"
+    },
+    "tracedCount": {
+      "minimum": 0,
+      "title": "Tracedcount",
+      "type": "integer"
+    },
+    "unreadFiles": {
+      "default": [],
+      "items": {
+        "type": "string"
+      },
+      "title": "Unreadfiles",
+      "type": "array"
+    },
+    "untracedCount": {
+      "minimum": 0,
+      "title": "Untracedcount",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "executionId",
+    "taskId",
+    "changeSetDigest",
+    "policy",
+    "technologies",
+    "testFiles",
+    "requirements",
+    "tracedCount",
+    "untracedCount",
+    "skippedCount"
+  ],
+  "title": "RequirementTraceabilityReport",
+  "type": "object"
+}

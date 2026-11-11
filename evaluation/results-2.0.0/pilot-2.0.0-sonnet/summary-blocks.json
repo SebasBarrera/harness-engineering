@@ -1,0 +1,2077 @@
+{
+ "blocks": {
+  "A": {
+   "full|direct|claude-sonnet-5-5|brownfield": {
+    "addedLines": {
+     "max": 45,
+     "median": 45,
+     "min": 45,
+     "n": 1,
+     "values": [
+      45
+     ]
+    },
+    "agentErrors": 0,
+    "banditIntroduced": {
+     "HIGH": 0,
+     "LOW": 0,
+     "MEDIUM": 0
+    },
+    "calls": {
+     "max": 1,
+     "median": 1,
+     "min": 1,
+     "n": 1,
+     "values": [
+      1
+     ]
+    },
+    "costUsd": {
+     "max": 0.062102,
+     "median": 0.062102,
+     "min": 0.062102,
+     "n": 1,
+     "values": [
+      0.062102
+     ]
+    },
+    "delivered": 1,
+    "deliveredDefective": 0,
+    "diffCoverage": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "hiddenRatio": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "inputTokensTotal": {
+     "max": 50922,
+     "median": 50922,
+     "min": 50922,
+     "n": 1,
+     "values": [
+      50922
+     ]
+    },
+    "measuredOnQuarantineCopy": 0,
+    "notDeliveredCorrect": 0,
+    "notDeliveredDefective": 0,
+    "outOfScopeRuns": 0,
+    "outputTokens": {
+     "max": 2925,
+     "median": 2925,
+     "min": 2925,
+     "n": 1,
+     "values": [
+      2925
+     ]
+    },
+    "perRun": [
+     {
+      "calls": 1,
+      "corrections": null,
+      "costUsd": 0.062102,
+      "delivered": true,
+      "dryRun": false,
+      "hidden": "24/24",
+      "measuredOn": "workspace",
+      "outcome": "direct",
+      "rep": 1,
+      "waits": []
+     }
+    ],
+    "permissionDenials": {
+     "max": 1,
+     "median": 1,
+     "min": 1,
+     "n": 1,
+     "values": [
+      1
+     ]
+    },
+    "regressionAllPassed": 1,
+    "ruffIntroduced": {
+     "max": 0,
+     "median": 0,
+     "min": 0,
+     "n": 1,
+     "values": [
+      0
+     ]
+    },
+    "runs": 1,
+    "seconds": {
+     "agentCalls": {
+      "max": 26.594,
+      "median": 26.594,
+      "min": 26.594,
+      "n": 1,
+      "values": [
+       26.594
+      ]
+     },
+     "harnessProcess": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "n": 0
+     },
+     "productOwner": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "total": {
+      "max": 26.61,
+      "median": 26.61,
+      "min": 26.61,
+      "n": 1,
+      "values": [
+       26.61
+      ]
+     }
+    },
+    "secretLiteralDelivered": 0,
+    "secretLiteralRuns": 0,
+    "testFilesChanged": {
+     "max": 1,
+     "median": 1,
+     "min": 1,
+     "n": 1,
+     "values": [
+      1
+     ]
+    },
+    "visibleGreen": 1
+   },
+   "full|harness-anchored|claude-sonnet-5-5|brownfield": {
+    "addedLines": {
+     "max": 525,
+     "median": 525,
+     "min": 525,
+     "n": 1,
+     "values": [
+      525
+     ]
+    },
+    "agentErrors": 0,
+    "banditIntroduced": {
+     "HIGH": 0,
+     "LOW": 0,
+     "MEDIUM": 0
+    },
+    "calls": {
+     "max": 11,
+     "median": 11,
+     "min": 11,
+     "n": 1,
+     "values": [
+      11
+     ]
+    },
+    "costUsd": {
+     "max": 0.87499,
+     "median": 0.87499,
+     "min": 0.87499,
+     "n": 1,
+     "values": [
+      0.87499
+     ]
+    },
+    "delivered": 1,
+    "deliveredDefective": 0,
+    "diffCoverage": {
+     "max": 0.8667,
+     "median": 0.8667,
+     "min": 0.8667,
+     "n": 1,
+     "values": [
+      0.8667
+     ]
+    },
+    "harness": {
+     "callsByKindModel": {
+      "acceptance|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.235476,
+        "median": 0.235476,
+        "min": 0.235476,
+        "n": 1,
+        "values": [
+         0.235476
+        ]
+       },
+       "outputTokens": {
+        "max": 16253,
+        "median": 16253,
+        "min": 16253,
+        "n": 1,
+        "values": [
+         16253
+        ]
+       },
+       "wallSeconds": {
+        "max": 107.86,
+        "median": 107.86,
+        "min": 107.86,
+        "n": 1,
+        "values": [
+         107.86
+        ]
+       }
+      },
+      "architecture|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.098389,
+        "median": 0.098389,
+        "min": 0.098389,
+        "n": 1,
+        "values": [
+         0.098389
+        ]
+       },
+       "outputTokens": {
+        "max": 4571,
+        "median": 4571,
+        "min": 4571,
+        "n": 1,
+        "values": [
+         4571
+        ]
+       },
+       "wallSeconds": {
+        "max": 31.125,
+        "median": 31.125,
+        "min": 31.125,
+        "n": 1,
+        "values": [
+         31.125
+        ]
+       }
+      },
+      "clarify|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.130061,
+        "median": 0.130061,
+        "min": 0.130061,
+        "n": 1,
+        "values": [
+         0.130061
+        ]
+       },
+       "outputTokens": {
+        "max": 2617,
+        "median": 2617,
+        "min": 2617,
+        "n": 1,
+        "values": [
+         2617
+        ]
+       },
+       "wallSeconds": {
+        "max": 28.765,
+        "median": 28.765,
+        "min": 28.765,
+        "n": 1,
+        "values": [
+         28.765
+        ]
+       }
+      },
+      "implement|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.168793,
+        "median": 0.168793,
+        "min": 0.168793,
+        "n": 1,
+        "values": [
+         0.168793
+        ]
+       },
+       "outputTokens": {
+        "max": 6201,
+        "median": 6201,
+        "min": 6201,
+        "n": 1,
+        "values": [
+         6201
+        ]
+       },
+       "wallSeconds": {
+        "max": 43.562,
+        "median": 43.562,
+        "min": 43.562,
+        "n": 1,
+        "values": [
+         43.562
+        ]
+       }
+      },
+      "locate|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.151311,
+        "median": 0.151311,
+        "min": 0.151311,
+        "n": 1,
+        "values": [
+         0.151311
+        ]
+       },
+       "outputTokens": {
+        "max": 5968,
+        "median": 5968,
+        "min": 5968,
+        "n": 1,
+        "values": [
+         5968
+        ]
+       },
+       "wallSeconds": {
+        "max": 46.094,
+        "median": 46.094,
+        "min": 46.094,
+        "n": 1,
+        "values": [
+         46.094
+        ]
+       }
+      },
+      "review|claude-sonnet-5-5": {
+       "calls": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "n": 1,
+        "values": [
+         2
+        ]
+       },
+       "costUsd": {
+        "max": 0.09096,
+        "median": 0.09096,
+        "min": 0.09096,
+        "n": 1,
+        "values": [
+         0.09096
+        ]
+       },
+       "outputTokens": {
+        "max": 2083,
+        "median": 2083,
+        "min": 2083,
+        "n": 1,
+        "values": [
+         2083
+        ]
+       },
+       "wallSeconds": {
+        "max": 21.547,
+        "median": 21.547,
+        "min": 21.547,
+        "n": 1,
+        "values": [
+         21.547
+        ]
+       }
+      }
+     },
+     "certificationByStatus": {
+      "CERTIFIED": 2,
+      "NOT_CERTIFIED": 5
+     },
+     "chainValid": 1,
+     "clarificationQuestions": {
+      "max": 9,
+      "median": 9,
+      "min": 9,
+      "n": 1,
+      "values": [
+       9
+      ]
+     },
+     "clarificationRounds": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "coreDigestEqual": [],
+     "corrections": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "gateFirst": {
+      "PASSED": 1
+     },
+     "governanceCalls": {
+      "max": 10,
+      "median": 10,
+      "min": 10,
+      "n": 1,
+      "values": [
+       10
+      ]
+     },
+     "governanceCostUsd": {
+      "max": 0.706197,
+      "median": 0.706197,
+      "min": 0.706197,
+      "n": 1,
+      "values": [
+       0.706197
+      ]
+     },
+     "governanceSeconds": {
+      "max": 235.391,
+      "median": 235.391,
+      "min": 235.391,
+      "n": 1,
+      "values": [
+       235.391
+      ]
+     },
+     "implementationCalls": {
+      "max": 1,
+      "median": 1,
+      "min": 1,
+      "n": 1,
+      "values": [
+       1
+      ]
+     },
+     "lane": {
+      "full": 1
+     },
+     "outcomes": {
+      "approved": 1
+     },
+     "productOwnerCalls": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "productOwnerCostUsd": {
+      "max": 0.053082,
+      "median": 0.053082,
+      "min": 0.053082,
+      "n": 1,
+      "values": [
+       0.053082
+      ]
+     },
+     "quarantined": 0,
+     "recordVerified": 1,
+     "reviewFindingsByDomain": {
+      "python": 1
+     },
+     "routedModels": {
+      "acceptance:claude-sonnet-5-5:high": 1,
+      "architecture:claude-sonnet-5-5:high": 1,
+      "clarify:claude-sonnet-5-5:medium": 3,
+      "implement:claude-sonnet-5-5:high": 1,
+      "locate:claude-sonnet-5-5:medium": 3,
+      "review:claude-sonnet-5-5:medium": 2
+     },
+     "trace2Complete": 1,
+     "trace2Missing": {},
+     "trace8Complete": 1,
+     "trace8Ratio": {
+      "max": 1.0,
+      "median": 1.0,
+      "min": 1.0,
+      "n": 1,
+      "values": [
+       1.0
+      ]
+     },
+     "unsupportedClaims": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "waits": {
+      "acceptance": 1,
+      "architecture-rules": 1,
+      "clarification": 2,
+      "plan-approval": 1
+     },
+     "writeFindings": {}
+    },
+    "hiddenRatio": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "inputTokensTotal": {
+     "max": 494503,
+     "median": 494503,
+     "min": 494503,
+     "n": 1,
+     "values": [
+      494503
+     ]
+    },
+    "measuredOnQuarantineCopy": 0,
+    "notDeliveredCorrect": 0,
+    "notDeliveredDefective": 0,
+    "outOfScopeRuns": 1,
+    "outputTokens": {
+     "max": 37693,
+     "median": 37693,
+     "min": 37693,
+     "n": 1,
+     "values": [
+      37693
+     ]
+    },
+    "perRun": [
+     {
+      "calls": 11,
+      "corrections": 0,
+      "costUsd": 0.87499,
+      "delivered": true,
+      "dryRun": false,
+      "hidden": "24/24",
+      "measuredOn": "workspace",
+      "outcome": "approved",
+      "rep": 1,
+      "waits": [
+       "clarification",
+       "clarification",
+       "architecture-rules",
+       "acceptance",
+       "plan-approval"
+      ]
+     }
+    ],
+    "permissionDenials": {
+     "max": 4,
+     "median": 4,
+     "min": 4,
+     "n": 1,
+     "values": [
+      4
+     ]
+    },
+    "regressionAllPassed": 1,
+    "ruffIntroduced": {
+     "max": 0,
+     "median": 0,
+     "min": 0,
+     "n": 1,
+     "values": [
+      0
+     ]
+    },
+    "runs": 1,
+    "seconds": {
+     "agentCalls": {
+      "max": 278.953,
+      "median": 278.953,
+      "min": 278.953,
+      "n": 1,
+      "values": [
+       278.953
+      ]
+     },
+     "harnessProcess": {
+      "max": 275.923,
+      "median": 275.923,
+      "min": 275.923,
+      "n": 1,
+      "values": [
+       275.923
+      ]
+     },
+     "productOwner": {
+      "max": 21.703,
+      "median": 21.703,
+      "min": 21.703,
+      "n": 1,
+      "values": [
+       21.703
+      ]
+     },
+     "total": {
+      "max": 590.406,
+      "median": 590.406,
+      "min": 590.406,
+      "n": 1,
+      "values": [
+       590.406
+      ]
+     }
+    },
+    "secretLiteralDelivered": 0,
+    "secretLiteralRuns": 0,
+    "testFilesChanged": {
+     "max": 6,
+     "median": 6,
+     "min": 6,
+     "n": 1,
+     "values": [
+      6
+     ]
+    },
+    "visibleGreen": 1
+   },
+   "full|harness-core|claude-sonnet-5-5|brownfield": {
+    "addedLines": {
+     "max": 47,
+     "median": 47,
+     "min": 47,
+     "n": 1,
+     "values": [
+      47
+     ]
+    },
+    "agentErrors": 0,
+    "banditIntroduced": {
+     "HIGH": 0,
+     "LOW": 0,
+     "MEDIUM": 0
+    },
+    "calls": {
+     "max": 1,
+     "median": 1,
+     "min": 1,
+     "n": 1,
+     "values": [
+      1
+     ]
+    },
+    "costUsd": {
+     "max": 0.078228,
+     "median": 0.078228,
+     "min": 0.078228,
+     "n": 1,
+     "values": [
+      0.078228
+     ]
+    },
+    "delivered": 1,
+    "deliveredDefective": 0,
+    "diffCoverage": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "harness": {
+     "callsByKindModel": {
+      "implement|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.078228,
+        "median": 0.078228,
+        "min": 0.078228,
+        "n": 1,
+        "values": [
+         0.078228
+        ]
+       },
+       "outputTokens": {
+        "max": 3932,
+        "median": 3932,
+        "min": 3932,
+        "n": 1,
+        "values": [
+         3932
+        ]
+       },
+       "wallSeconds": {
+        "max": 34.781,
+        "median": 34.781,
+        "min": 34.781,
+        "n": 1,
+        "values": [
+         34.781
+        ]
+       }
+      }
+     },
+     "certificationByStatus": {},
+     "chainValid": 1,
+     "clarificationQuestions": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "clarificationRounds": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "coreDigestEqual": [
+      false
+     ],
+     "corrections": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "gateFirst": {
+      "PASSED": 1
+     },
+     "governanceCalls": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "governanceCostUsd": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "n": 0
+     },
+     "governanceSeconds": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "implementationCalls": {
+      "max": 1,
+      "median": 1,
+      "min": 1,
+      "n": 1,
+      "values": [
+       1
+      ]
+     },
+     "lane": {},
+     "outcomes": {
+      "approved": 1
+     },
+     "productOwnerCalls": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "productOwnerCostUsd": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "n": 0
+     },
+     "quarantined": 0,
+     "recordVerified": 1,
+     "reviewFindingsByDomain": {},
+     "routedModels": {},
+     "trace2Complete": 1,
+     "trace2Missing": {},
+     "trace8Complete": 1,
+     "trace8Ratio": {
+      "max": 1.0,
+      "median": 1.0,
+      "min": 1.0,
+      "n": 1,
+      "values": [
+       1.0
+      ]
+     },
+     "unsupportedClaims": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "waits": {},
+     "writeFindings": {}
+    },
+    "hiddenRatio": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "inputTokensTotal": {
+     "max": 78527,
+     "median": 78527,
+     "min": 78527,
+     "n": 1,
+     "values": [
+      78527
+     ]
+    },
+    "measuredOnQuarantineCopy": 0,
+    "notDeliveredCorrect": 0,
+    "notDeliveredDefective": 0,
+    "outOfScopeRuns": 0,
+    "outputTokens": {
+     "max": 3932,
+     "median": 3932,
+     "min": 3932,
+     "n": 1,
+     "values": [
+      3932
+     ]
+    },
+    "perRun": [
+     {
+      "calls": 1,
+      "corrections": 0,
+      "costUsd": 0.078228,
+      "delivered": true,
+      "dryRun": false,
+      "hidden": "24/24",
+      "measuredOn": "workspace",
+      "outcome": "approved",
+      "rep": 1,
+      "waits": []
+     }
+    ],
+    "permissionDenials": {
+     "max": 2,
+     "median": 2,
+     "min": 2,
+     "n": 1,
+     "values": [
+      2
+     ]
+    },
+    "regressionAllPassed": 1,
+    "ruffIntroduced": {
+     "max": 0,
+     "median": 0,
+     "min": 0,
+     "n": 1,
+     "values": [
+      0
+     ]
+    },
+    "runs": 1,
+    "seconds": {
+     "agentCalls": {
+      "max": 34.781,
+      "median": 34.781,
+      "min": 34.781,
+      "n": 1,
+      "values": [
+       34.781
+      ]
+     },
+     "harnessProcess": {
+      "max": 37.517,
+      "median": 37.517,
+      "min": 37.517,
+      "n": 1,
+      "values": [
+       37.517
+      ]
+     },
+     "productOwner": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "total": {
+      "max": 86.453,
+      "median": 86.453,
+      "min": 86.453,
+      "n": 1,
+      "values": [
+       86.453
+      ]
+     }
+    },
+    "secretLiteralDelivered": 0,
+    "secretLiteralRuns": 0,
+    "testFilesChanged": {
+     "max": 1,
+     "median": 1,
+     "min": 1,
+     "n": 1,
+     "values": [
+      1
+     ]
+    },
+    "visibleGreen": 1
+   },
+   "full|harness|claude-sonnet-5-5|brownfield": {
+    "addedLines": {
+     "max": 113,
+     "median": 113,
+     "min": 113,
+     "n": 1,
+     "values": [
+      113
+     ]
+    },
+    "agentErrors": 0,
+    "banditIntroduced": {
+     "HIGH": 0,
+     "LOW": 0,
+     "MEDIUM": 0
+    },
+    "calls": {
+     "max": 13,
+     "median": 13,
+     "min": 13,
+     "n": 1,
+     "values": [
+      13
+     ]
+    },
+    "costUsd": {
+     "max": 0.897044,
+     "median": 0.897044,
+     "min": 0.897044,
+     "n": 1,
+     "values": [
+      0.897044
+     ]
+    },
+    "delivered": 1,
+    "deliveredDefective": 0,
+    "diffCoverage": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "harness": {
+     "callsByKindModel": {
+      "acceptance|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.076873,
+        "median": 0.076873,
+        "min": 0.076873,
+        "n": 1,
+        "values": [
+         0.076873
+        ]
+       },
+       "outputTokens": {
+        "max": 4837,
+        "median": 4837,
+        "min": 4837,
+        "n": 1,
+        "values": [
+         4837
+        ]
+       },
+       "wallSeconds": {
+        "max": 31.0,
+        "median": 31.0,
+        "min": 31.0,
+        "n": 1,
+        "values": [
+         31.0
+        ]
+       }
+      },
+      "architecture|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.073768,
+        "median": 0.073768,
+        "min": 0.073768,
+        "n": 1,
+        "values": [
+         0.073768
+        ]
+       },
+       "outputTokens": {
+        "max": 2822,
+        "median": 2822,
+        "min": 2822,
+        "n": 1,
+        "values": [
+         2822
+        ]
+       },
+       "wallSeconds": {
+        "max": 20.047,
+        "median": 20.047,
+        "min": 20.047,
+        "n": 1,
+        "values": [
+         20.047
+        ]
+       }
+      },
+      "clarify|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.114264,
+        "median": 0.114264,
+        "min": 0.114264,
+        "n": 1,
+        "values": [
+         0.114264
+        ]
+       },
+       "outputTokens": {
+        "max": 1932,
+        "median": 1932,
+        "min": 1932,
+        "n": 1,
+        "values": [
+         1932
+        ]
+       },
+       "wallSeconds": {
+        "max": 22.156,
+        "median": 22.156,
+        "min": 22.156,
+        "n": 1,
+        "values": [
+         22.156
+        ]
+       }
+      },
+      "implement|claude-sonnet-5-5": {
+       "calls": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "n": 1,
+        "values": [
+         2
+        ]
+       },
+       "costUsd": {
+        "max": 0.382641,
+        "median": 0.382641,
+        "min": 0.382641,
+        "n": 1,
+        "values": [
+         0.382641
+        ]
+       },
+       "outputTokens": {
+        "max": 12985,
+        "median": 12985,
+        "min": 12985,
+        "n": 1,
+        "values": [
+         12985
+        ]
+       },
+       "wallSeconds": {
+        "max": 93.577,
+        "median": 93.577,
+        "min": 93.577,
+        "n": 1,
+        "values": [
+         93.577
+        ]
+       }
+      },
+      "locate|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.16474,
+        "median": 0.16474,
+        "min": 0.16474,
+        "n": 1,
+        "values": [
+         0.16474
+        ]
+       },
+       "outputTokens": {
+        "max": 6266,
+        "median": 6266,
+        "min": 6266,
+        "n": 1,
+        "values": [
+         6266
+        ]
+       },
+       "wallSeconds": {
+        "max": 47.577,
+        "median": 47.577,
+        "min": 47.577,
+        "n": 1,
+        "values": [
+         47.577
+        ]
+       }
+      },
+      "review|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.084759,
+        "median": 0.084759,
+        "min": 0.084759,
+        "n": 1,
+        "values": [
+         0.084759
+        ]
+       },
+       "outputTokens": {
+        "max": 1787,
+        "median": 1787,
+        "min": 1787,
+        "n": 1,
+        "values": [
+         1787
+        ]
+       },
+       "wallSeconds": {
+        "max": 25.155,
+        "median": 25.155,
+        "min": 25.155,
+        "n": 1,
+        "values": [
+         25.155
+        ]
+       }
+      }
+     },
+     "certificationByStatus": {
+      "NOT_CERTIFIED": 8
+     },
+     "chainValid": 1,
+     "clarificationQuestions": {
+      "max": 9,
+      "median": 9,
+      "min": 9,
+      "n": 1,
+      "values": [
+       9
+      ]
+     },
+     "clarificationRounds": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "coreDigestEqual": [],
+     "corrections": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "gateFirst": {
+      "PASSED": 1
+     },
+     "governanceCalls": {
+      "max": 11,
+      "median": 11,
+      "min": 11,
+      "n": 1,
+      "values": [
+       11
+      ]
+     },
+     "governanceCostUsd": {
+      "max": 0.514404,
+      "median": 0.514404,
+      "min": 0.514404,
+      "n": 1,
+      "values": [
+       0.514404
+      ]
+     },
+     "governanceSeconds": {
+      "max": 145.935,
+      "median": 145.935,
+      "min": 145.935,
+      "n": 1,
+      "values": [
+       145.935
+      ]
+     },
+     "implementationCalls": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "lane": {
+      "full": 1
+     },
+     "outcomes": {
+      "approved": 1
+     },
+     "productOwnerCalls": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "productOwnerCostUsd": {
+      "max": 0.054258,
+      "median": 0.054258,
+      "min": 0.054258,
+      "n": 1,
+      "values": [
+       0.054258
+      ]
+     },
+     "quarantined": 0,
+     "recordVerified": 1,
+     "reviewFindingsByDomain": {},
+     "routedModels": {},
+     "trace2Complete": 1,
+     "trace2Missing": {},
+     "trace8Complete": 1,
+     "trace8Ratio": {
+      "max": 1.0,
+      "median": 1.0,
+      "min": 1.0,
+      "n": 1,
+      "values": [
+       1.0
+      ]
+     },
+     "unsupportedClaims": {
+      "max": 1,
+      "median": 1,
+      "min": 1,
+      "n": 1,
+      "values": [
+       1
+      ]
+     },
+     "waits": {
+      "acceptance": 1,
+      "architecture-rules": 1,
+      "clarification": 2,
+      "plan-approval": 1
+     },
+     "writeFindings": {}
+    },
+    "hiddenRatio": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "inputTokensTotal": {
+     "max": 800617,
+     "median": 800617,
+     "min": 800617,
+     "n": 1,
+     "values": [
+      800617
+     ]
+    },
+    "measuredOnQuarantineCopy": 0,
+    "notDeliveredCorrect": 0,
+    "notDeliveredDefective": 0,
+    "outOfScopeRuns": 1,
+    "outputTokens": {
+     "max": 30629,
+     "median": 30629,
+     "min": 30629,
+     "n": 1,
+     "values": [
+      30629
+     ]
+    },
+    "perRun": [
+     {
+      "calls": 13,
+      "corrections": 0,
+      "costUsd": 0.897044,
+      "delivered": true,
+      "dryRun": false,
+      "hidden": "24/24",
+      "measuredOn": "workspace",
+      "outcome": "approved",
+      "rep": 1,
+      "waits": [
+       "clarification",
+       "clarification",
+       "architecture-rules",
+       "acceptance",
+       "plan-approval"
+      ]
+     }
+    ],
+    "permissionDenials": {
+     "max": 10,
+     "median": 10,
+     "min": 10,
+     "n": 1,
+     "values": [
+      10
+     ]
+    },
+    "regressionAllPassed": 1,
+    "ruffIntroduced": {
+     "max": 0,
+     "median": 0,
+     "min": 0,
+     "n": 1,
+     "values": [
+      0
+     ]
+    },
+    "runs": 1,
+    "seconds": {
+     "agentCalls": {
+      "max": 239.512,
+      "median": 239.512,
+      "min": 239.512,
+      "n": 1,
+      "values": [
+       239.512
+      ]
+     },
+     "harnessProcess": {
+      "max": 245.926,
+      "median": 245.926,
+      "min": 245.926,
+      "n": 1,
+      "values": [
+       245.926
+      ]
+     },
+     "productOwner": {
+      "max": 21.593,
+      "median": 21.593,
+      "min": 21.593,
+      "n": 1,
+      "values": [
+       21.593
+      ]
+     },
+     "total": {
+      "max": 518.906,
+      "median": 518.906,
+      "min": 518.906,
+      "n": 1,
+      "values": [
+       518.906
+      ]
+     }
+    },
+    "secretLiteralDelivered": 0,
+    "secretLiteralRuns": 0,
+    "testFilesChanged": {
+     "max": 3,
+     "median": 3,
+     "min": 3,
+     "n": 1,
+     "values": [
+      3
+     ]
+    },
+    "visibleGreen": 1
+   }
+  },
+  "B": {
+   "casual|harness|claude-sonnet-5-5|brownfield": {
+    "addedLines": {
+     "max": 197,
+     "median": 197,
+     "min": 197,
+     "n": 1,
+     "values": [
+      197
+     ]
+    },
+    "agentErrors": 0,
+    "banditIntroduced": {
+     "HIGH": 0,
+     "LOW": 0,
+     "MEDIUM": 0
+    },
+    "calls": {
+     "max": 10,
+     "median": 10,
+     "min": 10,
+     "n": 1,
+     "values": [
+      10
+     ]
+    },
+    "costUsd": {
+     "max": 0.501551,
+     "median": 0.501551,
+     "min": 0.501551,
+     "n": 1,
+     "values": [
+      0.501551
+     ]
+    },
+    "delivered": 1,
+    "deliveredDefective": 0,
+    "diffCoverage": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "harness": {
+     "callsByKindModel": {
+      "acceptance|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.054983,
+        "median": 0.054983,
+        "min": 0.054983,
+        "n": 1,
+        "values": [
+         0.054983
+        ]
+       },
+       "outputTokens": {
+        "max": 3136,
+        "median": 3136,
+        "min": 3136,
+        "n": 1,
+        "values": [
+         3136
+        ]
+       },
+       "wallSeconds": {
+        "max": 21.813,
+        "median": 21.813,
+        "min": 21.813,
+        "n": 1,
+        "values": [
+         21.813
+        ]
+       }
+      },
+      "architecture|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.054607,
+        "median": 0.054607,
+        "min": 0.054607,
+        "n": 1,
+        "values": [
+         0.054607
+        ]
+       },
+       "outputTokens": {
+        "max": 2157,
+        "median": 2157,
+        "min": 2157,
+        "n": 1,
+        "values": [
+         2157
+        ]
+       },
+       "wallSeconds": {
+        "max": 17.093,
+        "median": 17.093,
+        "min": 17.093,
+        "n": 1,
+        "values": [
+         17.093
+        ]
+       }
+      },
+      "clarify|claude-sonnet-5-5": {
+       "calls": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "n": 1,
+        "values": [
+         2
+        ]
+       },
+       "costUsd": {
+        "max": 0.077202,
+        "median": 0.077202,
+        "min": 0.077202,
+        "n": 1,
+        "values": [
+         0.077202
+        ]
+       },
+       "outputTokens": {
+        "max": 1276,
+        "median": 1276,
+        "min": 1276,
+        "n": 1,
+        "values": [
+         1276
+        ]
+       },
+       "wallSeconds": {
+        "max": 15.188,
+        "median": 15.188,
+        "min": 15.188,
+        "n": 1,
+        "values": [
+         15.188
+        ]
+       }
+      },
+      "implement|claude-sonnet-5-5": {
+       "calls": {
+        "max": 1,
+        "median": 1,
+        "min": 1,
+        "n": 1,
+        "values": [
+         1
+        ]
+       },
+       "costUsd": {
+        "max": 0.135296,
+        "median": 0.135296,
+        "min": 0.135296,
+        "n": 1,
+        "values": [
+         0.135296
+        ]
+       },
+       "outputTokens": {
+        "max": 4731,
+        "median": 4731,
+        "min": 4731,
+        "n": 1,
+        "values": [
+         4731
+        ]
+       },
+       "wallSeconds": {
+        "max": 38.281,
+        "median": 38.281,
+        "min": 38.281,
+        "n": 1,
+        "values": [
+         38.281
+        ]
+       }
+      },
+      "locate|claude-sonnet-5-5": {
+       "calls": {
+        "max": 2,
+        "median": 2,
+        "min": 2,
+        "n": 1,
+        "values": [
+         2
+        ]
+       },
+       "costUsd": {
+        "max": 0.086656,
+        "median": 0.086656,
+        "min": 0.086656,
+        "n": 1,
+        "values": [
+         0.086656
+        ]
+       },
+       "outputTokens": {
+        "max": 3248,
+        "median": 3248,
+        "min": 3248,
+        "n": 1,
+        "values": [
+         3248
+        ]
+       },
+       "wallSeconds": {
+        "max": 29.094,
+        "median": 29.094,
+        "min": 29.094,
+        "n": 1,
+        "values": [
+         29.094
+        ]
+       }
+      },
+      "review|claude-sonnet-5-5": {
+       "calls": {
+        "max": 3,
+        "median": 3,
+        "min": 3,
+        "n": 1,
+        "values": [
+         3
+        ]
+       },
+       "costUsd": {
+        "max": 0.092808,
+        "median": 0.092808,
+        "min": 0.092808,
+        "n": 1,
+        "values": [
+         0.092808
+        ]
+       },
+       "outputTokens": {
+        "max": 2135,
+        "median": 2135,
+        "min": 2135,
+        "n": 1,
+        "values": [
+         2135
+        ]
+       },
+       "wallSeconds": {
+        "max": 26.407,
+        "median": 26.407,
+        "min": 26.407,
+        "n": 1,
+        "values": [
+         26.407
+        ]
+       }
+      }
+     },
+     "certificationByStatus": {
+      "CERTIFIED": 4,
+      "NOT_CERTIFIED": 1
+     },
+     "chainValid": 1,
+     "clarificationQuestions": {
+      "max": 10,
+      "median": 10,
+      "min": 10,
+      "n": 1,
+      "values": [
+       10
+      ]
+     },
+     "clarificationRounds": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "coreDigestEqual": [],
+     "corrections": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "gateFirst": {
+      "PASSED": 1
+     },
+     "governanceCalls": {
+      "max": 9,
+      "median": 9,
+      "min": 9,
+      "n": 1,
+      "values": [
+       9
+      ]
+     },
+     "governanceCostUsd": {
+      "max": 0.366255,
+      "median": 0.366255,
+      "min": 0.366255,
+      "n": 1,
+      "values": [
+       0.366255
+      ]
+     },
+     "governanceSeconds": {
+      "max": 109.595,
+      "median": 109.595,
+      "min": 109.595,
+      "n": 1,
+      "values": [
+       109.595
+      ]
+     },
+     "implementationCalls": {
+      "max": 1,
+      "median": 1,
+      "min": 1,
+      "n": 1,
+      "values": [
+       1
+      ]
+     },
+     "lane": {
+      "full": 1
+     },
+     "outcomes": {
+      "approved": 1
+     },
+     "productOwnerCalls": {
+      "max": 2,
+      "median": 2,
+      "min": 2,
+      "n": 1,
+      "values": [
+       2
+      ]
+     },
+     "productOwnerCostUsd": {
+      "max": 0.04739,
+      "median": 0.04739,
+      "min": 0.04739,
+      "n": 1,
+      "values": [
+       0.04739
+      ]
+     },
+     "quarantined": 0,
+     "recordVerified": 1,
+     "reviewFindingsByDomain": {},
+     "routedModels": {},
+     "trace2Complete": 1,
+     "trace2Missing": {},
+     "trace8Complete": 1,
+     "trace8Ratio": {
+      "max": 1.0,
+      "median": 1.0,
+      "min": 1.0,
+      "n": 1,
+      "values": [
+       1.0
+      ]
+     },
+     "unsupportedClaims": {
+      "max": 0,
+      "median": 0,
+      "min": 0,
+      "n": 1,
+      "values": [
+       0
+      ]
+     },
+     "waits": {
+      "acceptance": 1,
+      "architecture-rules": 1,
+      "clarification": 2,
+      "plan-approval": 1
+     },
+     "writeFindings": {}
+    },
+    "hiddenRatio": {
+     "max": 1.0,
+     "median": 1.0,
+     "min": 1.0,
+     "n": 1,
+     "values": [
+      1.0
+     ]
+    },
+    "inputTokensTotal": {
+     "max": 327117,
+     "median": 327117,
+     "min": 327117,
+     "n": 1,
+     "values": [
+      327117
+     ]
+    },
+    "measuredOnQuarantineCopy": 0,
+    "notDeliveredCorrect": 0,
+    "notDeliveredDefective": 0,
+    "outOfScopeRuns": 0,
+    "outputTokens": {
+     "max": 16683,
+     "median": 16683,
+     "min": 16683,
+     "n": 1,
+     "values": [
+      16683
+     ]
+    },
+    "perRun": [
+     {
+      "calls": 10,
+      "corrections": 0,
+      "costUsd": 0.501551,
+      "delivered": true,
+      "dryRun": false,
+      "hidden": "24/24",
+      "measuredOn": "workspace",
+      "outcome": "approved",
+      "rep": 1,
+      "waits": [
+       "clarification",
+       "clarification",
+       "architecture-rules",
+       "acceptance",
+       "plan-approval"
+      ]
+     }
+    ],
+    "permissionDenials": {
+     "max": 2,
+     "median": 2,
+     "min": 2,
+     "n": 1,
+     "values": [
+      2
+     ]
+    },
+    "regressionAllPassed": 1,
+    "ruffIntroduced": {
+     "max": 0,
+     "median": 0,
+     "min": 0,
+     "n": 1,
+     "values": [
+      0
+     ]
+    },
+    "runs": 1,
+    "seconds": {
+     "agentCalls": {
+      "max": 147.876,
+      "median": 147.876,
+      "min": 147.876,
+      "n": 1,
+      "values": [
+       147.876
+      ]
+     },
+     "harnessProcess": {
+      "max": 264.562,
+      "median": 264.562,
+      "min": 264.562,
+      "n": 1,
+      "values": [
+       264.562
+      ]
+     },
+     "productOwner": {
+      "max": 21.485,
+      "median": 21.485,
+      "min": 21.485,
+      "n": 1,
+      "values": [
+       21.485
+      ]
+     },
+     "total": {
+      "max": 448.094,
+      "median": 448.094,
+      "min": 448.094,
+      "n": 1,
+      "values": [
+       448.094
+      ]
+     }
+    },
+    "secretLiteralDelivered": 0,
+    "secretLiteralRuns": 0,
+    "testFilesChanged": {
+     "max": 2,
+     "median": 2,
+     "min": 2,
+     "n": 1,
+     "values": [
+      2
+     ]
+    },
+    "visibleGreen": 1
+   }
+  }
+ },
+ "dryRunRecords": 0,
+ "files": [
+  "pilot.jsonl"
+ ],
+ "records": 5
+}

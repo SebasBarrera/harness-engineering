@@ -12,16 +12,26 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 `title` or `intent` is currently stored as the text `None` instead of being rejected
 (issue #29), so always provide both.
 
+At least one acceptance criterion is required, except when the project sets
+`intake.criteriaPolicy: enforce`: then a task without criteria is accepted and stored
+with `criteriaPending: true`, and INTENT asks for its criteria (rule `C0`). Only the
+harness sets `criteriaPending`, and it removes the field once `harness task clarify`
+adds the first criterion.
+
 ## Task
 
 | Field | Type | Required | Constraints |
 |---|---|---|---|
 | `acceptanceCriteria` | array of [AcceptanceCriterion](#acceptancecriterion) | yes |  |
+| `checklist` | array of [ChecklistItem](#checklistitem) | no |  |
 | `constraints` | array of string | no |  |
+| `contract` | [OperationalContract](#operationalcontract) or null | no |  |
 | `createdAt` | string (date-time) | no |  |
+| `criteriaPending` | boolean | no | default `false` |
 | `implementation` | [ImplementationInstruction](#implementationinstruction) | no |  |
 | `intent` | string | yes | min length 1; max length 16000 |
 | `metadata` | object | no |  |
+| `probes` | array of [ProbeDefinition](#probedefinition) | no |  |
 | `projectId` | string | yes |  |
 | `requirements` | array of [Requirement](#requirement) | no |  |
 | `schemaVersion` | `1.0` | no | default `"1.0"` |
@@ -35,7 +45,25 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 | `criterionId` | string | yes |  |
 | `priority` | `MUST` \| `SHOULD` \| `COULD` | no | default `"MUST"` |
 | `text` | string | yes | min length 1; max length 8000 |
+| `verification` | [CriterionVerification](#criterionverification) or null | no |  |
 | `verificationHint` | string or null | no | max length 4000 |
+
+## ChecklistItem
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `id` | string | yes | pattern `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$` |
+| `text` | string | yes | min length 1; max length 2000 |
+
+## CriterionVerification
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `deferred` | string or null | no | max length 1000 |
+| `level` | [VerificationLevel](#verificationlevel) | yes |  |
+| `manual` | string or null | no | max length 2000 |
+| `probe` | string or null | no |  |
+| `tests` | array of string | no |  |
 
 ## FilePatch
 
@@ -55,6 +83,62 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 | `mode` | `none` \| `patch` \| `command` | no | default `"none"` |
 | `patches` | array of [FilePatch](#filepatch) | no |  |
 
+## OperationalContract
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `branch` | string or null | no | max length 200 |
+| `comment` | boolean or null | no |  |
+| `coverageThreshold` | number or null | no |  |
+| `createPullRequest` | boolean or null | no |  |
+| `definitionOfDone` | array of string | no |  |
+| `examples` | array of string | no |  |
+| `objective` | string or null | no | max length 4000 |
+| `outOfScope` | array of string | no |  |
+| `push` | boolean or null | no |  |
+| `scope` | array of string | no |  |
+| `scopePaths` | array of string | no |  |
+| `verificationLevel` | [VerificationLevel](#verificationlevel) or null | no |  |
+
+## ProbeAssertion
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `after` | string or null | no |  |
+| `before` | string or null | no |  |
+| `contains` | string or null | no |  |
+| `equals` | any | no |  |
+| `kind` | `exitCode` \| `jsonPath` \| `differs` \| `order` \| `text` | yes |  |
+| `matches` | string or null | no |  |
+| `order` | `ascending` \| `descending` or null | no |  |
+| `path` | string or null | no |  |
+| `present` | boolean or null | no |  |
+| `variants` | array of string | no |  |
+
+## ProbeDefinition
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `assertions` | array of [ProbeAssertion](#probeassertion) | yes |  |
+| `command` | array of string | yes |  |
+| `criteria` | array of string | no |  |
+| `cwd` | string | no | default `"."` |
+| `id` | string | yes | pattern `^[a-z0-9][a-z0-9_.-]{0,63}$` |
+| `level` | [VerificationLevel](#verificationlevel) | no | default `"L3"` |
+| `matrix` | map of array of string | no |  |
+| `output` | `json` \| `text` | no | default `"text"` |
+| `passEnv` | array of string | no |  |
+| `timeoutSeconds` | integer | no | default `60` |
+| `variants` | array of [ProbeVariant](#probevariant) | no |  |
+
+## ProbeVariant
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|
+| `env` | map of string | no |  |
+| `name` | string | yes | min length 1; max length 200 |
+| `values` | map of string | no |  |
+
 ## Requirement
 
 | Field | Type | Required | Constraints |
@@ -62,3 +146,8 @@ aliases are accepted, `projectId` defaults to the project and `schemaVersion` an
 | `requirementId` | string | yes |  |
 | `source` | string | no | default `"human"` |
 | `text` | string | yes | min length 1; max length 8000 |
+
+## VerificationLevel
+
+| Field | Type | Required | Constraints |
+|---|---|---|---|

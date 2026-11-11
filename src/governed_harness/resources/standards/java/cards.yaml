@@ -1,0 +1,58 @@
+pack: java
+title: Java
+cards:
+  - id: java.specific-exceptions
+    title: Catch specific exceptions
+    rule: Catch the specific exceptions a block can throw; never catch Exception, Throwable or RuntimeException to continue, and never leave a catch block empty.
+    rationale: Generic handlers hide defects and swallow interruptions.
+    exceptions:
+      - A top-level boundary that logs and converts every error.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["pmd:AvoidCatchingGenericException", "pmd:EmptyCatchBlock", "checkstyle:IllegalCatch"]
+  - id: java.null-safety
+    title: No null surprises
+    rule: Do not return null for collections or optional results; return an empty collection or Optional, and validate arguments at public boundaries.
+    rationale: Null returns move the failure far from its cause.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["spotbugs:NP_NULL_ON_SOME_PATH", "pmd:ReturnEmptyCollectionRatherThanNull"]
+    principle: least-astonishment
+  - id: java.immutability
+    title: Immutable values, no exposed internals
+    rule: Make value types immutable (records or final fields) and do not expose mutable internal collections or arrays.
+    rationale: Shared mutable state breaks invariants from a distance.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["spotbugs:EI_EXPOSE_REP", "spotbugs:EI_EXPOSE_REP2"]
+  - id: java.resources
+    title: try-with-resources
+    rule: Open every Closeable (streams, connections, statements) in try-with-resources.
+    rationale: Resources leak on the error path otherwise.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["pmd:CloseResource", "spotbugs:OBL_UNSATISFIED_OBLIGATION"]
+  - id: java.small-methods
+    title: Small methods and classes
+    rule: Keep methods short, with few parameters and low cyclomatic complexity; split classes with several responsibilities.
+    rationale: Size and branching predict defects.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["checkstyle:MethodLength", "checkstyle:ParameterNumber", "checkstyle:CyclomaticComplexity", "pmd:GodClass"]
+    principle: kiss
+  - id: java.naming
+    title: Java naming conventions
+    rule: Use camelCase for methods and variables, PascalCase for types and UPPER_SNAKE_CASE for constants; no abbreviations a reader must guess.
+    rationale: Conventional names are read without context.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["checkstyle:MethodName", "checkstyle:TypeName", "checkstyle:ConstantName"]
+    principle: least-astonishment
+  - id: java.unused
+    title: No unused code
+    rule: Remove unused private methods, fields, variables and imports.
+    rationale: Dead code misleads and hides real dependencies.
+    appliesTo: ["**/*.java"]
+    verifiedBy: ["pmd:UnusedPrivateMethod", "pmd:UnusedPrivateField", "checkstyle:UnusedImports"]
+    principle: yagni
+  - id: java.dependency-injection
+    title: Depend on abstractions through constructors
+    rule: Inject collaborators through the constructor as interfaces; do not create infrastructure objects inside domain code.
+    rationale: Constructor injection makes dependencies visible and replaceable in tests.
+    appliesTo: ["src/main/**/*.java"]
+    verifiedBy: ["review"]
+    principle: dip

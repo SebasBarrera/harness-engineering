@@ -1,0 +1,76 @@
+# Escenario de viajes y domicilios de comida (paquete `rides`, ver fixture/INTERFACE.md y SPEC.md).
+# Cuatro niveles de instrucción. one_line y paragraph solo ven INTERFACE.md en el repositorio;
+# requirements y super también encuentran SPEC.md en el repositorio como docs/SPEC.md.
+# steps: el plan del super prompt; con el harness cada uno es una tarea gobernada corta.
+
+one_line: haz una app como Uber con Uber Eats, viajes y domicilios de comida, siguiendo INTERFACE.md
+
+paragraph: >-
+  Construye en Python el backend de una plataforma como Uber y Uber Eats, siguiendo INTERFACE.md. Pasajeros,
+  conductores, repartidores, restaurantes y administradores tienen cuentas con contraseñas seguras. Los
+  conductores registran vehículos y se conectan; los pasajeros obtienen una cotización con precio dinámico,
+  piden un viaje, se les asigna un conductor cercano y el viaje va desde la recogida hasta el destino, con
+  cancelaciones, propinas y viajes programados. Los restaurantes tienen horarios de atención y menús con
+  opciones; los pasajeros piden comida, el restaurante la acepta y la prepara y un repartidor la entrega,
+  con agrupación de pedidos. Agrega códigos promocionales y referidos, tarjetas y una billetera, ganancias y
+  pagos semanales para conductores y repartidores, calificaciones, tickets de soporte, compartir el viaje,
+  notificaciones, reportes de administración y un registro de auditoría. Guarda todo en SQLite. Usa un reloj
+  virtual. Mantén el código limpio y agrega pruebas.
+
+requirements_intro: >-
+  Construye el backend de la plataforma de viajes y domicilios de comida descrita en docs/SPEC.md, siguiendo
+  INTERFACE.md. Implementa cada requisito de docs/SPEC.md exactamente como está escrito (números, redondeo,
+  excepciones, identificadores) y escribe pruebas de pytest en tests/ para cada requisito; python -m pytest -q
+  debe pasar. Usa solo la biblioteca estándar de Python.
+
+approval_conditions:
+- Cada requisito del paso tiene al menos una prueba de pytest que fallaría si el requisito se incumpliera.
+- python -m pytest -q pasa, incluidas las pruebas de todos los pasos anteriores.
+- El cambio toca solo src/rides y tests, no agrega ninguna dependencia y deja INTERFACE.md intacto.
+- El dinero nunca es un float, cada redondeo es half up donde la especificación lo indica, y no se guarda
+  ninguna contraseña en texto plano, número de tarjeta ni cvc.
+- El código del paso sigue la guía de ingeniería (capas, máquinas de estados, Decimal, reloj, helper de
+  validación, límites de tamaño), y cada límite de sus requisitos se prueba por ambos lados.
+
+engineering_guide:
+- "Arquitectura: una fachada Platform delgada en src/rides/platform.py que verifica el actor y delega; una capa
+  de dominio (entidades, objetos de valor, máquinas de estados) sin I/O; un módulo de servicio por área (cuentas,
+  flota, geografía, precios, despacho, viajes, programación, restaurantes, pedidos, repartidores, promociones,
+  pagos, ganancias, calificaciones, soporte, notificaciones, reportes, auditoría); un módulo de persistencia, el
+  único que importa sqlite3. Las dependencias apuntan hacia adentro: fachada, luego servicios, luego dominio."
+- "Tamaño: ningún módulo de más de 400 líneas, ninguna función de más de 40 líneas o con complejidad
+  ciclomática mayor que 10, ninguna clase con más de una responsabilidad, nada de lógica duplicada."
+- "Los estados de los viajes y de los pedidos son máquinas de estados explícitas: una tabla de transiciones
+  permitidas por entidad, y todo cambio de estado pasa por ella."
+- "El dinero es Decimal de principio a fin y se redondea half up en un solo helper; nunca float. El tiempo viene
+  solo del reloj virtual; todo temporizador (ofertas, vencimiento de pedidos, despacho programado) está en una
+  sola cola ordenada que advance() ejecuta en orden temporal."
+- "La validación y la precedencia de errores (regla X8) viven en un solo módulo helper que usan todos los
+  servicios, no reescritas en cada método."
+- "El despacho usa un índice espacial (una cuadrícula de celdas) para que una solicitud entre 5,000 conductores
+  conectados quede muy por debajo del límite de V3."
+- "Persistencia: un esquema versionado (tabla schema_version), una transacción por save(), contraseñas guardadas
+  solo como hashes PBKDF2 con sal, números de tarjeta y cvc nunca guardados."
+- "Anotaciones de tipo en cada función, escritas para pasar mypy --strict y ruff sin hallazgos; docstrings en
+  las clases y funciones públicas; nada de código muerto ni except genéricos."
+- "Pruebas: tests/ refleja los servicios; cada requisito tiene pruebas con el nombre de su id (test_<id>_...) que
+  usan solo la API pública de Platform, cubren ambos lados de cada límite de tiempo, distancia y monto y cada
+  tipo de excepción, son independientes entre sí y corren en menos de un minuto."
+
+steps:
+- {id: S01, title: "Cuentas y seguridad", sections: [X, A]}
+- {id: S02, title: "Conductores, repartidores y vehículos", sections: [B]}
+- {id: S03, title: "Geografía y zonas", sections: [C]}
+- {id: S04, title: "Cotizaciones de viajes, tarifas y precio dinámico", sections: [D, E]}
+- {id: S05, title: "Tarjetas, billetera y pagos", sections: [O]}
+- {id: S06, title: "Despacho y ciclo de vida del viaje", sections: [F, G]}
+- {id: S07, title: "Tarifa final, propinas y viajes programados", sections: [H, I]}
+- {id: S08, title: "Restaurantes y menús", sections: [J]}
+- {id: S09, title: "Precio y ciclo de vida de los pedidos de comida", sections: [K, L]}
+- {id: S10, title: "Repartidores y agrupación de pedidos", sections: [M]}
+- {id: S11, title: "Promociones y referidos", sections: [N]}
+- {id: S12, title: "Ganancias, liquidaciones y calificaciones", sections: [P, Q]}
+- {id: S13, title: "Soporte, compartir viaje y notificaciones", sections: [R, S]}
+- {id: S14, title: "Reportes y registro de auditoría", sections: [T]}
+- {id: S15, title: "Persistencia en SQLite", sections: [U]}
+- {id: S16, title: "Requisitos no funcionales", sections: [V]}

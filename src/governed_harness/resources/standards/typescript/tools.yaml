@@ -1,0 +1,33 @@
+pack: typescript
+detect:
+  markers: [tsconfig.json]
+  extensions: [.ts, .tsx]
+runner:
+  test: [npm, test, --silent]
+  testFiles: false
+  bdd: [npx, cucumber-js]
+bddFrameworks:
+  - name: cucumber-js
+    markers: [cucumber.js, cucumber.json]
+    dependencies: ["@cucumber/cucumber"]
+tools:
+  - id: tsc
+    title: TypeScript compiler
+    configFiles: [tsconfig.json]
+    command: [npx, --no-install, tsc, --noEmit, --pretty, "false"]
+    parser: tsc
+    coveredBy: [node.typecheck]
+  - id: typescript-eslint
+    title: typescript-eslint
+    configFiles: [eslint.config.js, eslint.config.mjs, eslint.config.ts, .eslintrc.json, .eslintrc.cjs]
+    command: [npx, --no-install, eslint, -f, json, .]
+    parser: eslint
+    coveredBy: [node.lint, standards.javascript.eslint]
+    recommended: |
+      // eslint.config.mjs with typescript-eslint
+      import tseslint from "typescript-eslint";
+      export default tseslint.config(...tseslint.configs.strictTypeChecked, { rules: {
+        "@typescript-eslint/no-explicit-any": "error",
+        "@typescript-eslint/no-floating-promises": "error",
+        "@typescript-eslint/no-non-null-assertion": "error"
+      } });

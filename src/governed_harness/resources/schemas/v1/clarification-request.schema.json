@@ -1,0 +1,131 @@
+{
+  "$defs": {
+    "ClarificationQuestion": {
+      "additionalProperties": false,
+      "description": "A question raised in INTENT by the deterministic intent assessment or, since 2.0, by the\nagent review of the task or the check of earlier answers.\n\n``target`` is the criterion id the question is about, ``task`` for the task as a whole,\nor ``task:<part>`` for a ``C0`` question about a task without acceptance criteria (for\nexample ``task:results``). ``question_id`` is stable for a given task revision (``Q-1``,\n``Q-2``, ...). ``category`` groups the questions of an agent review (ambiguity,\ncompleteness categories, consistency) and is left out when absent.",
+      "properties": {
+        "category": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Category"
+        },
+        "questionId": {
+          "pattern": "^Q-[1-9][0-9]*$",
+          "title": "Questionid",
+          "type": "string"
+        },
+        "ruleId": {
+          "enum": [
+            "C0",
+            "C1",
+            "C2",
+            "C3",
+            "T1",
+            "A1",
+            "A2",
+            "A3",
+            "P1"
+          ],
+          "title": "Ruleid",
+          "type": "string"
+        },
+        "target": {
+          "minLength": 1,
+          "title": "Target",
+          "type": "string"
+        },
+        "text": {
+          "minLength": 1,
+          "title": "Text",
+          "type": "string"
+        }
+      },
+      "required": [
+        "questionId",
+        "ruleId",
+        "target",
+        "text"
+      ],
+      "title": "ClarificationQuestion",
+      "type": "object"
+    }
+  },
+  "$id": "https://example.org/governed-harness/schemas/v1/clarification-request.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The questions INTENT asked about one revision of a task, identified by its digest.\n\nSince 2.0 (#55) the same request may carry the operational contract (``contract``): the\nsummary of what was agreed and the items nobody settled, so that a person answers\neverything in one message. A request has at least one question or a contract.",
+  "properties": {
+    "contract": {
+      "anyOf": [
+        {
+          "additionalProperties": true,
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contract"
+    },
+    "createdAt": {
+      "format": "date-time",
+      "title": "Createdat",
+      "type": "string"
+    },
+    "executionId": {
+      "title": "Executionid",
+      "type": "string"
+    },
+    "policy": {
+      "enum": [
+        "enforce",
+        "warn"
+      ],
+      "title": "Policy",
+      "type": "string"
+    },
+    "questions": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClarificationQuestion"
+      },
+      "title": "Questions",
+      "type": "array"
+    },
+    "requestId": {
+      "title": "Requestid",
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "1.0",
+      "default": "1.0",
+      "title": "Schemaversion",
+      "type": "string"
+    },
+    "taskDigest": {
+      "title": "Taskdigest",
+      "type": "string"
+    },
+    "taskId": {
+      "title": "Taskid",
+      "type": "string"
+    }
+  },
+  "required": [
+    "requestId",
+    "executionId",
+    "taskId",
+    "taskDigest",
+    "policy"
+  ],
+  "title": "ClarificationRequest",
+  "type": "object"
+}

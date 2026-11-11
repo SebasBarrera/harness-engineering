@@ -21,6 +21,7 @@
       "properties": {
         "allowedCapabilities": {
           "default": [],
+          "description": "Capabilities a grant made while the phase runs may carry, under governance.phaseCapabilities (issue #4); without it grants are per run.",
           "items": {
             "type": "string"
           },
@@ -29,6 +30,7 @@
         },
         "dependsOn": {
           "default": [],
+          "description": "Earlier phases whose latest attempt must have passed before this phase starts, under governance.enforceWorkflow (the order of the nine phases stays fixed).",
           "items": {
             "$ref": "#/$defs/PhaseId"
           },
@@ -36,6 +38,7 @@
           "type": "array"
         },
         "exitGate": {
+          "description": "Name of the condition the phase must meet to pass: evaluated from the run's records under governance.enforceWorkflow (an unmet one leaves the attempt BLOCKED); recorded with each attempt (exitGate, exitGateMet) under governance.applyWorkflowSettings or governance.enforceWorkflow.",
           "title": "Exitgate",
           "type": "string"
         },
@@ -44,6 +47,7 @@
         },
         "maxAttempts": {
           "default": 1,
+          "description": "Failed attempts of the phase after which it is not started again, under governance.applyWorkflowSettings.",
           "maximum": 20,
           "minimum": 1,
           "title": "Maxattempts",
@@ -51,6 +55,7 @@
         },
         "parallelizable": {
           "default": false,
+          "description": "Under governance.enforceWorkflow, the phase's independent read-only work may run at once: the validators declared parallelSafe of VERIFICATION. Phases themselves and the sub-tasks of a decomposition run one at a time on the run's workspace.",
           "title": "Parallelizable",
           "type": "boolean"
         },
@@ -65,17 +70,20 @@
         },
         "timeoutSeconds": {
           "default": 1800,
+          "description": "Wall-clock budget of one attempt of the phase under governance.applyWorkflowSettings.",
           "minimum": 1,
           "title": "Timeoutseconds",
           "type": "integer"
         },
         "validators": {
           "default": [],
+          "description": "Declarative: the validators come from the profiles and the project.",
           "items": {
             "type": "string"
           },
           "title": "Validators",
-          "type": "array"
+          "type": "array",
+          "x-declarative": true
         }
       },
       "required": [
@@ -128,11 +136,13 @@
     },
     "invariants": {
       "default": [],
+      "description": "Declarative: names of invariants the engine enforces in code.",
       "items": {
         "type": "string"
       },
       "title": "Invariants",
-      "type": "array"
+      "type": "array",
+      "x-declarative": true
     },
     "phases": {
       "items": {

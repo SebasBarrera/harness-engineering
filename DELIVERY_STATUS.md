@@ -1,5 +1,8 @@
 # Current delivery status
 
+> This file records the 0.8.0 delivery (the evaluated cut) and is kept as it was. The current
+> release and its changes are in [CHANGELOG.md](CHANGELOG.md) and [README.md](README.md).
+
 Version: 0.8.0 research beta
 Delivery date: 2026-08-30
 

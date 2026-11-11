@@ -1,0 +1,67 @@
+pack: python
+title: Python
+cards:
+  - id: python.public-annotations
+    title: Annotate the public API
+    rule: Annotate the parameters and the return type of every public function and method.
+    rationale: Type checkers and readers rely on the signature; an unannotated public function hides contract changes.
+    exceptions:
+      - Test functions and fixtures.
+      - Private helpers whose types are obvious from a single call site.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:ANN001", "ruff:ANN201", "mypy:no-untyped-def"]
+    principle: least-astonishment
+  - id: python.no-mutable-defaults
+    title: No mutable default arguments
+    rule: Do not use a list, dict or set literal as a default argument; default to None and create the value inside.
+    rationale: The default is created once and shared by every call.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:B006"]
+  - id: python.specific-exceptions
+    title: Catch specific exceptions
+    rule: Catch the specific exceptions a block can raise; never use a bare except or swallow Exception without re-raising or logging it.
+    rationale: Broad handlers hide defects and turn failures into silent wrong results.
+    exceptions:
+      - A top-level boundary (CLI entry point, request handler) that logs and converts every error.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:E722", "ruff:BLE001", "ruff:S110"]
+  - id: python.safe-deserialization
+    title: No unsafe deserialization
+    rule: Never unpickle, marshal or yaml.load data that crosses a trust boundary; use json or yaml.safe_load.
+    rationale: Deserializing untrusted data executes code.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:S301", "ruff:S506"]
+  - id: python.naming
+    title: PEP 8 names
+    rule: Use snake_case for functions, variables and modules, CapWords for classes and UPPER_CASE for constants.
+    rationale: Names that follow the convention are read correctly without context.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:N802", "ruff:N803", "ruff:N806", "ruff:N801"]
+    principle: least-astonishment
+  - id: python.small-functions
+    title: Small, simple functions
+    rule: Keep functions short and their branching low; extract a named helper instead of nesting more conditions.
+    rationale: Complexity predicts defects and makes tests incomplete.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:C901", "ruff:PLR0912", "ruff:PLR0913"]
+    principle: kiss
+  - id: python.no-print-in-library
+    title: Log, do not print, in library code
+    rule: Use the logging module in library code; print only in command-line entry points.
+    rationale: Printing from a library cannot be configured or silenced by its caller.
+    exceptions:
+      - Scripts and command-line entry points whose output is the product.
+    appliesTo: ["src/**/*.py"]
+    verifiedBy: ["ruff:T201"]
+  - id: python.resource-handling
+    title: Close resources with context managers
+    rule: Open files, sockets, locks and database connections in a with statement.
+    rationale: A resource left open leaks descriptors and keeps locks on error paths.
+    appliesTo: ["**/*.py"]
+    verifiedBy: ["ruff:SIM115", "review"]
+  - id: python.test-behaviour
+    title: Tests check behaviour, one reason to fail
+    rule: Each test checks one observable behaviour through the public API and asserts the exact expected result.
+    rationale: Tests of internals break on refactors and miss behaviour changes.
+    appliesTo: ["tests/**/*.py", "**/test_*.py", "**/*_test.py"]
+    verifiedBy: ["review"]

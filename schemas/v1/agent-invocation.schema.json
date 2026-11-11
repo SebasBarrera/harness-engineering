@@ -137,7 +137,8 @@
         "CANCELLED",
         "TIMED_OUT",
         "ERROR",
-        "INCONCLUSIVE"
+        "INCONCLUSIVE",
+        "INTERRUPTED"
       ],
       "title": "ResultStatus",
       "type": "string"
@@ -150,6 +151,27 @@
     "actor": {
       "$ref": "#/$defs/Actor"
     },
+    "callKind": {
+      "anyOf": [
+        {
+          "enum": [
+            "implement",
+            "clarify",
+            "review",
+            "plan",
+            "acceptance",
+            "architecture",
+            "locate"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Callkind"
+    },
     "contextManifestRef": {
       "anyOf": [
         {
@@ -161,6 +183,18 @@
       ],
       "default": null,
       "title": "Contextmanifestref"
+    },
+    "effort": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effort"
     },
     "error": {
       "anyOf": [

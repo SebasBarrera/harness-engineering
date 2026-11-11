@@ -24,5 +24,6 @@ def test_chains_are_independent_per_execution(tmp_path: Path) -> None:
     one = store.append("run_1", "run.started", {})
     two = store.append("run_2", "run.started", {})
     assert one.sequence == two.sequence == 1
-    assert one.previous_digest is None and two.previous_digest is None
+    assert one.previous_digest is None
+    assert two.previous_digest is None
     store.close()

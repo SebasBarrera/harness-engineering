@@ -49,6 +49,8 @@ def test_persisted_vertical_slice_records_match_public_schemas(
     task_file.write_text(
         "title: Add threshold behavior\n"
         "intent: Apply the configured discount at the threshold.\n"
+        "requirements:\n"
+        "  - A subtotal equal to the threshold is reduced by the rate.\n"
         "acceptanceCriteria:\n"
         "  - The threshold is inclusive.\n"
         "implementation:\n"

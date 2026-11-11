@@ -1,0 +1,44 @@
+pack: rust
+title: Rust
+cards:
+  - id: rust.no-unwrap
+    title: No unwrap or expect in library code
+    rule: Propagate errors with ? and a typed error; do not call unwrap or expect outside tests and examples.
+    rationale: unwrap turns a recoverable error into a panic.
+    exceptions:
+      - Invariants proven a few lines above, with an expect message that states the invariant.
+    appliesTo: ["src/**/*.rs"]
+    verifiedBy: ["clippy:clippy::unwrap_used", "clippy:clippy::expect_used"]
+  - id: rust.no-unsafe
+    title: No unsafe without a safety comment
+    rule: Avoid unsafe; when it is needed, keep the block minimal and document the invariants in a SAFETY comment.
+    rationale: unsafe code bypasses the guarantees the rest of the crate relies on.
+    appliesTo: ["**/*.rs"]
+    verifiedBy: ["clippy:clippy::undocumented_unsafe_blocks"]
+  - id: rust.borrow-not-clone
+    title: Borrow instead of cloning
+    rule: Borrow (&T, &str, &[T]) in parameters; do not clone to satisfy the borrow checker.
+    rationale: Needless clones cost allocations and hide ownership design problems.
+    appliesTo: ["**/*.rs"]
+    verifiedBy: ["clippy:clippy::redundant_clone", "clippy:clippy::needless_pass_by_value"]
+  - id: rust.simple-functions
+    title: Simple functions
+    rule: Keep functions short, with few arguments and low cognitive complexity.
+    rationale: Complexity predicts defects.
+    appliesTo: ["**/*.rs"]
+    verifiedBy: ["clippy:clippy::cognitive_complexity", "clippy:clippy::too_many_arguments"]
+    principle: kiss
+  - id: rust.formatting
+    title: rustfmt formatting
+    rule: Leave formatting to rustfmt; do not reformat code the change does not touch.
+    rationale: Formatting churn hides the change.
+    appliesTo: ["**/*.rs"]
+    verifiedBy: ["rustfmt:check"]
+    principle: boy-scout
+  - id: rust.traits-over-inheritance
+    title: Traits and composition
+    rule: Share behaviour through traits and composition; keep trait objects and generics at the boundaries that need them.
+    rationale: Small traits keep modules decoupled.
+    appliesTo: ["**/*.rs"]
+    verifiedBy: ["review"]
+    principle: composition-over-inheritance

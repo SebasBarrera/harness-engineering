@@ -39,6 +39,9 @@ def test_configured_command_agent_is_a_functional_second_provider(
             "model": "deterministic-fixture",
         }
     }
+    # This test is about the provider protocol; the sandbox has its own tests and no mechanism
+    # on Linux runners without bubblewrap or on Windows.
+    config["runtime"]["agentSandbox"] = "off"
     config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
 
     task_file = tmp_path / "command-agent-task.yaml"

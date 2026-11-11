@@ -14,20 +14,34 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from governed_harness.agents.contract import AgentCallRequestContract, AgentCallResponse
+from governed_harness.agents.script_contracts import ScriptContract
 from governed_harness.configuration.models import ProjectConfiguration, WorkflowDefinition
 from governed_harness.domain.models import (
     AgentInvocation,
+    AgentSelfReport,
     Artifact,
     CapabilityGrant,
+    CertificationRecord,
     ChangeSet,
+    ClarificationRecord,
+    ClarificationRequest,
+    ComponentProvenance,
+    DeferredVerification,
     Evidence,
+    EvidenceBundleManifest,
+    ExceptionRecord,
     Execution,
     Finding,
     GateEvaluation,
+    HumanAttachment,
     HumanDecision,
     MemoryRecord,
+    OutcomeRecord,
     PhaseExecution,
     Plan,
+    PreAuthorization,
+    ProviderFeedback,
     Recommendation,
     ResourceUsage,
     Retrospective,
@@ -36,6 +50,7 @@ from governed_harness.domain.models import (
     ValidationResult,
 )
 from governed_harness.plugins.protocol import PluginDescriptor, PluginRequest, PluginResponse
+from governed_harness.validators.traceability import RequirementTraceabilityReport
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_ROOT = ROOT / "schemas" / "v1"
@@ -43,25 +58,41 @@ RESOURCE_ROOT = ROOT / "src" / "governed_harness" / "resources" / "schemas" / "v
 type SchemaModel = type[BaseModel]
 
 MODELS: dict[str, SchemaModel] = {
+    "agent-call-request.schema.json": AgentCallRequestContract,
+    "agent-call-response.schema.json": AgentCallResponse,
     "agent-invocation.schema.json": AgentInvocation,
+    "agent-self-report.schema.json": AgentSelfReport,
     "artifact.schema.json": Artifact,
     "capability-grant.schema.json": CapabilityGrant,
+    "certification.schema.json": CertificationRecord,
     "change-set.schema.json": ChangeSet,
+    "clarification-record.schema.json": ClarificationRecord,
+    "clarification-request.schema.json": ClarificationRequest,
+    "component-provenance.schema.json": ComponentProvenance,
+    "deferred-verification.schema.json": DeferredVerification,
+    "evidence-bundle-manifest.schema.json": EvidenceBundleManifest,
     "evidence.schema.json": Evidence,
+    "exception.schema.json": ExceptionRecord,
     "execution.schema.json": Execution,
     "finding.schema.json": Finding,
     "gate-evaluation.schema.json": GateEvaluation,
+    "human-attachment.schema.json": HumanAttachment,
     "human-decision.schema.json": HumanDecision,
     "memory-record.schema.json": MemoryRecord,
+    "outcome.schema.json": OutcomeRecord,
     "phase-result.schema.json": PhaseExecution,
     "plan.schema.json": Plan,
     "plugin-descriptor.schema.json": PluginDescriptor,
     "plugin-request.schema.json": PluginRequest,
     "plugin-response.schema.json": PluginResponse,
+    "pre-authorization.schema.json": PreAuthorization,
     "project-config.schema.json": ProjectConfiguration,
+    "provider-feedback.schema.json": ProviderFeedback,
+    "requirement-traceability.schema.json": RequirementTraceabilityReport,
     "resource-usage.schema.json": ResourceUsage,
     "retrospective-recommendation.schema.json": Recommendation,
     "retrospective.schema.json": Retrospective,
+    "script-contract.schema.json": ScriptContract,
     "task.schema.json": Task,
     "tool-invocation.schema.json": ToolInvocation,
     "validation-result.schema.json": ValidationResult,

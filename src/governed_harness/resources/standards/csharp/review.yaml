@@ -1,0 +1,29 @@
+# Review metadata of the csharp pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: csharp
+domains:
+  csharp.async: concurrency
+  csharp.dispose: resilience
+  csharp.specific-exceptions: resilience
+blocking: []
+signals:
+  concurrency:
+  - \block\s*\(
+  - \bInterlocked\.
+  - \bTask\.Run\(
+  - \bParallel\.
+  - \bConcurrentDictionary\b
+  - \bSemaphoreSlim\b
+  - \bnew Thread\(
+  external-calls:
+  - \bHttpClient\b
+  - \bSqlConnection\b
+  - \bProcess\.Start\(
+  - \bWebRequest\b
+  structure:
+  - ^\s*using\s
+  - ^\s*(?:public|protected|internal)\s
+  - ^\s*namespace\s
+pipeline:
+- '*.ps1'

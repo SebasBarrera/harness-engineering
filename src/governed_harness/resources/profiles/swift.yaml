@@ -1,0 +1,33 @@
+profileVersion: '1.0'
+profileId: swift_default
+technology: swift
+detectors:
+  - marker: Package.swift
+    weight: 0.80
+  - marker: Package.resolved
+    weight: 0.10
+defaultCommands:
+  test: [swift, test]
+  typecheck: [swift, build]
+defaultValidators:
+  - swift.test
+  - swift.build
+validators:
+  - id: swift.test
+    command: [swift, test]
+    mandatory: true
+    timeoutSeconds: 1800
+  - id: swift.build
+    command: [swift, build]
+    mandatory: false
+    whenAvailable: true
+    timeoutSeconds: 1800
+policies:
+  missingTestCommand: BLOCKED
+capabilities:
+  filesystem.read: ['**']
+  filesystem.write: ['Sources/**', 'Tests/**', 'Package.swift']
+  process.execute: [swift]
+  git.read: ['**']
+  approval.request: ['**']
+  artifact.publish: ['**']

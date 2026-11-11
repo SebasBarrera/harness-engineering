@@ -1,0 +1,40 @@
+# Review metadata of the python pack (#57): the review domain of a card (default
+# quality), the cards that block, the signals that activate reviewers (regular expressions
+# over changed lines of the pack's files) and the files the pipeline reviewer reads.
+pack: python
+domains:
+  python.specific-exceptions: resilience
+  python.resource-handling: resilience
+  python.safe-deserialization: pipeline-security
+  python.test-behaviour: tests
+blocking:
+- python.safe-deserialization
+- python.no-mutable-defaults
+signals:
+  concurrency:
+  - \bimport threading\b
+  - \bthreading\.
+  - \basyncio\.
+  - \bmultiprocessing\b
+  - \bconcurrent\.futures\b
+  - \bThreadPoolExecutor\b
+  - \bLock\(\)
+  - ^\s*global\s
+  external-calls:
+  - \brequests\.
+  - \bhttpx\.
+  - \burllib\.request\b
+  - \burlopen\(
+  - \bsubprocess\.
+  - \bsocket\.
+  - \bboto3\b
+  - \.execute\(
+  - \bconnect\(
+  structure:
+  - ^\s*(?:from\s+\S+\s+)?import\s
+  - ^\s*(?:async\s+)?def\s+[A-Za-z]
+  - ^\s*class\s+\w
+pipeline:
+- noxfile.py
+- tox.ini
+- .pre-commit-config.yaml

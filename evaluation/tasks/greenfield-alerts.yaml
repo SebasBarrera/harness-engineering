@@ -1,22 +1,22 @@
 taskId: task_eval_greenfield_alerts
-title: Implement the alerts client
+title: Implementar el cliente de alertas
 intent: >-
-  Implement the Python package `alerts` in src/alerts/ exactly as specified in SPEC.md, including
-  the function build_alert_request and tests for it in tests/.
+  Implementa el paquete de Python `alerts` en src/alerts/ exactamente como se especifica en SPEC.md,
+  incluida la función build_alert_request y sus pruebas en tests/.
 requirements:
   - requirementId: req_spec
-    text: build_alert_request implements every rule of SPEC.md (validation, request, authentication).
+    text: build_alert_request implementa todas las reglas de SPEC.md (validación, solicitud, autenticación).
     source: SPEC.md
   - requirementId: req_tests
-    text: The repository contains pytest tests in tests/ that exercise the rules of SPEC.md.
+    text: El repositorio contiene pruebas de pytest en tests/ que ejercitan las reglas de SPEC.md.
     source: SPEC.md
 acceptanceCriteria:
   - criterionId: ac_rules
-    text: Every rule of SPEC.md holds for build_alert_request.
+    text: Todas las reglas de SPEC.md se cumplen para build_alert_request.
   - criterionId: ac_no_network
-    text: build_alert_request performs no network call.
+    text: build_alert_request no hace ninguna llamada de red.
   - criterionId: ac_tests
-    text: python -m pytest -q passes.
+    text: python -m pytest -q pasa.
 constraints:
-  - Use only the Python standard library.
-  - Keep the public signature build_alert_request(event, *, base_url="https://alerts.internal.example").
+  - Usa solo la biblioteca estándar de Python.
+  - Conserva la firma pública build_alert_request(event, *, base_url="https://alerts.internal.example").
