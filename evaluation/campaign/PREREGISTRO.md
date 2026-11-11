@@ -289,6 +289,99 @@ no tienen implementación todavía: sus criterios quedan congelados aquí igual.
   `sandbox.unavailable`.
 - **Criterio de éxito:** 0 diferencias inesperadas; las esperadas se documentan. La lista previa
   de diferencias esperadas debe versionarse aquí antes de la primera corrida comparada.
+- **Precisiones fijadas al implementar la suite (2026-11-10, antes de cualquier corrida en más de
+  una plataforma; la lista de diferencias esperadas se versiona en este commit, antes que el
+  código que la compara):**
+  - *Plataformas* (job `portability (report)` de `.github/workflows/evaluation.yml`, una imagen
+    fija por plataforma, sobre el wheel construido en el mismo job): `linux-bwrap`
+    (`ubuntu-24.04` con bubblewrap, el entorno de la regla 6 y **referencia** de la comparación),
+    `linux-nobwrap` (`ubuntu-24.04` sin bubblewrap; el job comprueba que `bwrap` no está),
+    `macos` (`macos-15`, arm64, con `sandbox-exec`) y `windows` (`windows-2025`). Cada suite
+    corre con los argumentos de `run_deterministic.py` (`fault-probes` con 3 repeticiones; las
+    demás con 1) y `demo_flows.py all` con el mismo entorno virtual.
+  - *Configuración por plataforma:* en Linux y macOS la que escribe `harness init`
+    (`runtime.agentSandbox: enforce`). En Windows, que no tiene mecanismo de sandbox
+    (`runtime/sandbox.py:159-203`), las suites escriben `runtime.agentSandbox: off`, como el
+    piloto (`evaluation/campaign/README.md`, «Entornos»), y cada `environment.json` lo declara
+    como desviación. En `linux-nobwrap` se deja `enforce` a propósito: es la condición que mide
+    `sandbox.unavailable`.
+  - *Adaptación del aparato (sin cambiar ninguna expectativa):* en Windows los scripts usan
+    `Scripts\` y `Lib\site-packages` del entorno virtual, `;` en `PATH` (con el directorio de
+    `git` y el de `sh` de Git for Windows, y `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`,
+    `USERPROFILE`, `LOCALAPPDATA` y `APPDATA` conservados), una búsqueda de procesos sin
+    `pgrep` y un directorio de trabajo corto (límite de 260 caracteres). Los archivos que las
+    suites escriben en los espacios de trabajo se escriben con fin de línea LF en todas las
+    plataformas (en Windows el modo texto de Python escribiría CRLF y cambiaría cada línea del
+    diff). Las rutas que las sondas meten dentro de un `sh -c` van en forma `C:/...`: la política
+    de comandos destructivos parte el script con `shlex` en modo POSIX
+    (`capabilities/repository.py:126-146`), que leería las barras invertidas como escapes; con
+    la forma `C:/...` la sonda prueba la misma regla que en POSIX. Si una de estas adaptaciones
+    no basta y una suite no corre en una plataforma, esa suite queda «no evaluada» en esa
+    plataforma (regla 2), no «coincide».
+  - *Unidad de comparación* («prueba»): cada sonda de `fault_probes.py` (29: `matchesExpectation`
+    de cada repetición, `identical` y el bloque `observed` del resumen), cada corrida de
+    `friction.py` (24: condición, tarea y riesgo), cada caso de `ladder_corpus.py` (16) y de
+    `review_corpus.py` (23) con los campos de su registro, y cada paso de `demo_flows.py all`
+    (código esperado, código obtenido y si coinciden, por flujo y posición). Una prueba
+    *coincide* con la referencia cuando todos sus campos comparados son iguales después de
+    normalizar identificadores, digests, instantes y rutas absolutas (que por diseño cambian en
+    cada corrida o máquina). Las rutas relativas al espacio de trabajo no se normalizan: una
+    barra invertida en una de ellas es una diferencia inesperada.
+  - *Medidas excluidas de la comparación* (se registran, no se comparan): segundos y medianas de
+    segundos (`seconds`, `commandSeconds`, `runWallSeconds`), tokens estimados
+    (`recordedTokens`, `tokens` de la revisión: se estiman con los caracteres de la petición,
+    que lleva rutas absolutas de longitud distinta en cada plataforma), tamaños de artefactos,
+    `environment.json` (versión de Python y de Git, plataforma) y los textos libres
+    `stdout`/`stderr`.
+- **Lista previa de diferencias esperadas** (leídas en el código antes de correr; «segura» = el
+  código la determina; «posible» = el código la permite, sin certeza). Se compara cada
+  plataforma con `linux-bwrap`. Una diferencia que no está en la lista es *inesperada*; una de la
+  lista que no aparece se reporta como «esperada, no observada».
+  - **E1, `linux-nobwrap`, `sandbox.unavailable` (segura):** con `enforce` y sin `bwrap`, cada
+    llamada a un proveedor de comando se rehúsa antes de lanzarlo con un hallazgo HIGH
+    `sandbox.unavailable` y la fase bloqueada (`orchestration/engine.py:1793-1817`); un revisor
+    de comando del panel queda `UNKNOWN` («the agent sandbox is enforced but unavailable»,
+    `review/providers.py:80-91`). Afecta a las sondas de `fault_probes.py` que llegan a llamar al
+    proveedor (se espera que casi todas dejen de cumplir su expectativa), a las 24 corridas de
+    `friction.py` y a los revisores de `review_corpus.py` (veredicto, revisores, caché, llamadas
+    del fixture y lo que detecta el revisor oráculo). Regla de la comparación: una prueba de
+    `linux-nobwrap` que difiere y cuyo registro contiene `sandbox.unavailable` (o el motivo
+    anterior) es esperada; si difiere sin esa marca, es inesperada. `ladder_corpus.py` usa el
+    proveedor `simulated`, que corre dentro del proceso del harness sin sandbox
+    (`engine.py:1772-1775`): ahí no se espera ninguna diferencia. `demo_flows.py` pone
+    `agentSandbox: off` en todos los flujos con proveedor de comando
+    (`scripts/demo_flows.py:840,1098,1782,1871,2044`): tampoco se espera diferencia.
+  - **E2, `windows`, escrituras fuera del espacio de trabajo (segura):** con `agentSandbox: off`
+    nada niega las escrituras de `write-outside`, `write-git-hooks` y `write-symlink`: no hay
+    hallazgo `sandbox.write-denied` y los archivos se escriben (`write-symlink` además necesita
+    permiso para crear enlaces simbólicos; sin él la escritura falla en el propio proveedor).
+    Las tres sondas dejan de cumplir su expectativa en Windows.
+  - **E3, `windows`, `lease-sigterm` (segura):** Windows no entrega `SIGTERM` a un proceso:
+    `Popen.send_signal(SIGTERM)` llama a `TerminateProcess`, el manejador de
+    `runtime/lease.py:213-228` no corre, el código de salida no es 143 y la corrida no queda
+    `INTERRUPTED`. La sonda deja de cumplir su expectativa; la recuperación con `run continue`
+    puede o no ocurrir.
+  - **E4, `windows`, `timeout` (posible):** en Windows el ejecutor termina el proceso lanzado
+    pero no sus descendientes (no hay grupos de procesos: `runtime/process_runner.py:177,280-291`
+    y el comentario de `.github/workflows/windows.yml`), y el `python.exe` de un entorno virtual
+    de Windows es un lanzador que arranca otro proceso. La sonda puede encontrar
+    `leftoverProcesses` mayor que 0 o terminar en otro estado.
+  - **E5, todas, rutas absolutas y directorio de estado (segura, sin efecto en la comparación):**
+    las rutas absolutas (espacio de trabajo, base de datos de estado, ejecutables, entornos
+    virtuales) cambian de forma (`C:\...` frente a `/home/...` o `/Users/...`); las suites fijan
+    `HARNESS_STATE_DIR` y `HARNESS_ANCHOR_DIR` bajo su directorio de trabajo, así que el
+    directorio por omisión de cada sistema (`runtime/state_location.py:47-62`) no interviene. Se
+    normalizan antes de comparar.
+  - **E6, todas, tiempo y tokens estimados (segura, excluida):** las medidas de la lista de
+    exclusión difieren entre plataformas y entre corridas; no cuentan como diferencia.
+  - Nada más se espera: en particular, ninguna diferencia en `macos` (fuera de E5 y E6), en
+    `ladder_corpus.py`, en `demo_flows.py all` ni en las sondas de integridad, decisiones y
+    alcance en ninguna plataforma.
+- **Salida:** `evaluation/deterministic/portability_compare.py` escribe, por plataforma y suite,
+  pruebas que coinciden / total, las diferencias esperadas (con su id E1–E4), las inesperadas
+  (campo, valor de referencia y valor observado), las esperadas no observadas y cuántas pruebas
+  registran `sandbox.unavailable`; sale con 1 si hay alguna diferencia inesperada o falta una
+  plataforma o una suite.
 
 ---
 

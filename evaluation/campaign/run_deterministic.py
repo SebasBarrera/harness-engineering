@@ -7,7 +7,10 @@ missing-tool probe), the brownfield archive checked against its SHA-256, then ea
 exit code. One suite failing does not stop the others; the summary records every exit code and the
 script exits 1 when any suite failed, so a caller cannot mistake a partial campaign for a full one.
 
-Linux and macOS (the suites and the agent sandbox are POSIX). Usage::
+Linux, macOS and Windows (H46, ``PREREGISTRO.md``). Windows has no agent sandbox, so the suites
+run the governed conditions there with ``runtime.agentSandbox: off`` and record it in each
+``environment.json``; its ``--work`` must be short (at most 40 characters: the suites' paths stay
+under the 260-character limit). Usage::
 
     python evaluation/campaign/run_deterministic.py --wheel dist/governed_agent_harness-2.0.0-py3-none-any.whl \
         --work /tmp/campaign --out evaluation/results-2.0.0/deterministic [--only fault-probes,ladder]
@@ -60,6 +63,8 @@ INTERCEPTION = {
     "h05": "h05_dependencies.py",
     "h38": "h38_false_fast_lane.py",
 }
+# On Windows the work directory must leave the suites' deepest paths under 260 characters.
+WINDOWS_MAX_WORK = 40
 # H11 reads the per-case records of these suites' output directories (defect_corpus.py).
 DEFECT_CORPUS_INPUTS = ("h01", "h03", "h05", "ladder", "review")
 
@@ -77,10 +82,11 @@ def bin_dir(venv: Path) -> Path:
 
 
 def make_venv(path: Path, *, with_pip: bool = True) -> Path:
-    if not (bin_dir(path) / "python").exists():
+    python = bin_dir(path) / ("python.exe" if os.name == "nt" else "python")
+    if not python.exists():
         flags = [] if with_pip else ["--without-pip"]
         subprocess.run([sys.executable, "-m", "venv", *flags, str(path)], check=True)
-    return bin_dir(path) / "python"
+    return python
 
 
 def cache_archive(cache: Path) -> Path:
@@ -219,13 +225,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo", type=Path, default=REPO, help="checkout block0 verifies")
     parser.add_argument("--only", default=",".join(SUITES))
     args = parser.parse_args(argv)
-    if os.name == "nt":
-        raise SystemExit("the deterministic suites need Linux or macOS (POSIX processes, sandbox)")
     wanted = [s for s in args.only.split(",") if s]
     unknown = sorted(set(wanted) - set(SUITES))
     if unknown:
         raise SystemExit(f"unknown suites: {', '.join(unknown)}")
     work = args.work.resolve()
+    if os.name == "nt" and len(str(work)) > WINDOWS_MAX_WORK:
+        raise SystemExit(
+            f"--work {work} is longer than {WINDOWS_MAX_WORK} characters: on Windows the suites' "
+            "paths would pass the 260-character limit"
+        )
     out = args.out.resolve()
     wheel = args.wheel.resolve()
     work.mkdir(parents=True, exist_ok=True)
