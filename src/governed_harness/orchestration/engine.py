@@ -171,6 +171,8 @@ CANCELLATION_REQUESTED = "Cancellation requested"
 _CORRECTION_AUTHORIZED = "correction.authorized"
 _FINDING_RECORDED = "finding.recorded"
 _FILESYSTEM_READ = "filesystem.read"
+# A limit crossed by the last agent call stops the run before these phases (#157).
+_BUDGET_CHECKED_PHASES = frozenset({PhaseId.INDEPENDENT_REVIEW, PhaseId.DECISION})
 
 FAILED_ATTEMPT_STATUSES = frozenset(
     {
@@ -276,6 +278,8 @@ class _ProcessLedger:
 class RunEngine:
     _exit_gate_unmet: str | None = None
     """Why the last phase attempt did not meet its exit gate (governance.enforceWorkflow)."""
+    _budget_stopped: bool = False
+    """Whether an exceeded budget stopped the last phase before it started (#157)."""
 
     def __init__(self, services: EngineServices, sandbox_host: SandboxHost | None = None) -> None:
         self.s = services
@@ -497,9 +501,9 @@ class RunEngine:
     ) -> Literal["stop", "next"]:
         """After a phase that did not pass: a correction cycle goes on to the next step,
         otherwise the loop stops on the run."""
-        if self._exit_gate_unmet is not None:
-            # The phase's own work passed but its exit gate did not (#3): no
-            # correction cycle starts on a record the phase failed to leave.
+        if self._exit_gate_unmet is not None or self._budget_stopped:
+            # The phase's own work passed but its exit gate did not (#3), or an exceeded
+            # budget stopped the phase before it started (#157): no correction cycle starts.
             return "stop"
         if phase_id is PhaseId.VERIFICATION and self._after_failed_verification(execution, outcome):
             return "next"
@@ -967,7 +971,13 @@ class RunEngine:
             {"phaseId": phase_id, "attempt": attempt},
             phase_execution_id=phase.phase_execution_id,
         )
-        outcome = self._execute_handler(running, phase, handler)
+        stopped = (
+            self.results.before_phase(running, phase)
+            if self.results.active and phase_id in _BUDGET_CHECKED_PHASES
+            else None
+        )
+        self._budget_stopped = stopped is not None
+        outcome = stopped or self._execute_handler(running, phase, handler)
         if definition is not None:
             outcome = self._apply_phase_settings(definition, phase, outcome)
         exit_checks: list[ExitGateCheck] = []
