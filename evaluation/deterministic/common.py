@@ -355,7 +355,14 @@ def query(database: Path, sql: str, params: Sequence[Any] = ()) -> list[tuple[An
 
 SIMULATED_PERSON = "human.reviewer-simulated"
 # The inbox kinds (#73) the simulated person answers; any other stop is returned as it is.
-ANSWERED_KINDS = ("clarification", "acceptance", "plan", "decomposition", "preflight")
+ANSWERED_KINDS = (
+    "clarification",
+    "acceptance",
+    "plan",
+    "decomposition",
+    "preflight",
+    "architecture",
+)
 
 
 def simulated_person(
@@ -371,8 +378,9 @@ def simulated_person(
     """The declared simulated person (``human.reviewer-simulated``, a simulation stated in every
     README) answers the waits before DECISION when ``run start``/``run continue`` exits with 6:
     INTENT questions (answered "keep the behaviour the task describes"), acceptance tests, a plan
-    approval and an unavailable preflight (continued uncertified). Any other stop is returned as
-    it is. Each wait is appended to ``waits`` as ``PHASE:kind``."""
+    approval, an unavailable preflight (continued uncertified) and the layer rules a survey
+    inferred in DISCOVERY (approved with their digest, H06). Any other stop is returned as it
+    is. Each wait is appended to ``waits`` as ``PHASE:kind``."""
     for _ in range(max_rounds):
         if code != 6:
             return code
@@ -412,10 +420,30 @@ def simulated_person(
             open_request = listed.get("openRequest") if isinstance(listed, dict) else None
             questions = list((open_request or {}).get("questions") or [])
             kind = "clarification" if questions else ""
-        if not kind:
+        if not kind or (kind == "architecture" and phase != "DISCOVERY"):
+            # Architecture options of a new project (INTENT) need a chosen option: not answered.
             return code
         waits.append(f"{phase}:{kind}")
-        if kind == "clarification":
+        if kind == "architecture":
+            code, _, _ = h.run(
+                ws,
+                "architecture",
+                "decide",
+                "--path",
+                ".",
+                "--run",
+                run_id,
+                "--decision",
+                "APPROVE",
+                "--digest",
+                plan_digest,
+                "--actor",
+                SIMULATED_PERSON,
+                "--rationale",
+                "simulated approval of the inferred layer rules",
+                label="architecture decide",
+            )
+        elif kind == "clarification":
             answers = {
                 "answers": {
                     q[

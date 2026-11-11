@@ -38,6 +38,7 @@ from governed_harness.orchestration.workspace_ops import (
 )
 from governed_harness.runtime import CancellationToken, SafeProcessRunner, WorkspaceSnapshotter
 from governed_harness.runtime.process_runner import CommandSpec
+from governed_harness.runtime.workspace import WorkspaceSnapshot
 from governed_harness.validators import ValidatorOutput
 
 if TYPE_CHECKING:
@@ -51,6 +52,10 @@ NOT_REPRODUCED_RULE = "correction.not-reproduced"
 class Corrections:
     def __init__(self, results: ResultsHost) -> None:
         self.results = results
+        self._started: dict[str, WorkspaceSnapshot] = {}
+        """The snapshot each correction attempt started from, by its stored reference, while
+        this process runs the attempt: a stored snapshot whose texts were redacted (#178)
+        cannot give the content before the correction back."""
 
     @property
     def enabled(self) -> bool:
@@ -84,6 +89,7 @@ class Corrections:
             self.results.engine._snapshot_to_dict(snapshot),
             metadata={"kind": "correction-start", "executionId": execution.execution_id},
         )
+        self._started = {ref.uri: snapshot}
         self.results.set_flag_json(
             f"correctionstart:{execution.execution_id}",
             {
@@ -104,7 +110,8 @@ class Corrections:
         if not isinstance(start, dict) or start.get("phaseExecutionId") != phase.phase_execution_id:
             return
         engine = self.results.engine
-        before = engine._snapshot_from_dict(
+        # Read back from the store, a redacted text is never given back (snapshot_contents).
+        before = self._started.pop(start["snapshotRef"], None) or engine._snapshot_from_dict(
             json.loads(self.results.s.artifacts.get(start["snapshotRef"]))
         )
         workspace = self.results.s.paths.workspace

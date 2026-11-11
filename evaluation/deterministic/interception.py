@@ -170,7 +170,8 @@ def change_document(case: dict[str, Any]) -> dict[str, Any]:
         "write": case.get("write") or {},
         "delete": case.get("delete") or [],
     }
-    for key in ("append", "symlink"):
+    # "results", "summary" and "selfReport" (H06, H07, H12): what the fixture agent answers.
+    for key in ("append", "symlink", "results", "summary", "selfReport"):
         if case.get(key):
             document[key] = case[key]
     if case.get("tolerateDenied"):

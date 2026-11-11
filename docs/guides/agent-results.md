@@ -304,7 +304,7 @@ findings are `LOW`.
 | `invariants` | Commands (`id`, `command`) that must pass on every VERIFICATION, including each sub-task's. |
 | `riskFactors` | `newDependency`, `authentication`, `destructiveMigration`, `publicContract`, `network`, `floatMoney`, `sensitiveLogging`, `deletedWithoutTests`, each `block`, `acknowledge`, `inform` or `off`. |
 | `differential` | A failing mandatory validator also runs on the baseline: shared failures are `PREEXISTING_ERROR` and do not block; new ones are `INTRODUCED_ERROR` findings. |
-| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. |
+| `ratchet` | An optional validator (Ruff, Mypy) must not report more problems than on the baseline. The problems in a frozen acceptance test still as approved are left out: the agent cannot change that file (#183). |
 
 A risk factor with `acknowledge` must be acknowledged in the decision; the decision brief lists
 the factors:
@@ -351,7 +351,10 @@ restored with the rest.
 and `wallSeconds`, with `warnAt` (default 0.8). Usage is what providers report and the wall time
 the harness measures. Crossing `warnAt` records a LOW `budget.warning` once; crossing a limit
 records a HIGH `budget.exceeded` finding and no further agent call is made until a person raises
-the limit:
+the limit. A limit crossed by the last agent call of a run, with no further call to refuse, stops
+the run before `INDEPENDENT_REVIEW` (`BLOCKED`, exit code 6), or before `DECISION` when a review
+call crossed it (exit code 4, no gate evaluated): the run never reaches the decision as if it were
+within its budget (#157):
 
 ```bash
 harness budget show --run <runId>

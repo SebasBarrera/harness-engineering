@@ -7,12 +7,14 @@ import json
 import sqlite3
 from pathlib import Path
 
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from governed_harness.application import HarnessApplication
 from governed_harness.cli.main import app
 from governed_harness.domain.enums import DecisionKind
+from governed_harness.domain.errors import PolicyViolationError
 
 TASK = (
     "taskId: task_discount\n"
@@ -110,6 +112,54 @@ def test_phases_use_the_pinned_revision(python_workspace: Path, tmp_path: Path) 
     assert run_created["eventType"] == "run.created"
     assert run_created["payload"]["taskDigest"].startswith("sha256:")
     assert record.acceptance_contract_digest
+
+
+def test_a_redacted_pinned_revision_is_never_applied(
+    python_workspace: Path, tmp_path: Path
+) -> None:
+    """#178: the pinned revision of a task whose patch holds a quoted secret is stored redacted.
+    The run applies the task as given (the stored task, while it has the pinned digest) and
+    stops with a policy error once the stored task no longer has it."""
+    secret = TASK.replace(
+        "            return subtotal",
+        '            password = "supersecret123"\n            _ = password\n'
+        "            return subtotal",
+        1,
+    )
+    assert _create(python_workspace, _task_file(tmp_path, secret)).exit_code == 0
+    execution = HarnessApplication().start_run(python_workspace, "task_discount")
+    assert execution.current_phase.value == "DECISION"
+    pricing = (python_workspace / "src" / "sample" / "pricing.py").read_text(encoding="utf-8")
+    assert 'password = "supersecret123"' in pricing
+    with sqlite3.connect(python_workspace / ".harness" / "state.db") as connection:
+        uri = connection.execute(
+            "SELECT value FROM flags WHERE key=?", (f"taskrev:{execution.execution_id}",)
+        ).fetchone()[0]
+        hex_digest = uri.rsplit("/", 1)[1]
+        blob = python_workspace / ".harness" / "artifacts" / "blobs" / "sha256"
+        stored = (blob / hex_digest[:2] / hex_digest[2:]).read_bytes()
+        assert b"supersecret123" not in stored
+        assert b"<REDACTED>" in stored
+        payload = json.loads(
+            connection.execute(
+                "SELECT payload_json FROM records WHERE record_type='task' AND record_id=?",
+                ("task_discount",),
+            ).fetchone()[0]
+        )
+        payload["title"] = "Changed behind the harness's back"
+        connection.execute(
+            "UPDATE records SET payload_json=? WHERE record_type='task' AND record_id=?",
+            (json.dumps(payload), "task_discount"),
+        )
+    with pytest.raises(PolicyViolationError, match="stored redacted"):
+        HarnessApplication().decide_gate(
+            python_workspace,
+            execution_id=execution.execution_id,
+            decision=DecisionKind.APPROVE_EXCEPTION,
+            change_set_digest=execution.change_set_digest or "",
+            actor_id="human.reviewer",
+            rationale="reviewed",
+        )
 
 
 def test_decision_is_refused_when_the_contract_changed(

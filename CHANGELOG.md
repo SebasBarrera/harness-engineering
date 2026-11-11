@@ -12,6 +12,46 @@
   `fake_claude.py` reads a prompt given on stdin on Windows with LF newlines again, so the dry
   run finds the request there.
 
+- Security: a quoted secret inside a JSON string is no longer stored in clear (#178). The
+  `generic_secret_assignment` rule (unchanged since 0.8.0) runs on the serialized JSON of an
+  artifact, where `password = "..."` in a string is escaped as `password = \"...\"` and does not
+  match, and the string-by-string redaction of #152 ran only when the text redaction broke the
+  document. `put_json` now also runs the redactor on every decoded string and, when any of them
+  redacts, stores the document redacted string by string. A JSON artifact with nothing to redact
+  in its strings keeps its bytes and digest; the stored bytes of 1.0.0 change only where such a
+  secret was stored in clear. A redacted artifact is never applied as data: a pinned task revision
+  stored redacted is replaced by the stored task while it has the digest pinned with it (otherwise
+  the run stops with a policy error), and a snapshot text that no longer matches its file's digest
+  is never written back by a restore or a materialized copy (Git gives it back under
+  `baseline: manifest`, otherwise the path is reported as not restorable). The reproduce-first
+  check keeps the snapshot its correction started from in memory.
+- The ratchet no longer blames the agent for problems in the frozen acceptance tests (#183).
+  They are new files, so every Ruff or Mypy problem in them counted as a `ratchet.regressed`
+  regression, but the agent cannot change them (approved by a person, write-protected): in the
+  2.0.0 Haiku pilot a run whose tests all passed failed VERIFICATION after both automatic
+  corrections on four Ruff problems in the frozen files. `harness.ratchet` now leaves out the
+  problems of a frozen acceptance test still as approved; the validators still report them, and
+  a frozen file the agent changed is not exempt.
+- The `python.ruff` validator no longer rewrites the workspace (#182). It ran `ruff check .`,
+  which applies fixes when the project's Ruff configuration sets `fix = true`: in the 2.0.0 Haiku
+  pilot it rewrote the frozen acceptance tests in every VERIFICATION, so the harness reported
+  `acceptance.modified` and `acceptance.write-undone` against an agent that had not touched them.
+  The Python profile now runs `python -m ruff check --no-fix .` (also its `lint` default command
+  and the Ruff entry of the Python standards catalogue); Ruff reports every problem and changes
+  nothing.
+- The access log of `harness api serve` no longer writes query strings (#174). uvicorn logged the
+  request target with its query, so a token sent by mistake as `?token=...` was refused with 401
+  but written in clear to standard output. The access line now keeps the client, method, path,
+  HTTP version and status; authentication is unchanged.
+- Two refusals name their next step (#157, found by the H44 evaluation suite): a refused
+  `harness budget raise` (exit 5) prints a hint with `harness budget show` and the command to
+  retry, and `harness verify` adds a `hint` to a report with a run that does not verify (its
+  status, `harness run cancel` and a new `harness run start` of its task).
+- A budget limit crossed by the last agent call of a run no longer lets the run reach DECISION
+  as if it were within its budget (#157, found by the H20 evaluation suite): with no further
+  agent call to refuse, the run stops `BLOCKED` with `budget.exceeded` before
+  `INDEPENDENT_REVIEW` (or before `DECISION` when a review call crossed it) until a person runs
+  `harness budget raise` and `harness run continue`.
 - The fast lane no longer prevents disputing a frozen acceptance test (#161). Its affected tests
   ran first and stopped the attempt on a failure, so when they included the frozen file
   `harness.acceptance-tests` never ran and no dispute could open: `disputes: person` had no
