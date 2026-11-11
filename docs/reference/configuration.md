@@ -81,6 +81,7 @@ intake:
     - scope-contradiction
     - destructive-collision
   projectSetup: ask
+  language: auto
 verification:
   requirementTraceability: enforce
   outputParsers: true
@@ -391,6 +392,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `architecture.catalogue` | `off` when absent; `init` writes `experts` | `experts`: a new project is offered the ten styles of the catalogue; the advise call recommends one with its reasons and the project characteristics that support it (report in `.harness/architecture-options.md`), a person accepts it or picks any style (`harness architecture decide --style`), and an expert for the chosen style plans the organization and rides with every later request. See [architectures (Spanish)](../es/arquitecturas.md). |
 | `architecture.documentation` | `off` when absent; `init` writes `project` | `project`: the survey of an existing project also writes persistent reverse engineering documents in `.harness/reverse-engineering` that later requests point to; the survey is reused while they hold. See [reverse engineering (Spanish)](../es/ingenieria-inversa.md). |
 | `intake.projectSetup` | off when absent; `init` writes `ask` | INTENT asks the architecture, testing strategy and standards of a new project, or what detection could not establish (rule `P1`). See [new and existing projects](../guides/engineering.md#new-and-existing-projects). |
+| `intake.language` | the English rules when absent; `init` writes `auto` | The language of the deterministic INTENT rules (`C0` to `C3`, `T1`): `en`, `es`, or `auto` to detect it from each task. See [the language of the rules](#the-language-of-the-rules). |
 | `friction.*` | 1.0.0 behaviour when absent; `init` writes the whole section | The fast lane, the approval in advance, change types, the plan-approval checkpoint and the friction targets. See [friction](#friction). |
 | `metrics.*` | no price table and no narrative when absent; `init` writes none | The price table and the narrative command of `harness metrics`. See [friction](#friction). |
 
@@ -598,6 +600,37 @@ task, when the file adds no requirement or criterion, becomes a requirement with
 task without an open request (exit 3), and a task that has a run past INTENT or an actor id in a
 namespace the harness uses for agents, validators or itself (`agent.`, `validator.`, `harness.`)
 (exit 5). Actor ids are recorded, not authenticated.
+
+### The language of the rules
+
+`intake.language` chooses the vocabularies and the question texts of the rules above; rule ids,
+question ids and targets do not change.
+
+| Value | The rules |
+|---|---|
+| absent | As described above: words are ASCII runs (`contraseñas` is read as `contrase` and `as`), the vocabularies and the questions are English. A `project.yaml` without the key keeps its configuration digest. |
+| `en` | Words are Unicode runs of letters, digits, `_`, `'` and `-`, compared without diacritics; the English vocabularies and questions. For ASCII text the words, and so the questions, are the same as without the key. |
+| `es` | Unicode words as under `en`; the Spanish vocabularies are added to the English ones (Spanish tasks keep English code words) and the questions and the next step of a `warn` finding are in Spanish. |
+| `auto` | `es` or `en` for each task, detected from its title, intent, criteria and verification hints (below). |
+
+The Spanish vocabularies: vague words such as "funciona", "correctamente", "adecuadamente",
+"bien", "bueno", "limpio", "robusto", "como se espera", "fácil de usar"; filler words such as
+articles, auxiliaries and "código", "sistema", "aplicación", "resultado"; result verbs such as
+"devuelve", "lanza", "rechaza", "acepta", "contiene", "lista", "guarda", "imprime", "muestra",
+"responde", "crea", "elimina", "coincide", "pasa", "falla", "dentro", "antes", "después",
+"como máximo", "al menos"; quality words "rápido", "veloz", "eficiente", "escalable", "seguro",
+"fiable", "confiable", "responsivo", "performante"; and number words such as "cero", "dos",
+"diez", "cien", "mil", "millón", "medio" and "doble"
+("un" and "una" are left out, since they are mostly articles). The full lists are in
+`src/governed_harness/intake/language.py`.
+
+Detection is a fixed count, without a language model: a word counts for Spanish when it is a
+Spanish function word ("el", "de", "que", "para", ...), a common word of short Spanish requests
+("agrega", "implementa", "pruebas", ...) or a word of the Spanish vocabularies; an English
+function word ("the", "of", "should", ...) counts for English; each `ñ`, `¿`, `¡` or accented
+vowel counts for Spanish. Words shared by both languages ("a", "general", "once") count for
+neither. The task is Spanish when Spanish counts more; a tie, including a task with no signal,
+is English. The `T1` intent length (25 words) is the same in both languages.
 
 ### Tasks without acceptance criteria
 
