@@ -39,9 +39,7 @@ class SecretRedactor:
             re.compile(
                 rb"(?i)\b(api[_-]?key|token|secret|password|passwd|access[_-]?token)\b"
                 rb"(\s*[:=]\s*)"
-                # An unquoted value never ends on the backslash of an escaped quote (\" in a
-                # JSON string): cutting there left invalid JSON behind (#157).
-                rb"((?:[^\s,;\}\]\"'\\]|\\(?!\")){4,}|\"[^\"]{4,}\"|'[^']{4,}')"
+                rb"([^\s,;\}\]\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
             ),
             rb"\1\2<REDACTED>",
         ),

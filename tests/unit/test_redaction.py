@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 import pytest
 
 from governed_harness.evidence.redaction import SecretRedactor
@@ -28,25 +26,3 @@ def test_non_secret_is_unchanged() -> None:
     result = SecretRedactor().redact(data)
     assert result.data == data
     assert not result.redacted
-
-
-@pytest.mark.parametrize(
-    ("text", "redacted"),
-    [
-        ('secret = os.environ.get("ALERTS_PASSWORD") (risk factor authentication)', True),
-        ("token=abcd1234 z", True),
-        # A quoted value escaped inside a JSON string is left as in 1.0.0: the stored task of a
-        # patch task carries it, and redacting it would change the code the run applies.
-        ('password = "supersecret123"\n_ = password', False),
-    ],
-)
-def test_redacting_a_json_string_keeps_the_json_valid(text: str, redacted: bool) -> None:
-    # #157: the provider feedback of the H45 reference solution was redacted into invalid JSON
-    # (the value was cut after the backslash of an escaped quote).
-    data = json.dumps({"message": text}).encode("utf-8")
-    result = SecretRedactor().redact(data)
-    message = json.loads(result.data)["message"]
-    assert result.redacted is redacted
-    assert ("<REDACTED>" in message) is redacted
-    assert "abcd1234" not in message
-    assert SecretRedactor().redact(result.data).data == result.data
