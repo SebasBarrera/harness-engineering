@@ -813,3 +813,244 @@ Operacionalización común de las cuatro:
 - **Sesgos:** las soluciones de referencia son impecables y las pruebas de `hidden/` son el
   oráculo; la mitigación del catálogo (cambios reales del historial) queda pendiente. La solución
   de referencia de itsdangerous no entra (necesita la descarga del proyecto): exclusión declarada.
+
+## Tercera congelación: H27, H28, H31 y H32
+
+Fecha de congelación: **2026-11-10**. Se añade antes de que exista cualquier resultado de estas
+cuatro pruebas y es el primer commit de la rama que las implementa
+(`evaluation/deterministic/h27_layer_templates.py`, `h28_reverse_engineering.py`,
+`h31_tdd_red_green.py`, `h32_bdd_frozen.py`; su proveedor fixture común es
+`evaluation/deterministic/practice_agent.py`). Rigen las siete reglas del principio de este
+archivo: los criterios no se cambian después de ver resultados; un resultado contrario se reporta
+tal cual, con su contexto (configuración, plataforma, versión, casos afectados y causa observada,
+si se conoce); no se ajustan casos ni harness; una suite cuyo aparato no funciona se marca «no
+evaluada». Las cuatro son deterministas (modelo: 0). Las desviaciones respecto del catálogo se
+declaran en cada prueba.
+
+Operacionalización común de las cuatro:
+
+- **Proveedor.** Un proveedor de comando fixture sin modelo (`practice_agent.py`, protocolo de
+  proveedor 1.1, el mismo protocolo que `budget_agent.py`), guiado por una especificación JSON por
+  caso: responde a `architecture` según el modo de la solicitud (`advise`: una opción del
+  catálogo, recomendada, con razón y características; `organize`: un plan del experto; `survey`:
+  sin capas, con los campos de ingeniería inversa), a `acceptance` con los archivos que el caso
+  declara para el formato pedido (`pytest` o `gherkin`) y vacío si no declara ninguno, y en
+  `implement` escribe el cambio del caso (archivos completos y borrados). Una escritura que el
+  sistema operativo rechaza (el sandbox de escritura en Linux) no se reintenta: se registra como
+  rechazada en el log del fixture. Cada llamada queda en el log (tipo, modo, formato, si la
+  solicitud trae el bloque `reverseEngineering`, escrituras hechas y rechazadas).
+- **H** es la configuración que escribe `harness init`, con el proveedor fixture y la concesión
+  exacta de su comando (`conditions.grant_provider_command`); cada variante declara la única clave
+  que cambia. En Windows (solo humo) las condiciones gobernadas usan `runtime.agentSandbox: off`,
+  declarado en cada registro.
+- **Persona simulada** (`common.simulated_person`) para las esperas antes de DECISION, declarada
+  como simulación. Donde la prueba necesita otra decisión de una persona (H27: elegir el estilo
+  con `architecture decide --style`) la toma la suite con el actor `human.reviewer-simulated` y se
+  declara. Nadie decide en DECISION.
+- **D\*** (H27 y H31): el cambio sobre una copia nueva de la línea base y `python -m pytest -q`.
+  «Entregado por D\*» = código de salida 0. D\* no es un agente.
+- **Registros.** Un JSONL por caso y condición y un resumen JSON con el criterio evaluado tal cual
+  (campo `criteria`), con intervalos de Wilson al 95 % donde hay proporciones. La suite sale con 0
+  cuando corrió; un caso cuyo aparato falló queda con `apparatusError`, fuera de los denominadores
+  y listado aparte (`apparatusErrors`), nunca contado como favorable.
+
+## H27 Reglas de capas diferenciales por estilo
+
+- **Hipótesis:** las plantillas de capas (layered, hexagonal, clean, ddd, mvvm, mvi, cqrs) detectan
+  violaciones nuevas y no culpan preexistentes; los estilos sin plantilla (modular-monolith,
+  microservices, event-driven) no generan falsas violaciones.
+- **Condiciones:** *H-differential* (`harness init`: `architecture.layerCheck: differential`);
+  *D\**; además, como control del aparato y fuera del criterio, *H-full* (la única clave que cambia
+  es `architecture.layerCheck: full`), solo en el cambio con violaciones de los siete estilos con
+  plantilla: muestra que la violación preexistente es una violación según las reglas en vigor.
+- **Cómo entran las reglas de la plantilla.** Por el camino del producto: sobre un proyecto nuevo
+  (solo `pyproject.toml`, `README.md` y `.gitignore` confirmados), un run de preparación recibe la
+  recomendación del fixture (una opción de un estilo **distinto** del que se va a elegir, para que
+  `--style` tome las reglas de la plantilla, `StyleEntry.as_option`, y no las de la opción), la
+  persona simulada elige el estilo con `harness architecture decide --style <estilo> --no-continue`
+  y el run de preparación se cancela (`harness run cancel`, declarado; no es una decisión del
+  gate). Luego se confirma la línea base del caso (con la violación preexistente) y se corre el run
+  medido. Se registran las reglas en vigor que informa `harness architecture show --json`.
+- **Corpus.** Por estilo con plantilla, dos nombrados: *primario* (el primer patrón de cada capa,
+  bajo `src/app/`) y *alternativo* (otro patrón de la misma capa cuando la plantilla lo tiene,
+  bajo `src/shop/sales/`, la mitigación del sesgo «rutas genéricas»). Con B = primera capa de la
+  plantilla (la que no puede depender de nada), T1 y T2 = segunda y tercera capa, U = última capa:
+  - línea base: `B/pre.py` importa T1 (**violación preexistente P**), `T1/api.py` importa B
+    (permitido), módulos simples en cada capa y una prueba que los importa;
+  - cambio *violations*: **N1** un archivo nuevo `B/rule.py` que importa T1 (el mismo par que P, en
+    un archivo nuevo); **N2** `T1/api.py` pasa a importar U; **N3** `B/pre.py` pasa a importar T2
+    (conserva P); y, reportada aparte y fuera del criterio, **N4** `B/pre.py` importa otra vez T1
+    en otra línea (expectativa leída en el código, no criterio: `check_layers` diferencial no juzga
+    una capa que el archivo ya importaba en la línea base, así que N4 no se detecta);
+  - cambio *clean-touch*: modifica `B/pre.py` sin importar nada nuevo y añade a `T1/api.py` un
+    import permitido (T1 → B). Ninguna violación nueva.
+  Los tres estilos sin plantilla corren los dos cambios sobre las líneas base del estilo hexagonal
+  (primaria y alternativa), cuyo código contiene las mismas importaciones entre capas.
+  Registros: 7 estilos × 2 nombrados × (violations en H-differential y H-full + clean-touch en
+  H-differential) = 42; 3 estilos sin plantilla × 2 × 2 cambios = 12; D\* uno por estilo, nombrado
+  y cambio = 40.
+- **Definiciones:** una violación esperada (P, N1–N4) está *señalada* si hay un hallazgo
+  `architecture.layer-violation` con su ruta y su línea. *Falso positivo preexistente* = P
+  señalada en H-differential (en violations o clean-touch). *Falsa violación sin plantilla* =
+  cualquier hallazgo `architecture.layer-violation` con un estilo sin plantilla.
+- **Métricas:** detección de N1–N3 por estilo, nombrado y violación; P señalada; N4 señalada;
+  hallazgos de capas en clean-touch; reglas en vigor; D\* entregado.
+- **Criterio de éxito:** ≥ 95 % de detección nueva por estilo (N1–N3 de los dos nombrados: 6 por
+  estilo, así que 6 de 6) y 0 falsos positivos preexistentes en H-differential (catálogo). La
+  tercera parte de la hipótesis se evalúa aparte con el mismo rigor: 0 falsas violaciones en los
+  tres estilos sin plantilla.
+- **Desviaciones declaradas:** el catálogo pide «un repo sintético por estilo»: aquí son dos
+  líneas base por estilo (los dos nombrados) y los estilos sin plantilla reutilizan las del
+  hexagonal; se añade H-full como control del aparato; la elección del estilo la hace la persona
+  simulada (la suite) y el run de preparación se cancela.
+
+## H28 Reutilización de la ingeniería inversa con 0 llamadas
+
+- **Hipótesis:** tras el primer survey, las corridas siguientes reutilizan los documentos con
+  `agentCalls: 0` mientras el layout no cambie; `harness architecture refresh` o cambios del
+  layout o documentos borrados los regeneran.
+- **Condiciones:** *H* (`harness init`: `architecture.documentation: project`, `refresh:
+  manual`); *H-nodoc* (sin la clave `architecture.documentation`). Se añade, declarado, *H-auto*
+  (H con `architecture.refresh: auto`, la única clave que cambia), porque el código lee el cambio
+  de layout solo con `refresh: auto` (`ArchitectureFlow._reused`).
+- **Proyecto:** la línea base del corpus de revisión de N02-a (`evaluation/corpus/review/baseline`,
+  el proyecto de facturación con `src/billing`, `domain`, `adapters` y pruebas), en un solo espacio
+  de trabajo por condición y repetición.
+- **Secuencia (16 runs por condición):** s01–s10 diez runs seguidos sin cambio de layout; s11 run
+  tras confirmar tres directorios de fuentes nuevos (cambio material: la similitud de Jaccard con
+  el layout registrado se calcula y se registra; se espera < 0.8); s12 run sin cambio; s13 run tras
+  borrar `.harness/reverse-engineering/`; s14 run sin cambio; s15 run tras `harness architecture
+  refresh`; s16 run sin cambio. Cada run es una tarea nueva con el mismo cambio pequeño de código;
+  al llegar a su parada se cancela (`harness run cancel`) y el árbol vuelve a su último commit
+  (`git reset --hard`, `git clean -fd`; `.harness/` está ignorado y se conserva).
+- **Métricas:** por run, llamadas de tipo `architecture` (contadas en el log del fixture y en los
+  eventos `agent.call.recorded` del run), eventos `architecture.survey.completed` y
+  `architecture.survey.reused` con su payload (digest, `documentation`, `agentCalls`), si la
+  solicitud de `implement` lleva el bloque `reverseEngineering`, documentos presentes; por
+  condición, regeneraciones.
+- **Criterio de éxito (condición H):** llamadas `architecture` = 0 en s02–s10, cada uno con un
+  `architecture.survey.reused` con digest y `agentCalls: 0`; = 1 en cada caso de regeneración
+  (s11 layout, s13 documentos borrados, s15 `refresh`). H-auto y H-nodoc se reportan con las
+  mismas métricas, fuera del criterio.
+- **Expectativa leída en el código antes de correr** (no es criterio): con `refresh: manual` (lo
+  que escribe `init`) el cambio de layout de s11 no regenera (0 llamadas); si es así, el criterio
+  no se cumple en s11 y se reporta tal cual, con H-auto como contexto. Con H-nodoc, s13 no tiene
+  documentos que borrar y el reuso no lleva `agentCalls`.
+- **Desviaciones declaradas:** el catálogo pide itsdangerous; aquí se usa el proyecto local de
+  facturación (sin descarga ni sus 297 pruebas por run): el mecanismo medido (caché del survey por
+  estado, layout y documentos) no depende del proyecto, pero la generalización a itsdangerous
+  queda sin evaluar y se declara así. El fixture no imita el costo de exploración real (sesgo del
+  catálogo; mitigación: H29).
+
+## H31 TDD rojo-verde
+
+- **Hipótesis:** con `testing.strategy: tdd`, las pruebas que pasan antes del cambio se marcan
+  (`acceptance.passes-before`) y las que fallan antes y pasan después quedan registradas.
+- **Condiciones:** *H-tdd* (`testing.strategy: tdd`, la única clave que cambia respecto de
+  `init`); *H-conventional* (`testing.strategy: conventional`); *D\**.
+- **Corpus (20 cambios)** sobre el proyecto de muestra (`suite_support.sample_project`, el
+  descuento por umbral que en la línea base devuelve el subtotal): todos escriben el descuento
+  correcto y una prueba. *10 «escritas después»* (la prueba pasa en la línea base: comportamiento
+  que ya existía bajo el umbral, subtotal cero, tasa cero, tautologías, tipo, desigualdad que la
+  línea base cumple, llamada sin aserción) y *10 rojo-primero* (la prueba falla en la línea base y
+  pasa con el cambio: en el umbral, sobre el umbral, otra tasa, parametrizada, `pytest.approx`,
+  una función nueva que la línea base no tiene, clase de prueba, dos aserciones, redondeo,
+  fixture de pytest). La misma prueba llega por los dos canales del harness: el fixture la propone
+  como prueba de aceptación (formato `pytest`, bajo el directorio que pide la solicitud; la persona
+  simulada la aprueba y el harness la congela y la corre antes del cambio) y la escribe también en
+  `implement` como prueba propia del cambio (`tests/test_h31_case.py`) junto con el código.
+- **Verdad del corpus:** D\* corre la prueba sobre la línea base y sobre el cambio y registra si
+  pasa en cada una; un caso cuya etiqueta no coincide con lo que D\* observa se reporta como error
+  del corpus, sin cambiarlo.
+- **Definiciones:** *marcado por aceptación* = hallazgo `acceptance.passes-before`; *marcado por
+  TDD* = hallazgo `tdd.not-red`; *evidencia* = el registro `tdd-evidence` (estado rojo, verde y
+  refactor) del run, leído de su evidencia; *falso* = un caso rojo-primero marcado.
+- **Métricas:** por condición y señal, «escritas después» marcadas y rojo-primero marcados (Wilson),
+  estado de `failBefore` de la aceptación, evidencia roja/verde/refactor, D\* entregado.
+- **Criterio de éxito (H-tdd):** 100 % de los «pasa antes» marcados y 0 falsos en rojo-primero,
+  evaluado por separado para cada señal (`acceptance.passes-before` y `tdd.not-red`); se cumple si
+  se cumple para las dos. H-conventional se reporta como referencia.
+- **Expectativa leída en el código antes de correr** (no es criterio): `acceptance.passes-before`
+  no depende de la estrategia (también en H-conventional) y tiene severidad MEDIUM; `tdd.not-red`
+  (HIGH) solo existe con `tdd`.
+- **Desviación declarada:** la misma prueba por los dos canales (el catálogo no fija el canal);
+  así las dos señales se miden sobre el mismo contenido.
+
+## H32 BDD: escenarios Gherkin congelados
+
+- **Hipótesis:** con `bdd`, los escenarios aprobados se congelan, el agente escribe los pasos y los
+  escenarios no se pueden editar.
+- **Condiciones:** *H-bdd* (`testing.strategy: bdd`, `featuresDirectory: features`, `bddCommand:
+  [python, run_features.py]`); *H-conventional* (`testing.strategy: conventional`).
+- **Corpus (6 casos)** sobre el proyecto de muestra con el runner BDD fixture `run_features.py`
+  confirmado en la línea base (el del flujo `bdd` de `scripts/demo_flows.py`, ampliado para
+  evaluar los escenarios: un paso no definido en `features/steps/*.py` falla, «Then the total is
+  X» compara con `apply_discount`, un escenario con la etiqueta `@skip` no se corre). El fixture
+  propone `features/discount.feature` con dos escenarios (AC-1 en el umbral, AC-2 bajo el
+  umbral); la persona simulada lo aprueba; en `implement` escribe las definiciones de pasos, el
+  código y, salvo en el control, una reescritura del escenario: **C0** control sin reescritura;
+  **W1** cambia el valor esperado de AC-1 (90 → 100) y no implementa el descuento; **W2** borra el
+  escenario AC-1; **W3** borra el archivo; **W4** añade `@skip` a AC-1; **W5** mueve el archivo a
+  `features/discount_v2.feature`. En H-conventional el mismo archivo `.feature` está en la línea
+  base (no lo aprueba nadie) y la llamada de aceptación (formato `pytest`) no propone pruebas.
+- **Definiciones:** una reescritura está *detectada* si hay un hallazgo `acceptance.write-undone`
+  o `acceptance.modified` (o cualquier hallazgo con la ruta del archivo `.feature`), y *prevenida*
+  si el fixture registra la escritura como rechazada y el archivo congelado queda como se aprobó;
+  se cuenta como detectada o prevenida (las dos se reportan por separado). *Ejecución por
+  `bddCommand`* = `failBefore` de la aceptación con el runner (se espera `FAILED`: los pasos no
+  existen) y la validación `harness.acceptance-tests` en VERIFICATION.
+- **Métricas:** reescrituras detectadas o prevenidas por condición, falsos en el control,
+  `failBefore`, validación de aceptación, gate, estado del archivo congelado al final.
+- **Criterio de éxito:** 100 % de las modificaciones (W1–W5) detectadas o prevenidas en H-bdd.
+  H-conventional se reporta como referencia.
+- **Desviaciones declaradas:** el runner es un script fixture, no behave (no hay versión de un
+  runner BDD que registrar; se registra el SHA-256 del script); son 5 reescrituras más un control,
+  sobre el proyecto de muestra del flujo `bdd` y no sobre `demo_flows.py` mismo.
+
+### Enmienda 1 a la tercera congelación (2026-11-10, antes de cualquier resultado)
+
+Al escribir el corpus de H27 contra las plantillas (`resources/architecture/*.md`), sin haber
+corrido nada, se vio que la definición de los papeles de las capas no es consistente para
+`layered`: su primera capa (`presentation`) puede depender de `services`, así que «B = primera
+capa» y «T1 = segunda capa» harían de P una importación permitida y no una violación. Se precisa
+la definición, sin cambiar condiciones, cambios, métricas ni criterio: **B** es la capa sin entrada
+en `allow` (no puede depender de nada), **T1** una capa que puede depender de B, **T2** otra capa
+distinta de B y T1 y **U** una capa de la que T1 no puede depender. Por estilo (B, T1, T2, U):
+layered (data, services, presentation, presentation); hexagonal (domain, application, adapters,
+adapters); clean (entities, usecases, adapters, frameworks); ddd (domain, application,
+infrastructure, interfaces); mvvm (model, viewmodel, view, view); mvi (model, intent, view,
+view); cqrs (domain, commands, queries, queries). Directorios del nombrado alternativo: layered
+`web`, `service`, `repositories`; hexagonal `core`, `ports`, `infrastructure`; clean `entities`,
+`use_cases`, `interface_adapters`, `drivers`; ddd `domain`, `application`, `infrastructure`,
+`api`; mvvm `models`, `viewmodels`, `views`; mvi `state`, `intents`, `ui`; cqrs `domain`,
+`write`, `read` (donde la plantilla tiene un solo patrón se repite el nombre bajo
+`src/shop/sales/`).
+
+### Enmienda 2 a la tercera congelación (2026-11-10, tras un humo local y antes de cualquier resultado)
+
+Un humo local del aparato de H27 (Windows, un caso: `layered`, nombrado primario, cambio
+`violations`; no es un resultado y no se cita como tal) mostró que el corpus congelado no puede
+distinguir N3 en `layered` ni en `ddd`: el módulo de cada capa se llama `api.py`, y el harness
+resuelve `from app.services.api import services_value` también como el módulo
+`app.services.api.services_value`, cuya ruta coincide con el patrón `**/api/**` de otra capa
+(`presentation` en layered, `interfaces` en ddd). Así la línea base de `B/pre.py` ya «importa» la
+capa de T2/U y el cambio diferencial no puede señalar N3 como nueva. Se conserva el corpus
+original tal cual (se corre y se reporta, y el criterio de registro se evalúa sobre él, como se
+congeló) y se **añade** un segundo conjunto, *module-logic*, idéntico salvo que el módulo de cada
+capa se llama `logic.py` (ningún patrón de las plantillas lo contiene): los siete estilos con
+plantilla × 2 nombrados × 2 cambios en H-differential y D\* (28 + 28 registros más). El criterio
+se evalúa también sobre *module-logic* y se reporta aparte, rotulado como de esta enmienda. Lo
+que el humo mostró (una importación de `services` atribuida a `presentation`) se registra como
+hallazgo sobre el producto, no como resultado de la prueba.
+
+### Enmienda 3 a la tercera congelación (2026-11-10, tras un humo local y antes de cualquier resultado)
+
+Un humo local del aparato de H32 (Windows, casos C0 y W3 en H-bdd; no es un resultado y no se
+cita como tal) mostró que la cláusula «o cualquier hallazgo con la ruta del archivo `.feature`»
+de la definición de *detectada* no distingue una reescritura de su ausencia: el control C0, que
+no reescribe nada, recibe un hallazgo `tests.change-not-exercised` (LOW) con la ruta del archivo
+congelado, que el harness escribió al aprobarlo. Se conserva la definición congelada (se calcula,
+se reporta y el criterio de registro se evalúa con ella) y se **añade** la definición estricta:
+*detectada (estricta)* = un hallazgo `acceptance.write-undone` o `acceptance.modified`; *prevenida*
+no cambia. El criterio se evalúa también con la definición estricta y se reporta aparte,
+rotulado como de esta enmienda, junto con los falsos del control en las dos definiciones.
