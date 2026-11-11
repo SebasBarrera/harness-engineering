@@ -64,6 +64,40 @@ acceptance-dispute`, la decisión, las razones (del agente y del product owner) 
 Tras `REVISE` la corrida vuelve a SPECIFICATION y la regla ya registrada de las pruebas de
 aceptación aprueba o rechaza las pruebas reescritas.
 
+### Enmienda 2026-11-11: modelos y repeticiones de la campaña
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña** (ni el piloto ni los bloques
+con modelo tienen resultados 2.0.0; el piloto Haiku está en curso y no se cita aquí ninguna cifra
+suya). Fija los modelos, la configuración de la condición anclada y las repeticiones de los bloques
+con modelo; no cambia hipótesis, métricas ni criterios de éxito de este registro.
+
+1. **Modelos.** El piloto Haiku (`evaluation/launchers/pilot.sh`) es una **comprobación del
+   aparato**: sirve para ver que el lanzador, la persona simulada, el product owner y el registro
+   funcionan, y sus corridas no son resultados de la campaña. Se añade un **piloto Sonnet** con el
+   mismo diseño (mismo escenario, las mismas cinco corridas y el mismo lanzador, con
+   `EVAL_PILOT_MODEL=claude-sonnet-5-5` y su propio directorio de salida; la orden está en
+   `evaluation/README.md`). Los bloques con modelo de la campaña corren con **Haiku y Sonnet**;
+   Opus no es necesario y no se exige.
+2. **Condición anclada.** `harness-anchored` usa los valores por defecto del router de la versión
+   bajo prueba con el modelo de la celda como techo, incluido el nivel `trivial` de la llamada
+   `implement` (#197): una tarea trivial según `agentRouting.thresholds.trivial` (valores
+   iniciales: 1 requisito, 1 archivo propio, 150 líneas, sin banderas de riesgo) se implementa con
+   `claude-haiku-5-5`, y el resto con Sonnet (S, M) u Opus (L) recortado al modelo de la celda. No
+   se cambian ni se calibran los umbrales durante la campaña; cada corrida guarda su
+   `project.yaml` (regla 7) y cada decisión su regla (`agent.routing.decided`).
+   Lo mismo vale para H41, que usa las tablas y los umbrales por defecto: sus señales «dentro de
+   S» (1 requisito, 1 archivo, 10 líneas) son triviales con esos valores, así que su malla y su
+   proyección de costo incluyen el nivel `trivial` (tamaño registrado `trivial`, presupuesto de
+   tokens de S).
+3. **Repeticiones.** 5 repeticiones por celda en los bloques de modelos; 10 por celda en el
+   **contraste primario** (directo frente a harness, prompt completo, Sonnet); 3 por celda en el
+   bloque rides (costo y tiempo). Los resultados se reportan como conteos de éxitos con intervalo
+   de Wilson al 95 % y medianas con rango intercuartílico de costo y tiempo. Con esos n no se hacen
+   afirmaciones de significación (regla 5): las diferencias se describen, no se prueban.
+4. **Costos y tiempos.** El costo y el tiempo de la campaña se estiman a partir de los dos pilotos
+   (Haiku y Sonnet), no se fijan de antemano; la estimación se escribe con sus fuentes antes de
+   lanzar los bloques y no cambia los números de repeticiones de este punto 3.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos

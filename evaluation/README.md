@@ -166,11 +166,16 @@ export EVAL_PYTHON=<venv with the v2.0.0 wheel and pytest 8.3.5, freezegun, cove
 export EVAL_WHEEL=<the v2.0.0 wheel>  EVAL_WORK=<work dir outside the repo>  EVAL_CACHE=<dir with itsdangerous-2.2.0.tar.gz>
 export EVAL_CORE_REFERENCE_SRC=<src of harness 1.0.0>      # optional: digest check of harness-core
 bash evaluation/launchers/pilot.sh            # 5 runs: direct, harness-core, harness, harness-anchored, casual x harness
+EVAL_PILOT_MODEL=claude-sonnet-5-5 EVAL_OUT=evaluation/results-2.0.0/pilot-2.0.0-sonnet bash evaluation/launchers/pilot.sh   # Sonnet pilot, same 5 runs
 bash evaluation/launchers/block-b.sh          # casual and minimal x {direct, harness-core, harness} x 3 x 3 x 3
 bash evaluation/launchers/block-a.sh          # complete x {direct, harness} x 3 x 3 x 3, then harness-anchored x 3 x 3 x 2
 bash evaluation/launchers/block-d.sh          # {casual direct, structured direct, harness} x 3 models x 3 sessions
 bash evaluation/launchers/block-embedded.sh   # host model x 3, brownfield, 2 repetitions
 ```
+
+The Sonnet pilot (amendment of 2026-11-11 in `campaign/PREREGISTRO.md`) needs its own `EVAL_OUT`:
+`pilot.sh` skips a run already recorded for the same prompt and condition in `pilot.jsonl`, whatever
+the model, and takes the same lock as the Haiku pilot, so it runs after it.
 
 Summaries: `report.py --v2 <results> <summary.json>` (blocks A and B: one cell per prompt,
 condition, model and scenario, every run listed next to the dispersion n/min/median/max),
