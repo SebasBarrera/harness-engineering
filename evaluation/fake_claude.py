@@ -397,6 +397,9 @@ def main(argv: list[str]) -> int:
         text = _host(prompt, cwd, _arg(argv, "--mcp-config") or "{}")
         return _print(text, model)
     text = _product_owner(prompt)
+    if text is None and prompt.startswith("Antes de implementar la tarea de abajo puedes"):
+        # direct-po's questions turn (direct_po.QUESTIONS_PROMPT): one question.
+        text = "```yaml\nquestions:\n  - |\n    ¿Qué pasa con una entrada inválida?\n```"
     if text is None:
         result = _call(prompt, cwd)
         if result is not None:

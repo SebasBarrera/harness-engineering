@@ -29,7 +29,14 @@ GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "cl
 FLOWS_V2 = [
     (prompt, condition)
     for prompt in ("casual", "poor", "full")
-    for condition in ("direct", "harness-core", "harness", "harness-anchored", "harness-tiered")
+    for condition in (
+        "direct",
+        "direct-po",  # the separate exploratory test (amendment of 2026-11-12)
+        "harness-core",
+        "harness",
+        "harness-anchored",
+        "harness-tiered",
+    )
 ]
 LABELS = {
     ("casual", "baseline"): "Casual\nsin harness",

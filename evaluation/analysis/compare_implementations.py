@@ -58,7 +58,15 @@ sys.path.insert(0, str(HERE))
 import practices  # noqa: E402
 
 SCHEMA = "compare-implementations/1"
-CONDITIONS = ("harness-anchored", "harness-core", "harness", "direct", "baseline", "clarify")
+CONDITIONS = (
+    "harness-anchored",
+    "harness-core",
+    "harness",
+    "direct-po",
+    "direct",
+    "baseline",
+    "clarify",
+)
 RUN_NAME = re.compile(
     r"^(?P<scenario>[a-z]+)(?:-(?P<prompt>[a-z_]+))?-(?P<condition>"
     + "|".join(re.escape(c) for c in CONDITIONS)
@@ -1155,7 +1163,7 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
         final = run_dir / "measure-final-tree" / "hidden.xml"
         reconstruction["finalTreeHidden"] = _tally(_junit_cases(final)) if final.is_file() else None
         out["quarantine"] = reconstruction
-    if meta["condition"] == "direct":
+    if meta["condition"] in ("direct", "direct-po"):
         out["requirements"]["direct"] = direct_text_metrics(run_dir)
     else:
         db = state_path(run_dir, run_dir / "ws")
@@ -1523,7 +1531,14 @@ def _excerpt(record: dict[str, Any]) -> list[str]:
     return [f"`{record['run']['condition']}`{cut}:", "", "```diff", code["text"], "```", ""]
 
 
-CONDITION_ORDER = ["direct", "harness-core", "harness", "harness-anchored", "clarify"]
+CONDITION_ORDER = [
+    "direct",
+    "direct-po",
+    "harness-core",
+    "harness",
+    "harness-anchored",
+    "clarify",
+]
 
 
 def _condition_rank(record: dict[str, Any]) -> int:

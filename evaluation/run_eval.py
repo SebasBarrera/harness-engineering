@@ -46,6 +46,7 @@ sys.path.insert(0, str(HERE))
 
 import agentlib  # noqa: E402
 import conditions  # noqa: E402
+import direct_po  # noqa: E402
 import harness_state  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
@@ -96,7 +97,17 @@ SCENARIOS = {
         "archive_sha256": "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b",
     },
 }
-CONDITION_CHOICES = ["direct", "baseline", "harness-core", "harness", "harness-anchored", "clarify"]
+CONDITION_CHOICES = [
+    "direct",
+    "baseline",
+    "direct-po",
+    "harness-core",
+    "harness",
+    "harness-anchored",
+    "clarify",
+]
+# The conditions without the harness; direct-po is the separate exploratory test (direct_po.py).
+DIRECT_CONDITIONS = ("direct", "direct-po")
 GIT = [
     "git",
     "-c",
@@ -367,6 +378,17 @@ def trace_completeness(
         state.close()
 
 
+def product_knowledge(scenario: str) -> str:
+    """What the simulated product owner knows: the full task and the specification the poor and
+    casual prompts leave out (the same in every condition that has a product owner)."""
+    full_task = SCENARIOS[scenario]["task"]
+    spec = SCENARIOS[scenario].get("fixture", Path("-")) / SPEC_FILE
+    knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
+    if spec.is_file():
+        knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
+    return knowledge
+
+
 def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
     """A one-line prompt as a task file: the text is the title and the intent, and there is no
     acceptance criterion (2.0.0 stores it with criteriaPending and asks for criteria in INTENT;
@@ -606,6 +628,10 @@ def main() -> int:
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     if condition == "clarify" and args.prompt != "poor":
         parser.error("the clarify condition applies to the poor prompt (harness 1.1.0 or later)")
+    if condition == "direct-po" and args.agent != "claude":
+        parser.error(
+            "direct-po asks its questions with a read-only Claude Code call: --agent claude"
+        )
 
     started = time.monotonic()
     record: dict[str, Any] = {
@@ -620,13 +646,27 @@ def main() -> int:
         if condition == "direct" or args.no_product_owner
         else args.po_model,
         "dryRun": args.dry_run,
-        "provider": args.provider if condition != "direct" else None,
+        "provider": args.provider if condition not in DIRECT_CONDITIONS else None,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     owner = None
-    if condition == "direct":
-        log = run_dir / "agent-calls" / "call-1.json"
+    if condition in DIRECT_CONDITIONS:
         prompt = casual_prompt if casual_prompt is not None else agentlib.build_prompt(task)
+        if condition == "direct-po":
+            # The separate exploratory test (amendment of 2026-11-12): one turn of questions,
+            # answered by the same simulated product owner, before the implementation call.
+            if not args.no_product_owner:
+                owner = ProductOwner(product_knowledge(args.scenario), args.po_model, run_dir)
+            po_task = (
+                {"title": casual_prompt.strip().splitlines()[0][:120], "intent": casual_prompt}
+                if casual_prompt is not None
+                else task
+            )
+            prompt, record["directPo"] = direct_po.ask(
+                prompt, po_task, workspace, args.model, run_dir, owner
+            )
+            record["productOwner"] = owner.rounds if owner else []
+        log = agentlib.allocate_call(run_dir / "agent-calls")
         if args.agent == "codex":
             agentlib.run_codex(prompt, workspace, args.model, args.effort, log)
         else:
@@ -639,14 +679,8 @@ def main() -> int:
             if casual_prompt is not None
             else task_file
         )
-        # The simulated product owner knows the full task and the specification the prompt leaves out.
-        full_task = SCENARIOS[args.scenario]["task"]
-        spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
-        knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
-        if spec.is_file():
-            knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
         if not args.no_product_owner:
-            owner = ProductOwner(knowledge, args.po_model, run_dir)
+            owner = ProductOwner(product_knowledge(args.scenario), args.po_model, run_dir)
         if condition == "clarify":
             global RESUMABLE_PROVIDER  # noqa: PLW0603
             RESUMABLE_PROVIDER = True
@@ -714,7 +748,7 @@ def main() -> int:
     record["productOwnerCalls"] = summarize_calls(po_calls)
     commands = (record.get("harness") or {}).get("commands") or []
     harness_seconds = sum(c["seconds"] for c in commands)
-    model_seconds = record["agent"]["wallSeconds"] if condition != "direct" else 0.0
+    model_seconds = record["agent"]["wallSeconds"] if condition not in DIRECT_CONDITIONS else 0.0
     # P15: the time of the harness's own processes apart from the time of the model calls they wait
     # for, and both apart from the simulated person (product owner calls) and the runner.
     record["timeSplit"] = {
@@ -722,7 +756,7 @@ def main() -> int:
         "agentCallSeconds": record["agent"]["wallSeconds"],
         "harnessCommandSeconds": round(harness_seconds, 3),
         "harnessProcessSeconds": round(harness_seconds - model_seconds, 3)
-        if condition != "direct"
+        if condition not in DIRECT_CONDITIONS
         else None,
         "productOwnerSeconds": record["productOwnerCalls"]["wallSeconds"],
     }
