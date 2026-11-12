@@ -532,3 +532,98 @@ def test_hidden_metrics_give_the_two_counts(tmp_path: Path) -> None:
     record = {"requirements": {"hidden": {"deducibility": result}}}
     assert row["Pruebas ocultas deducibles sin especificación pasadas"](record) == 1
     assert row["Pruebas ocultas solo con especificación (total)"](record) == 2
+
+
+# ----- D8: what the run did before what the prompt left unsaid ------------------------------
+INVENTING = (
+    '"""Costs."""\n'
+    "from decimal import Decimal\n\n"
+    'RATES = {"local": Decimal("5.00"), "zonex": Decimal("7.35")}\n\n\n'
+    "def cost(zone):\n"
+    '    if zone not in RATES:\n        raise ValueError(f"unknown zone {zone} 42")\n'
+    "    return RATES[zone] + 1 + 0\n"
+)
+KNOWN = (
+    "from decimal import Decimal\n\n"
+    'RATES = {"local": Decimal("5.00"), "national": Decimal("9.00")}\n'
+    'FREE_FROM = Decimal("100")\nHALF = 0.5\n'
+)
+
+
+def _unknowns(tmp_path: Path, source: str, files=None, **kwargs: Any) -> dict[str, Any]:
+    ws = workspace(tmp_path, source)
+    baseline = git(ws, "rev-parse", "HEAD").strip()
+    changed = files or [{"path": "src/toy.py"}]
+    return cmp.unknown_behavior("greenfield", ws, baseline, changed, **kwargs)
+
+
+def test_literals_skip_docstrings_trivial_numbers_messages_and_fstrings() -> None:
+    found = cmp.code_literals(INVENTING)
+    assert dict(found) == ({("s", "local"): 1, ("n", "5"): 1, ("s", "zonex"): 1, ("n", "7.35"): 1})
+
+
+def test_invented_values_are_those_neither_in_the_spec_nor_declared(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, INVENTING, asked=0, declared=0)
+    assert result["behavior"] == cmp.INVENTED
+    assert result["inventedTexts"] == ["7.35", "zonex"]
+    assert result["specAvailable"] is True
+
+
+def test_values_of_the_spec_are_not_invented(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, KNOWN, asked=0, declared=0)
+    assert result["behavior"] == cmp.NOTHING_NEW and result["inventedValues"] == 0
+
+
+def test_priority_is_asked_then_declared_then_invented(tmp_path: Path) -> None:
+    asked = _unknowns(tmp_path / "a", INVENTING, asked=1, declared=1)
+    assert asked["behavior"] == cmp.ASKED
+    recorded = _unknowns(tmp_path / "b", INVENTING, asked=0, declared=1)
+    assert recorded["behavior"] == cmp.ASSUMED
+    said = _unknowns(
+        tmp_path / "c", INVENTING, asked=0, declared=0, final_text="Asumo 7.35 y zonex."
+    )
+    assert said["behavior"] == cmp.ASSUMED and said["inventedValues"] == 0
+
+
+def test_a_comment_or_a_todo_in_the_added_code_declares_the_assumption(tmp_path: Path) -> None:
+    commented = INVENTING + "# TODO confirmar la tarifa zonex 7.35\n"
+    result = _unknowns(tmp_path, commented, asked=0, declared=0)
+    assert result["behavior"] == cmp.ASSUMED
+    assert result["inventedValues"] == 0
+
+
+def test_the_row_is_in_the_primary_table_only_when_the_run_has_the_metric(runs: Path) -> None:
+    found, _ = cmp.discover([runs])
+    record = cmp.analyze_run(found[1], static=False)
+    assert "unknowns" not in record["requirements"]  # scenario ``toy`` is not greenfield
+    record["requirements"]["unknowns"] = {"behavior": cmp.INVENTED, "inventedValues": 3}
+    other = json.loads(json.dumps(record))
+    other["run"]["condition"] = "direct"
+    other["requirements"]["unknowns"] = {"behavior": cmp.ASKED}
+    markdown = cmp.comparison_markdown([other, record], [])
+    primary = markdown.split("#### Métricas primarias")[1].split("(exploratorias)")[0]
+    assert "inventó (3 valores inventados)" in primary and "preguntó" in primary
+    # the row has no direction: it never enters the tally
+    assert cmp.UNKNOWNS_ROW[2] == 0 and cmp.UNKNOWNS_ROW not in cmp.PRIMARY
+
+
+def test_analyze_run_reports_the_behavior_of_a_poor_greenfield_run(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    direct = root / "greenfield-casual-direct-model-x-r1-20261111T000000Z"
+    workspace(direct, INVENTING, {})
+    call(direct, "Hecho. ¿Qué zonas necesitas?")
+    harness = root / "greenfield-casual-harness-model-x-r1-20261111T000100Z"
+    workspace(harness, KNOWN, {})
+    call(harness, None, cost=0.5)
+    state(
+        harness,
+        {"task": [{"metadata": {"assumptions": ["zones are local and national"]}}]},
+        [],
+    )
+    found, _ = cmp.discover([root])
+    by_condition = {
+        r["run"]["condition"]: r for r in (cmp.analyze_run(f, static=False) for f in found)
+    }
+    assert by_condition["direct"]["requirements"]["unknowns"]["behavior"] == cmp.ASKED
+    unknowns = by_condition["harness"]["requirements"]["unknowns"]
+    assert unknowns["behavior"] == cmp.ASSUMED and unknowns["assumptionsDeclared"] == 1

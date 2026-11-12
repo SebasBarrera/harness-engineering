@@ -25,6 +25,19 @@ the direct run with each governed condition per (scenario, prompt, model, repeti
 "diferencias" section generated from the numbers only. Paths are depersonalized
 (``agentlib.anonymize``).
 
+Behaviour before what the prompt left unsaid (D8, poor and casual prompts of ``greenfield`` and
+``security`` only; ``unknown_behavior``): ``preguntó`` > ``declaró supuestos`` > ``inventó``, first
+rule that holds. (a) asked: the final text of a direct run (``resultText`` of ``agent-calls``; the
+``.jsonl`` does not keep it) has a line that ends in ``?``, or the harness recorded clarification
+questions. (b) declared assumptions: the final text, a comment or the README lines the run added say
+explicitly that something is assumed (``asumo``, ``supuesto``, ``assume``, ``assumption``, a TODO to
+confirm a value), or the harness recorded assumptions (self-report, ``metadata.assumptions`` of the
+task). (c) invented: the new source code carries concrete values (numbers; word-like strings such as
+zone or coupon names) that appear neither in ``SPEC.md`` of the scenario (numbers compared as
+decimals, also as a percentage; strings case-insensitively) nor in an assumption the run declared.
+Without any of the three the run is ``sin valores nuevos``. Literals 0, 1 and 2, docstrings, f-string
+parts and strings with spaces (messages) are not values. It is a heuristic over literals, not a proof.
+
     python evaluation/analysis/compare_implementations.py --runs <work>/runs/pilot --out <dir>
 """
 
@@ -44,6 +57,7 @@ import tomllib
 import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Callable, Iterable
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -966,6 +980,7 @@ def harness_metrics(db_path: Path, visible_junit: Path) -> dict[str, Any]:
             "questionTexts": [_short(a.get("question") or "") for a in answers[:MAX_TEXTS]],
         },
         "assumptions": {
+            "taskMetadata": len((task.get("metadata") or {}).get("assumptions") or []),
             "count": len(assumptions),
             "texts": [_short(a) for a in assumptions[:MAX_TEXTS]],
         },
@@ -1035,6 +1050,152 @@ def direct_text_metrics(run_dir: Path) -> dict[str, Any]:
         "questionLines": len(questions),
         "assumptionTexts": [_short(x) for x in assumption[:MAX_TEXTS]],
         "questionTexts": [_short(x) for x in questions[:MAX_TEXTS]],
+    }
+
+
+# ----------------------------------------------------------------------------- unknowns (D8)
+
+UNKNOWN_SCENARIOS = ("greenfield", "security")
+UNKNOWN_PROMPTS = ("poor", "one_line", "casual")
+ASKED, ASSUMED, INVENTED, NOTHING_NEW = (
+    "preguntó",
+    "declaró supuestos",
+    "inventó",
+    "sin valores nuevos",
+)
+EXPLICIT_ASSUMPTION = re.compile(
+    r"(?i)\b(asumo|asumi\w*|supuest\w*|assum(?:e|es|ed|ing|ption|ptions))\b"
+    r"|\bTODO\b.*\b(confirm\w*|verific\w*|validar|to confirm)\b"
+)
+TRIVIAL_NUMBERS = {Decimal(0), Decimal(1), Decimal(2)}
+WORD_LIKE = re.compile(r"^[^\s%{}]{2,24}$")
+
+
+def _decimal(value: Any) -> Decimal | None:
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def spec_values(scenario: str) -> tuple[set[Decimal], set[str]] | None:
+    """Numbers (also as ``n / 100``, for percentages) and lower-case words of ``SPEC.md`` of the
+    scenario; ``None`` when the file is not there."""
+    task = TASKS.get(scenario)
+    spec = EVALUATION / "fixtures" / task.stem / "SPEC.md" if task else None
+    if spec is None or not spec.is_file():
+        return None
+    text = spec.read_text(encoding="utf-8")
+    numbers: set[Decimal] = set()
+    for raw in re.findall(r"\d+(?:\.\d+)?", text):
+        number = Decimal(raw)
+        numbers |= {number, number / 100}
+    return numbers, {w.lower() for w in re.findall(r"[^\W\d][\w-]*", text)}
+
+
+def code_literals(source: str) -> Counter[tuple[str, str]]:
+    """Concrete values in the code: ``("n", normalized number)`` and ``("s", word-like string)``."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return Counter()
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            skip |= {id(c) for c in ast.walk(node) if isinstance(c, ast.Constant)}
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                skip.add(id(first.value))
+    found: Counter[tuple[str, str]] = Counter()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or id(node) in skip or isinstance(node.value, bool):
+            continue
+        value = node.value
+        number = None
+        if isinstance(value, int | float):
+            number = _decimal(value)
+        elif isinstance(value, str) and WORD_LIKE.match(value):
+            number = _decimal(value)  # ``Decimal("5.00")`` carries a number as text
+            if number is None:
+                found[("s", value.lower())] += 1
+                continue
+        if number is not None and abs(number) not in TRIVIAL_NUMBERS:
+            found[("n", format(abs(number).normalize(), "f"))] += 1
+    return found
+
+
+def _added(workspace: Path, baseline: str, path: str) -> list[str]:
+    target = workspace / path
+    if not target.is_file():
+        return []
+    old = Counter((baseline_text(workspace, baseline, path) or "").splitlines())
+    added = []
+    for line in target.read_text(encoding="utf-8", errors="replace").splitlines():
+        if old[line] > 0:
+            old[line] -= 1
+        else:
+            added.append(line)
+    return added
+
+
+def unknown_behavior(
+    scenario: str,
+    workspace: Path,
+    baseline: str,
+    files: list[dict[str, Any]],
+    asked: int,
+    declared: int,
+    final_text: str = "",
+) -> dict[str, Any]:
+    """What the run did before what the prompt left unsaid (see the module docstring). ``asked`` and
+    ``declared`` count what the condition recorded (question lines or clarification questions;
+    assumptions recorded); the explicit statements in the final text and in the lines the run added
+    are counted here."""
+    declared_lines = [x for x in final_text.splitlines() if EXPLICIT_ASSUMPTION.search(x)]
+    new_literals: Counter[tuple[str, str]] = Counter()
+    for item in files:
+        path = item["path"]
+        if file_kind(path) == "source" and path.endswith(".py"):
+            target = workspace / path
+            if target.is_file():
+                after = code_literals(target.read_text(encoding="utf-8", errors="replace"))
+                before = code_literals(baseline_text(workspace, baseline, path) or "")
+                new_literals += after - before
+        if file_kind(path) in ("source", "docs") or Path(path).name.lower().startswith("readme"):
+            declared_lines += [
+                x for x in _added(workspace, baseline, path) if EXPLICIT_ASSUMPTION.search(x)
+            ]
+    known = spec_values(scenario)
+    declared_text = " ".join(declared_lines).lower()
+    invented = []
+    if known is not None:
+        numbers, words = known
+        for kind, value in sorted(new_literals):
+            if kind == "n" and Decimal(value) in numbers:
+                continue
+            if kind == "s" and value in words:
+                continue
+            if value in declared_text:
+                continue
+            invented.append(value)
+    declared_total = declared + len(declared_lines)
+    if asked > 0:
+        behavior = ASKED
+    elif declared_total > 0:
+        behavior = ASSUMED
+    elif invented:
+        behavior = INVENTED
+    else:
+        behavior = NOTHING_NEW
+    return {
+        "behavior": behavior,
+        "questions": asked,
+        "assumptionsDeclared": declared_total,
+        "inventedValues": len(invented),
+        "inventedTexts": invented[:MAX_TEXTS],
+        "specAvailable": known is not None,
     }
 
 
@@ -1255,6 +1416,24 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
             harness_metrics(db, visible)
             if db
             else {"available": False, "reason": "no state database"}
+        )
+    if meta["scenario"] in UNKNOWN_SCENARIOS and meta["prompt"] in UNKNOWN_PROMPTS:
+        requirements = out["requirements"]
+        direct_side = requirements.get("direct")
+        harness_side = requirements.get("harness") or {}
+        if direct_side is not None:
+            asked = int(direct_side.get("questionLines") or 0)
+            declared = 0
+            text = "\n".join(
+                str(c.get("resultText") or "") for c in agentlib.load_calls(run_dir / "agent-calls")
+            )
+        else:
+            asked = int((harness_side.get("clarification") or {}).get("questions") or 0)
+            recorded = harness_side.get("assumptions") or {}
+            declared = int(recorded.get("count") or 0) + int(recorded.get("taskMetadata") or 0)
+            text = ""
+        requirements["unknowns"] = unknown_behavior(
+            meta["scenario"], workspace, baseline, files, asked, declared, text
         )
     return out
 
@@ -1533,6 +1712,20 @@ PRIMARY_LABELS = (
 )
 _ALL_ROWS = {row[0]: row for row in ROWS + PRACTICE_ROWS}
 PRIMARY: list[Row] = [_ALL_ROWS[label] for label in PRIMARY_LABELS]
+UNKNOWNS_ROW: Row = (
+    "Qué hizo ante lo que no sabía (preguntó > declaró supuestos > inventó)",
+    lambda r: (
+        None
+        if _get(r, "requirements.unknowns.behavior") is None
+        else (
+            f"{_get(r, 'requirements.unknowns.behavior')} "
+            f"({_get(r, 'requirements.unknowns.inventedValues')} valores inventados)"
+            if _get(r, "requirements.unknowns.behavior") == INVENTED
+            else _get(r, "requirements.unknowns.behavior")
+        )
+    ),
+    0,
+)
 EXPLORATORY_ROWS: list[Row] = [r for r in ROWS if r[0] not in PRIMARY_LABELS]
 EXPLORATORY_PRACTICE_ROWS: list[Row] = [r for r in PRACTICE_ROWS if r[0] not in PRIMARY_LABELS]
 
@@ -1708,7 +1901,7 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 ),
                 "",
             ]
-        out += ["#### Métricas primarias", "", *_table(runs, PRIMARY)]
+        out += ["#### Métricas primarias", "", *_table(runs, [*PRIMARY, UNKNOWNS_ROW])]
         out += [
             "#### Resultado, cambio y requisitos (exploratorias)",
             "",
