@@ -67,6 +67,19 @@ evaluable» y sale con 1. Para versionar, cada carpeta `results/deterministic/<s
 | Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI. | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
 | **macOS (pendiente: cuando el autor compre una Mac)** | **La campaña completa en un solo equipo**: suites deterministas y todos los bloques con modelo, con `sandbox-exec` y los lanzadores de `evaluation/launchers/` sin cambios. | — |
 
+### Rutas cortas en Windows
+
+Windows limita una ruta a 260 caracteres y las corridas escriben muy hondo: el directorio de estado
+de una corrida (`<EVAL_WORK>/runs/<bloque>/<modelo>/<corrida>/state`) llegó a 146 caracteres con un
+`EVAL_WORK` de 28 y la corrida falló; con `C:/e/b` (5) funcionó. Bajo ese directorio, el archivo más
+largo es el temporal del almacén de artefactos (`<clave de proyecto>/artifacts/metadata/.<64 hex>.json.<8
+aleatorios>`, 120 caracteres con la clave `project-<12 hex>`), de modo que el directorio de estado admite
+a lo sumo 260 - 120 = 140. Con el nombre de corrida más largo posible (bloque `block-embedded`, modelo
+`claude-haiku-4-5-20251001`, escenario `brownfield`, prompt `casual`, condición `harness-core`, `r10` y la
+marca de tiempo) lo fijo mide 130, así que `EVAL_WORK` admite a lo sumo 10 caracteres en forma Windows
+(`cygpath -w`). Si `EVAL_WINDOWS=1` y lo supera, `launchers/common.sh` aborta con código 5 antes de crear
+nada. El cálculo completo está comentado en ese archivo. Usa algo como `C:/e/b`.
+
 ### Pendiente para la Mac
 
 Cuando haya una Mac disponible:

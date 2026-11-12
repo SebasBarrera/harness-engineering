@@ -4,6 +4,7 @@
 # (default 2).
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-a.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-a}"
 mkdir -p "$EVAL_OUT"
@@ -11,6 +12,7 @@ check_account
 take_lock block-a
 copy_code
 record_environment A
+run_smoke A a1
 run_part() {  # conditions reps tag
   local conditions="$1" reps="$2" tag="$3"
   for MODEL in $EVAL_MODELS; do

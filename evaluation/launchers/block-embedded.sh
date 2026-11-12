@@ -5,6 +5,7 @@
 # harness condition's configuration) or no-acceptance (see evaluation/README.md, "Embedded mode").
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-embedded.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-embedded}"
 mkdir -p "$EVAL_OUT"
@@ -12,6 +13,7 @@ check_account
 take_lock block-embedded
 copy_code
 record_environment embedded
+run_smoke embedded e1
 SC="${EVAL_EMBEDDED_SCENARIO:-brownfield}"
 VARIANT="${EVAL_EMBEDDED_VARIANT:-init}"
 SLOT=$(make_slot e1)

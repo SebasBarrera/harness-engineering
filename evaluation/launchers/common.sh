@@ -43,6 +43,33 @@ esac
 : "${EVAL_PYTHON:?set EVAL_PYTHON to the python of the evaluation venv}"
 : "${EVAL_WORK:?set EVAL_WORK to a work directory outside the repository}"
 : "${EVAL_CACHE:?set EVAL_CACHE to the directory with itsdangerous-2.2.0.tar.gz}"
+
+# Windows: the whole path of the files a run writes must stay under MAX_PATH (260). The longest one
+# is the artifact store's temporary file of a run (src/governed_harness/evidence/artifact_store.py,
+# _atomic_write): <run dir>/state/<project key>/artifacts/metadata/.<64 hex>.json.<8 random>, and the
+# run registry sits in <run dir>/state (HARNESS_STATE_DIR). Measured: with a 28-character EVAL_WORK
+# (a directory under the user profile) the state directory of a run was 146 characters long and the
+# run failed; with the 5-character C:/e/b it worked. The tail below the state directory is
+#   21 ("/" + project key "project-<12 hex>") + 10 ("/artifacts") + 9 ("/metadata") + 1 ("/")
+#   + 79 ("." + 64 hex + ".json" + "." + 8 random characters of mkstemp) = 120
+# so the state directory may have at most 260 - 120 = 140 characters (146 + 120 = 266 > 260 fails,
+# 126 + 120 = 246 works, as observed). The state directory is
+#   EVAL_WORK + "/runs/" + <block> + "/" + <model> + "/" + <run name> + "/state"
+# with the longest of each: block "block-embedded" (14), model "claude-haiku-4-5-20251001" (25),
+# and the run name <scenario>[-<prompt>]-<condition>-<model>-r<rep>-<timestamp> of
+#   "brownfield" (10) + "-casual" (7) + "-" + "harness-core" (12) + "-" + model (25) + "-r10" (4)
+#   + "-" + "20261111T235959Z" (16) = 77.
+# Fixed part: 6 ("/runs/") + 14 + 1 + 25 + 1 + 77 + 6 ("/state") = 130, so EVAL_WORK may have at most
+# 140 - 130 = 10 characters in its Windows form (cygpath -w; backslashes count as one, like slashes).
+EVAL_WORK_MAX_WINDOWS=10
+if [ "$EVAL_WINDOWS" = "1" ]; then
+  EVAL_WORK_WINDOWS="$(cygpath -w "$EVAL_WORK")"
+  if [ "${#EVAL_WORK_WINDOWS}" -gt "$EVAL_WORK_MAX_WINDOWS" ]; then
+    echo "ABORT: EVAL_WORK is ${#EVAL_WORK_WINDOWS} characters long ($EVAL_WORK_WINDOWS); on Windows it may have at most" \
+      "$EVAL_WORK_MAX_WINDOWS or the paths of a run exceed the 260-character limit. Use a short one, such as C:/e/b." >&2
+    exit 5
+  fi
+fi
 EVAL_MODELS="${EVAL_MODELS:-claude-haiku-4-5-20251001 claude-sonnet-5-5 claude-opus-5-5}"
 EVAL_SCENARIOS="${EVAL_SCENARIOS:-greenfield brownfield security}"
 EVAL_REPS="${EVAL_REPS:-3}"

@@ -4,6 +4,7 @@
 # conditions answer INTENT's questions through the simulated product owner. See common.sh for the
 # environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-b.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-b}"
 mkdir -p "$EVAL_OUT"
@@ -11,6 +12,7 @@ check_account
 take_lock block-b
 copy_code
 record_environment B
+run_smoke B b1
 CONDITIONS="${EVAL_CONDITIONS:-direct,harness-core,harness}"
 for MODEL in $EVAL_MODELS; do
   for PROMPT in ${EVAL_PROMPTS:-casual poor}; do
