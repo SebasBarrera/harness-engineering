@@ -27,6 +27,7 @@ executable; the run records its version.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -50,7 +51,7 @@ import direct_po  # noqa: E402
 import harness_state  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
-from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, NoProductOwner, ProductOwner  # noqa: E402
 
 __all__ = [
     "MAX_CLARIFY_ROUNDS",
@@ -61,6 +62,7 @@ __all__ = [
     "harness_json",
     "prepare",
     "run_harness",
+    "run_key",
 ]
 
 RUN_START_FAILED = "apparatus-run-start-failed"
@@ -103,6 +105,7 @@ CONDITION_CHOICES = [
     "direct-po",
     "harness-core",
     "harness",
+    "harness-nopanel",
     "harness-anchored",
     "clarify",
 ]
@@ -182,6 +185,16 @@ def harness(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def harness_json(workspace: Path, *args: str) -> Any:
     proc = harness(workspace, *args)
     return json.loads(proc.stdout)
+
+
+def run_key(execution_id: str | None, run_dir: Path) -> str | None:
+    """A stable, non-personal key of one run: a short digest of its execution id plus the name of
+    its run directory. ``harness.runId`` is anonymized as ``"run"``; this pairs a record with its
+    directory (and with the harness state of that run) without publishing the local identifier."""
+    if not execution_id:
+        return None
+    digest = hashlib.sha256(execution_id.encode("utf-8")).hexdigest()[:10]
+    return f"{digest}-{run_dir.name}"
 
 
 def harness_version() -> str:
@@ -326,11 +339,17 @@ def run_harness(
     )
     driven = person.drive(run_id, task["taskId"], started.returncode)
     final = harness_json(workspace, "status", "--path", ".", "--run", run_id)
+    shown = harness(workspace, "task", "show", "--path", ".", "--task", task["taskId"])
+    try:
+        assumptions = (json.loads(shown.stdout).get("metadata") or {}).get("assumptions") or []
+    except (ValueError, AttributeError):
+        assumptions = []
     findings = harness_json(workspace, "findings", "list", "--path", ".", "--run", run_id)
     state = harness_state.collect(harness, workspace, run_dir, run_id, final, findings)
     trace = state.get("trace") or {"present": 0, "requiredCount": 0}
     return {
         "runId": "run",  # anonymized: the local identifier is not published
+        "runKey": run_key(run_id, run_dir),
         "outcome": driven["outcome"],
         "delivered": driven["outcome"] == "approved",
         "corrections": driven["corrections"],
@@ -356,6 +375,7 @@ def run_harness(
         "eventChainValid": final["eventChainValid"],
         "recordsValid": final.get("recordsValid"),
         "clarification": driven["clarification"],
+        "assumptions": len(assumptions) if isinstance(assumptions, list) else 0,
         "harnessMetrics": {name: item.get("value") for name, item in final["metrics"].items()},
         "trace": trace,
         "state": {k: v for k, v in state.items() if k != "trace"},
@@ -679,7 +699,12 @@ def main() -> int:
             if casual_prompt is not None
             else task_file
         )
-        if not args.no_product_owner:
+        if args.no_product_owner:
+            # Tests T1 and T6: no product knowledge; every question is answered "decide yourself"
+            # and the harness records assumptions (the run does not stop in INTENT).
+            owner = NoProductOwner()
+            record["productOwnerMode"] = "none"
+        else:
             owner = ProductOwner(product_knowledge(args.scenario), args.po_model, run_dir)
         if condition == "clarify":
             global RESUMABLE_PROVIDER  # noqa: PLW0603

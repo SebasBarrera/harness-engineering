@@ -6,7 +6,7 @@ first. Each run is independent (fresh repository, fresh harness state); a failin
 and the matrix continues. A run already in the output file (same scenario, condition, prompt and
 repetition) is skipped, so a matrix that stopped resumes where it left off.
 
-2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-anchored`` (``baseline`` is the
+2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-nopanel``, ``harness-anchored`` (``baseline`` is the
 0.9.0 name of ``direct``). ``--dry-run`` and ``--provider`` are passed to every run (see run_eval.py).
 """
 
@@ -63,6 +63,13 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--provider", choices=["claude", "simulated"], default="claude")
     parser.add_argument("--core-reference-src", type=Path, default=None)
+    parser.add_argument(
+        "--no-product-owner",
+        action="store_true",
+        help="governed conditions: the simulated person has no product knowledge, answers every "
+        "clarification question 'decide yourself' and the harness records assumptions "
+        "(test T1, harness without product owner)",
+    )
     args = parser.parse_args()
     done = set()
     if args.out.exists():
@@ -112,6 +119,8 @@ def main() -> int:
         ]
         if args.dry_run:
             command.append("--dry-run")
+        if args.no_product_owner:
+            command.append("--no-product-owner")
         if args.core_reference_src:
             command += ["--core-reference-src", str(args.core_reference_src)]
         proc = subprocess.run(command, capture_output=True, text=True)

@@ -172,3 +172,13 @@ def test_direct_po_is_not_a_default_condition() -> None:
     launchers = (EVALUATION / "launchers").glob("*.sh")
     assert all("direct-po" not in path.read_text(encoding="utf-8") for path in launchers)
     assert "direct-po" not in run_matrix.plan("m", 1, 1, ["greenfield"])[0]
+
+
+def test_run_key_is_stable_and_not_the_execution_id(tmp_path: Path) -> None:
+    run_dir = tmp_path / "greenfield-harness-m-r1-20260101T000000Z"
+    key = run_eval.run_key("exec_abc123", run_dir)
+    assert key == run_eval.run_key("exec_abc123", run_dir)
+    assert key is not None and "exec_abc123" not in key and key.endswith(run_dir.name)
+    assert key != run_eval.run_key("exec_other", run_dir)
+    assert key != run_eval.run_key("exec_abc123", tmp_path / "other")
+    assert run_eval.run_key(None, run_dir) is None

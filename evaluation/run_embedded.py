@@ -309,6 +309,7 @@ def main() -> int:
                     "personSeconds",
                 )
             },
+            "runKey": run_eval.run_key(run_id, run_dir),
             "delivered": driven["outcome"] == "approved",
             "finalStatus": final["execution"]["status"],
             "finalPhase": final["execution"]["currentPhase"],

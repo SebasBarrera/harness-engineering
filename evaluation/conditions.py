@@ -9,6 +9,9 @@ Condition             ``.harness/project.yaml``
                       absence keeps the 1.0.0 behaviour and configuration digest).
 ``harness``           what ``harness init`` of the version under test writes (every 2.0.0 setting
                       on), with ``agentRouting.mode: fixed``: every call uses the cell's model.
+``harness-nopanel``   what ``harness init`` writes (as ``harness``, routing ``fixed``) with
+                      ``review.panel.mode: off``: the review panel is not run, nothing else changes
+                      (the rung of the cost ladder between ``harness-core`` and ``harness``).
 ``harness-anchored``  what ``harness init`` writes, routing left as init writes it (``anchored``,
                       #85) with ``agentRouting.anchorModel`` set to the cell's model: the model the
                       person invoked is the ceiling, cheaper rungs of the routing tables below it
@@ -39,7 +42,7 @@ from typing import Any
 
 import yaml
 
-GOVERNED = ("harness-core", "harness", "harness-anchored")
+GOVERNED = ("harness-core", "harness", "harness-nopanel", "harness-anchored")
 # Read in records of the first 2.0.0 pilot (routing left ``tiered``, before #85).
 LEGACY_GOVERNED = ("harness-tiered",)
 CONDITIONS = ("direct", *GOVERNED)
@@ -150,7 +153,7 @@ def apply_provider(
         if calls not in paths:
             paths.append(calls)
         runtime["sandboxWritePaths"] = paths
-    if condition == "harness":
+    if condition in ("harness", "harness-nopanel"):
         config.setdefault("agentRouting", {})["mode"] = "fixed"
     if condition == "harness-anchored":
         config.setdefault("agentRouting", {})["anchorModel"] = model
@@ -219,9 +222,11 @@ def write_config(
         # the core file is then written over its project.yaml.
         harness(workspace, "init", "--path", ".")
         config = core_config(yaml.safe_load(path.read_text(encoding="utf-8"))["projectId"])
-    elif condition in ("harness", "harness-anchored"):
+    elif condition in ("harness", "harness-nopanel", "harness-anchored"):
         harness(workspace, "init", "--path", ".")
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if condition == "harness-nopanel":
+            config.setdefault("review", {}).setdefault("panel", {})["mode"] = "off"
         if (
             condition == "harness-anchored"
             and (config.get("agentRouting") or {}).get("mode") != "anchored"
