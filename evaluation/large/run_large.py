@@ -187,6 +187,9 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
             "eventChainValid", "validationSummary")
     if outcome["outcome"].startswith("task-refused"):
         return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "taskCreateError")}
+    if outcome.get("invalid"):
+        # harness run start failed (run_eval.RUN_START_FAILED): no run to measure, kept with its cause.
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "invalid", "runStartError")}
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]
@@ -240,7 +243,7 @@ def main() -> int:
             steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3), "harness": result,
                           "usage": usage(calls_since(calls_dir, before)),
                           "oracle": oracle(workspace, scratch, label)})
-            if result["outcome"].startswith("task-refused"):
+            if result["outcome"].startswith("task-refused") or result.get("invalid"):
                 break
 
     final = oracle(workspace, scratch, "final")
@@ -256,8 +259,14 @@ def main() -> int:
         "usage": usage(calls_since(calls_dir, 0)),
         "final": {"hidden": final, **final_measures(workspace, scratch)},
     }
+    invalid = next((s["harness"]["invalid"] for s in steps if (s.get("harness") or {}).get("invalid")), None)
+    out = args.out
+    if invalid:
+        # An apparatus failure, as in run_eval.py: kept in <out>.invalid.jsonl, never a result.
+        record["invalid"] = invalid
+        out = args.out.with_name(args.out.stem + ".invalid.jsonl")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with out.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
     print(json.dumps({k: record[k] for k in ("level", "condition", "model", "rep", "wallSeconds")}
                      | {"hidden": f"{final['passed']}/{final['total']}", "usd": record["usage"]["costUsd"]}))
