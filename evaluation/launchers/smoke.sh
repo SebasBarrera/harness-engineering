@@ -114,6 +114,7 @@ run_smoke() {
   slot=$(make_slot "$slot_name")
   model="${EVAL_SMOKE_MODEL:-${EVAL_MODELS%% *}}"
   scenario="${EVAL_SCENARIOS%% *}"
+  [ "$block" = "LADDER" ] && scenario=brownfield
   dir="$EVAL_WORK/smoke/$block"
   rm -rf "$dir"
   mkdir -p "$dir"
@@ -159,7 +160,7 @@ run_smoke() {
         governed=1
         [ "$condition" = "direct" ] && governed=0
         smoke_cell "$slot" "$block" matrix "$condition" "$governed" \
-          "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario brownfield --condition "$condition" --model "$model" \
+          "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$condition" --model "$model" \
           --rep "$SMOKE_REP" --prompt full --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
           --dry-run ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} || failed=1
       done
