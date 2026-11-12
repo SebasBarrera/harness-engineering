@@ -25,7 +25,7 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    `harness init --ignore-file gitignore` writes the `.gitignore` instead (a change to commit).
 2. **Install the project's test dependencies where the harness runs.** Validators run the
    project's own commands (`python -m pytest`, `npm test`) with the interpreter or tools found on
-   `PATH`; under `toolchain.interpreter: auto` (written by `harness init` since 1.1) the Python
+   `PATH`; under `toolchain.interpreter: auto` (written by `harness init` since 2.0) the Python
    validators use the project's `.venv` or `venv`, `uv run --no-sync` or `poetry run` instead. A
    project whose commands differ declares its own validators under `toolchain.validators` (see
    [project toolchain](../reference/configuration.md#project-toolchain)). A missing test
@@ -37,7 +37,7 @@ PYTHON=python3.12 examples/brownfield-itsdangerous/reproduce.sh <harness wheel o
    run that ran no test, such as pytest stopped by a collection error from a missing test
    dependency, is not comparable and still blocks (#190): fix the environment or close with
    `APPROVE_EXCEPTION`. The evidence shows which files failed.
-4. **Large repositories.** Since 1.1 `harness init` writes `workspace.snapshot: git`,
+4. **Large repositories.** Since 2.0 `harness init` writes `workspace.snapshot: git`,
    `workspace.baseline: manifest` and `workspace.snapshotCache: true`: files that `.gitignore`
    excludes are never read or stored, the baseline is a manifest of digests, and unchanged files
    are not hashed again. See [large repositories](../reference/configuration.md#large-repositories)

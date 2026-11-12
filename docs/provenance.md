@@ -74,7 +74,9 @@ infrastructure, documentation and quality fixes that do not change behavior. `v0
 [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md) and the
 [brownfield guide](guides/brownfield.md) state where the results differ from the thesis. `v1.0.0` adds
 governed memory operations, decisions on retrospective recommendations and reported usage without
-changing the run path of earlier versions. The evaluation reports `2.0.1` (campaign in
+changing the run path of earlier versions. `v2.0.0` adds the governance features of the
+changelog behind configuration keys that `harness init` writes; a `project.yaml` without them keeps
+the earlier behaviour and configuration digest. The evaluation reports `2.0.1` (campaign in
 progress); results of earlier versions are in the git history and the `v0.8.0` tag and are not part of
 that analysis. `v2.0.0`
 closed the remaining defects of the milestone *backlog — thesis-impact* (#3, #4, #5, #7, #8). `v0.8.1` and later releases are built by CI with an SPDX SBOM and a build

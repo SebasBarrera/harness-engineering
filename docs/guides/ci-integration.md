@@ -90,7 +90,7 @@ jobs:
 ## Approval valid for what gets merged
 
 A decision binds the digest of the ChangeSet in the workspace where the run happened; what a team
-merges is a pull request. Since 1.1 three pieces connect them:
+merges is a pull request. Since 2.0 three pieces connect them:
 
 1. **The closure commit** (`delivery.closureCommit`, written by `harness init` as `branch`): at
    `CLOSURE` the approved ChangeSet becomes one commit on `harness/<run id>` with the trailers

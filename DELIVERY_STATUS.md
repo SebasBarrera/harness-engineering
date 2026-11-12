@@ -1,6 +1,9 @@
 # Delivery status of the 0.8.0 cut
 
-Version: 0.8.0 research beta (the cut the thesis documents, tag `v0.8.0`)
+> This file records the 0.8.0 delivery (an earlier iteration) and is kept as it was. The current
+> release and its changes are in [CHANGELOG.md](CHANGELOG.md) and [README.md](README.md).
+
+Version: 0.8.0 research beta
 Delivery date: 2026-08-30
 
 This file records the 0.8.0 delivery and is not updated with later releases. The current version

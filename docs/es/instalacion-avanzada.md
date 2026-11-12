@@ -65,7 +65,7 @@ Cada release del repositorio incluye los distribuibles, el archivo `SHA256SUMS` 
 1. Descarga el wheel y `SHA256SUMS` en la misma carpeta (a mano desde la página del release, o con la CLI de GitHub).
 
    ```bash
-   gh release download v1.0.0 --repo SebasBarrera/harness-engineering
+   gh release download v2.0.0 --repo SebasBarrera/harness-engineering
    ```
 
 2. Comprueba las sumas.
@@ -80,7 +80,7 @@ Cada release del repositorio incluye los distribuibles, el archivo `SHA256SUMS` 
 3. Verifica la atestación con la CLI de GitHub:
 
    ```bash
-   gh attestation verify governed_agent_harness-1.0.0-py3-none-any.whl --repo SebasBarrera/harness-engineering
+   gh attestation verify governed_agent_harness-2.0.0-py3-none-any.whl --repo SebasBarrera/harness-engineering
    ```
 
    Es el mismo comando que `release.yml` agrega a las notas de cada release. No lo pude ejecutar sin red.

@@ -29,6 +29,6 @@ def test_normalized_status_enum_is_closed() -> None:
         "TIMED_OUT",
         "ERROR",
         "INCONCLUSIVE",
-        # Since 1.1, only under governance.workspaceLease (#47).
+        # Since 2.0, only under governance.workspaceLease (#47).
         "INTERRUPTED",
     ]

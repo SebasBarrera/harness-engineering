@@ -201,7 +201,7 @@
     },
     "AgentProviderConfiguration": {
       "additionalProperties": false,
-      "description": "An agent provider.\n\nSince 1.1 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra\ncommand-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's\nenvironment passed as they are) and ``env`` (variables set for the provider, as a literal\nvalue or ``{fromEnv: NAME}``). Values that come from the environment are redacted from\nevery artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized\nconfiguration.",
+      "description": "An agent provider.\n\nSince 2.0 a provider may also declare ``kind`` (a built-in adapter), ``args`` (extra\ncommand-line arguments of a built-in adapter), ``passEnv`` (variables of the harness's\nenvironment passed as they are) and ``env`` (variables set for the provider, as a literal\nvalue or ``{fromEnv: NAME}``). Values that come from the environment are redacted from\nevery artifact. Absent keys keep the 1.0.0 behaviour and are left out of the serialized\nconfiguration.",
       "properties": {
         "args": {
           "anyOf": [
@@ -450,7 +450,7 @@
     },
     "AmbiguityReviewConfig": {
       "additionalProperties": false,
-      "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the review of 1.1, which neither converges nor stops.",
+      "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the single-round review, which neither converges nor stops.",
       "properties": {
         "maxQuestions": {
           "anyOf": [
@@ -1206,7 +1206,7 @@
     },
     "ContractRetryConfig": {
       "additionalProperties": false,
-      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects\nor, since #92, a call that changed the workspace) is sent once more before the phase\nblocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as in 1.1.",
+      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects\nor, since #92, a call that changed the workspace) is sent once more before the phase\nblocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as before.",
       "properties": {
         "fallbackProvider": {
           "anyOf": [
@@ -1236,7 +1236,7 @@
     },
     "DeliveryConfig": {
       "additionalProperties": false,
-      "description": "What CLOSURE delivers to version control (since 1.1).\n\n* ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch\n  (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the\n  working tree, the index or the current branch; ``head`` commits it on the current branch\n  (only the ChangeSet paths). The commit carries the trailers ``Harness-Run``,\n  ``Harness-ChangeSet`` and ``Harness-Decision`` (and ``Harness-Exception`` for an\n  ``APPROVE_EXCEPTION``), and is created only if its diff recomputes to the approved\n  ChangeSet digest. ``off`` (or absent): the harness never commits, as in 1.0.0.\n* ``publisher``: defaults of ``harness pr publish``.",
+      "description": "What CLOSURE delivers to version control (since 2.0).\n\n* ``closureCommit: branch`` writes the approved ChangeSet as one commit on a new branch\n  (``branch``, default ``harness/{runId}``) whose parent is ``HEAD``, without touching the\n  working tree, the index or the current branch; ``head`` commits it on the current branch\n  (only the ChangeSet paths). The commit carries the trailers ``Harness-Run``,\n  ``Harness-ChangeSet`` and ``Harness-Decision`` (and ``Harness-Exception`` for an\n  ``APPROVE_EXCEPTION``), and is created only if its diff recomputes to the approved\n  ChangeSet digest. ``off`` (or absent): the harness never commits, as in 1.0.0.\n* ``publisher``: defaults of ``harness pr publish``.",
       "properties": {
         "branch": {
           "anyOf": [
@@ -2292,7 +2292,7 @@
     },
     "IntakeConfig": {
       "additionalProperties": false,
-      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 1.1 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.\n\nSince #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,\n``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records\nthe open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the 1.1\nreview.",
+      "description": "How INTENT treats acceptance criteria that cannot be observed.\n\n``enforce`` blocks INTENT until a person answers the clarification questions, ``warn``\nrecords the questions as evidence and low-severity findings and lets the run continue,\n``off`` skips the assessment.\n\nSince 2.0 (#37): ``ambiguityReview: agent`` also asks an agent (call kind ``clarify``) for\nambiguity and completeness questions once per task revision, ``clarifyAgent`` chooses its\nprovider, model and effort, and ``validateAnswers`` checks a person's answers for references\nto documents or requirements the task and the workspace do not contain. Absent keys keep the\n1.0.0 behaviour.\n\nSince #79 ``ambiguityReview`` may also be an object (``mode``, ``maxRounds``,\n``maxQuestions``, ``onExhausted``): the review converges and, after its last round, records\nthe open points as assumptions or keeps INTENT blocked. The bare ``agent`` keeps the single-round\nreview.",
       "properties": {
         "ambiguityReview": {
           "anyOf": [
@@ -2980,7 +2980,7 @@
     },
     "NotificationsConfig": {
       "additionalProperties": false,
-      "description": "Webhooks notified when a run waits for a human decision or finishes (since 1.1).\nAbsent: nothing is sent, as in 1.0.0.",
+      "description": "Webhooks notified when a run waits for a human decision or finishes (since 2.0).\nAbsent: nothing is sent, as in 1.0.0.",
       "properties": {
         "webhooks": {
           "default": [],
@@ -3583,7 +3583,7 @@
     },
     "ProvenanceConfig": {
       "additionalProperties": false,
-      "description": "Provenance per component (since 1.1).\n\n* ``agentSnapshots``: after each agent invocation the harness records a manifest of the\n  digests of the files in the ChangeSet scope. A later difference that no invocation\n  produced is attributed, per file, as an out-of-band edit, and the provenance of every\n  ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as\n  evidence.\n* ``selfReport``: the request asks the agent for a structured self-report (assumptions,\n  alternatives discarded, low-confidence areas, unrequested changes); the answer is stored\n  as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "description": "Provenance per component (since 2.0).\n\n* ``agentSnapshots``: after each agent invocation the harness records a manifest of the\n  digests of the files in the ChangeSet scope. A later difference that no invocation\n  produced is attributed, per file, as an out-of-band edit, and the provenance of every\n  ChangeSet file (the invocation that last wrote it, or ``OUT_OF_BAND``) is recorded as\n  evidence.\n* ``selfReport``: the request asks the agent for a structured self-report (assumptions,\n  alternatives discarded, low-confidence areas, unrequested changes); the answer is stored\n  as data of quality ``REPORTED`` and contrasted with the ChangeSet, never as a check.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
         "agentSnapshots": {
           "anyOf": [
@@ -3760,7 +3760,7 @@
     },
     "RetrospectiveConfig": {
       "additionalProperties": false,
-      "description": "With ``causal: true`` (since 1.1) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
+      "description": "With ``causal: true`` (since 2.0) the retrospective attributes every blocked gate and\ncorrection cycle to the reason code, validator or rule that caused it, ignores optional\nvalidators that had no effect on the gate, and is also generated when a run is rejected or\ncancelled. Absent or false keeps the 1.0.0 retrospective.",
       "properties": {
         "causal": {
           "anyOf": [
@@ -3780,7 +3780,7 @@
     },
     "ReviewConfig": {
       "additionalProperties": false,
-      "description": "How a person's exceptions are recorded (since 1.1).\n\nWith ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an\nexpiry, a scope (the findings it covers, by rule, path and fingerprint), optional\nalternative evidence and a follow-up. While it is in force, a later run of the project does\nnot block on the findings it covers; once it expires they block again, and a run waiting in\nDECISION on an expired exception is blocked. Absent or false keeps the 1.0.0 behaviour: an\nexception is a decision with a rationale and no expiry.",
+      "description": "How a person's exceptions are recorded (since 2.0).\n\nWith ``exceptions: true`` an ``APPROVE_EXCEPTION`` decision records an exception with an\nexpiry, a scope (the findings it covers, by rule, path and fingerprint), optional\nalternative evidence and a follow-up. While it is in force, a later run of the project does\nnot block on the findings it covers; once it expires they block again, and a run waiting in\nDECISION on an expired exception is blocked. Absent or false keeps the 1.0.0 behaviour: an\nexception is a decision with a rationale and no expiry.",
       "properties": {
         "agentReview": {
           "anyOf": [
@@ -4121,7 +4121,7 @@
     },
     "RuntimeConfig": {
       "additionalProperties": false,
-      "description": "Process bounds and, since 1.1, the agent sandbox and the feedback loop around the agent\nprovider.\n\nThe sandbox and loop settings are optional: a key that is absent keeps the 1.0.0 behaviour\nand is left out of the serialized configuration, so the snapshot digest of an existing\nproject does not change. ``harness init`` writes them.",
+      "description": "Process bounds and, since 2.0, the agent sandbox and the feedback loop around the agent\nprovider.\n\nThe sandbox and loop settings are optional: a key that is absent keeps the 1.0.0 behaviour\nand is left out of the serialized configuration, so the snapshot digest of an existing\nproject does not change. ``harness init`` writes them.",
       "properties": {
         "agentSandbox": {
           "anyOf": [
@@ -4793,7 +4793,7 @@
     },
     "ToolchainConfig": {
       "additionalProperties": false,
-      "description": "Project-defined profiles, validators and interpreter (since 1.1).\n\n* ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology\n  profiles in the format of the built-in ones, relative to the workspace root. ``profiles``\n  may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.\n* ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``\n  (several profiles per repository); ``best`` (or absent) selects the best one.\n* ``interpreter: auto`` runs the validators whose command starts with ``python`` with the\n  project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync\n  python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``\n  (or absent) keeps ``python`` from ``PATH``.\n* ``validators``: validators of the project. An entry with the id of a selected validator\n  replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other\n  entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,\n  ``failureSeverity`` and ``passEnv``.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "description": "Project-defined profiles, validators and interpreter (since 2.0).\n\n* ``profilePaths``: YAML files (or directories of ``*.yaml`` files) with technology\n  profiles in the format of the built-in ones, relative to the workspace root. ``profiles``\n  may name them by ``profileId`` and ``auto`` detects them by their ``detectors``.\n* ``profileDetection: all`` selects every detected profile under ``profiles: [auto]``\n  (several profiles per repository); ``best`` (or absent) selects the best one.\n* ``interpreter: auto`` runs the validators whose command starts with ``python`` with the\n  project's interpreter: ``.venv`` or ``venv`` in the workspace, else ``uv run --no-sync\n  python`` with ``uv.lock``, else ``poetry run python`` with ``poetry.lock``; ``system``\n  (or absent) keeps ``python`` from ``PATH``.\n* ``validators``: validators of the project. An entry with the id of a selected validator\n  replaces its definition (for example ``python.pytest`` with ``uv run pytest``); any other\n  entry is added. Each needs a ``command`` and may set ``parser``, ``severity``,\n  ``failureSeverity`` and ``passEnv``.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
         "extendedProfiles": {
           "anyOf": [
@@ -4922,7 +4922,7 @@
     },
     "ValidatorDefinition": {
       "additionalProperties": false,
-      "description": "A validator of a profile or, since 1.1, of the project (``toolchain.validators``).\n\nThe keys added in 1.1 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,\n``parallelSafe``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
+      "description": "A validator of a profile or, since 2.0, of the project (``toolchain.validators``).\n\nThe keys added in 2.0 (``parser``, ``severity``, ``failureSeverity``, ``passEnv``,\n``parallelSafe``) are\nleft out of the serialized definition while they are absent, so a resolved configuration\nwithout them keeps its digest.",
       "properties": {
         "command": {
           "anyOf": [
@@ -5355,7 +5355,7 @@
       "type": "object"
     },
     "VerificationLevel": {
-      "description": "Rungs of the verification ladder (since 1.1, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
+      "description": "Rungs of the verification ladder (since 2.0, ``verification.ladder``): what kind of\nevidence shows that an acceptance criterion holds. A higher rung is stronger evidence of\nthe behaviour a person asked for; a rung is reached only by evidence recorded for the\ncriterion, never by omission.",
       "enum": [
         "L0",
         "L1",
@@ -5431,7 +5431,7 @@
     },
     "WorkspaceConfig": {
       "additionalProperties": false,
-      "description": "The workspace root and, since 1.1, how the workspace is read for large repositories.\n\n* ``snapshot: git`` lists the files through Git (tracked plus untracked files that\n  ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are\n  neither hashed nor stored; ``walk`` (or absent) walks every file as in 1.0.0.\n* ``baseline: manifest`` stores the baseline as a manifest of digests; the text of a file\n  is stored only when it enters the ChangeSet (taken from Git or from a per-file blob kept\n  for untracked files), instead of the text of every file.\n* ``snapshotCache: true`` reuses the digest of a file whose size and modification time did\n  not change since the last snapshot of the run.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
+      "description": "The workspace root and, since 2.0, how the workspace is read for large repositories.\n\n* ``snapshot: git`` lists the files through Git (tracked plus untracked files that\n  ``.gitignore`` does not exclude), so ignored files such as ``.env`` or build output are\n  neither hashed nor stored; ``walk`` (or absent) walks every file as in 1.0.0.\n* ``baseline: manifest`` stores the baseline as a manifest of digests; the text of a file\n  is stored only when it enters the ChangeSet (taken from Git or from a per-file blob kept\n  for untracked files), instead of the text of every file.\n* ``snapshotCache: true`` reuses the digest of a file whose size and modification time did\n  not change since the last snapshot of the run.\n\nAbsent keys keep the 1.0.0 behaviour and are left out of the serialized configuration.",
       "properties": {
         "baseline": {
           "anyOf": [

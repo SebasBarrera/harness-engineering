@@ -107,7 +107,7 @@ class DeclaredProfileDetector:
 def detect_profiles(
     workspace: Path, extra: Iterable[TechnologyProfileDefinition] = ()
 ) -> list[DetectionResult]:
-    """The built-in detections and, since 1.1, those of the project profiles in ``extra``."""
+    """The built-in detections and, since 2.0, those of the project profiles in ``extra``."""
     results = [PythonDetector().detect(workspace), NodeDetector().detect(workspace)]
     results.extend(DeclaredProfileDetector(profile).detect(workspace) for profile in extra)
     return sorted(results, key=lambda item: (item.confidence, item.profile_id), reverse=True)

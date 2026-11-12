@@ -1,6 +1,6 @@
 # Review panel
 
-Since 1.1 (#57) the second review of a change is a panel of reviewers by domain instead of one
+Since 2.0 (#57) the second review of a change is a panel of reviewers by domain instead of one
 reviewer that reads the whole diff. The machinery is generic; the rules come in three layers:
 
 - **A, built-in** (`src/governed_harness/resources/review/rules.yaml`): language-neutral rules for

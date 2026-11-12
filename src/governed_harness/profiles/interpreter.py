@@ -1,4 +1,4 @@
-"""The project's Python interpreter (``toolchain.interpreter: auto``, since 1.1).
+"""The project's Python interpreter (``toolchain.interpreter: auto``, since 2.0).
 
 The built-in Python validators run ``python -m pytest`` with the ``python`` on ``PATH``, which
 in a project managed by uv or Poetry, or with a local virtual environment, is not the one that

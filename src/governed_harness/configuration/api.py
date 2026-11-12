@@ -1,4 +1,4 @@
-"""Authentication and roles of the local API and dashboard (since 1.1, issue #18).
+"""Authentication and roles of the local API and dashboard (since 2.0, issue #18).
 
 ``harness api serve`` of 1.0.0 had no authentication: any process that reached the port could
 read every run and record a decision under any actor id. The ``api`` section turns on a local

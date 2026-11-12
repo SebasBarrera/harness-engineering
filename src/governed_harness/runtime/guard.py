@@ -87,7 +87,7 @@ class ExcludedPathGuard:
         self.root = root.resolve(strict=True)
         self.guarded = frozenset(guarded)
         self.include_ignored = include_ignored
-        """``workspace.snapshot: git`` (since 1.1): files ``.gitignore`` excludes leave the
+        """``workspace.snapshot: git`` (since 2.0): files ``.gitignore`` excludes leave the
         ChangeSet, so the guard also fingerprints the ignored files outside the directories it
         already watches and outside the caches every test run rewrites."""
 

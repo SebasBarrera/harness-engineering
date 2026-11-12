@@ -1,6 +1,6 @@
 # Standards, principles, testing strategy and architecture
 
-Since 1.1 (#56) the harness carries the team's engineering standards into the run: language
+Since 2.0 (#56) the harness carries the team's engineering standards into the run: language
 standards packs, engineering principles, a testing strategy (TDD or BDD when the team works that
 way) and the project's architecture. Every setting is optional; a `project.yaml` without it keeps
 the 1.0.0 behaviour and its configuration digest. `harness init` writes them (see
@@ -87,7 +87,7 @@ rule id (`principles.srp` and so on) the reviewer uses for its findings.
 | `testing.strategy` | What happens |
 |---|---|
 | `auto` (`init`) | Follow the repository: feature files or a BDD framework (behave, pytest-bdd, Cucumber, SpecFlow or Reqnroll, Karate, Behat, godog, Kotest...) give `bdd`, tests give `conventional`; nothing known is asked in INTENT under `intake.projectSetup`, and a person's answer is kept for the project. |
-| `conventional` | The 1.1 behaviour. |
+| `conventional` | The earlier behaviour. |
 | `tdd` | The implement request asks for test-first work, and VERIFICATION records the evidence (validator `harness.tdd`, artifact `tdd-evidence`): **red**, the tests the change adds or changes run on the workspace with the changed sources reverted to the baseline and must fail there (`tdd.not-red`, HIGH, when they pass; `tdd.no-tests`, HIGH, when code changes without a test); **green**, every mandatory validator passes; **refactor**, the principles, architecture and layer checks pass with everything green. The red run uses `testing.testCommand` with the test files, else the pack's runner (`python -m pytest -q FILES`, `bundle exec rspec FILES`, the whole suite where the runner takes no files). |
 | `bdd` | The acceptance call of SPECIFICATION writes the criteria as Gherkin feature files under `featuresDirectory` (default `features`) instead of pytest files; SPECIFICATION waits for a person (`harness acceptance decide`); the approved files are frozen and the BDD runner (`bddCommand`, else the pack's: `python -m behave`, `npx cucumber-js`, `mvn -q test`, `bundle exec cucumber`...) runs before the change and must fail (the steps are not defined); the implement request asks for the step definitions; every VERIFICATION checks the frozen files and runs the runner. |
 

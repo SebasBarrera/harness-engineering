@@ -121,6 +121,9 @@
   `secret`, `card` and `payment` count only next to a word of their context or in a sensitive
   file, so "discard", "tokenize" or "product card" no longer lift a small task to `M`. Without the
   key the 1.x word list and fast lane are unchanged; `v0.8.0` has neither.
+
+## 2.0.0 - 2026-11-11
+
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
   INTENT blocked by clarification questions names the rules that asked
   (`Intent needs clarification: 2 question(s) (rules C1, T1)`) instead of only counting the
@@ -522,7 +525,7 @@
   new task revision (`metadata.assumptions`, shown in the operational contract, the gate
   contract and the decision brief) and the run continues (`assume`), or INTENT stays blocked
   (`block`, the default of the object form); both record `intent.ambiguity.exhausted`. The bare
-  `agent` keeps the 1.1 review and its configuration digest. Tested with a fixture agent that
+  `agent` keeps the single-round review and its configuration digest. Tested with a fixture agent that
   keeps asking and with the questions of the pilot's Haiku review on the pilot's task
   (`tests/integration/test_ambiguity_convergence.py`).
 - Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
