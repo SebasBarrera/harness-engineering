@@ -91,6 +91,8 @@ def open_request(application: HarnessApplication, workspace: Path, run: str) -> 
 
 
 def clarify_requests(log: Path) -> list[dict[str, Any]]:
+    if not log.exists():
+        return []
     return [item for item in json.loads(log.read_text()) if item.get("kind") == "clarify"]
 
 
@@ -133,7 +135,7 @@ def test_a_paragraph_asks_fewer_basics_and_plans_fewer_rounds(
     assert payload(clarify)["maxRounds"] == 4
 
 
-def test_without_the_key_the_questions_and_the_request_are_the_earlier_ones(
+def test_without_the_key_the_questions_and_the_fast_lane_are_the_earlier_ones(
     python_workspace: Path, tmp_path: Path
 ) -> None:
     log = configure(python_workspace, tmp_path, depth=False)
@@ -141,6 +143,13 @@ def test_without_the_key_the_questions_and_the_request_are_the_earlier_ones(
     request = open_request(application, python_workspace, run)
     assert not any(q.category == "basics" for q in request.questions)
     assert [q.rule_id for q in request.questions if q.rule_id == "C0"] == ["C0"] * 7
-    [clarify] = clarify_requests(log)
-    assert "depth" not in payload(clarify)
-    assert payload(clarify)["maxRounds"] == 3
+    # As before the key: the one-line wish is size S, the fast lane keeps the deterministic
+    # intake only and no clarify call is made.
+    assert clarify_requests(log) == []
+    with application._services(python_workspace) as services:
+        skipped = [
+            item.payload
+            for item in services.events.list(run)
+            if item.event_type == "lane.step.skipped"
+        ]
+    assert skipped == [{"lane": "fast", "phaseId": "INTENT", "step": "ambiguityReview"}]

@@ -33,7 +33,7 @@ from governed_harness.domain.models import (
     Task,
 )
 from governed_harness.intake import resolve_language, task_digest
-from governed_harness.intake.depth import TOPIC_LABELS, depth_plan, topic_language
+from governed_harness.intake.depth import TOPIC_LABELS, DepthPlan, depth_plan, topic_language
 from governed_harness.orchestration.intent_convergence import (
     Convergence,
     Item,
@@ -209,9 +209,9 @@ class IntentReview:
     ) -> ReviewOutcome:
         intake = self.results.project.intake
         settings = intake.ambiguity_settings if intake else None
-        if settings is not None and settings.adaptive:
+        plan = self._plan(task)
+        if settings is not None and plan is not None:
             # depth: adaptive: the rounds and the questions of this task's plan.
-            plan = depth_plan(task, settings.rounds, settings.questions)
             settings = settings.model_copy(
                 update={"max_rounds": plan.rounds, "max_questions": plan.questions}
             )
@@ -355,8 +355,9 @@ class IntentReview:
         if context is not None:
             payload.update(context.payload())
             suffix = context.suffix()
-            if context.settings.adaptive:
-                depth, depth_suffix = _depth_request(task, context, self._language(task))
+            plan = self._plan(task)
+            if plan is not None:
+                depth, depth_suffix = _depth_request(plan, context, self._language(task))
                 payload["depth"] = depth
                 suffix += depth_suffix
         outcome = results.call_agent(
@@ -523,6 +524,15 @@ class IntentReview:
         )
         return ref
 
+    def _plan(self, task: Task) -> DepthPlan | None:
+        """The plan of ``depth: adaptive`` from the configured rounds and questions (never
+        from the settings the plan already adjusted); ``None`` without the key."""
+        intake = self.results.project.intake
+        settings = intake.ambiguity_settings if intake else None
+        if settings is None or not settings.adaptive:
+            return None
+        return depth_plan(task, settings.rounds, settings.questions)
+
     def _language(self, task: Task) -> str:
         intake = self.results.project.intake
         return topic_language(resolve_language(task, intake.language if intake else None))
@@ -574,11 +584,11 @@ class IntentReview:
         return items
 
 
-def _depth_request(task: Task, context: Convergence, language: str) -> tuple[dict[str, Any], str]:
+def _depth_request(
+    plan: DepthPlan, context: Convergence, language: str
+) -> tuple[dict[str, Any], str]:
     """The ``depth`` part of a ``clarify`` request under ``depth: adaptive`` and the line it adds
     to the instructions: the level, the plan and the fundamental topics of this round."""
-    settings = context.settings
-    plan = depth_plan(task, settings.rounds, settings.questions)
     topics = plan.round_topics(context.round)
     labels = TOPIC_LABELS[language]
     request = {
@@ -593,8 +603,8 @@ def _depth_request(task: Task, context: Convergence, language: str) -> tuple[dic
     )
     return request, DEPTH_SUFFIX.format(
         level=plan.level,
-        maxRounds=settings.rounds,
-        maxQuestions=settings.questions,
+        maxRounds=plan.rounds,
+        maxQuestions=plan.questions,
         topics=focus,
     )
 
