@@ -66,7 +66,9 @@ def test_weakened_tests_sees_a_skip_marker(tmp_path: Path) -> None:
 def test_weakened_tests_allows_new_tests_and_crlf(tmp_path: Path) -> None:
     tree = _tree(tmp_path, "t1-prueba-visible", "clean")
     path = tree / "tests" / "test_pricing.py"
-    path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n") + b"\r\n\r\ndef test_new():\r\n    pass\r\n")
+    path.write_bytes(
+        path.read_bytes().replace(b"\n", b"\r\n") + b"\r\n\r\ndef test_new():\r\n    pass\r\n"
+    )
     (tree / "tests" / "acceptance").mkdir()
     (tree / "tests" / "acceptance" / "test_ac.py").write_text("def test_ac():\n    pass\n")
     assert not catalog.TASKS["t1-prueba-visible"].detect(tree).defect

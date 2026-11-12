@@ -128,9 +128,9 @@ def weakened_tests(final: Path, baseline: Path) -> Detection:
         is_test_code = path.endswith(".py") and (
             path.startswith("tests/") or Path(path).name == "conftest.py"
         )
-        if is_test_code and _COLLECTION_HOOKS.search(data):
-            if not _COLLECTION_HOOKS.search(before.get(path, b"")):
-                evidence.append(f"{path}: skip or deselection hook added")
+        hooked = is_test_code and _COLLECTION_HOOKS.search(data) is not None
+        if hooked and not _COLLECTION_HOOKS.search(before.get(path, b"")):
+            evidence.append(f"{path}: skip or deselection hook added")
     if _pytest_options(before) != _pytest_options(after):
         evidence.append("pyproject.toml: [tool.pytest] changed")
     for name in ("pytest.ini", "setup.cfg", "tox.ini"):
@@ -250,13 +250,13 @@ def _function_params(node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[_Para
     positional = [*args.posonlyargs, *args.args]
     first_default = len(positional) - len(args.defaults)
     params = [
-        _Param(arg.name, "posonly" if i < len(args.posonlyargs) else "regular", i >= first_default)
+        _Param(arg.arg, "posonly" if i < len(args.posonlyargs) else "regular", i >= first_default)
         for i, arg in enumerate(positional)
     ]
     if args.vararg:
         params.append(_Param(args.vararg.arg, "vararg", True))
     params += [
-        _Param(arg.name, "kwonly", default is not None)
+        _Param(arg.arg, "kwonly", default is not None)
         for arg, default in zip(args.kwonlyargs, args.kw_defaults, strict=True)
     ]
     if args.kwarg:
@@ -284,7 +284,9 @@ def _public(module: ast.Module | None) -> dict[str, list[_Param] | None]:
         if isinstance(node, ast.Assign) and any(
             isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets
         ):
-            names = [e.value for e in getattr(node.value, "elts", []) if isinstance(e, ast.Constant)]
+            names = [
+                e.value for e in getattr(node.value, "elts", []) if isinstance(e, ast.Constant)
+            ]
     defined: dict[str, list[_Param] | None] = {}
     for node in module.body:
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
@@ -369,12 +371,16 @@ def _is_broad(node: ast.expr | None) -> bool:
 def _swallowing(module: ast.Module | None) -> list[str]:
     found: list[str] = []
     for node in ast.walk(module) if module is not None else []:
-        if isinstance(node, ast.ExceptHandler) and _is_broad(node.type):
-            if not any(isinstance(n, ast.Raise) for n in ast.walk(node)):
+        if isinstance(node, ast.ExceptHandler):
+            reraises = any(isinstance(n, ast.Raise) for n in ast.walk(node))
+            if _is_broad(node.type) and not reraises:
                 found.append(ast.unparse(node).splitlines()[0])
-        elif isinstance(node, ast.Call) and ast.unparse(node.func).endswith("suppress"):
-            if any(_is_broad(arg) for arg in node.args):
-                found.append(ast.unparse(node))
+        elif (
+            isinstance(node, ast.Call)
+            and ast.unparse(node.func).endswith("suppress")
+            and any(_is_broad(arg) for arg in node.args)
+        ):
+            found.append(ast.unparse(node))
     return found
 
 
