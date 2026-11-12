@@ -63,6 +63,7 @@ def off_from_yaml(value: Any) -> Any:
 
 
 AmbiguityExhausted = Literal["assume", "block"]
+AmbiguityDepth = Literal["fixed", "adaptive"]
 DEFAULT_AMBIGUITY_ROUNDS = 3
 """Rounds of agent questions a person answers before the review is exhausted (#79)."""
 DEFAULT_AMBIGUITY_QUESTIONS = 8
@@ -90,6 +91,12 @@ class AmbiguityReviewConfig(_Section):
     previous round of this run left no agent question, or once the ``unresolvable-ambiguity``
     stop condition was recorded; the run goes straight to ``onExhausted``. Absent: the review
     runs for every revision, as in 2.0.0."""
+    depth: AmbiguityDepth | None = None
+    """Since 2.0.1: ``adaptive`` scales the rounds and the questions per round with how little
+    the task says and asks the fundamental topics first (users, what they do, main flows,
+    platform, data, business rules, edge cases, acceptance criteria, first version), see
+    :mod:`governed_harness.intake.depth`. Absent or ``fixed``: ``maxRounds`` and
+    ``maxQuestions`` as written and no topic questions, as in 2.0.0."""
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -115,6 +122,10 @@ class AmbiguityReviewConfig(_Section):
     @property
     def skips_settled(self) -> bool:
         return self.skip_settled is True
+
+    @property
+    def adaptive(self) -> bool:
+        return self.depth == "adaptive"
 
 
 # ----- read-only calls (#80) ----------------------------------------------------------------

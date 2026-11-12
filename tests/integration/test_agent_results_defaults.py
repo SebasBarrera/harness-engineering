@@ -50,6 +50,8 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
         "onExhausted": "assume",
         # 2.0.1: no new review once a round settled.
         "skipSettled": True,
+        # 2.0.1: more rounds and questions, the basics first, for a poorer request.
+        "depth": "adaptive",
     }
     assert config["review"]["agentReview"] == "enforce"
     assert config["governance"]["stopTheLine"] == "restore"
