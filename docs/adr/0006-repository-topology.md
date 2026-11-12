@@ -8,7 +8,7 @@
 Two products come out of the research: the software (the Governed Agent Harness) and the thesis
 document (LaTeX) that designs, implements and evaluates it. They differ in:
 
-- **life cycle**: the software keeps evolving after the evaluated cut; the document follows the
+- **life cycle**: the software keeps evolving after the earlier iteration `v0.8.0`; the document follows the
   academic calendar;
 - **visibility**: the software can be public; the manuscript is under institutional review and
   must not be published before it is approved;

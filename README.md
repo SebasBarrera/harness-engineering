@@ -401,7 +401,7 @@ overhead on shared runners, not productivity or quality. See [docs/benchmarks.md
 
 ## Limitations and known defects
 
-The `v0.8.0` tag keeps the behavior the thesis documents. The defects of the
+The `v0.8.0` tag keeps the behavior of the earlier iteration. The defects of the
 [backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3) are closed
 ([changelog](CHANGELOG.md)): 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, 1.0.0 made memory
 operable (#6), and 2.0.0 enforces the workflow phase settings (#3), resolves capabilities per phase
@@ -436,14 +436,14 @@ Declared limitations (see the [trust model](docs/architecture/trust-model.md)):
 This software is the artifact of the master's thesis *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis documents the cut
-[**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), which reproduces
-it byte for byte ([provenance](docs/provenance.md)), and its evaluation reports only version 2.0.1
-(campaign in progress, [`evaluation/campaign/`](evaluation/campaign/); the pilots ran on 2.0.0 as
-checks of the apparatus); results of earlier versions are
-in the git history and the `v0.8.0` tag and are not part of that analysis.
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis evaluates version 2.0.1 (campaign in progress,
+[`evaluation/campaign/`](evaluation/campaign/); the pilots ran on 2.0.0 as checks of the apparatus). [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0)
+is an earlier, obsolete Design Science Research iteration: it stays documented and reproducible byte
+for byte ([provenance](docs/provenance.md)), its tag never moves, and its behavior may change in new
+versions. Results of earlier versions are in the git history and the `v0.8.0` tag and are not part
+of the `2.0.1` analysis.
 
-Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state):
+Snapshot of the earlier iteration v0.8.0, reported by its manuscript (the CI badges show the current state):
 
 | Fact | v0.8.0 |
 |---|---|
@@ -459,6 +459,6 @@ More in [docs/thesis.md](docs/thesis.md). To cite the software, use [CITATION.cf
 ## Contributing, security and license
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): setup, verification commands, branch flow and the rules that
-  protect the evaluated cut. [Code of conduct](CODE_OF_CONDUCT.md). [Support](SUPPORT.md).
+  keep the `v0.8.0` tag reproducible and behavior changes recorded. [Code of conduct](CODE_OF_CONDUCT.md). [Support](SUPPORT.md).
 - [SECURITY.md](SECURITY.md): report vulnerabilities privately through GitHub.
 - Licensed under the [Apache License 2.0](LICENSE).

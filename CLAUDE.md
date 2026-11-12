@@ -6,8 +6,8 @@ Conventions for working in this repository.
 
 The Governed Agent Harness: a Python ≥ 3.12 package (`src/governed_harness`, Typer CLI `harness`,
 FastAPI local API) that governs AI-assisted development through nine normative phases, fail-closed
-gates and digest-bound human decisions. It is the artifact of a master's thesis; `v0.8.0` is the
-evaluated cut, frozen byte for byte.
+gates and digest-bound human decisions. It is the artifact of a master's thesis, which evaluates `2.0.1`; `v0.8.0` is an earlier,
+obsolete Design Science Research iteration, documented and reproducible byte for byte.
 
 ## Setup and checks
 
@@ -30,11 +30,14 @@ If the developer's global Git config signs commits, the test fixtures are isolat
 
 ## Rules
 
-- **Never modify the `v0.8.0` tag or rewrite published history.** No force pushes to `main` or
+- **Never modify the `v0.8.0` tag or rewrite published history.** The tag is immutable and keeps the
+  earlier iteration reproducible. No force pushes to `main` or
   `develop` (rulesets block them).
-- **Do not change behavior evaluated in the thesis.** Defects labeled `thesis-impact` stay unfixed
-  until the maintainer decides; open or update the issue instead. Refactors must keep public names
-  (`__all__`) and behavior; prove it with the full suite and `scripts/demo_flows.py all`.
+- **`v0.8.0` is an earlier iteration, not a constraint.** Its behavior may change in new versions
+  (record it in `CHANGELOG.md`); defects labeled `thesis-impact` may be fixed. Behavior evaluated by
+  the thesis campaign on `2.0.1` does not change silently: fix it in a new version and say so.
+  Refactors must keep public names (`__all__`) and behavior; prove it with the full suite and
+  `scripts/demo_flows.py all`.
 - **Evidence before prose.** Every command, output, number or exit code written in docs or commit
   messages must come from something you ran or read. Mark anything unverified as such.
 - **Fail closed.** No `|| true`, `continue-on-error`, `--exit-zero` or lowered thresholds to turn a
