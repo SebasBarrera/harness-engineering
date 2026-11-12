@@ -53,7 +53,9 @@
   `harness doctor` reports it on Windows as the `pathLength` check.
 - A budget crossed by the last agent call already stops the run before DECISION (#157 item 1,
   fixed by #164; `tests/integration/test_budget.py`).
-
+- On Windows the process runner also passes `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` (when set) to
+  the commands it starts, besides `HOME`. An agent provider started without `HOME` failed with
+  `RuntimeError: Could not determine home directory` from `Path.home()`. POSIX is unchanged.
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`
