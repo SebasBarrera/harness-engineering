@@ -108,6 +108,7 @@ from governed_harness.intake import (
     revise_task,
     task_digest,
 )
+from governed_harness.intake.depth import covered_topics, depth_plan
 from governed_harness.intake.language import RECOMMENDATION_TEMPLATES
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
@@ -1224,7 +1225,11 @@ class RunEngine:
             policy = "enforce"
         intake_config = self.s.resolved.project.intake
         language = intake_config.language if intake_config else None
-        questions = assess_intent(task, language=language) if policy != "off" else ()
+        questions = (
+            assess_intent(task, language=language, basic_topics=self._basic_topics(task))
+            if policy != "off"
+            else ()
+        )
         review_refs: tuple[str, ...] = ()
         if self.friction.active and self.friction.fast_lane is not None:
             # friction.fastLane (#58): the lane of the run, recorded with its reasons.
@@ -1266,6 +1271,26 @@ class RunEngine:
             ladder_block=ladder_block,
             evidence=evidence,
         )
+
+    def _basic_topics(self, task: Task) -> tuple[str, ...]:
+        """The fundamental topics the deterministic intake asks first under
+        ``intake.ambiguityReview.depth: adaptive`` (see :mod:`governed_harness.intake.depth`):
+        the next ones nobody answered, while the task's rounds last. Empty without the key."""
+        intake_config = self.s.resolved.project.intake
+        settings = intake_config.ambiguity_settings if intake_config else None
+        if settings is None or not settings.adaptive:
+            return ()
+        plan = depth_plan(task, settings.rounds, settings.questions)
+        answered = sum(
+            1
+            for record in self.s.state.list(
+                "clarification", ClarificationRecord, project_id=task.project_id
+            )
+            if record.task_id == task.task_id
+        )
+        if answered >= plan.rounds:
+            return ()
+        return plan.next_topics(covered_topics(task))
 
     def _intent_review(
         self,

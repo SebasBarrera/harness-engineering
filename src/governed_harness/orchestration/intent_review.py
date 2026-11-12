@@ -32,7 +32,8 @@ from governed_harness.domain.models import (
     PhaseExecution,
     Task,
 )
-from governed_harness.intake import task_digest
+from governed_harness.intake import resolve_language, task_digest
+from governed_harness.intake.depth import TOPIC_LABELS, depth_plan, topic_language
 from governed_harness.orchestration.intent_convergence import (
     Convergence,
     Item,
@@ -67,6 +68,21 @@ LAST_ROUND_KEY = "agentclarifylast"
 in a run."""
 STOP_EVENT = "stop.condition"
 AMBIGUITY_STOP = "unresolvable-ambiguity"
+
+DEPTH_SUFFIX = (
+    " The request is {level} (depth.level, measured from its words, criteria, requirements and "
+    "entities): this review may take up to {maxRounds} rounds of at most {maxQuestions} "
+    "questions. {topics}"
+)
+DEPTH_TOPICS = (
+    "In this round cover first, in this order, the fundamental topics in depth.topics that the "
+    "task and the previous answers leave open ({labels}), with concrete questions a product "
+    "owner can answer, before any detail."
+)
+DEPTH_DETAILS = (
+    "The fundamental topics were covered in earlier rounds: ask about the details that remain "
+    "open (business rules with numbers, edge cases, errors, observable acceptance results)."
+)
 
 
 @dataclass(frozen=True)
@@ -193,6 +209,12 @@ class IntentReview:
     ) -> ReviewOutcome:
         intake = self.results.project.intake
         settings = intake.ambiguity_settings if intake else None
+        if settings is not None and settings.adaptive:
+            # depth: adaptive: the rounds and the questions of this task's plan.
+            plan = depth_plan(task, settings.rounds, settings.questions)
+            settings = settings.model_copy(
+                update={"max_rounds": plan.rounds, "max_questions": plan.questions}
+            )
         context = convergence(self.results, execution, task, settings) if settings else None
         fetched = self._review_items(execution, phase, task, deterministic, answers, context)
         if fetched.blocked is not None:
@@ -333,6 +355,10 @@ class IntentReview:
         if context is not None:
             payload.update(context.payload())
             suffix = context.suffix()
+            if context.settings.adaptive:
+                depth, depth_suffix = _depth_request(task, context, self._language(task))
+                payload["depth"] = depth
+                suffix += depth_suffix
         outcome = results.call_agent(
             execution,
             phase,
@@ -497,6 +523,10 @@ class IntentReview:
         )
         return ref
 
+    def _language(self, task: Task) -> str:
+        intake = self.results.project.intake
+        return topic_language(resolve_language(task, intake.language if intake else None))
+
     # ----- answers ---------------------------------------------------------------------------
     def _current_answers(self, execution: Execution, task: Task) -> list[dict[str, str]]:
         """The answers that produced the current revision of the task (if it came from
@@ -542,6 +572,31 @@ class IntentReview:
             _dangling_documents(workspace, answer, text, seen, items)
             corpus = _dangling_identifiers(workspace, answer, text, task_text, corpus, seen, items)
         return items
+
+
+def _depth_request(task: Task, context: Convergence, language: str) -> tuple[dict[str, Any], str]:
+    """The ``depth`` part of a ``clarify`` request under ``depth: adaptive`` and the line it adds
+    to the instructions: the level, the plan and the fundamental topics of this round."""
+    settings = context.settings
+    plan = depth_plan(task, settings.rounds, settings.questions)
+    topics = plan.round_topics(context.round)
+    labels = TOPIC_LABELS[language]
+    request = {
+        **plan.as_dict(),
+        "round": context.round,
+        "topics": [{"topic": topic, "label": labels[topic]} for topic in topics],
+    }
+    focus = (
+        DEPTH_TOPICS.format(labels="; ".join(labels[topic] for topic in topics))
+        if topics
+        else DEPTH_DETAILS
+    )
+    return request, DEPTH_SUFFIX.format(
+        level=plan.level,
+        maxRounds=settings.rounds,
+        maxQuestions=settings.questions,
+        topics=focus,
+    )
 
 
 def _doc_references(text: str) -> list[str]:
