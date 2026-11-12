@@ -250,6 +250,23 @@ def test_without_the_section_the_api_has_no_authentication(python_workspace: Pat
     assert not (python_workspace / ".harness" / AUDIT_LOG).exists()
 
 
+@pytest.mark.parametrize("section", [None, {"auth": "off"}])
+def test_without_authentication_no_decision_is_recorded(
+    python_workspace: Path, tmp_path: Path, section: dict[str, Any] | None
+) -> None:
+    # F13: without authentication the POST accepted any human actor id from any local process.
+    run_id, digest = _pending_run(python_workspace, tmp_path)
+    _write_api(python_workspace, section)
+    client = TestClient(create_app(python_workspace), base_url=LOCAL)
+    refused = client.post(
+        f"/api/runs/{run_id}/decision", json=_decision(digest, actor_id="human.someone")
+    )
+    assert refused.status_code == 403
+    assert "harness gate decide" in refused.json()["detail"]
+    assert client.get(f"/api/runs/{run_id}").json()["execution"]["currentPhase"] == "DECISION"
+    assert HarnessApplication().status(python_workspace, run_id)["humanDecision"] is None
+
+
 def test_auth_off_keeps_the_api_open(python_workspace: Path) -> None:
     config = python_workspace / ".harness" / "project.yaml"
     config.write_text(config.read_text(encoding="utf-8") + "api:\n  auth: off\n", encoding="utf-8")

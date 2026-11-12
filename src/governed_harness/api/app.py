@@ -60,11 +60,20 @@ def trusted_hosts(workspace: Path) -> tuple[str, ...] | None:
 _ERRORS: dict[int, str] = {
     400: "The workspace configuration or the query is not valid.",
     401: "Authentication required (api.auth: token).",
-    403: "The authenticated user lacks the role, or the actor is not a person.",
+    403: (
+        "The authenticated user lacks the role, the actor is not a person, or the API runs "
+        "without authentication and records no decision."
+    ),
     404: "The run or its records were not found.",
     409: "The decision was refused, or the evidence chain does not verify.",
     500: "The API audit log cannot be written.",
 }
+
+UNAUTHENTICATED_DECISION_DETAIL = (
+    "the API runs without authentication (no api section in .harness/project.yaml, or "
+    "api.auth: off) and records no decision; add an api section (auth: token) and send "
+    "Authorization: Bearer TOKEN, or decide with harness gate decide"
+)
 
 
 def _responses(*codes: int) -> dict[int | str, dict[str, Any]]:
@@ -247,10 +256,12 @@ def _decider(
     settings: ApiConfig, http: Request, request: DecisionRequest, audited: _Audited
 ) -> str | None:
     """The actor of a decision: the authenticated person (a reviewer or an admin, and the
-    ``actor_id`` sent, if any, must be theirs), else the ``actor_id`` of the request."""
+    ``actor_id`` sent, if any, must be theirs). Without authentication (no ``api`` section, or
+    ``api.auth: off``) no decision is recorded: any process that reached the port could
+    otherwise decide under any human actor id (F13). Reads stay open."""
     principal = _authorize(settings, http, "viewer")
     if principal is None:
-        return request.actor_id
+        raise HTTPException(status_code=403, detail=UNAUTHENTICATED_DECISION_DETAIL)
     # The audit attempt is written before anything is decided (if it cannot be written,
     # nothing is).
     audited.attempt(principal)

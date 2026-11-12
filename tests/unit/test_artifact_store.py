@@ -273,3 +273,28 @@ def test_windows_concurrent_stores_of_the_same_blob_all_succeed(tmp_path: Path) 
     assert errors == []
     assert mismatches == []
     assert len(LocalArtifactStore(tmp_path).list()) == rounds
+
+
+def test_a_path_over_the_windows_limit_fails_with_a_clear_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A long state directory made run start die with a raw FileNotFoundError from mkstemp.
+    from governed_harness.domain.errors import ConfigurationError
+
+    store = LocalArtifactStore(tmp_path / ("s" * max(1, 200 - len(str(tmp_path)))))
+    _on_windows(monkeypatch)
+    monkeypatch.setattr(artifact_store, "windows_long_paths_enabled", lambda: False)
+
+    def refused(*_args: object, **_kwargs: object) -> tuple[int, str]:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(artifact_store.tempfile, "mkstemp", refused)
+    with pytest.raises(ConfigurationError) as raised:
+        store.put(b"evidence")
+    message = str(raised.value)
+    assert str(store.root) in message
+    assert "260" in message
+    assert "runtime.stateDir" in message
+    assert "LongPathsEnabled" in message
+    assert artifact_store.artifact_path_too_long(store.root)
+    assert not artifact_store.artifact_path_too_long(tmp_path)
