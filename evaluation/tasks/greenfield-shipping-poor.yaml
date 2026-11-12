@@ -1,6 +1,6 @@
 taskId: task_eval_greenfield_shipping_poor
 title: Costos de envío
-intent: Implementa shipping_cost en un paquete shipping como se describe en SPEC.md.
+intent: Implementa shipping_cost en un paquete shipping.
 acceptanceCriteria:
   - criterionId: ac_works
     text: Funciona.

@@ -1,8 +1,13 @@
-# Campaña de evaluación de la 2.0.0
+# Campaña de evaluación de la 2.0.1
 
-La evaluación de la tesis reporta solo la versión 2.0.0 (campaña en curso). Los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
+La evaluación de la tesis reporta solo la versión 2.0.1 (campaña en curso), instalada desde el
+wheel construido a partir del tag anotado `v2.0.1`, nunca desde un árbol de fuentes (enmiendas
+del 2026-11-11 y del 2026-11-12 en [`PREREGISTRO.md`](PREREGISTRO.md)). Los pilotos Haiku y
+Sonnet corrieron sobre 2.0.0 y, como los pre-chequeos y los intentos listados en la enmienda del
+2026-11-12, son comprobaciones del aparato, no resultados. Los directorios de resultados
+conservan el nombre `results-2.0.0/`. Los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
 
-Scripts, catálogo y plan de la campaña que evalúa la versión 2.0.0 del harness. Todo lo de esta
+Scripts, catálogo y plan de la campaña que evalúa la versión 2.0.1 del harness. Todo lo de esta
 carpeta se versiona: la carpeta local `.local/` donde vivían los scripts de comparación se perdió
 con el equipo anterior, y no debe volver a pasar.
 
@@ -63,8 +68,8 @@ evaluable» y sale con 1. Para versionar, cada carpeta `results/deterministic/<s
 
 | Entorno | Qué corre | Limitaciones declaradas |
 |---|---|---|
-| GitHub Actions, `ubuntu-24.04` | Suites deterministas (sin modelo), con el sandbox de escritura real (`bwrap`). | Runners compartidos: los tiempos absolutos son ruidosos; se comparan condiciones dentro de la misma corrida. |
-| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI. | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
+| GitHub Actions, `ubuntu-24.04` | Suites deterministas (sin modelo), con el sandbox de escritura real (`bwrap`), sobre el wheel de `v2.0.1`. Es el entorno de las cifras de la regla 6 del pre-registro. | Runners compartidos: los tiempos absolutos son ruidosos; se comparan condiciones dentro de la misma corrida. |
+| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI, sobre el wheel de `v2.0.1` (declarado en la enmienda del 2026-11-12: la regla 6 aplica a las suites deterministas). | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
 | **macOS (pendiente: cuando el autor compre una Mac)** | **La campaña completa en un solo equipo**: suites deterministas y todos los bloques con modelo, con `sandbox-exec` y los lanzadores de `evaluation/launchers/` sin cambios. | — |
 
 ### Pendiente para la Mac
@@ -73,7 +78,7 @@ Cuando haya una Mac disponible:
 
 1. Instalar Python 3.12, Git, Node.js y el CLI de Claude Code autenticado con la cuenta de
    evaluación (`agentlib.EXPECTED_ACCOUNT`).
-2. Correr `run_deterministic.py` sobre el wheel `v2.0.0` publicado y comparar con los resultados
+2. Correr `run_deterministic.py` sobre el wheel `v2.0.1` publicado y comparar con los resultados
    de GitHub Actions (mismo código, otro sistema operativo).
 3. Repetir el piloto y los bloques A, B, D y embebido con `evaluation/launchers/*.sh`, con el
    sandbox en `enforce` como lo escribe `harness init`, y reemplazar los resultados de Windows en

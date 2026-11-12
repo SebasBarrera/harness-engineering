@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- Fixes of the evaluation apparatus found by an expert review, before any campaign result
+  (amendment of 2026-11-12 in `evaluation/campaign/PREREGISTRO.md`). A governed run whose
+  `harness run start` fails is no longer lost: `run_eval.py` writes it to `<out>.invalid.jsonl`
+  as `apparatus-run-start-failed` with the exit code and the trimmed stderr, and exits with 3 (no
+  rerun). A task refused at `task create` is recorded as refused, without a hidden-test score
+  (it was scored on the untouched baseline, 18/24 in brownfield), and `report.py`,
+  `report_prompts.py` and `analysis/compare_implementations.py` show it as refused. Hidden tests
+  are scored against a fixed nominal count per scenario (33, 24, 14), so a collection error no
+  longer reads 0 of 1, and the tests the baseline already passes are reported apart from the
+  discriminating ones. The poor and casual prompts of the greenfield and security scenarios no
+  longer point at `SPEC.md`, and those levels are prepared without it. A separate, exploratory
+  condition `direct-po` (`evaluation/direct_po.py`) lets the direct agent ask the same simulated
+  product owner once before implementing; no block runs it by default. The amendment also lists
+  the deviations of the 2026-11-11 amendments and every earlier pilot and precheck attempt. Only
+  the evaluation apparatus changes.
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`

@@ -46,6 +46,7 @@ sys.path.insert(0, str(HERE))
 
 import agentlib  # noqa: E402
 import conditions  # noqa: E402
+import direct_po  # noqa: E402
 import harness_state  # noqa: E402
 from measure import measure  # noqa: E402
 from person import MAX_CORRECTIONS, SimulatedPerson  # noqa: E402
@@ -62,6 +63,12 @@ __all__ = [
     "run_harness",
 ]
 
+RUN_START_FAILED = "apparatus-run-start-failed"
+"""``invalid`` of a governed run whose ``harness run start`` printed no execution (amendment of
+2026-11-12): the record keeps the exit code and the trimmed stderr, goes to ``<out>.invalid.jsonl``
+and the runner exits with ``MEASUREMENT_FAILED_EXIT_CODE`` (no rerun)."""
+STDERR_CHARS = 2000
+OUTCOME_FILE = "run-outcome.json"
 # Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
 MAX_CLARIFY_ROUNDS = 3
 # Set by the clarify condition only: agent calls resume after a usage limit or a failure of the machine,
@@ -90,7 +97,17 @@ SCENARIOS = {
         "archive_sha256": "7b0c6d4186e963b88489b69603b7ab2bf7c8e9eb4135a7b13b5f21bd4b937f2b",
     },
 }
-CONDITION_CHOICES = ["direct", "baseline", "harness-core", "harness", "harness-anchored", "clarify"]
+CONDITION_CHOICES = [
+    "direct",
+    "baseline",
+    "direct-po",
+    "harness-core",
+    "harness",
+    "harness-anchored",
+    "clarify",
+]
+# The conditions without the harness; direct-po is the separate exploratory test (direct_po.py).
+DIRECT_CONDITIONS = ("direct", "direct-po")
 GIT = [
     "git",
     "-c",
@@ -110,12 +127,30 @@ def git(cwd: Path, *args: str) -> str:
     ).stdout
 
 
-def prepare(scenario: str, workspace: Path, cache: Path, site_packages: Path) -> str:
+SPEC_FILE = "SPEC.md"
+
+
+def prepare(
+    scenario: str, workspace: Path, cache: Path, site_packages: Path, with_spec: bool = True
+) -> str:
+    """Copy the scenario into ``workspace`` and commit it as the baseline. ``with_spec`` False (the
+    poor and casual prompt levels, amendment of 2026-11-12) leaves SPEC.md out and drops the README
+    lines that point at it: a poor prompt must not find the specification in the repository. Only
+    the simulated product owner holds it."""
     spec = SCENARIOS[scenario]
     workspace.mkdir(parents=True)
     if "fixture" in spec:
         for item in spec["fixture"].iterdir():
+            if not with_spec and item.name == SPEC_FILE:
+                continue
             target = ".gitignore" if item.name == "gitignore.template" else item.name
+            if not with_spec and item.name == "README.md":
+                lines = item.read_text(encoding="utf-8").splitlines()
+                kept = [line for line in lines if SPEC_FILE not in line]
+                (workspace / target).write_text(
+                    "\n".join(kept).rstrip() + "\n", encoding="utf-8", newline="\n"
+                )
+                continue
             shutil.copy2(item, workspace / target)
     else:
         with tarfile.open(cache / spec["archive"]) as archive:
@@ -245,6 +280,7 @@ def run_harness(
         return {
             "runId": None,
             "outcome": f"task-refused-exit-{created.returncode}",
+            "refused": True,
             "delivered": False,
             "corrections": 0,
             "gateHistory": [],
@@ -262,7 +298,25 @@ def run_harness(
         "--provider",
         "simulated" if provider == "simulated" else agent,
     )
-    run_id = json.loads(started.stdout)["executionId"]
+    try:
+        run_id = json.loads(started.stdout)["executionId"]
+    except (ValueError, KeyError, TypeError):
+        # The run never started: no run to drive or measure. The record keeps the exit code and the
+        # trimmed stderr and goes to <out>.invalid.jsonl (an apparatus failure, never dropped).
+        return {
+            "runId": None,
+            "outcome": f"run-start-failed-exit-{started.returncode}",
+            "delivered": False,
+            "corrections": 0,
+            "gateHistory": [],
+            "invalid": RUN_START_FAILED,
+            "runStartError": {
+                "exitCode": started.returncode,
+                "stderr": started.stderr[-STDERR_CHARS:],
+                "stdout": started.stdout[-STDERR_CHARS:],
+            },
+            "commands": events,
+        }
     person = SimulatedPerson(
         tracked,
         workspace,
@@ -324,6 +378,17 @@ def trace_completeness(
         state.close()
 
 
+def product_knowledge(scenario: str) -> str:
+    """What the simulated product owner knows: the full task and the specification the poor and
+    casual prompts leave out (the same in every condition that has a product owner)."""
+    full_task = SCENARIOS[scenario]["task"]
+    spec = SCENARIOS[scenario].get("fixture", Path("-")) / SPEC_FILE
+    knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
+    if spec.is_file():
+        knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
+    return knowledge
+
+
 def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
     """A one-line prompt as a task file: the text is the title and the intent, and there is no
     acceptance criterion (2.0.0 stores it with criteriaPending and asks for criteria in INTENT;
@@ -340,6 +405,13 @@ def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
         newline="\n",
     )
     return path
+
+
+def refused_measures(outcome: str) -> dict[str, Any]:
+    """The measures of a task the harness refused at ``task create`` (amendment of 2026-11-12):
+    no agent call was made and the tree is the baseline, so there is no hidden-test score (the
+    baseline's would be reported as the run's). The run is a result, reported as refused."""
+    return {"measuredOn": None, "refused": True, "skipped": outcome, "hidden": None}
 
 
 QUARANTINE_NOT_APPLIED = "quarantine-patch-not-applied"
@@ -539,7 +611,9 @@ def main() -> int:
     tag = "" if args.prompt == "full" else f"-{args.prompt}"
     run_dir = args.work / f"{args.scenario}{tag}-{condition}-{args.model}-r{args.rep}-{stamp}"
     workspace = run_dir / "ws"
-    baseline = prepare(args.scenario, workspace, args.cache, site_packages)
+    baseline = prepare(
+        args.scenario, workspace, args.cache, site_packages, with_spec=args.prompt == "full"
+    )
     HARNESS_ENV["HARNESS_STATE_DIR"] = str((run_dir / "state").resolve())
     if args.fake_mode:
         (run_dir / "fake-mode").write_text(args.fake_mode, encoding="utf-8")
@@ -554,6 +628,10 @@ def main() -> int:
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     if condition == "clarify" and args.prompt != "poor":
         parser.error("the clarify condition applies to the poor prompt (harness 1.1.0 or later)")
+    if condition == "direct-po" and args.agent != "claude":
+        parser.error(
+            "direct-po asks its questions with a read-only Claude Code call: --agent claude"
+        )
 
     started = time.monotonic()
     record: dict[str, Any] = {
@@ -568,13 +646,27 @@ def main() -> int:
         if condition == "direct" or args.no_product_owner
         else args.po_model,
         "dryRun": args.dry_run,
-        "provider": args.provider if condition != "direct" else None,
+        "provider": args.provider if condition not in DIRECT_CONDITIONS else None,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
     }
     owner = None
-    if condition == "direct":
-        log = run_dir / "agent-calls" / "call-1.json"
+    if condition in DIRECT_CONDITIONS:
         prompt = casual_prompt if casual_prompt is not None else agentlib.build_prompt(task)
+        if condition == "direct-po":
+            # The separate exploratory test (amendment of 2026-11-12): one turn of questions,
+            # answered by the same simulated product owner, before the implementation call.
+            if not args.no_product_owner:
+                owner = ProductOwner(product_knowledge(args.scenario), args.po_model, run_dir)
+            po_task = (
+                {"title": casual_prompt.strip().splitlines()[0][:120], "intent": casual_prompt}
+                if casual_prompt is not None
+                else task
+            )
+            prompt, record["directPo"] = direct_po.ask(
+                prompt, po_task, workspace, args.model, run_dir, owner
+            )
+            record["productOwner"] = owner.rounds if owner else []
+        log = agentlib.allocate_call(run_dir / "agent-calls")
         if args.agent == "codex":
             agentlib.run_codex(prompt, workspace, args.model, args.effort, log)
         else:
@@ -587,14 +679,8 @@ def main() -> int:
             if casual_prompt is not None
             else task_file
         )
-        # The simulated product owner knows the full task and the specification the prompt leaves out.
-        full_task = SCENARIOS[args.scenario]["task"]
-        spec = SCENARIOS[args.scenario].get("fixture", Path("-")) / "SPEC.md"
-        knowledge = "Descripción completa de la tarea:\n" + full_task.read_text(encoding="utf-8")
-        if spec.is_file():
-            knowledge += "\nSPEC.md:\n" + spec.read_text(encoding="utf-8")
         if not args.no_product_owner:
-            owner = ProductOwner(knowledge, args.po_model, run_dir)
+            owner = ProductOwner(product_knowledge(args.scenario), args.po_model, run_dir)
         if condition == "clarify":
             global RESUMABLE_PROVIDER  # noqa: PLW0603
             RESUMABLE_PROVIDER = True
@@ -621,9 +707,13 @@ def main() -> int:
                 claude_bin=claude_bin,
             )
         run_id = result.pop("_runId", None)
-        if condition == "harness-core":
+        if result.get("invalid"):
+            record["invalid"] = result["invalid"]
+        if result.get("refused"):
+            record["refused"] = result["outcome"]
+        if condition == "harness-core" and not result.get("invalid"):
             result["coreCheck"] = conditions.check_core(workspace, harness, args.core_reference_src)
-        if condition != "clarify":
+        if condition != "clarify" and not result.get("invalid"):
             result["grantCheck"] = conditions.check_grant(workspace, harness)
         record["harness"] = result
         record["productOwner"] = owner.rounds if owner else []
@@ -658,7 +748,7 @@ def main() -> int:
     record["productOwnerCalls"] = summarize_calls(po_calls)
     commands = (record.get("harness") or {}).get("commands") or []
     harness_seconds = sum(c["seconds"] for c in commands)
-    model_seconds = record["agent"]["wallSeconds"] if condition != "direct" else 0.0
+    model_seconds = record["agent"]["wallSeconds"] if condition not in DIRECT_CONDITIONS else 0.0
     # P15: the time of the harness's own processes apart from the time of the model calls they wait
     # for, and both apart from the simulated person (product owner calls) and the runner.
     record["timeSplit"] = {
@@ -666,12 +756,17 @@ def main() -> int:
         "agentCallSeconds": record["agent"]["wallSeconds"],
         "harnessCommandSeconds": round(harness_seconds, 3),
         "harnessProcessSeconds": round(harness_seconds - model_seconds, 3)
-        if condition != "direct"
+        if condition not in DIRECT_CONDITIONS
         else None,
         "productOwnerSeconds": record["productOwnerCalls"]["wallSeconds"],
     }
     record.pop("_run", None)
-    if record.get("quarantine") and record["quarantine"].get("patchRef"):
+    if record.get("refused"):
+        record["measures"] = refused_measures(record["refused"])
+    elif record.get("invalid") == RUN_START_FAILED:
+        # No run: nothing the agent did can be measured (and the agent was never called).
+        record["measures"] = {"measuredOn": None, "skipped": RUN_START_FAILED, "hidden": None}
+    elif record.get("quarantine") and record["quarantine"].get("patchRef"):
         record["measures"] = measure_quarantine(
             args.scenario,
             workspace,
@@ -697,6 +792,18 @@ def main() -> int:
     else:
         record["measures"] = measure(args.scenario, workspace, baseline, run_dir, args.cache, HERE)
         record["measures"]["measuredOn"] = "workspace"
+    # Read by analysis/compare_implementations.py: a refused or never started run has nothing to
+    # compare (its tree is the baseline).
+    (run_dir / OUTCOME_FILE).write_text(
+        json.dumps(
+            {
+                "outcome": (record.get("harness") or {}).get("outcome", "direct"),
+                "refused": record.get("refused"),
+                "invalid": record.get("invalid"),
+            }
+        ),
+        encoding="utf-8",
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     out = (
         args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out

@@ -1,1 +1,1 @@
-implementa la calculadora de costos de envío de SPEC.md
+haz shipping_cost en un paquete shipping que calcule lo que cuesta un envío

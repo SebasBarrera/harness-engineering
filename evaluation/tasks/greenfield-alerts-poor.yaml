@@ -1,6 +1,6 @@
 taskId: task_eval_greenfield_alerts_poor
 title: Cliente de alertas
-intent: Implementa build_alert_request en un paquete alerts como se describe en SPEC.md.
+intent: Implementa build_alert_request en un paquete alerts.
 acceptanceCriteria:
   - criterionId: ac_works
     text: Funciona.

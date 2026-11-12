@@ -62,6 +62,7 @@ lanzador, fuera del repositorio, y los registros no llevan ninguna ruta local ni
 | `harness` | Lo que escribe `harness init` de la versión bajo prueba (todos los ajustes de la 2.0.0 activos), con `agentRouting.mode: fixed`: cada llamada usa el modelo de la celda. |
 | `harness-anchored` | Lo que escribe `harness init`, con el enrutamiento tal como lo escribe init desde la ola 9 (`anchored`, #85) y `agentRouting.anchorModel` fijado en el modelo de la celda: el enrutador elige el modelo y el esfuerzo de cada llamada a partir de las tablas por defecto, con el modelo que invoca como techo (`agent.routing.decided` con su `anchor`). El factor es el modelo que invoca: Haiku, Sonnet u Opus. Reemplaza a `harness-tiered` del primer piloto, en el que las tablas por defecto ignoraban el modelo que invoca. |
 | `embedded` | `run_embedded.py`: Claude Code, como sesión anfitriona, conduce el harness a través de `harness mcp serve` y la skill (`harness init --agent-skills`), con la configuración `harness`; el factor es el modelo anfitrión. |
+| `direct-po` | Prueba aparte y exploratoria (enmienda del 2026-11-12), fuera de los bloques por defecto: la condición directa con un turno previo de solo lectura en el que el agente puede hacer a lo sumo 8 preguntas (`kind: direct-questions`), que responde el mismo product owner simulado; la llamada de implementación recibe el prompt con las preguntas y las respuestas (`direct_po.py`, registro `directPo`). Solo corre si `run_matrix.py --conditions` la nombra. |
 
 La evaluación cambia solo el proveedor del agente (el adaptador descrito abajo, o el proveedor
 `simulated` del harness en una corrida en seco), el permiso de exactamente ese comando de proveedor,
@@ -216,6 +217,21 @@ El piloto Sonnet (enmienda del 2026-11-11 en `campaign/PREREGISTRO.md`) necesita
 `EVAL_OUT`: `pilot.sh` omite una corrida ya registrada con el mismo prompt y condición en
 `pilot.jsonl`, sea cual sea el modelo, y toma el mismo candado que el piloto Haiku, así que corre
 después de él.
+
+Desde la enmienda del 2026-11-12 al pre-registro:
+
+- Una corrida gobernada cuyo `harness run start` falla se registra en `<out>.invalid.jsonl` con
+  `invalid: apparatus-run-start-failed`, el código de salida y la salida de error recortada
+  (`harness.runStartError`), sin medir; el runner sale con 3 y `run_matrix.py` no la repite.
+- Una tarea que el harness rechaza al crearla (`task-refused-exit-N`) se registra como rechazada
+  (`refused`, `measures.hidden: null`, `run-outcome.json` en el directorio de la corrida) y los
+  resúmenes la muestran como «rechazada», fuera de los agregados del árbol.
+- `measures.hidden` lleva el denominador nominal del escenario (`nominal`: greenfield 33,
+  brownfield 24, security 14), `collectionError` y las pruebas discriminantes (`discriminating`:
+  las que la línea base no pasa; 6 de 24 en brownfield, todas en los escenarios nuevos).
+- Con `--prompt poor` o `--prompt casual` el espacio de trabajo de greenfield y security no trae
+  `SPEC.md` ni la línea del `README.md` que apunta a ella, en todas las condiciones; solo el
+  product owner simulado la conoce.
 
 Resúmenes: `report.py --v2 <results> <summary.json>` (bloques A y B: una celda por prompt,
 condición, modelo y escenario, con cada corrida listada junto a la dispersión n/min/mediana/max),

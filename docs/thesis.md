@@ -30,6 +30,13 @@ operations, decisions on retrospective recommendations and the usage reported by
 is the evaluated one. The remaining defects are tracked in the milestone
 *backlog — thesis-impact*.
 
+The controlled evaluation installs the harness from the wheel built from its release tag, not from
+a source tree, so the version under test is the one each `environment.json` records (with the
+wheel's SHA-256 and the commit). The deterministic suites run on GitHub Actions; the runs with a
+model run on the author's Windows PC, declared as such. Pilot and precheck attempts made before
+the campaign are apparatus checks and are listed, with their cause, in the preregistration
+(`evaluation/campaign/PREREGISTRO.md`, amendment of 2026-11-12).
+
 ## Snapshot reported for the evaluated cut
 
 The thesis reports these figures for `v0.8.0` (they describe the frozen cut, not the current
