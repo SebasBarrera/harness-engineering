@@ -182,3 +182,20 @@ def test_run_key_is_stable_and_not_the_execution_id(tmp_path: Path) -> None:
     assert key != run_eval.run_key("exec_other", run_dir)
     assert key != run_eval.run_key("exec_abc123", tmp_path / "other")
     assert run_eval.run_key(None, run_dir) is None
+
+
+@pytest.mark.parametrize(
+    ("shown", "count"),
+    [
+        (_proc(0, json.dumps({"metadata": {"assumptions": ["a", "b"]}})), 2),
+        (_proc(0, json.dumps({"metadata": {}})), 0),
+        (_proc(1, "", "task not found"), None),
+        (_proc(0, "not json"), None),
+        (_proc(0, json.dumps(["not", "a", "task"])), None),
+        (_proc(0, json.dumps({"metadata": {"assumptions": "text"}})), None),
+    ],
+)
+def test_task_assumptions_are_unknown_when_the_task_cannot_be_read(
+    shown: subprocess.CompletedProcess[str], count: int | None
+) -> None:
+    assert run_eval.task_assumptions(shown) == count

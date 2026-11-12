@@ -193,6 +193,21 @@ def harness_json(workspace: Path, *args: str) -> Any:
     return json.loads(proc.stdout)
 
 
+def task_assumptions(shown: subprocess.CompletedProcess[str]) -> int | None:
+    """How many assumptions ``harness task show`` lists in the task's ``metadata.assumptions``;
+    ``None`` when the command failed or its output is not a task (the count is unknown)."""
+    if shown.returncode != 0:
+        return None
+    try:
+        value = json.loads(shown.stdout)
+    except ValueError:
+        return None
+    if not isinstance(value, dict):
+        return None
+    assumptions = (value.get("metadata") or {}).get("assumptions") or []
+    return len(assumptions) if isinstance(assumptions, list) else None
+
+
 def effective_condition(condition: str, no_product_owner: bool = False) -> str:
     """The condition a run is recorded under: ``baseline`` is the 0.9.0 name of ``direct``, and
     ``harness`` without product owner is ``harness-nopo``, so its runs (directory name, record and
@@ -357,10 +372,7 @@ def run_harness(
     driven = person.drive(run_id, task["taskId"], started.returncode)
     final = harness_json(workspace, "status", "--path", ".", "--run", run_id)
     shown = harness(workspace, "task", "show", "--path", ".", "--task", task["taskId"])
-    try:
-        assumptions = (json.loads(shown.stdout).get("metadata") or {}).get("assumptions") or []
-    except (ValueError, AttributeError):
-        assumptions = []
+    assumptions = task_assumptions(shown)
     findings = harness_json(workspace, "findings", "list", "--path", ".", "--run", run_id)
     state = harness_state.collect(harness, workspace, run_dir, run_id, final, findings)
     trace = state.get("trace") or {"present": 0, "requiredCount": 0}
@@ -392,7 +404,8 @@ def run_harness(
         "eventChainValid": final["eventChainValid"],
         "recordsValid": final.get("recordsValid"),
         "clarification": driven["clarification"],
-        "assumptions": len(assumptions) if isinstance(assumptions, list) else 0,
+        # None: the task could not be read, so the count is unknown (never a silent 0).
+        "assumptions": assumptions,
         "harnessMetrics": {name: item.get("value") for name, item in final["metrics"].items()},
         "trace": trace,
         "state": {k: v for k, v in state.items() if k != "trace"},
