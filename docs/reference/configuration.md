@@ -72,6 +72,8 @@ intake:
     maxRounds: 3
     maxQuestions: 8
     onExhausted: assume
+    skipSettled: true
+    depth: adaptive
   validateAnswers: true
   operationalContract: batch
   interruptions:
@@ -177,6 +179,7 @@ context:
   maxBytes: 400000
   locate:
     mode: agent
+    reuse: scope
 budget:
   perCall:
     costUsd: 25
@@ -204,9 +207,15 @@ agentRouting:
     - 2000
     - 10000
   maxEscalations: 2
+  readOnlyEffort:
+    clarify: low
+    locate: low
+    architecture: medium
+    review: medium
 agentContract:
   mode: enforce
   maxIterations: 5
+  budgetProfile: by-kind
 governance:
   deciderIdentity: git
   confirmDecisionDigest: true
@@ -229,6 +238,7 @@ governance:
   phaseCapabilities: true
   applyRepositoryPolicies: true
   enforceWorkflow: true
+  riskProfile: auto
 toolchain:
   profileDetection: all
   interpreter: auto
@@ -332,7 +342,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `profiles` | `["auto"]` | `auto` selects the detected profiles; otherwise list profile ids (`python_default`, `node_default`). |
 | `workflow` | `default_development` | The normative workflow. Only the built-in workflow exists; the order of its nine phases is fixed, and under `governance.enforceWorkflow` its `exitGate`, `dependsOn` and `parallelizable` take effect (see [declared settings](#declared-settings)). |
 | `capabilities.default` | `deny` | Only `deny` is accepted. |
-| `capabilities.grants` | `[]` | Extra grants: `capability`, `scope` (globs or command names), `approvalRequired`, `conditions` (for example `allowDelete`). They are **added** to the profile grants (issue #4). |
+| `capabilities.grants` | `[]` | Extra grants: `capability`, `scope` (globs or command names), `approvalRequired`, `conditions` (for example `allowDelete`). They are **added** to the profile grants (issue #4). A path scope is an `fnmatch` glob over the workspace-relative path (`*` also crosses `/`, as in 0.8.0; `dir/**` is the directory and everything below it); a leading `./` is removed as a prefix, and a path with a `..` part or an absolute path is in no scope. A `process.execute` scope matches the executable or the first arguments joined by spaces; only the executable may contain spaces. On Windows a bare command name is looked up in the absolute `PATH` entries only, never in the working directory or the workspace, and the validation report records the program as `executable`. |
 | `validators` | `[]` | Validator ids to run; empty means the profile defaults. An id not defined by a selected profile is a configuration error. |
 | `policies` | see below | Policy overrides; locked policies can only be restated with their locked value. |
 | `agentProvider` | `simulated` | Default provider for `run start` (`--provider` overrides it). |
@@ -361,6 +371,8 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
 | `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes the object form below and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
 | `intake.ambiguityReview.mode`, `maxRounds`, `maxQuestions`, `onExhausted` | the bare `agent` (the single-round review) when given as a value; `init` writes `agent`, `3`, `8`, `assume` | Since #79 the object form makes the review converge: it sends the questions already asked with their answers, drops repeated questions, asks at most `maxQuestions` (default 8) a round, and after `maxRounds` (default 3) answered rounds records the open points as assumptions of the task revision (`assume`) or keeps INTENT blocked (`block`, the default). See [a review that converges](../guides/agent-results.md#a-review-that-converges-79). |
+| `intake.ambiguityReview.skipSettled` | `false` when absent; `init` writes `true` | Since 2.0.1 the review is not called again for a new revision when the previous round of the run left no agent question, or once the `unresolvable-ambiguity` stop condition was recorded in the run: the run goes on as after an exhausted review with no open point (`onExhausted` has nothing to ask or assume) and records `intent.agent-review.skipped` with the reason. Without the key every revision is reviewed, as in 2.0.0. |
+| `intake.ambiguityReview.depth` | `fixed` when absent; `init` writes `adaptive` | Since 2.0.1 `adaptive` scales the rounds and the questions per round with a deterministic measure of how little the task says (intent words, observable criteria, requirements, entities): a `very-poor` request gets `maxRounds` + 3 rounds of `maxQuestions` + 4 questions, a `poor` one +1 and +2, at most 8 rounds and 16 questions (or the configured value when larger). The first rounds cover the fundamental topics (users, what they do, main flows, platform, data, business rules, edge cases, acceptance criteria, first version) in the language of `intake.language`: the deterministic intake asks them first for `very-poor` and `poor` requests (category `basics`, target `task:<topic>`), and the `clarify` request carries a `depth` object with the level, the plan and the topics of the round. A `very-poor` or `poor` request keeps the agent review in the fast lane. Without the key or with `fixed`, nothing changes. See [More questions for a poorer request](../guides/agent-results.md#more-questions-for-a-poorer-request-depth-adaptive-201). |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
 | `verification.reverifyOnChange` | `false` when absent; `init` writes `true` | `run continue` on a run waiting in DECISION whose ChangeSet changed outside the run records the change as evidence and runs VERIFICATION again on the new ChangeSet (#78). See [re-verification after a change outside the run](#re-verification-after-a-change-outside-the-run). |
 | `review.agentReview`, `review.reviewer`, `review.structuredChanges` | off when absent; `init` writes `enforce` and `true` | Second-agent review in INDEPENDENT_REVIEW and blocking items of REQUEST_CHANGES. |
@@ -370,15 +382,18 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `governance.stopTheLine`, `governance.phasePermissions` | off when absent; `init` writes `restore` and `true` | What happens to the changes of a run that stops unapproved; per-call permissions. |
 | `governance.applyRepositoryPolicies` | off when absent; `init` writes `true` | Applies `policies.repositoryContentTrusted` and `policies.destructiveActionsDefault` (#5). See [repository policies](#repository-policies). |
 | `governance.enforceWorkflow` | off when absent; `init` writes `true` | The workflow's `exitGate`, `dependsOn` and `parallelizable` take effect. See [declared settings](#declared-settings). |
+| `governance.riskProfile` | absent: the fast lane is `friction.fastLane` alone and the `security` flag is the 1.x word list; `init` writes `auto` | Governance by risk: `auto` gives a task sized `S` with no risk flag the light profile and every other task the full one, `light` gives every task without a risk flag the light profile whatever its size, `full` gives every task the full flow (no fast lane). Any value reads the `security` flag in context. See [governance profiles by risk](../guides/low-friction.md#governance-profiles-by-risk). |
 | `governance.phaseCapabilities` | off when absent; `init` writes `true` | Capabilities per phase (#4): the project narrows the profiles' grants, each phase allows only its `allowedCapabilities`, an agent call outside IMPLEMENTATION is read-only. See [capabilities per phase](#capabilities-per-phase). |
 | `planning`, `context`, `budget`, `memory`, `agentRouting` | off when absent; `init` writes each section | Decomposition, context manifest, governed budget, lessons and model routing. See [better agent results](../guides/agent-results.md). |
 | `agentRouting.thresholds.trivial` | `requirements: 1`, `files: 1`, `loc: 150` when absent | Since #197: the upper bounds under which an `S` task (with at least one requirement and one owned file, no risk flag, not decomposed) is `trivial` and its `implement` call runs on the family's `trivial` rung (`claude-haiku-5-5` in the claude-code table); a failed trivial call escalates to the `S` rung. Starting values to calibrate; `requirements: 0` turns the tier off. See [trivial implement tasks](../guides/agent-results.md#trivial-implement-tasks-197). |
 | `agentRouting.mode`, `agentRouting.anchorModel` | `fixed` when absent; `init` writes `anchored` (before #85: `tiered`) | `fixed` keeps the provider's model, `tiered` chooses from the tables, `anchored` chooses from the tables with the invoking model as the ceiling; `anchorModel` names the invoking model when the provider does not (for example an embedded session). See [anchored routing](../guides/agent-results.md#anchored-at-the-invoking-model-85). |
+| `agentRouting.readOnlyEffort` | the table's effort when absent; `init` writes `clarify: low`, `locate: low`, `architecture: medium`, `review: medium` | Since 2.0.1 the effort (`low`, `medium` or `high`) of the first attempt of a routed read-only call by kind (`clarify`, `locate`, `architecture`, `review`, `plan`, `acceptance`; `review` also covers the reviewers of the panel), in place of the table's. `implement` never changes, escalations climb the ladder as before, an explicit per-call setting wins, and a model that takes no effort (Claude 3, Haiku 4.x, Sonnet and Opus 4.0 to 4.5) gets none. The decision's rule ends in `:read-only-effort`. |
 | `toolchain.*` | 1.0.0 behaviour when absent; `init` writes `profileDetection: all` and `interpreter: auto` | Project profiles and validators, several profiles per repository and the project's Python interpreter. See [project toolchain](#project-toolchain). |
 | `provenance.*` | 1.0.0 behaviour when absent; `init` writes both keys | Provenance of every ChangeSet file and the agent's self-report. See [provenance](#provenance). |
 | `delivery.*` | the harness never commits when absent; `init` writes `closureCommit: branch` | The closure commit with trailers and the defaults of `harness pr publish`. See [delivery](#delivery). |
 | `verification.ladder`, `verification.probes`, `verification.mutation`, `review.manualChecklist` | off when absent; `init` writes all but `probes` | The verification ladder, behaviour probes, light mutation and the manual checklist. See [verification ladder](#verification-ladder). |
 | `intake.operationalContract`, `intake.interruptions`, `context.locate` | off when absent; `init` writes `batch`, the budget and `agent` | The operational contract, the interruption budget and localisation in INTENT. See [intake contract](#operational-contract-and-interruptions). |
+| `context.locate.reuse` | `revision` when absent; `init` writes `scope` | Since 2.0.1 `scope` reuses the last locate result of the task while its scope is unchanged (owned paths, `scope`, `scopePaths` and `outOfScope` of its contract, size class and `maxLocations`), so an answered revision makes no new call; the reuse is recorded as `locate.reused` with `scope: true`, and the questions of the earlier result are not asked again. `revision` calls once per task revision, as in 2.0.0. |
 | `environment`, `workspace.isolation`, `runtime.stateDir`, `toolchain.extendedProfiles` | 1.0.0 behaviour when absent; `init` writes each | Environment preflight, worktree isolation (mode `none`), the run registry outside the workspace and the extended built-in profiles. See [delivery hygiene](#delivery-hygiene). |
 | `delivery.stage`, `push`, `pullRequest`, `comment`, `instructions` | off when absent; `init` writes `stage: true`, `push: false`, no pull request, `comment: notClean` and the instruction files | Complete delivery as the operational contract authorises it, and `harness config lint`. See [complete delivery](#complete-delivery). |
 | `delivery.forge` | GitHub through `delivery.publisher` when absent; `init` writes none (the forge is detected from `origin`) | The forge of `harness pr publish`, `pr create` and `pr status`: GitHub, GitLab, Bitbucket, Azure DevOps or Gitea. See [forges](../guides/forges.md). |
@@ -1365,6 +1380,7 @@ the section behaves, and digests, as before. The guide in Spanish is
 | `mode` | `enforce` | `enforce` turns the contract on; `off` (or a missing section) keeps the earlier behaviour. |
 | `maxIterations` | `5` | Cap of iterations of one agent in a run, 1 to 6. A value above 6 is rejected. |
 | `budgets.S`, `budgets.M`, `budgets.L` | 50000 tokens / 600 s, 200000 / 1800 s, 800000 / 5400 s | `tokens` and `wallSeconds` of one call by the size the router gives the task. Starting values, not a measured optimum. The token budget counts the work of the call as the provider reports it: fresh input, cache creation, output and reasoning. Prompt-cache reads (`cacheReadTokens`) are recorded with the call's usage, its response and the metrics, but do not count; a provider that reports no cache-read split counts its whole input. The limit message gives both numbers. |
+| `budgetProfile` | `uniform`; `init` writes `by-kind` | Since 2.0.1 `by-kind` takes the token budget from a table by call kind: `implement` 120000 (S), 300000 (M), 800000 (L); the read-only calls 100000 (S), 200000 (M), 800000 (L). The time limits stay those of the size. A size of `budgets` with its own `tokens` wins. The values come from the counted tokens of the 2.0.0 pilot calls (about the 95th percentile times 1.5, never below `uniform`); see the CHANGELOG entry. |
 | `limits.summaryChars` | `600` | The summary a parent receives is cut to this many characters. |
 | `limits.resultBytes` | by kind | Largest `result` object (JSON bytes). Defaults: 4096 implement, 32768 clarify, plan and locate, 65536 review and architecture, 262144 acceptance. |
 | `limits.fieldChars` | `4000` | Largest text field inside a `result` (the content of an acceptance test is exempt). |

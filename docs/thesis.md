@@ -16,29 +16,37 @@ and its evaluation is formative and descriptive (no statistical generalization).
 
 ## Evaluated versions
 
-The thesis documents the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
-which reproduces it byte for byte (see [provenance](provenance.md)), and runs its
-[controlled evaluation](evaluation/results.md) only on `v2.0.0` (campaign in progress,
-`evaluation/campaign/`); results of earlier versions are in the git history and the `v0.8.0` tag
-and are not part of that analysis. `v0.8.1` adds
+The thesis keeps chapters 1 to 4 of its manuscript; chapters 5 to 8 are rewritten with the results
+of `2.0.1`, the version of the [controlled evaluation](evaluation/results.md) (campaign in
+progress, `evaluation/campaign/`). [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0)
+is an earlier, obsolete Design Science Research iteration: it stays documented and reproducible
+byte for byte (see [provenance](provenance.md)), its tag is never moved, and its behavior may be
+changed in new versions. Results of earlier versions are in the git history and the `v0.8.0` tag
+and are not part of the `2.0.1` analysis. `v0.8.1` adds
 infrastructure, documentation and quality fixes without behavior change. `v0.9.0` fixes seven
 behavioral defects; the only difference visible in the thesis cases is the brownfield closure, which
 is now a plain `APPROVE` instead of an `APPROVE_EXCEPTION` (see the
 [brownfield guide](guides/brownfield.md)). `v1.0.0` adds, after the evaluation, governed memory
 operations, decisions on retrospective recommendations and the usage reported by agent providers
 (see [memory and retrospective decisions](guides/memory.md)); with no memory records the run path
-is the evaluated one. `v2.0.0` adds the governance found missing by that evaluation and by use on
+is that of the earlier iteration. `v2.0.0` adds the governance found missing by that evaluation and by use on
 real projects: clarification and criteria at intake, independent acceptance tests, a verification
 ladder with certification, a review panel with layered rule catalogs, capabilities per phase,
 an agent write sandbox, stop the line, routing anchored at the invoking model, low-friction small
 changes, local metrics, forges and embedded mode (see the [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md)).
-Every new behaviour sits behind a configuration key that `harness init` writes. The evaluation of
-`v2.0.0` is tracked in issue #70. The milestone *backlog — thesis-impact* has no open defects.
+Every new behaviour sits behind a configuration key that `harness init` writes.
 
-## Snapshot reported for the evaluated cut
+The controlled evaluation installs the harness from the wheel built from its release tag, not from
+a source tree, so the version under test is the one each `environment.json` records (with the
+wheel's SHA-256 and the commit). The deterministic suites run on GitHub Actions; the runs with a
+model run on the author's Windows PC, declared as such. Pilot and precheck attempts made before
+the campaign are apparatus checks and are listed, with their cause, in the preregistration
+(`evaluation/campaign/PREREGISTRO.md`, amendment of 2026-11-12).
 
-The thesis reports these figures for `v0.8.0` (they describe the frozen cut, not the current
-state of `develop`):
+## Snapshot of the earlier iteration (v0.8.0)
+
+The figures of the earlier iteration `v0.8.0`, reported by its thesis manuscript (they describe
+that frozen cut, not the current state of `develop` nor the `2.0.1` evaluation):
 
 | Fact | Value |
 |---|---|
@@ -62,4 +70,4 @@ The re-verification of these figures during publication is recorded in the
 
 Use the citation metadata in [`CITATION.cff`](https://github.com/SebasBarrera/harness-engineering/blob/develop/CITATION.cff)
 (GitHub shows a "Cite this repository" button), and cite the version you used, for example
-`v0.8.0` for the documented cut or `v2.0.0` for the controlled evaluation.
+`v0.8.0` for the earlier, documented iteration or `v2.0.1` for the controlled evaluation.

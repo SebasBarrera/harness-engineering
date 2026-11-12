@@ -62,6 +62,7 @@ Pensadas para empezar sin conocer los detalles internos (también en el
 - [Contrato entre agentes](docs/es/contrato-de-agentes.md), [límites de iteraciones, tokens y tiempo](docs/es/limites-de-agentes.md) y [scripts como cajas negras](docs/es/scripts-caja-negra.md).
 - [Arquitecturas para proyectos nuevos](docs/es/arquitecturas.md) e [ingeniería inversa de proyectos existentes](docs/es/ingenieria-inversa.md).
 - [Trabajo simultáneo](docs/es/trabajo-simultaneo.md): qué se puede hacer entre dos personas y qué no.
+- [Modelo de confianza](docs/es/modelo-de-confianza.md): qué resiste el harness frente a un agente honesto, uno descuidado y uno adversario, y qué no garantiza.
 - [Instalación](docs/es/instalacion.md), [instalación avanzada](docs/es/instalacion-avanzada.md) y [publicación de versiones](docs/es/publicacion.md).
 
 ## Qué es y qué no es
@@ -82,8 +83,10 @@ código cambia después, la aprobación deja de aplicar.
 | Una herramienta ausente parece un éxito o se ignora | Ningún resultado no exitoso se convierte en éxito: `BLOCKED`, `ERROR`, `INCONCLUSIVE`, `TIMED_OUT` mantienen el gate cerrado |
 | «Aprobar» se refiere a una tarea o una conversación | La aprobación se vincula al digest del ChangeSet, la configuración y la política exactos |
 
-**No** es un sandbox, ni un servicio de CI, ni un reemplazo de Git o de los pull requests, y no
-tiene integración nativa con ningún agente o proveedor de modelos en particular.
+**No** es un sandbox, ni un servicio de CI, ni un reemplazo de Git o de los pull requests. No está
+atado a un agente o proveedor de modelos: los adaptadores incorporados ejecutan las CLI de Claude
+Code, Codex, Gemini CLI y aider, y cualquier otro agente se conecta con el proveedor por comando
+([Agentes externos](#agentes-externos)).
 
 Stack: Python ≥ 3.12, Pydantic 2, Typer, FastAPI y Uvicorn (extra opcional `api`), PyYAML,
 JSON Schema 2020-12, SQLite. Licencia: Apache-2.0.
@@ -134,7 +137,7 @@ flowchart LR
 Las dependencias apuntan hacia adentro: el dominio no conoce la CLI, el framework web, los perfiles
 ni los proveedores; los validadores producen resultados pero solo el motor de gates decide; los
 reportes nunca cambian el estado. Detalles en [ARCHITECTURE.md](ARCHITECTURE.md), los
-[ADR](docs/adr) y el [modelo de confianza](docs/architecture/trust-model.md). Fuentes de los
+[ADR](docs/adr) y el [modelo de confianza](docs/es/modelo-de-confianza.md). Fuentes de los
 diagramas: [`diagrams/`](diagrams).
 
 ## Inicio rápido en cinco minutos
@@ -145,7 +148,7 @@ código de salida que aparece aquí.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.0/governed_agent_harness-2.0.0-py3-none-any.whl" pytest
+pip install "governed-agent-harness==2.0.1" pytest   # desde PyPI; o el wheel del release, ver Instalación
 
 # un proyecto Python mínimo con un commit de baseline
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -172,16 +175,19 @@ La tarea usada es [`docs/guides/task.yaml`](docs/guides/task.yaml); la
 
 | Desde | Comando |
 |---|---|
-| Un wheel del release (recomendado) | `pip install <URL del wheel en la página del release>`; verifícalo con `sha256sum -c SHA256SUMS` y `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
+| PyPI | `pip install governed-agent-harness` (o `pip install "governed-agent-harness[api]==2.0.1"` para el tablero) |
+| Un wheel del release | `pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.1/governed_agent_harness-2.0.1-py3-none-any.whl"`; verifícalo con `sha256sum -c SHA256SUMS` y `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | Código fuente | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:2.0.0 --help` (publicada desde `v2.0.0`; corre con un usuario sin privilegios) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:2.0.1 --help` (publicada desde el tag `v2.0.1`; corre con un usuario sin privilegios) |
 
 Requisitos: **Python ≥ 3.12** y **Git** (los baselines y ChangeSets salen del repositorio). Para
 proyectos Node.js, **Node.js LTS y npm**. El extra opcional `api` instala FastAPI y Uvicorn para el
 tablero. El harness es un paquete de Python: **no se instala con npm ni con npx**. Las versiones
-están en GitHub Releases y GHCR. La publicación en PyPI (`pip install governed-agent-harness`)
-con un Trusted Publisher está preparada en `release.yml` y sigue apagada hasta que el mantenedor
-la configure ([publicación](docs/es/publicacion.md)); mientras tanto usa el wheel del release.
+están en GitHub Releases y GHCR y, desde la 2.0.1, en PyPI: `release.yml` sube los mismos
+distribuibles atestados con un Trusted Publisher cuando el mantenedor lo habilita
+([publicación](docs/es/publicacion.md)). Sin verificar todavía: el 2026-11-11, antes del release
+2.0.1, PyPI no tenía el proyecto `governed-agent-harness` y no existían el wheel ni la imagen
+`v2.0.1`; si `pip` responde `No matching distribution`, usa el wheel de la página del release.
 Guías: [instalación](docs/es/instalacion.md) y [instalación avanzada](docs/es/instalacion-avanzada.md).
 
 ## Guía greenfield
@@ -219,7 +225,7 @@ Qué cambia frente a un proyecto nuevo:
   entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet; el gate cuenta
   el último intento de cada validador, así que quedó en `PASSED` y un `APPROVE` simple cerró la
   ejecución: 46 eventos, cadena válida), o cerrar con `APPROVE_EXCEPTION` y una justificación
-  escrita. En el corte evaluado 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
+  escrita. En la iteración anterior 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
   por excepción.
 - **Respeta las convenciones.** La detección es de solo lectura (en el caso: Python, confianza 1,0
   por `pyproject.toml` y `tox.ini`). Varios lockfiles elevan la confianza de Node.js, pero el perfil
@@ -233,25 +239,26 @@ salida.
 Una tarea es YAML o JSON: `taskId`, `title`, `intent`, `requirements`, `acceptanceCriteria`,
 `constraints`, `implementation` (`mode: none | patch | command`, `patches`) y `metadata` (por ejemplo
 `ownedPaths`). La [referencia del archivo de tarea](docs/reference/task-file.md) se genera desde
-[`schemas/v1/task.schema.json`](schemas/v1/task.schema.json). Incluye siempre `title` e `intent`: si
-falta uno, hoy se guarda el texto `None` (issue #29).
+[`schemas/v1/task.schema.json`](schemas/v1/task.schema.json). Una tarea sin `title` o `intent` no
+vacíos, o con campos desconocidos, se rechaza con código 2 (corregido en la 0.9.0, #29).
 
 ## CLI
 
-30 comandos (referencia completa con todas las opciones, generada desde el código:
-[docs/reference/cli.md](docs/reference/cli.md)):
+80 comandos en la 2.0.1, contados por la [referencia de la CLI](docs/reference/cli.md), que se
+genera desde el código y lista todas las opciones:
 
 | Grupo | Comandos |
 |---|---|
-| Proyecto | `init`, `inspect`, `doctor`, `config validate` |
-| Tareas | `task create`, `task list`, `task show`, `task questions`, `task clarify` |
-| Ejecuciones | `run start`, `run continue`, `run cancel`, `run list`, `status` |
-| Evidencia | `evidence list`, `findings list`, `trace`, `retrospect` |
-| Memoria | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
-| Recomendaciones | `recommendation list`, `recommendation decide` |
-| Decisión | `gate decide` |
-| Extensiones y benchmarks | `plugins list`, `benchmark run`, `benchmark scenarios` |
-| Tablero | `api serve` |
+| Proyecto y configuración (10) | `init`, `inspect`, `doctor`, `project show`, `config validate`, `config lint`, `standards show`, `architecture show`, `architecture decide`, `architecture refresh` |
+| Tareas (6) | `task create`, `task list`, `task show`, `task questions`, `task clarify`, `task confirm` |
+| Ejecuciones (9) | `do`, `run start`, `run continue`, `run cancel`, `run cleanup`, `run quarantine`, `run list`, `status`, `inbox` |
+| Puntos de control y decisiones (11) | `plan show`, `plan decide`, `acceptance show`, `acceptance decide`, `acceptance dispute`, `verification show`, `verification decide`, `budget show`, `budget raise`, `review`, `gate decide` |
+| Evidencia y registro (10) | `check`, `evidence list`, `evidence attach`, `findings list`, `artifact show`, `trace`, `verify`, `export`, `verify-approval`, `gc` |
+| Panel de revisión (6) | `review-code`, `review verify`, `review variance`, `review rules show`, `review rules sync`, `review hook install` |
+| Memoria, retrospectiva y desenlaces (13) | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate`, `retrospect`, `recommendation list`, `recommendation decide`, `outcome record`, `outcome list`, `exceptions list`, `rules health`, `metrics` |
+| Agentes y enrutamiento (6) | `agent-contract schema`, `agent-contract validate`, `agent-contract scripts`, `agent-contract calls`, `routing calibrate`, `mcp serve` |
+| Forjas (4) | `pr publish`, `pr create`, `pr status`, `pr forge` |
+| Extensiones, benchmarks y tablero (5) | `plugins list`, `benchmark run`, `benchmark scenarios`, `registry`, `api serve` |
 
 Todos los comandos aceptan `--help`; los comandos de proyecto reciben `--path` (por defecto, el
 directorio actual).
@@ -295,8 +302,9 @@ capacidades, validadores, políticas, proveedores de agente y límites de ejecuc
 están **bloqueadas** y no se pueden debilitar: `requireHumanDecision`, `approvalDigestBinding`,
 `mandatoryNonSuccessBlocks` (siempre `true`) y `retrospectiveAutoApply` (siempre `false`).
 `findingBlockSeverities` (por defecto `HIGH` y `CRITICAL`) y `allowEmptyChangeSet` son configurables.
-`runtime.allowNetwork`, `runtime.maxParallel`, `retention` y `workspace.units` son **declarativos:
-nada los aplica**. `intake.criteriaPolicy` decide qué hace `INTENT` con criterios de aceptación que
+`workspace.units` es **declarativo: nada lo aplica**; `retention` se aplica cuando corre
+`harness gc`, `runtime.allowNetwork` solo a los proveedores de agente bajo
+`governance.applyNetworkPolicy`, y `runtime.maxParallel` solo con `governance.enforceWorkflow`. `intake.criteriaPolicy` decide qué hace `INTENT` con criterios de aceptación que
 no se pueden observar ("It works."): `enforce` (lo escribe `init`) bloquea hasta que una persona
 responda las preguntas con `harness task clarify`, `warn` (un archivo sin la clave) las registra como
 evidencia y hallazgos `LOW`, y `off` omite la verificación. Solo `enforce` acepta una tarea sin
@@ -334,17 +342,23 @@ Un validador opcional ausente queda en `NOT_APPLICABLE`; un ejecutable obligator
 
 ## Agentes externos
 
-Un agente se conecta mediante el **proveedor por comando**: un programa registrado en
+Un agente se conecta de tres formas. Los **adaptadores incorporados**
+(`agentProviders.<id>.kind`: `claude-code`, `codex`, `gemini-cli`, `aider`) ejecutan la CLI del
+agente en su modo no interactivo documentado, convierten la petición en un prompt y leen la salida
+propia de la CLI, con tokens y costo cuando la CLI los reporta; sus líneas de comando se prueban
+contra CLI falsas que imprimen los formatos documentados, no contra los agentes reales
+([`agents/native.py`](src/governed_harness/agents/native.py)). El **proveedor por comando** es un
+programa registrado en
 `agentProviders` que recibe la tarea y el plan como JSON por la entrada estándar e imprime un objeto
 JSON (`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`, opcionalmente con el `usage` que
 reporta el agente) por la salida estándar. Cuando el proyecto tiene memoria gobernada vigente, la
 petición también la lleva en `context` ([guía de memoria](docs/guides/memory.md)).
-`examples/structured-command-agent.py` es un ejemplo funcional. **No hay integración nativa con
-Claude Code, Codex ni ninguna API de modelos**: se conectan mediante un envoltorio de ese tipo; hay
-una plantilla en la [guía de agentes externos](docs/guides/external-agents.md). El proveedor solo
-propone un cambio; la verificación, la revisión, el gate y la decisión siguen en manos del harness.
+`examples/structured-command-agent.py` es un ejemplo funcional, y hay una plantilla en la
+[guía de agentes externos](docs/guides/external-agents.md). El harness no llama por sí mismo a
+ninguna API de modelos. El proveedor solo propone un cambio; la verificación, la revisión, el gate y
+la decisión siguen en manos del harness.
 
-Desde 2.0 una sesión de agente también puede conducir el flujo (**modo embebido**:
+Desde la 2.0.0 una sesión de agente también puede conducir el flujo (**modo embebido**:
 `harness mcp serve` y `harness init --agent-skills`, ver la
 [guía de modo embebido](docs/guides/embedded-mode.md)),
 la ejecución puede llevar los estándares de lenguaje, los principios de ingeniería, la estrategia de
@@ -367,7 +381,7 @@ tiempo según el tamaño de la tarea, y los scripts como cajas negras. Ver el
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requiere el extra `api`) sirve el
 tablero en `/` y nueve rutas: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective` y
-`POST /api/runs/{id}/decision` (2.0 agrega más rutas, listadas en la referencia). Desde 2.0 (#18) la sección `api` que escribe `harness init` exige un token
+`POST /api/runs/{id}/decision` (la 2.0.0 agrega más rutas, listadas en la referencia). Desde la 2.0.0 (#18) la sección `api` que escribe `harness init` exige un token
 bearer en todas las rutas, con los roles `viewer`, `reviewer` y `admin` y usuarios declarados por
 el nombre de la variable de su token; el token de quien inicia el servidor se imprime una sola vez
 en la salida de error salvo que `HARNESS_API_TOKEN` lo provea. **Un `project.yaml` sin la sección
@@ -381,8 +395,10 @@ contención de rutas (se rechazan traversal y escapes por enlaces simbólicos), 
 límite de tiempo, cancelación y tope de salida, redacción de secretos antes de persistir,
 decisiones vinculadas al digest y un registro de eventos encadenado. **No** aísla los procesos que
 lanza: un comando autorizado conserva los permisos de sistema de archivos, red, CPU y memoria de tu
-usuario. `allowNetwork` no se aplica. La cadena de eventos hace detectable una alteración, no la
-impide. Ejecuta repositorios, agentes o extensiones en los que no confías solo dentro de un
+usuario. `allowNetwork: false` niega la red solo a los proveedores de agente, bajo
+`governance.applyNetworkPolicy` y el sandbox del agente; los validadores nunca se confinan. La
+cadena de eventos hace detectable una alteración, no la impide, y el id del actor de una decisión
+humana es declarado, no autenticado ([modelo de confianza](docs/es/modelo-de-confianza.md)). Ejecuta repositorios, agentes o extensiones en los que no confías solo dentro de un
 contenedor o una máquina virtual. Ver [SECURITY.md](SECURITY.md). La única excepción es el
 confinamiento de escritura de los proveedores de agente: con `runtime.agentSandbox: enforce`, que
 escribe `harness init`, una CLI de agente no puede escribir fuera del espacio de trabajo y de sus
@@ -429,36 +445,52 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 
 ## Limitaciones y defectos conocidos
 
-No hay defectos de comportamiento abiertos. La etiqueta `v0.8.0` conserva el corte que documenta la
-tesis, 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, 1.0.0 hizo operable la memoria (#6) y 2.0.0
-cerró el resto del backlog *thesis-impact* (#3, #4, #5, #7, #8) junto con los defectos que encontró
-la evaluación de 2.0.0 (#73–#87) ([changelog](CHANGELOG.md)).
+El tag `v0.8.0` conserva el comportamiento de la iteración anterior. Los defectos del hito
+[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3) están
+cerrados ([changelog](CHANGELOG.md)): la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, la 1.0.0
+hizo operable la memoria (#6), y la 2.0.0 aplica la configuración de fases del workflow (#3),
+resuelve las capacidades por fase (#4), aplica las políticas del repositorio (#5), separa los
+errores preexistentes de los introducidos (#7) y agrega el punto de aprobación del plan (#8). La
+mayoría de estas correcciones dependen de claves que escribe `harness init`; un `project.yaml` sin
+ellas conserva el comportamiento y el digest de configuración anteriores.
 
-Limitaciones declaradas: el sandbox de escritura confina lo que escribe el agente (`sandbox-exec` en
-macOS, `bwrap` en Linux), pero el harness mismo corre sin aislamiento de contenedor; el dashboard solo
-tiene autenticación local por token (ninguna sin la sección `api`); no hay ejecución distribuida ni
-firma externa de la evidencia; los adaptadores integrados de agentes y las forjas se prueban contra
-CLIs y transportes falsos; las métricas de tokens y costo dependen de que el proveedor las reporte
-(con un costo estimado cuando hay una tabla de precios configurada).
+Limitaciones declaradas (ver el [modelo de confianza](docs/es/modelo-de-confianza.md)):
+
+- la identidad de quien decide es declarada, no autenticada, en la CLI; la API local autentica con
+  tokens bearer solo cuando `project.yaml` tiene la sección `api`, y sin ella no autentica;
+- en modo embebido, la regla de que solo una persona decide es una instrucción a la sesión del
+  agente, respaldada porque el servidor MCP no expone ninguna herramienta de decisión; un agente con
+  shell todavía puede ejecutar `harness gate decide`;
+- la cadena de eventos y su ancla usan digests SHA-256 sin clave: detectan ediciones accidentales
+  o parciales, no una reescritura hecha por un proceso con los permisos de tu usuario; la evidencia
+  no lleva firma externa;
+- el confinamiento de escritura existe solo en macOS (`sandbox-exec`) y Linux (`bwrap`); en Windows
+  un sandbox exigido bloquea `IMPLEMENTATION`, y `agentSandbox: off` ejecuta el agente sin confinar;
+- sin aislamiento a nivel de sistema operativo de validadores y extensiones
+  ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), sin ejecución distribuida,
+  y métricas de tokens y costo solo cuando un proveedor las reporta.
 
 ## Hoja de ruta
 
-- Un adaptador de contenedor para el harness y sus validadores, y una firma externa de la evidencia.
-- Los adaptadores integrados de agentes y las forjas probados en CI contra CLIs y servicios reales.
-- El estudio de revisión con participantes previsto en la tesis (OE5).
+- Un adaptador de sandbox a nivel de sistema operativo (contenedor) para validadores y extensiones,
+  y confinamiento en Windows.
+- Identidad autenticada de quien decide (decisiones firmadas) y un ancla fuera del control del
+  usuario.
+- Adaptadores de proveedores verificados contra las CLI reales de los agentes.
 
 ## Contexto académico
 
 Este software es el artefacto de la tesis de maestría *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis documenta el corte
-[**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), que lo reproduce
-byte a byte ([procedencia](docs/provenance.md)), y su evaluación reporta solo la versión 2.0.0
-(campaña en curso, [`evaluation/campaign/`](evaluation/campaign/)); los resultados de versiones
-anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de ese análisis.
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis evalúa la versión 2.0.1 (campaña en curso,
+[`evaluation/campaign/`](evaluation/campaign/); los pilotos corrieron sobre la 2.0.0 como comprobaciones del aparato). [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0)
+es una iteración anterior y obsoleta de Design Science Research: sigue documentada y se reproduce
+byte a byte ([procedencia](docs/provenance.md)), su tag no se mueve y su comportamiento puede
+cambiar en versiones nuevas. Los resultados de versiones anteriores están en el historial de git y
+en el tag `v0.8.0`, y no forman parte del análisis de la 2.0.1.
 
-Snapshot reportado por la tesis para v0.8.0 (los badges de CI muestran el estado actual):
+Snapshot de la iteración anterior v0.8.0, reportado por su manuscrito (los badges de CI muestran el estado actual):
 
 | Hecho | v0.8.0 |
 |---|---|
@@ -474,6 +506,6 @@ Más en [docs/thesis.md](docs/thesis.md). Para citar el software, usa [CITATION.
 ## Contribuir, seguridad y licencia
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): entorno, comandos de verificación, flujo de ramas y las reglas
-  que protegen el corte evaluado. [Código de conducta](CODE_OF_CONDUCT.md). [Soporte](SUPPORT.md).
+  que mantienen reproducible el tag `v0.8.0` y registrados los cambios de comportamiento. [Código de conducta](CODE_OF_CONDUCT.md). [Soporte](SUPPORT.md).
 - [SECURITY.md](SECURITY.md): reporta vulnerabilidades de forma privada a través de GitHub.
 - Licencia [Apache 2.0](LICENSE).

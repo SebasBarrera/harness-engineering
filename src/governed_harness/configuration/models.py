@@ -777,6 +777,7 @@ DeciderIdentity = Literal["git", "default"]
 StopTheLine = Literal["restore", "block", "off"]
 ChainAnchorMode = Literal["file", "git-note", "off"]
 UnanchoredEvents = Literal["warn", "fail"]
+RiskProfile = Literal["auto", "light", "full"]
 
 DEFAULT_TRUSTED_HOSTS: tuple[str, ...] = ("127.0.0.1", "localhost", "::1")
 """Host names ``harness init`` lets the local API answer to (``governance.trustedHosts``)."""
@@ -857,7 +858,19 @@ class GovernanceConfig(ConfigModel):
       the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides
       which phase may start, and ``parallelizable`` lets the validators declared
       ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to
-      ``runtime.maxParallel``. An unknown gate or condition is a configuration error."""
+      ``runtime.maxParallel``. An unknown gate or condition is a configuration error.
+    * ``riskProfile``: the governance profile of each task by its risk. ``auto`` gives a task
+      the router sizes ``S`` with no risk flag (no security term, no ``riskPaths`` match, no
+      verification beyond ``L1``) the **light** profile and every other task the **full** one;
+      ``light`` gives the light profile to every task without a risk flag, whatever its size;
+      ``full`` gives every task the full profile (no fast lane). The light profile is the
+      fast lane of ``friction.fastLane`` (its ``skip`` and ``verification`` when configured,
+      else the defaults) plus no ``locate`` call and no ``planApproval: risk`` checkpoint; it
+      keeps the nine phases, the mandatory validators, the frozen acceptance tests, the
+      fail-closed gate, the digest-bound human decision and the event chain, and a ChangeSet
+      with a risk factor still takes the run out of it. Any value also reads the ``security``
+      risk flag with the contextual detector (``agents.risk_terms``) instead of the 1.x word
+      list. Absent, the fast lane is ``friction.fastLane`` alone, as in 1.x."""
 
     decider_identity: DeciderIdentity | None = Field(default=None, alias="deciderIdentity")
     confirm_decision_digest: bool | None = Field(default=None, alias="confirmDecisionDigest")
@@ -879,6 +892,7 @@ class GovernanceConfig(ConfigModel):
     phase_capabilities: bool | None = Field(default=None, alias="phaseCapabilities")
     apply_repository_policies: bool | None = Field(default=None, alias="applyRepositoryPolicies")
     enforce_workflow: bool | None = Field(default=None, alias="enforceWorkflow")
+    risk_profile: RiskProfile | None = Field(default=None, alias="riskProfile")
 
     @field_validator("stop_the_line", mode="before")
     @classmethod
@@ -1450,6 +1464,10 @@ class DeliveryConfig(ConfigModel):
     """Push the closure commit's branch, honouring the repository's hooks (never
     ``--no-verify``); the task's contract may say otherwise."""
     pull_request: PullRequestConfig | None = Field(default=None, alias="pullRequest")
+    record_commit_author: bool | None = Field(default=None, alias="recordCommitAuthor")
+    """``delivery.commit.created`` also records the commit's ``author`` (name and email as Git
+    shows them) and ``subject``, after the redaction of secrets, so that a bundle answers who
+    wrote the commit and with what message. Absent or false: the event is as before."""
     comment: CommentPolicy | None = None
     """Comment the decision brief on the pull request: ``notClean`` (exceptions, findings,
     partial certification), ``always`` or ``never``."""

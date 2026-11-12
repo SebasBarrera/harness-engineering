@@ -6,8 +6,10 @@ first. Each run is independent (fresh repository, fresh harness state); a failin
 and the matrix continues. A run already in the output file (same scenario, condition, prompt and
 repetition) is skipped, so a matrix that stopped resumes where it left off.
 
-2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-anchored`` (``baseline`` is the
-0.9.0 name of ``direct``). ``--dry-run`` and ``--provider`` are passed to every run (see run_eval.py).
+2.0.0 conditions: ``direct``, ``harness-core``, ``harness``, ``harness-nopo``, ``harness-nopanel``,
+``harness-anchored`` (``baseline`` is the 0.9.0 name of ``direct``; ``harness`` with
+``--no-product-owner`` is recorded as ``harness-nopo``, as in run_eval.py). ``--dry-run`` and
+``--provider`` are passed to every run (see run_eval.py).
 """
 
 from __future__ import annotations
@@ -26,6 +28,16 @@ HERE = Path(__file__).resolve().parent
 LIMIT_EXIT_CODE = 75  # agentlib.LIMIT_EXIT_CODE: the run met the usage limit and is not a result
 LIMIT_WAIT_SECONDS = int(os.environ.get("EVAL_LIMIT_WAIT", "900"))
 LIMIT_MAX_WAITS = int(os.environ.get("EVAL_LIMIT_MAX_WAITS", "48"))
+
+
+def recorded_condition(condition: str, no_product_owner: bool = False) -> str:
+    """The condition run_eval.py records (``run_eval.effective_condition``): the key of a run
+    already in the output file."""
+    if condition == "baseline":
+        return "direct"
+    if condition == "harness" and no_product_owner:
+        return "harness-nopo"
+    return condition
 
 
 def plan(
@@ -63,12 +75,21 @@ def main() -> int:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--provider", choices=["claude", "simulated"], default="claude")
     parser.add_argument("--core-reference-src", type=Path, default=None)
+    parser.add_argument(
+        "--no-product-owner",
+        action="store_true",
+        help="governed conditions: the simulated person has no product knowledge, answers every "
+        "clarification question 'decide yourself' and the harness records assumptions "
+        "(test T1, harness without product owner)",
+    )
     args = parser.parse_args()
     done = set()
     if args.out.exists():
         for line in args.out.read_text().splitlines():
             record = json.loads(line)
-            condition = "direct" if record["condition"] == "baseline" else record["condition"]
+            condition = recorded_condition(
+                record["condition"], record.get("productOwnerMode") == "none"
+            )
             done.add((record["scenario"], condition, record.get("prompt", "full"), record["rep"]))
     order = plan(
         args.model,
@@ -79,7 +100,7 @@ def main() -> int:
         args.first_rep,
     )
     for scenario, condition, rep in order:
-        key = (scenario, "direct" if condition == "baseline" else condition, args.prompt, rep)
+        key = (scenario, recorded_condition(condition, args.no_product_owner), args.prompt, rep)
         if key in done:
             continue
         stamp = datetime.now(UTC).isoformat(timespec="seconds")
@@ -112,6 +133,8 @@ def main() -> int:
         ]
         if args.dry_run:
             command.append("--dry-run")
+        if args.no_product_owner:
+            command.append("--no-product-owner")
         if args.core_reference_src:
             command += ["--core-reference-src", str(args.core_reference_src)]
         proc = subprocess.run(command, capture_output=True, text=True)

@@ -64,8 +64,17 @@ class CapabilityAuthorizer:
 
     @staticmethod
     def _matches(resource: str, scope: str) -> bool:
-        normalized_resource = resource.replace(os.sep, "/").lstrip("./")
-        normalized_scope = scope.replace(os.sep, "/").lstrip("./")
+        """Whether the workspace path ``resource`` is in the glob ``scope``. A leading ``./``
+        is a prefix (``lstrip`` removed characters, so ``.env`` matched ``env`` and
+        ``../src/x.py`` matched ``src/**``, F11); a path with a ``..`` part, or an absolute
+        one, is in no scope. The glob is ``fnmatch`` as in 0.8.0, where ``*`` also crosses
+        ``/`` (``*.py`` matches ``pkg/mod.py``, which the profiles' grants rely on)."""
+        resource_parts = _workspace_parts(resource)
+        scope_parts = _workspace_parts(scope)
+        if resource_parts is None or scope_parts is None:
+            return False
+        normalized_resource = "/".join(resource_parts)
+        normalized_scope = "/".join(scope_parts)
         if normalized_scope == "**":
             return True
         if fnmatch.fnmatchcase(normalized_resource, normalized_scope):
@@ -74,6 +83,20 @@ class CapabilityAuthorizer:
             base = normalized_scope[:-3].rstrip("/")
             return normalized_resource == base or normalized_resource.startswith(f"{base}/")
         return normalized_resource == normalized_scope
+
+
+def _workspace_parts(path: str) -> list[str] | None:
+    """The parts of a workspace-relative path (``./`` prefixes and empty parts dropped),
+    ``None`` for an absolute path or one with a ``..`` part."""
+    text = path.replace(os.sep, "/").replace("\\", "/")
+    if text.startswith("/") or (len(text) > 1 and text[1] == ":"):
+        return None
+    while text.startswith("./"):
+        text = text.removeprefix("./")
+    parts = [part for part in text.split("/") if part not in {"", "."}]
+    if ".." in parts:
+        return None
+    return parts
 
 
 def grants_from_rules(

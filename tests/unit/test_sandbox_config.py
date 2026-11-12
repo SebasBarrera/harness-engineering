@@ -7,6 +7,7 @@ import yaml
 
 from governed_harness.application import HarnessApplication
 from governed_harness.configuration import ConfigurationResolver, RuntimeConfig
+from governed_harness.configuration.init_project import default_sandbox_write_paths
 from governed_harness.configuration.models import DEFAULT_SANDBOX_WRITE_PATHS
 from governed_harness.domain.errors import ConfigurationError
 
@@ -27,7 +28,7 @@ def test_init_enforces_the_sandbox_with_the_default_write_paths(python_workspace
         "runtime"
     ]
     assert runtime["agentSandbox"] == "enforce"
-    assert runtime["sandboxWritePaths"] == [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS]
+    assert runtime["sandboxWritePaths"] == default_sandbox_write_paths()
     resolved = ConfigurationResolver().resolve(python_workspace)
     assert resolved.project.runtime.effective_agent_sandbox == "enforce"
     assert HarnessApplication().validate_config(python_workspace)["agentSandbox"] == {
@@ -87,3 +88,15 @@ def test_unknown_sandbox_mode_is_a_configuration_error(python_workspace: Path) -
     resolver = ConfigurationResolver()
     with pytest.raises(ConfigurationError):
         resolver.resolve(python_workspace)
+
+
+def test_init_leaves_out_the_posix_only_sandbox_paths_on_windows() -> None:
+    from governed_harness.configuration.init_project import default_sandbox_write_paths
+
+    posix = default_sandbox_write_paths("linux")
+    assert posix == [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS]
+    assert default_sandbox_write_paths("darwin") == posix
+    windows = default_sandbox_write_paths("win32")
+    assert not {"/tmp", "/var/folders", "~/Library/Caches"} & set(windows)  # nosec B108
+    assert windows == [p for p in posix if p not in {"/tmp", "/var/folders", "~/Library/Caches"}]  # nosec B108
+    assert "~/.claude" in windows

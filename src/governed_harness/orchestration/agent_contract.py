@@ -206,14 +206,15 @@ class AgentContractFlow:
         return PhaseOutcome(ResultStatus.BLOCKED, message, (ref,))
 
     # ----- limits --------------------------------------------------------------------------
-    def limits(self, execution: Execution, task: Task) -> CallLimits:
-        """The token budget and the time limit for the size the router gives the task."""
+    def limits(self, execution: Execution, task: Task, kind: str | None = None) -> CallLimits:
+        """The token budget and the time limit for the size the router gives the task (and,
+        under ``budgetProfile: by-kind``, for the call's ``kind``)."""
         config = self.config or AgentContractConfig()
         policy = self.results.project.agent_routing
         size, _rule = classify_size(
             self.results.task_signals(execution, task), policy.thresholds if policy else None
         )
-        tokens, seconds = config.budget_for(size)
+        tokens, seconds = config.budget_for(size, kind)
         return CallLimits(size, tokens, seconds)
 
     @staticmethod

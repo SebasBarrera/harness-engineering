@@ -4,12 +4,11 @@ Thank you for your interest. This repository holds the Governed Agent Harness, t
 artifact of a master's thesis. Contributions are welcome under two constraints that come from that
 context:
 
-1. **The evaluated cut is frozen.** `v0.8.0` reproduces the cut evaluated in the thesis byte for
-   byte ([provenance](docs/provenance.md)). Tags never move.
-2. **Behavior measured in the thesis does not change silently.** Defects whose fix would change
-   behavior evaluated on `v0.8.0` are labeled `thesis-impact`. A fix ships in a new minor version,
-   with a regression test that fails before the fix, and the changelog states how the results
-   differ from the thesis. Quality, infrastructure and documentation work that does not change
+1. **Tags never move.** `v0.8.0` is an earlier, obsolete iteration of the thesis; it stays
+   reproducible byte for byte ([provenance](docs/provenance.md)).
+2. **Behavior does not change silently.** The behavior of `v0.8.0` may change in new versions;
+   defects that touch it are labeled `thesis-impact`. A fix ships in a new version, with a
+   regression test that fails before the fix, and the changelog states what changed. Quality, infrastructure and documentation work that does not change
    behavior is welcome at any time.
 
 ## Development setup
@@ -60,7 +59,7 @@ force pushes and deletion.
 
 **External contributors** open a pull request against `develop`: the title must follow Conventional
 Commits, the description must reference an issue (`Closes #n` or `Refs #n`) and state whether the
-change affects behavior evaluated in the thesis (the pull-request template asks for it). With a
+change alters behavior (including that of `v0.8.0`) (the pull-request template asks for it). With a
 second maintainer, pull requests with one approval and CODEOWNERS review become mandatory.
 
 ## Commits

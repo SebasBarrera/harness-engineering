@@ -43,6 +43,38 @@ esac
 : "${EVAL_PYTHON:?set EVAL_PYTHON to the python of the evaluation venv}"
 : "${EVAL_WORK:?set EVAL_WORK to a work directory outside the repository}"
 : "${EVAL_CACHE:?set EVAL_CACHE to the directory with itsdangerous-2.2.0.tar.gz}"
+
+# Windows: the whole path of the files a run writes must stay under MAX_PATH (260). The longest one
+# is the artifact store's temporary file of a run (src/governed_harness/evidence/artifact_store.py,
+# _atomic_write): <run dir>/state/<project key>/artifacts/metadata/.<64 hex>.json.<8 random>, and the
+# run registry sits in <run dir>/state (HARNESS_STATE_DIR). Measured: with a 28-character EVAL_WORK
+# (a directory under the user profile) the state directory of a run was 146 characters long and the
+# run failed; with the 5-character C:/e/b it worked. The tail below the state directory is
+#   21 ("/" + project key "project-<12 hex>") + 10 ("/artifacts") + 9 ("/metadata") + 1 ("/")
+#   + 79 ("." + 64 hex + ".json" + "." + 8 random characters of mkstemp) = 120
+# so the state directory may have at most 260 - 120 = 140 characters (146 + 120 = 266 > 260 fails,
+# 126 + 120 = 246 works, as observed). The state directory is
+#   EVAL_WORK + "/runs/" + <block> + "/" + <model> + "/" + <run name> + "/state"
+# with the longest of each: block "block-embedded" (14; "block-temptations", 17, has run names of
+# about 31 characters, far shorter), model "claude-haiku-4-5-20251001" (25), and the run name
+# <scenario>[-<prompt>]-<condition>-<model>-r<rep>-<timestamp>. The longest condition names are
+# "harness-anchored" (16) and "harness-nopanel" (15), but they run only with the full prompt (no
+# prompt tag: blocks A and LADDER), so "brownfield-harness-anchored" is 27 characters; the longest
+# prefix is a casual cell of "harness-core" or "harness-nopo" (12, blocks B and T1), 30 characters:
+#   "brownfield" (10) + "-casual" (7) + "-" + "harness-nopo" (12) + "-" + model (25) + "-r10" (4)
+#   + "-" + "20261111T235959Z" (16) = 77.
+# (A casual cell of harness-anchored would be 81 characters and need EVAL_WORK of 6 or less.)
+# Fixed part: 6 ("/runs/") + 14 + 1 + 25 + 1 + 77 + 6 ("/state") = 130, so EVAL_WORK may have at most
+# 140 - 130 = 10 characters in its Windows form (cygpath -w; backslashes count as one, like slashes).
+EVAL_WORK_MAX_WINDOWS=10
+if [ "$EVAL_WINDOWS" = "1" ]; then
+  EVAL_WORK_WINDOWS="$(cygpath -w "$EVAL_WORK")"
+  if [ "${#EVAL_WORK_WINDOWS}" -gt "$EVAL_WORK_MAX_WINDOWS" ]; then
+    echo "ABORT: EVAL_WORK is ${#EVAL_WORK_WINDOWS} characters long ($EVAL_WORK_WINDOWS); on Windows it may have at most" \
+      "$EVAL_WORK_MAX_WINDOWS or the paths of a run exceed the 260-character limit. Use a short one, such as C:/e/b." >&2
+    exit 5
+  fi
+fi
 EVAL_MODELS="${EVAL_MODELS:-claude-haiku-4-5-20251001 claude-sonnet-5-5 claude-opus-5-5}"
 EVAL_SCENARIOS="${EVAL_SCENARIOS:-greenfield brownfield security}"
 EVAL_REPS="${EVAL_REPS:-3}"
@@ -206,6 +238,19 @@ record_environment() {
   [ "$EVAL_WINDOWS" = "1" ] && echo "Windows: runtime.agentSandbox off in the governed conditions (no OS sandbox on Windows; harness init writes enforce)" \
     | tee -a "$EVAL_OUT/log.txt"
   unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT PYTHONPATH
+}
+
+# finish_environment <block>: Claude Code version at the end of the block. If it differs from the
+# start, the block is flagged in environment.json (claudeCodeChanged) and the log warns; no result
+# is deleted.
+finish_environment() {
+  local slot out
+  slot=$(make_slot env)
+  out=$(PATH="$(slot_path "$slot")" "$slot/$VENV_BIN/python" "$CODE/environment.py" "$EVAL_OUT/environment.json"     --block "$1" --finish)
+  log "$out"
+  case "$out" in
+    *"changed=True"*) log "WARNING: Claude Code changed during block $1: the block is flagged (claudeCodeChanged), results kept" ;;
+  esac
 }
 
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$EVAL_OUT/log.txt"; }

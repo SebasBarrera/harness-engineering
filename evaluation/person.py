@@ -83,9 +83,16 @@ import yaml
 
 REVIEWER_ACTOR = "human.reviewer-simulated"
 MAX_CORRECTIONS = 2
-# A guard, not the rule: the harness bounds the agent's rounds (``maxRounds`` 3 as init writes
-# it, rule A1 only); the project-setup (P1) and deterministic (C0-C3, T1) rounds come on top.
+# A guard, not the rule: the harness bounds the agent's rounds (``maxRounds``, rule A1 only; with
+# ``depth: adaptive`` up to ``max(maxRounds, depth.MAX_ROUNDS)``, amendment of 2026-11-12); the
+# project-setup (P1) and deterministic (C0-C3, T1, basics) rounds come on top of them. The guard
+# is that bound plus ``EXTRA_CLARIFY_ROUNDS``, so the person never stops before the harness does.
 MAX_CLARIFY_ROUNDS = 6
+"""The guard of a project without ``intake.ambiguityReview`` (3 agent rounds plus the extra)."""
+EXTRA_CLARIFY_ROUNDS = 3
+DEFAULT_AGENT_ROUNDS = 3
+ADAPTIVE_MAX_ROUNDS = 8
+"""``governed_harness.intake.depth.MAX_ROUNDS`` (read from the harness when it has it)."""
 MAX_WAITS = 20
 PROJECT_SETUP = {
     "project:testing": "conventional",
@@ -227,6 +234,31 @@ def review_acceptance_content(
     if criteria is not None and cases < criteria:
         problems.append(f"{cases} caso(s) de prueba para {criteria} criterio(s) de aceptación")
     return {"testCases": cases, "criteria": criteria, "problems": problems}
+
+
+def clarify_round_cap(workspace: Path) -> int:
+    """The person's cap of clarification rounds for the project of ``workspace``: the most agent
+    rounds its ``intake.ambiguityReview`` allows (``maxRounds``; with ``depth: adaptive`` the
+    adaptive ceiling) plus ``EXTRA_CLARIFY_ROUNDS``; ``MAX_CLARIFY_ROUNDS`` without the key."""
+    path = workspace / ".harness" / "project.yaml"
+    try:
+        config = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return MAX_CLARIFY_ROUNDS
+    review = ((config.get("intake") or {}) if isinstance(config, dict) else {}).get(
+        "ambiguityReview"
+    )
+    if not isinstance(review, dict):
+        return MAX_CLARIFY_ROUNDS
+    rounds = review.get("maxRounds")
+    rounds = rounds if isinstance(rounds, int) and rounds > 0 else DEFAULT_AGENT_ROUNDS
+    if review.get("depth") == "adaptive":
+        try:
+            from governed_harness.intake.depth import MAX_ROUNDS as ceiling
+        except ImportError:
+            ceiling = ADAPTIVE_MAX_ROUNDS
+        rounds = max(rounds, ceiling)
+    return max(MAX_CLARIFY_ROUNDS, rounds + EXTRA_CLARIFY_ROUNDS)
 
 
 class SimulatedPerson:
@@ -405,7 +437,7 @@ class SimulatedPerson:
     def clarify(
         self, run_id: str, task_id: str, request: dict[str, Any], entry: dict[str, Any]
     ) -> int | None:
-        if len(self.clarification) >= MAX_CLARIFY_ROUNDS:
+        if len(self.clarification) >= clarify_round_cap(self.workspace):
             entry["action"] = "clarification-rounds-exhausted"
             return None
         questions = request.get("questions") or []

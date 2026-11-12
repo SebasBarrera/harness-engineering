@@ -419,7 +419,7 @@ class AgentContractPort(Protocol):
     def enabled(self) -> bool:
         """Whether ``agentContract`` is set to ``enforce``."""
 
-    def limits(self, execution: Execution, task: Task) -> CallLimits:
+    def limits(self, execution: Execution, task: Task, kind: str | None = ...) -> CallLimits:
         """The token budget and the time limit of a call for the task's size."""
 
     def timeout(self, default: int, limits: CallLimits) -> int:

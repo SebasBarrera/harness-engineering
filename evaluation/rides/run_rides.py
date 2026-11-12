@@ -12,10 +12,28 @@ Conditions:
   stepwise  (super only) the 16 steps sent one by one to the agent, without the harness and without
             any verification between steps;
   harness   governed tasks: one for paragraph (only criterion "Funciona.") and requirements, one per step
-            for super; one_line is refused when the task is created (no acceptance criteria).
-  clarify   (paragraph only; harness 1.1.0 or later) the governed paragraph task with
-            intake.criteriaPolicy enforce: INTENT asks clarification questions and a simulated product
-            owner who holds SPEC.md answers them (product_owner.py) before the run continues.
+            for super; one_line has no acceptance criterion: the configuration of harness init
+            (intake.criteriaPolicy enforce) stores it with criteriaPending and INTENT asks for its
+            criteria (rule C0), so the task is not refused when it is created. The questions of INTENT
+            are answered by the simulated product owner who holds SPEC.md (product_owner.py, --po-model).
+  clarify   (one_line and paragraph; harness 1.1.0 or later) the same governed run as harness (kept as a
+            label of the earlier evaluations).
+
+The governed conditions are configured as the other governed conditions of the campaign:
+conditions.write_config with the condition "harness" (what harness init writes, routing fixed to the
+run's model, runtime.agentSandbox off on Windows, the grant of harness check), the provider resumable
+with the rides time and budget limits, and the run's state in <run dir>/state (HARNESS_STATE_DIR), as
+run_eval.py does.
+
+Turn cap (amendment of 2026-11-12 to the pre-registration): no condition of rides has one. The direct
+call builds the whole platform in one invocation while the harness splits it into tasks, so a cap per
+call would truncate only the direct condition. EVAL_MAX_TURNS is ignored here; every call-N.json says
+maxTurns null (the direct call passes max_turns=0, the provider gets --no-max-turns). The direct and the
+governed conditions get the same prompt text, the same model and the same working directory
+(<run dir>/ws, a run directory name of the same pattern).
+
+--dry-run replaces Claude Code with fake_claude.py (no model call, no account check), for the smoke test
+of the block (launchers/smoke.sh).
 
 The harness applies the decision rule of run_eval.run_harness. A step that is not delivered leaves its
 changes in the working tree and the next step continues from there. After the run the quality measures
@@ -29,6 +47,7 @@ again: the unfinished run directory is reused, finished steps are skipped (progr
 call in flight resumes its session, and a governed step in flight is started again as a new task.
 
 Usage: python run_rides.py --level LEVEL --condition CONDITION --model MODEL --rep N --work DIR --out FILE
+       [--po-model MODEL] [--dry-run]
 """
 
 from __future__ import annotations
@@ -54,6 +73,8 @@ sys.path.insert(0, str(HERE.parent))
 sys.path.insert(0, str(HERE.parent / "longitudinal"))
 sys.path.insert(0, str(HERE))
 
+import agentlib  # noqa: E402
+import conditions  # noqa: E402
 import run_eval  # noqa: E402
 from agentlib import build_prompt, run_claude  # noqa: E402
 from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
@@ -82,9 +103,14 @@ def _tools_python() -> str:
 TOOLS_PYTHON = _tools_python()
 AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
+# No turn cap in any condition of rides (amendment of 2026-11-12): 0 is agentlib's "no cap".
+MAX_TURNS = 0
+# The governed conditions of rides use the configuration of conditions.py's "harness" condition.
+GOVERNED_CONDITION = "harness"
+PROVIDER_ARGS = ("--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET)
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
     ("stepwise", "super"), ("harness", "one_line"), ("harness", "paragraph"), ("harness", "requirements"),
-    ("harness", "super"), ("clarify", "paragraph")}
+    ("harness", "super"), ("clarify", "one_line"), ("clarify", "paragraph")}
 
 
 def requirements_by_section() -> dict[str, list[tuple[str, str]]]:
@@ -216,43 +242,28 @@ def expected_cases() -> dict[str, str]:
     return _EXPECTED
 
 
-def configure_limits(workspace: Path, model: str) -> None:
-    path = workspace / ".harness" / "project.yaml"
-    config = yaml.safe_load(path.read_text(encoding="utf-8"))
-    config["agentProviders"]["claude"]["command"] = [
-        "python", str(HERE.parent / "claude_provider.py"), "--model", model,
-        "--timeout", str(AGENT_TIMEOUT), "--budget", AGENT_BUDGET, "--resumable"]
-    # Waits for the usage limit happen inside the provider call, so the harness must not cut it short.
-    config["runtime"]["commandTimeoutSeconds"] = 7 * 24 * 3600
-    path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
-
-
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str,
-             clarifier: Any = None) -> dict[str, Any]:
+             clarifier: Any = None, claude_bin: str | None = None) -> dict[str, Any]:
     # Feedback belongs to the correction cycles of one task; a later step must not receive it.
     (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
     task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8", newline="\n")
-    if "acceptanceCriteria" not in task:
-        harness(workspace, "init", "--path", ".")
-        created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
-        return {"outcome": f"task-refused-exit-{created.returncode}", "delivered": False, "corrections": 0}
-    original = run_eval.configure_provider
-
-    def with_limits(ws: Path, m: str, agent: str = "claude", effort: str = "") -> None:
-        original(ws, m, agent, effort)
-        configure_limits(ws, m)
-
-    run_eval.configure_provider = with_limits
-    try:
-        outcome = run_harness(workspace, run_dir, task_file, model, clarifier=clarifier)
-    finally:
-        run_eval.configure_provider = original
+    # conditions.write_config, as every governed condition of the campaign; the provider is resumable
+    # (waits for the usage limit happen inside its call, commandTimeoutSeconds 7 days), has the rides
+    # time and budget limits and no turn cap.
+    outcome = run_harness(workspace, run_dir, task_file, model, clarifier=clarifier,
+                          condition=GOVERNED_CONDITION, claude_bin=claude_bin, resumable=True,
+                          turn_cap=False, provider_args=PROVIDER_ARGS)
+    if outcome["outcome"].startswith("task-refused") or outcome.get("invalid"):
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "taskCreateError", "invalid",
+                                        "runStartError") if k in outcome}
     keep = ("outcome", "delivered", "corrections", "gateHistory", "finalStatus", "finalPhase", "eventCount",
-            "eventChainValid", "validationSummary", "clarification")
+            "eventChainValid", "validationSummary", "clarification", "runKey", "configurationDigest",
+            "assumptions")
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]
+    result["grantCheck"] = conditions.check_grant(workspace, harness)
     return result
 
 
@@ -266,9 +277,17 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--po-model", default=DEFAULT_PO_MODEL,
                         help="the simulated product owner's model, the same in every cell (amendment of 2026-11-11)")
+    parser.add_argument("--dry-run", action="store_true", help="fake_claude.py instead of Claude Code (no model call)")
     args = parser.parse_args()
     if (args.condition, args.level) not in VALID:
         parser.error(f"{args.condition} does not apply to {args.level}")
+    claude_bin = None
+    if args.dry_run:
+        claude_bin = str(agentlib.FAKE_CLAUDE)
+        agentlib.CLAUDE_BIN = claude_bin
+    else:
+        agentlib.ensure_account()
+    governed_condition = args.condition in {"harness", "clarify"}
     site_packages = Path(next(p for p in sys.path if p.endswith("site-packages")))
     prefix = f"rides-{args.level}-{args.condition}-{args.model}-r{args.rep}-"
     unfinished = sorted(d for d in args.work.glob(prefix + "*") if (d / "progress.json").is_file()
@@ -288,6 +307,9 @@ def main() -> int:
         (run_dir / "agent-calls").mkdir()
         progress = {"steps": [], "promptsSent": [], "elapsedSeconds": 0.0, "restarts": 0, "current": None}
     calls_dir = run_dir / "agent-calls"
+    # The run's harness state next to the workspace, as run_eval.py keeps it (and the provider gives
+    # it to the agent's shell for harness check); it also keeps the state path short on Windows.
+    run_eval.HARNESS_ENV["HARNESS_STATE_DIR"] = str((run_dir / "state").resolve())
     started = time.monotonic() - progress["elapsedSeconds"]
     steps: list[dict[str, Any]] = progress["steps"]
     prompts_sent: list[str] = progress["promptsSent"]
@@ -311,7 +333,7 @@ def main() -> int:
             prompts_sent.append(text)
         save_progress(label)
         run_claude(text, workspace, args.model, log_path, timeout_seconds=AGENT_TIMEOUT,
-                   max_budget_usd=AGENT_BUDGET, resumable=True, resume_session=resume)
+                   max_budget_usd=AGENT_BUDGET, resumable=True, resume_session=resume, max_turns=MAX_TURNS)
         steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3),
                       "usage": usage(calls_since(calls_dir, before))})
         save_progress(None)
@@ -340,24 +362,30 @@ def main() -> int:
             t0 = time.monotonic()
             prompts_sent.append(yaml.safe_dump(task, sort_keys=False))
             save_progress(label)
-            clarifier = ProductOwner(SPEC_TEXT, args.po_model, run_dir) if args.condition == "clarify" else None
-            result = governed(workspace, run_dir, task, args.model, label, clarifier)
-            if clarifier is not None:
-                result["productOwner"] = clarifier.rounds
+            clarifier = ProductOwner(SPEC_TEXT, args.po_model, run_dir)
+            result = governed(workspace, run_dir, task, args.model, label, clarifier, claude_bin)
+            result["productOwner"] = clarifier.rounds
             steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3), "harness": result,
                           "usage": usage(calls_since(calls_dir, before))})
             save_progress(None)
-            if result["outcome"].startswith("task-refused"):
+            if result["outcome"].startswith("task-refused") or result.get("invalid"):
                 break
 
     hidden = oracle(workspace, scratch)
+    invalid = next((s["harness"]["invalid"] for s in steps if (s.get("harness") or {}).get("invalid")), None)
     record = {
         "experiment": "rides",
         "level": args.level,
         "condition": args.condition,
         "model": args.model,
         "rep": args.rep,
-        "productOwnerModel": args.po_model if args.condition == "clarify" else None,
+        "productOwnerModel": args.po_model if governed_condition else None,
+        "dryRun": args.dry_run,
+        # A governed step whose run never started (run_eval.RUN_START_FAILED): an apparatus failure.
+        **({"invalid": invalid} if invalid else {}),
+        # No turn cap in any condition (amendment of 2026-11-12); callMaxTurns is what the calls recorded.
+        "maxTurns": None,
+        "callMaxTurns": sorted({c.get("maxTurns") for c in calls_since(calls_dir, 0)}, key=str),
         "runDir": str(run_dir),
         "harnessSource": str(Path(__import__("governed_harness").__file__).resolve().parents[1]),
         "restarts": progress["restarts"],

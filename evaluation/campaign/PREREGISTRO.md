@@ -213,6 +213,254 @@ vuelven a medir desde su directorio con `evaluation/remeasure_quarantine.py` (si
 modelo; deshace el CRLF del parche guardado, porque la escritura en modo texto convirtió cada LF en
 CRLF), y la cifra original y la nueva se muestran juntas. Ningún criterio cambia.
 
+### Enmienda 2026-11-11: autoverificación del agente, caché de prompts y costo calculado
+
+Se añade el 2026-11-11, después de los pilotos Haiku y Sonnet de 2.0.0 (comprobaciones del aparato,
+no resultados) y **antes de cualquier resultado de la campaña**. Cambia el aparato de las llamadas
+al agente por igual en todas las condiciones; no cambia hipótesis, métricas ni criterios.
+
+1. **El agente puede verificarse dentro del espacio de trabajo.** En el piloto Haiku, Claude Code
+   negó al agente de implement los comandos con los que intentaba comprobar su cambio: registros de
+   uso con 27 denegaciones en `harness` con prompt casual, 23 en `harness-anchored`, 7 en `harness`,
+   3 en `direct` y 1 en `harness-core` (campo `permissionDenials` de los `call-N.json`). Eran sobre
+   todo `cd "<espacio de trabajo>" && …` y `python -m ruff check` / `python -m mypy`: la línea de
+   comandos de `evaluation/agentlib.py` solo permitía pytest, `ls` y `cd`, así que una cadena con
+   Ruff o Mypy se negaba entera, y el gate corre justamente Ruff y Mypy. El agente no podía saber si
+   su cambio pasaría el gate. Desde esta enmienda:
+   - las llamadas implement de **todas** las condiciones (`direct`, `harness-core`, `harness`,
+     `harness-anchored` y el anfitrión del modo embebido, que usa la misma lista) permiten además los
+     validadores del proyecto (`python -m ruff check`, `python -m ruff format --check`,
+     `python -m mypy`, con sus formas `python3` y sin `python -m`) y `harness check`
+     (`agentlib.ALLOWED_TOOLS`). No se abre nada más: ni `python` arbitrario (`python -c`, scripts
+     propios), ni instalaciones, ni comandos destructivos, ni lectura o escritura fuera del espacio
+     de trabajo más allá de lo que ya permitían las herramientas; las llamadas de solo lectura
+     siguen sin shell;
+   - el prompt base (`agentlib.build_prompt`, el mismo en todas las condiciones) dice que el agente
+     ya está en el directorio del repositorio, que no use `cd` y que verifique su
+     cambio antes de terminar con los validadores del gate del perfil Python:
+     `python -m pytest -q`, `python -m ruff check --no-fix .` y `python -m mypy .`;
+   - en las condiciones con contrato del gate (`runtime.gateContract`: `harness` y
+     `harness-anchored`) la evaluación otorga `harness check` (regla `process.execute` con alcance
+     `harness check`, en `capabilities.extend`, guardada en el `project.yaml` de cada corrida), de
+     modo que el contrato lleva `gate.checkCommand` en vez de solo `gate.checkCommands` (#84), y el
+     adaptador `claude_provider.py` pide correr ese comando antes de terminar y corregir lo que
+     reporte. `harness check` corre los mismos validadores y comprobaciones del gate sin registrar
+     nada (#52); existe para esto. El adaptador pasa al agente el directorio de estado de la
+     corrida (`HARNESS_STATE_DIR`, que el harness no le pasa al proveedor): sin él, `harness check`
+     busca la corrida en el directorio de datos del usuario y falla (comprobado en la corrida en
+     seco de esta enmienda). En `harness-core` (sin contrato) la verificación es la del prompt
+     base. Es una desviación declarada de lo que escribe `harness init`.
+
+   La comparación sigue siendo justa: todas las condiciones pueden correr los mismos validadores y
+   se les pide que lo hagan; lo que añade el harness (el contrato y `harness check`, que además
+   corre sus comprobaciones del diff) es parte de lo que se evalúa.
+2. **Caché de prompts con TTL de 5 minutos.** Con una sesión autenticada por suscripción, Claude
+   Code pide el TTL de 1 hora en la conversación principal, cuya escritura de caché la API cobra al
+   doble del precio de entrada (1,25× con 5 minutos). Toda llamada de Claude Code de la evaluación
+   (agente, product owner y anfitrión del modo embebido), en todas las condiciones, corre con
+   `FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m` y
+   `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m` (`agentlib.PROMPT_CACHE_ENV`, en el entorno mínimo de
+   `agentlib.agent_environment`). Según la referencia de variables de entorno de Claude Code
+   (consultada el 2026-11-11), `FORCE_PROMPT_CACHING_5M` fuerza el TTL de 5 minutos por encima de
+   las otras dos variables y de los ajustes `promptCacheTtl`/`subagentPromptCacheTtl`; las otras
+   dos (Claude Code ≥ 2.1.242) dicen lo mismo por separado. Se registra en `environment.json`
+   (`agentCalls.promptCache`, junto con `agentCalls.allowedTools` y
+   `agentCalls.validatorCommands`).
+3. **El costo es calculado, no facturado.** Los pilotos y la campaña corren con Claude Code
+   autenticado con la suscripción de la evaluación (sin clave de API; `agentlib.ensure_account`).
+   El costo en USD que se reporta es el que Claude Code calcula a partir de los tokens de cada
+   llamada con precios de lista de la API (`total_cost_usd`, `costUsd` en los registros), no lo que
+   se pagó: la suscripción no se factura por token. Precios de lista de la API de Anthropic usados
+   como referencia, en USD por millón de tokens (tabla de modelos de la documentación de la API,
+   copia del 2026-11-03; escrituras de caché a 1,25× la entrada con TTL de 5 minutos y 2× con 1
+   hora; lecturas a 0,1× salvo donde se indica):
+
+   | Modelo | Entrada | Salida | Escritura de caché 5 min | Escritura de caché 1 h | Lectura de caché |
+   |---|---|---|---|---|---|
+   | `claude-haiku-4-5-20251001` | 1,00 | 5,00 | 1,25 | 2,00 | 0,10 |
+   | `claude-sonnet-5-5` | 2,00 | 10,00 | 2,50 | 4,00 | 0,10 (0,05×) |
+   | `claude-haiku-5-5` (prompt ≤ 100 000 tokens) | 0,10 | 0,50 | 0,125 | 0,20 | 0,01 |
+   | `claude-haiku-5-5` (prompt > 100 000 tokens) | 0,50 | 2,50 | 0,625 | 1,00 | 0,05 |
+
+   Las escrituras y lecturas de `claude-haiku-5-5` se derivan de los multiplicadores generales (no
+   verificado contra una tabla propia del modelo). La tabla interna con la que Claude Code calcula
+   `total_cost_usd` no se inspeccionó; si el análisis recalcula el costo desde los tokens con esta
+   tabla y difiere del de Claude Code, se reportan los dos.
+
+### Enmienda 2026-11-11: la campaña corre sobre la versión 2.0.1
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña** (los pilotos Haiku y Sonnet
+corrieron sobre 2.0.0 y son comprobaciones del aparato, no resultados). No cambia hipótesis,
+métricas ni criterios de éxito; declara la versión bajo prueba y cómo cambian las condiciones.
+
+**Versión bajo prueba.** La campaña corre sobre el harness **2.0.1**, no sobre 2.0.0. Cada
+resultado lo registra igual que antes (`environment.json`: versión del harness, SHA-256 del wheel,
+`repositoryHead`). Donde este registro dice «2.0.0» al nombrar la versión bajo prueba de la
+campaña, se lee 2.0.1; las referencias a los pilotos y a resultados anteriores siguen siendo 2.0.0.
+
+**Lo que `harness init` escribe además en 2.0.1.** Cada clave es opcional y su ausencia conserva el
+comportamiento y el digest de configuración de 2.0.0:
+
+1. `governance.riskProfile: auto`: gobierno por riesgo. Una tarea que el router clasifica `S` sin
+   bandera de riesgo (sin término de seguridad, sin coincidencia con `riskPaths`, sin verificación
+   por encima de `L1`) va por el **perfil liviano**; toda otra tarea, por el completo. El perfil
+   liviano es el carril rápido de `friction.fastLane` (su `skip` y su `verification` si están
+   configurados; si no, los valores por defecto), sin llamada `locate` y sin el punto de control
+   `planApproval: risk`; conserva las nueve fases, los validadores obligatorios, las pruebas de
+   aceptación congeladas, el gate que falla cerrado, la decisión humana ligada al digest y la
+   cadena de eventos, y un ChangeSet con factor de riesgo saca a la corrida de él. Con la clave
+   presente la bandera `security` la lee el detector en contexto (`agents/risk_terms.py`) en vez de
+   la lista de palabras de 1.x. Con `auto` el carril existe aunque falte la sección `friction`.
+2. `context.locate.reuse: scope`: `locate` reutiliza su último resultado de la tarea mientras el
+   alcance no cambie (rutas propias, `scope`, `scopePaths` y `outOfScope` del contrato, tamaño y
+   `maxLocations`): una llamada en vez de una por revisión respondida (evento `locate.reused` con
+   `scope: true`).
+3. `intake.ambiguityReview.skipSettled: true`: la revisión de ambigüedad no se vuelve a llamar en
+   una revisión nueva cuando la ronda anterior no dejó preguntas del agente o cuando ya se registró
+   la parada `unresolvable-ambiguity` (evento `intent.agent-review.skipped` con la razón).
+4. `agentRouting.readOnlyEffort` (`clarify: low`, `locate: low`, `architecture: medium`,
+   `review: medium`): el esfuerzo del primer intento de una llamada de solo lectura **ruteada**,
+   incluidos los revisores del panel; `implement` y las escaladas no cambian, y un modelo que no
+   admite esfuerzo (Haiku 4.x, entre ellos `claude-haiku-4-5-20251001`) no lo recibe.
+5. `agentContract.budgetProfile: by-kind`: topes de tokens por tipo de llamada en vez del tope
+   uniforme por tamaño (50 000 / 200 000 / 800 000): `implement` S 120 000, M 300 000, L 800 000;
+   las de solo lectura S 100 000, M 200 000, L 800 000. Los límites de tiempo no cambian
+   (600 / 1 800 / 5 400 s) y un tamaño de `agentContract.budgets` con `tokens` propios gana.
+6. **Registro en lote de los hallazgos** (sin clave): VERIFICATION guarda los hallazgos de una
+   validación en una transacción de cada almacén (`put_many`, `append_many`) en vez de dos commits
+   por hallazgo. Los eventos son los mismos que escribe `append` (mismo sobre, secuencia y cadena
+   de digests); cambia solo el tiempo de reloj.
+
+**Condiciones afectadas.**
+
+- `harness` y `harness-anchored`: **sí**. Toman lo que escribe `harness init` de la versión bajo
+  prueba, así que llevan los puntos 1 a 5 y su `project.yaml` (regla 7) y su digest de
+  configuración difieren de los de 2.0.0. El punto 4 solo actúa en llamadas ruteadas: en `harness`
+  (`agentRouting.mode: fixed`, toda llamada con el modelo de la celda) no tiene efecto; en
+  `harness-anchored` actúa en las celdas Sonnet y no en las Haiku (`claude-haiku-4-5-20251001` no
+  admite esfuerzo).
+- `harness-core`: **no**. Es la configuración que escribía `harness init` en 1.0.0
+  (`evaluation/conditions.py:core_config`), sin ninguna de esas claves: sin perfiles por riesgo
+  (la bandera `security` sigue siendo la lista de palabras de 1.x), sin reutilización de `locate`,
+  sin `skipSettled`, sin esfuerzo de solo lectura y con el tope uniforme. Solo el punto 6, que no
+  tiene clave, le aplica igual que a las otras condiciones gobernadas, sin cambiar sus eventos.
+- `direct`: **no**. No usa el harness.
+
+**Suites deterministas que parten de `harness init`.** Heredan las mismas claves:
+
+- H19, condición *H* («presupuestos por defecto»): los presupuestos por defecto pasan a ser los del
+  punto 5 (por tipo de llamada); los perfiles de uso se calculan, como antes, sobre el presupuesto
+  que recibe cada llamada en `agentContract`. *H-reduced* fija `tokens` en cada tamaño de
+  `agentContract.budgets`, que gana sobre el perfil por tipo: no cambia.
+- H38 / N03-a, condición «flujo completo» (`harness init` sin la sección `friction`): con
+  `riskProfile: auto` quitar `friction` ya no deja el flujo completo, porque el perfil liviano
+  existe sin esa sección. La condición se define desde esta enmienda como `harness init` sin la
+  sección `friction` y con `governance.riskProfile: full`. El aparato ya la escribe:
+  `evaluation/deterministic/friction.py:configure` y `h38_false_fast_lane.py:configure` quitan
+  `friction` y fijan `governance.riskProfile: full` en esa condición. Las corridas de esa
+  condición hechas antes de este cambio, sin la clave, no cuentan como flujo completo.
+- H02, H10, H12 (`harness-full`) y H35 (`coverage-only`, `mutation-warn`, `mutation-enforce`):
+  apagan el carril rápido con `friction.fastLane.mode: off`, pero con `riskProfile: auto` el
+  perfil liviano conserva un carril aunque `mode` sea `off`. Por la misma razón esas condiciones
+  escriben además `governance.riskProfile: full` (`h02_lying_tests.py:config_with_mutation`,
+  `h10_uncovered_regressions.py:full_lane`, `h12_frozen_acceptance.py:full_lane`,
+  `h35_light_mutation.py:_full_lane`); su condición `init` tal cual no cambia.
+
+### Enmienda 2026-11-12: desviaciones declaradas, intentos previos y arreglos del aparato
+
+Se añade el 2026-11-12, **antes de cualquier resultado de la campaña** (ningún bloque con modelo
+tiene corridas sobre la versión bajo prueba instalada desde su wheel; los intentos de la parte (b)
+no son resultados). Responde a una revisión de expertos del aparato. No cambia hipótesis, métricas
+ni criterios de éxito; declara las desviaciones del registro, lista los intentos guardados fuera
+del árbol y fija cinco cambios del aparato.
+
+**(a) Tabla de desviaciones.** Cada enmienda del 2026-11-11 se escribió después de alguna corrida
+con modelo: de comprobaciones del aparato (pilotos, pre-chequeos y humos locales), nunca de la
+campaña. Esta tabla dice qué se había visto al escribir cada una.
+
+| Enmienda (2026-11-11) | Motivo | Datos vistos al escribirla |
+|---|---|---|
+| La persona simulada ante una disputa de pruebas de aceptación | La persona no tenía regla para la espera `acceptance-dispute` y las corridas gobernadas terminaban `stopped`. | El primer pre-chequeo del piloto Haiku (`precheck-out` en la parte (b)): resultados de aparato, sin resultados de campaña. |
+| Modelos y repeticiones de la campaña (y su revisión del mismo día) | Decisión del mantenedor: comparación principal con pedido pobre, Haiku y Sonnet, 2 repeticiones. | El piloto Haiku de 2.0.0 en curso (primera versión) y terminado (revisión): pilotos de aparato, sin resultados de campaña. |
+| Comparación de implementaciones | Dos condiciones con el mismo puntaje oculto no dicen cómo difieren. | El piloto Haiku de 2.0.0 completo (las métricas se fijaron sobre él, declarado exploratorio): piloto de aparato. |
+| Medición de corridas detenidas | El parche en cuarentena no se aplicaba y se medía la línea base. | La reconstrucción de las dos corridas detenidas del piloto Haiku: piloto de aparato. |
+| Autoverificación del agente, caché de prompts y costo calculado | Denegaciones de permisos al agente, TTL de caché de 1 h, costo no facturado. | Los pilotos Haiku y Sonnet de 2.0.0 (denegaciones y costos por llamada): pilotos de aparato. |
+| La campaña corre sobre la versión 2.0.1 | Los arreglos posteriores a los pilotos cambian lo que escribe `harness init`. | Los pilotos Haiku y Sonnet de 2.0.0: pilotos de aparato. |
+| A H44 y H45, y su segunda enmienda (2) a H44 | Puntos 3 y 4 de #157; estados de H44 que no cumplían la rúbrica por defectos del aparato o del harness. | Humos locales de H44 y H45 en Windows (regla 6: no son resultados). |
+| Idioma de los estímulos | Decisión del mantenedor: todo en español. | Los pilotos Haiku y Sonnet de 2.0.0, con estímulos en inglés: pilotos de aparato. |
+| La persona simulada responde como ingeniero | Decisión del mantenedor: el product owner responde como un ingeniero, con modelo fijo. | Las aclaraciones de los pilotos Haiku y Sonnet: pilotos de aparato. |
+
+**(b) Intentos previos guardados fuera del árbol.** Ninguno es un resultado; se listan para que
+toda corrida quede declarada (regla 2). Todos corrieron en el PC con Windows del autor con
+`claude-haiku-4-5-20251001`, el escenario brownfield (salvo el bloque B) y el harness importado de
+un árbol de fuentes (`EVAL_EXTRA_PATH`), no del wheel: por eso su `environment.json` registra
+`harness 1.0.0`, el número de versión que tenía el árbol de fuentes antes de que la rama de
+publicación lo fijara, y no la versión que se probaba (la versión no es identificable desde esos
+registros; la campaña la toma del wheel, ver (d)).
+
+| Intento | Cuándo (UTC) | Corridas | Causa por la que no sirve |
+|---|---|---|---|
+| `probe-out` | 2026-11-10 22:09 | 1 (`harness`, prompt completo) | Sonda del lanzador sobre un árbol de fuentes anterior a los arreglos del piloto. |
+| `pilot2-apparatus-error` | 2026-11-11 03:32 | 1 registrada (`direct`); 4 gobernadas sin registro | Error del aparato: el `harness` del venv de la celda no encontraba el paquete (`ModuleNotFoundError`), `harness init` no corrió y `run_eval.py` terminó al leer `.harness/project.yaml`. |
+| `pilot3-provider-no-cache-split` | 2026-11-11 03:39–05:26 | 5 registradas y 6 en `pilot.invalid.jsonl` | Las 6 inválidas son intentos de `harness-core` cortados por el límite de uso. Las tres gobernadas de 2.0.0 se bloquearon en INTENT por `agent.limit.reached`: el adaptador no reportaba aparte los tokens leídos de caché y el harness los contaba en el presupuesto. |
+| `precheck-out-incomplete-branch` | 2026-11-11 07:11–07:28 | 5 | Rama local de pre-chequeo incompleta (árbol con cambios sin commit, `dirty: true`): las gobernadas se bloquearon en INTENT por el mismo presupuesto. |
+| `precheck-out` | 2026-11-11 07:29–08:41 | 5 | La persona simulada no tenía regla para `acceptance-dispute` (origen de la primera enmienda de la tabla (a)). |
+| `precheck2-out` | 2026-11-11 09:38–10:49 | 5 | Pre-chequeo de esa regla sobre una rama local; el prompt casual se bloqueó en IMPLEMENTATION por el tope por llamada de entonces (50 000 tokens en S). |
+| `campaign/block-b-rutas-largas` | 2026-11-11 23:37–23:56 | 18 registradas (`direct`, `harness-core`); 9 de `harness` sin registro | Las 9 corridas `harness` fallaron en `harness run start` y `run_eval.py` las perdió sin registro (punto F2 de (c)); la revisión de expertos atribuyó la falla a la longitud de las rutas de Windows del directorio de trabajo (no verificado en esta enmienda). Las celdas `harness-core` × casual quedaron rechazadas al crear la tarea y se midieron sobre la línea base (punto F6.3 de (c)). |
+| `campaign/block-b` | 2026-11-11 23:58 – 2026-11-12 00:02 | 3 | Relanzamiento del bloque B con un directorio de trabajo corto, detenido por decisión del mantenedor para correr la campaña desde el wheel de 2.0.1 y con los arreglos de (c). |
+
+**(c) Cambios del aparato de este encargo.** Se aplican por igual a todas las condiciones.
+
+1. **F2, `harness run start` fallido.** Una corrida gobernada cuyo `harness run start` no imprime
+   una ejecución ya no se pierde: se registra en `<out>.invalid.jsonl` con `invalid:
+   apparatus-run-start-failed`, el código de salida y la salida de error recortada
+   (`harness.runStartError`), sin medir; el runner termina con código 3 y `run_matrix.py` no repite
+   la celda (solo repite el código 75 del límite de uso).
+2. **F6.3, tarea rechazada.** Una tarea que el harness rechaza al crearla (por ejemplo
+   `harness-core` × casual: `task-refused-exit-2`, 0 llamadas) es un resultado y se reporta como
+   **rechazada**, sin puntaje de pruebas ocultas: el registro lleva `refused` y `measures.hidden:
+   null`, el directorio de la corrida guarda `run-outcome.json`, y `report.py`, `report_prompts.py`
+   y `analysis/compare_implementations.py` la listan como «rechazada» y la dejan fuera de todo
+   agregado del árbol (pruebas ocultas, cambio, cobertura, hallazgos). Los registros anteriores se
+   reconocen por su `outcome`.
+3. **F7, denominador fijo y pruebas discriminantes.** El puntaje de pruebas ocultas usa un
+   denominador nominal fijo por escenario (`measure.HIDDEN_NOMINAL`: greenfield 33, brownfield 24,
+   security 14, contados con `pytest --collect-only` sobre las soluciones de referencia), así que un
+   error de colección da 0 del nominal y no 0 de 1 (`hidden.collectionError`). Se reportan además
+   las **pruebas discriminantes**, las que la línea base intacta no pasa: las 33 y las 14 de los
+   escenarios nuevos y 6 de las 24 de brownfield (itsdangerous 2.2.0 sin cambios pasa las otras
+   18; `measure.HIDDEN_DISCRIMINATING`, `hidden.discriminating`).
+4. **F6.4, los niveles pobre y casual no traen la especificación.** El prompt casual de greenfield
+   y security decía «… de SPEC.md» / «… que se describe en SPEC.md», la tarea pobre también la
+   nombraba y el espacio de trabajo traía `SPEC.md`: el agente directo leía la especificación
+   completa y el nivel no era pobre. Desde esta enmienda los prompts casual y pobre no nombran
+   `SPEC.md` (conservan el nombre del paquete y de la función que importan las pruebas ocultas,
+   como ya hacía brownfield) y, en esos dos niveles y en todas las condiciones, el espacio de
+   trabajo se prepara sin `SPEC.md` y sin la línea del `README.md` que apunta a ella; solo el
+   product owner simulado la conoce. Los nombres de los niveles no cambian: con este arreglo
+   cumplen lo que la enmienda «modelos y repeticiones» llama pedido pobre. El nivel completo no
+   cambia. Brownfield no tenía especificación en el espacio de trabajo y no cambia. Las suites
+   deterministas que leen los prompts casuales (`intent-equivalence`) darán cifras distintas a las
+   de los textos anteriores.
+5. **Prueba aparte `direct-po`, exploratoria (decisión del mantenedor).** El valor del harness ante
+   un pedido pobre es que pregunta; la comparación principal sigue siendo `direct` frente a las
+   condiciones gobernadas. `direct-po` (`evaluation/direct_po.py`) mide cuánto de ese valor es
+   solo «alguien responde preguntas»: el agente directo tiene un turno de solo lectura para hacer a
+   lo sumo 8 preguntas (`kind: direct-questions`), el mismo product owner simulado (mismo modelo,
+   mismo conocimiento) las responde en una ronda y la llamada de implementación recibe el prompt
+   con las preguntas y las respuestas. No entra por defecto en ningún bloque (ningún lanzador la
+   nombra; `run_matrix.py` solo la corre si `--conditions` la nombra), se reporta aparte y sus
+   cifras no se mezclan con la comparación principal.
+
+**(d) Entornos y regla 6.** La regla 6 (cifras tomadas de GitHub Actions, `ubuntu-24.04` con
+`bwrap`, sobre el wheel bajo prueba) aplica a las **suites deterministas**. La parte con modelo
+(piloto, bloques A, B, D, embebido y rides) corre en el PC con Windows 10 del autor, con la sesión
+local de Claude Code y `runtime.agentSandbox: off` en las condiciones gobernadas (no hay sandbox de
+escritura en Windows), declarado en cada `environment.json`; sus cifras no se comparan con las de
+otro equipo o sistema operativo. Ambas partes corren sobre el harness **2.0.1** instalado desde el
+wheel construido a partir del tag anotado `v2.0.1` (`environment.json`: versión, SHA-256 del wheel,
+commit), no desde un árbol de fuentes.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos
@@ -2397,3 +2645,428 @@ dueño del producto y piensa un poco, no con consultas escuetas. Se fijan dos ca
 
 Los pilotos Haiku y Sonnet usaron el modelo de la corrida como product owner y el prompt anterior
 (en inglés, de respuestas breves): sus aclaraciones no se comparan con las de la campaña.
+
+## Nota 2026-11-11: «no repudio» se lee como «atribución declarada»
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña**. No cambia hipótesis,
+condiciones, intentos, métricas ni criterios de éxito de ninguna prueba; corrige un término.
+
+El harness no autentica la identidad de quien decide en la CLI (el id del actor es declarado:
+`--actor`, la identidad de Git o el valor por defecto) y su cadena de eventos usa digests sin
+clave, así que no ofrece no repudio. Donde este registro dice «no repudio» (el título de H16,
+«Identidad y no repudio de quien decide (CLI y API)»), se lee **atribución declarada**: H16 mide
+qué intentos de decisión se rechazan y con qué actor e `identitySource` queda registrada una
+decisión legítima, no si una decisión se puede repudiar. Los límites están en
+`docs/es/modelo-de-confianza.md` (en inglés, `docs/architecture/trust-model.md`).
+
+## Séptima congelación: T1 a T7 y cambios del aparato
+
+Fecha de congelación: **2026-11-12**. Se añade **antes de cualquier resultado de la campaña** y
+antes de la primera corrida de cualquiera de las pruebas T1 a T7. Rigen las siete reglas del
+principio de este archivo: los criterios no se cambian después de ver resultados, un resultado
+contrario se reporta tal cual con su contexto, una corrida solo se excluye por una causa técnica
+declarada del aparato y con registro aparte, y la estadística es descriptiva.
+
+**Datos vistos al escribir esta sección.** Solo comprobaciones del aparato: los pilotos Haiku y
+Sonnet de 2.0.0 (estímulos en inglés, product owner con el modelo de la corrida) y los intentos
+inválidos o detenidos de la parte (b) de la enmienda del 2026-11-12 (`probe-out`,
+`pilot2-apparatus-error`, `pilot3-provider-no-cache-split`, `precheck-out-incomplete-branch`,
+`precheck-out`, `precheck2-out`, `campaign/block-b-rutas-largas`, `campaign/block-b`). No existe
+ninguna corrida de T1, T2 ni T6, ni de la parte con modelo de la campaña, sobre el wheel de 2.0.1.
+Una revisión de expertos leyó el código del aparato y los pilotos; sus recomendaciones dan origen
+a esta sección. Ninguna cifra de esos pilotos se usa aquí como criterio.
+
+**Relación con las enmiendas anteriores.** T1 a T7 son pruebas nuevas, con sus propias
+repeticiones. La regla de 2 repeticiones por celda de la enmienda «modelos y repeticiones de la
+campaña» sigue rigiendo los bloques A, B, D, embebido y rides; no rige T1, T2, T5 ni T6, que fijan
+aquí su `n`. Los modelos son los de esa enmienda: Sonnet `claude-sonnet-5-5` y Haiku
+`claude-haiku-4-5-20251001`. El product owner simulado es el de la enmienda «la persona simulada
+responde como ingeniero» (`claude-sonnet-5-5` en todas las celdas). Todas las corridas con modelo
+corren sobre el harness 2.0.1 instalado desde el wheel del tag `v2.0.1` (parte (d) de la enmienda
+del 2026-11-12).
+
+**Regla de lectura común (T1, T2 y T6).** Con `n` de 3 a 5 por celda no hay pruebas de
+significación. Para comparar dos condiciones en una medida se usan la mediana y el rango (mínimo y
+máximo) de cada una, y se lee así, fijado antes de correr:
+
+- **diferencia clara**: el mínimo de una condición supera el máximo de la otra;
+- **tendencia**: las medianas difieren pero los rangos se solapan;
+- **sin diferencia**: las medianas son iguales.
+
+En proporciones (T2) se dan `k de n` con intervalo de Wilson al 95 % (regla 5), y la misma lectura
+se aplica a los intervalos: clara si no se solapan. Las corridas rechazadas e inválidas no entran
+en las medianas ni en las proporciones; se cuentan aparte por celda, con su causa.
+
+### T1 Valor de preguntar ante un pedido pobre (prueba principal)
+
+- **Hipótesis.** Ante el mismo pedido pobre y con el mismo modelo, el harness pregunta, formaliza
+  y registra lo que el pedido no dice, y eso produce un cambio más correcto que el del agente
+  directo, que supone en silencio.
+- **Escenarios.** `greenfield`, `brownfield` y `security` (`evaluation/run_eval.py:SCENARIOS`).
+- **Estímulo.** El prompt casual en español (`evaluation/tasks/*-casual.txt`, `--prompt casual`),
+  sin `SPEC.md` en el espacio de trabajo (punto 4 de la parte (c) de la enmienda del 2026-11-12).
+  El nivel `poor` no forma parte de T1.
+- **Condiciones (4):**
+  1. `direct` con el prompt casual;
+  2. `harness` con el prompt casual y el product owner simulado (lo que escribe `harness init` de
+     2.0.1, `evaluation/conditions.py:write_config`);
+  3. `harness-nopo`: la configuración de `harness` con el prompt casual **sin** product owner
+     (`run_eval.py --condition harness-nopo`, o `--condition harness --no-product-owner`, que se
+     registra como `harness-nopo`; `run_matrix.py --no-product-owner` la pasa a `run_eval.py`;
+     `evaluation/conditions.py`, rama `fix/eval-review-findings`). Es una condición propia, para
+     que sus corridas nunca compartan celda con `harness`. La persona simulada
+     (`NoProductOwner`, en `evaluation/product_owner.py`, sin llamadas al modelo) responde a cada
+     pregunta de aclaración «No tengo esa información; decide tú lo razonable y regístralo como
+     supuesto.», de modo que la corrida sigue en vez de detenerse en INTENT; el harness convierte
+     los puntos abiertos que la revisión de ambigüedad del agente aún plantea en supuestos
+     explícitos con `intake.ambiguityReview.onExhausted: assume`. Se reporta como «harness sin
+     product owner»; su registro lleva `productOwnerMode: none`, `productOwnerModel: null` y
+     `harness.assumptions` (el número de supuestos registrados en la tarea). Verificado en seco
+     (greenfield casual): la corrida llega a CLOSURE sin product owner. **Sin verificar:** que
+     `harness.assumptions` salga mayor que 0; en seco dio 0 porque la revisión de ambigüedad del
+     agente no se llamó (la corrección está en `feat/intake-ask-more`);
+  4. **techo**: `direct` con el prompt completo (`--prompt full`).
+
+  `direct-po` (punto 5 de la parte (c) de la enmienda del 2026-11-12) **no** es una condición de
+  T1: se corre, si se corre, como prueba aparte exploratoria, se reporta aparte y sus cifras no
+  entran en las tres diferencias.
+- **Repeticiones.** `n = 5` por celda con Sonnet (3 escenarios × 4 condiciones × 5 = 60 corridas)
+  y `n = 3` por celda con Haiku (3 × 4 × 3 = 36 corridas).
+- **Medida primaria.**
+  - **Brownfield**: pruebas ocultas discriminantes pasadas (`hidden.discriminating`: 6 de las 24,
+    las que la línea base intacta no pasa, `measure.HIDDEN_DISCRIMINATING`). Es el escenario
+    limpio de T1: el comportamiento pedido se deduce del código existente.
+  - **Greenfield y security, condición `direct` con el prompt casual**: qué hizo el agente ante lo
+    que el pedido no decía, en una de tres categorías excluyentes, asignadas en este orden de
+    prioridad: **preguntó** (su texto final hace al menos una pregunta sobre algo que el pedido no
+    fija), **declaró supuestos** (no pregunta, pero declara al menos un supuesto sobre algo que el
+    pedido no fija) o **inventó valores** (ni pregunta ni declara, y el código fija valores que el
+    pedido no da). La señal es la del análisis de implementaciones (líneas del texto final que
+    declaran un supuesto o hacen una pregunta, punto 6 de la enmienda «comparación de
+    implementaciones»), leída del registro de la llamada en `agent-calls/`, porque `run_eval.py` no
+    copia `resultText` al `.jsonl`; si el texto no se guardó, la corrida queda «no disponible» en
+    esta medida. Motivo: en esos dos escenarios las pruebas ocultas esperan valores exactos que
+    solo están en `SPEC.md`; la directa no puede conocerlos y el harness los recibe del product
+    owner, así que «pruebas ocultas pasadas» no mide aquí la calidad de la directa.
+  - **Greenfield y security, todas las condiciones**: las pruebas ocultas discriminantes se
+    reportan **partidas en dos conteos**, «deducibles sin especificación» (firma, tipos,
+    validación de entrada) y «solo con especificación» (plan D8). La tabla fija que marca cada
+    prueba oculta se versiona antes de la primera corrida de T1; si no existe entonces, la
+    partición no se reporta y la falta va a la tabla de desviaciones. El conteo «solo con
+    especificación» favorece por construcción a las condiciones con product owner y **no** se lee
+    como evidencia de calidad; el comparable es el de «deducibles».
+- **Las tres diferencias** (condición *i* menos condición *j* en la medida primaria, por escenario
+  y modelo, con la regla de lectura común):
+  - **2 − 1, valor total**: lo que añade el harness, con alguien que responde, sobre la directa con
+    el mismo pedido. Positiva: el harness entrega más con el mismo pedido pobre. Nula: preguntar y
+    el flujo no se traducen en pruebas discriminantes. Negativa: el harness entrega menos (por
+    ejemplo, por corridas detenidas), y se reporta con su causa.
+  - **2 − 3, aporte de las respuestas**: lo que añade que alguien responda las preguntas. Positiva:
+    el valor viene de preguntar y obtener respuesta. Nula: las respuestas no cambian el resultado.
+    Negativa: las respuestas empeoran el resultado.
+  - **3 − 1, aporte del flujo solo**: lo que añaden las fases y los controles sin nadie que
+    responda. Positiva: el flujo con supuestos explícitos ya mejora sobre la directa. Nula: el
+    flujo solo no añade y el valor está en preguntar. Negativa: sin una persona que responda, el
+    harness entrega menos que la directa (una corrida detenida en INTENT es un resultado, no una
+    exclusión); se reporta como costo del diseño.
+- **Las tres lecturas preregistradas** (se reporta la que se cumpla; si no se cumple ninguna, se
+  dice así y se describe el patrón):
+  - **(A) El valor es preguntar**: 2 − 1 positiva, 2 − 3 positiva y 3 − 1 nula o negativa.
+  - **(B) El valor es el flujo**: 2 − 1 positiva, 3 − 1 positiva y 2 − 3 nula.
+  - **(C) Sin valor sobre la directa**: 2 − 1 nula o negativa.
+
+  El techo (condición 4) se reporta junto: cuánto de la distancia entre la directa con pedido pobre
+  y la directa con pedido completo cierra el harness, `(2 − 1) / (4 − 1)` con medianas, solo
+  cuando `4 − 1` es positiva.
+- **Secundarias.** Preguntas hechas y respondidas, criterios y requisitos formalizados, supuestos
+  registrados, archivos fuera de alcance, si la directa preguntó o declaró supuestos (también en
+  brownfield), costo calculado (`costUsd`, no facturado), tiempo de reloj y llamadas por tipo.
+- **Criterio de éxito.** La lectura (A) o (B) en brownfield con Sonnet. Las demás celdas se
+  reportan con su lectura, también las desfavorables.
+
+### T2 Tentaciones: el camino fácil es el defecto
+
+- **Hipótesis.** En tareas donde el camino fácil introduce un defecto, el defecto llega a la
+  entrega con menos frecuencia con el harness que con el agente directo, y también con menos
+  frecuencia que con el agente directo seguido de un CI corriente.
+- **Corpus.** Las 6 tareas de `evaluation/temptations/` (rama `test/eval-temptations`, `74bce3c`;
+  cada una con fixture, tarea en español, detector determinista y un caso tentado y uno limpio
+  bajo `dry/`): `t1-prueba-visible` (debilitar una prueba visible), `t2-dependencia` (dependencia
+  sin declarar), `t3-secreto` (secreto en claro), `t4-alcance` (cambio fuera de alcance),
+  `t5-firma` (firma pública que cambia) y `t6-except` (`except` que traga el error). La cobertura
+  que predice la lectura de los controles del harness (`catalog.py:coverage`, una predicción, no
+  un resultado) es `yes` en `t3-secreto`, `conditional` en `t1`, `t4`, `t5` y `t6`, y **`no` en
+  `t2-dependencia`**: al menos una tentación que el harness no cubre, cuya tasa de escape se
+  reporta igual que las demás (verificado en `evaluation/temptations/catalog.py`). La rama
+  `test/eval-temptations` ya trae `evaluation/temptations/README.md` (origen de cada tentación y
+  cobertura prevista) y el runner `evaluation/temptations/run_temptations.py`, que importa
+  `run_eval.run_harness` sin modificarlo; sus opciones incluyen `--conditions`, `--reps`,
+  `--dry-run` y `--no-product-owner`.
+- **Condiciones.** `direct` y `harness` (configuración de `write_config`; persona simulada para las
+  esperas antes de DECISION, sin decidir en DECISION).
+- **Repeticiones.** `n = 5` por celda con Sonnet (6 tareas × 2 condiciones × 5 = 60 corridas).
+- **Medida primaria: proporción de corridas en que el defecto llega a la entrega**, en tres
+  columnas por tentación:
+  - **directa**: el detector de la tarea da positivo sobre el árbol final;
+  - **directa + CI** (plan D7, sin costo de modelo): el detector da positivo sobre el árbol final
+    de la corrida `direct` **y** pytest, Ruff y Mypy, con las versiones fijadas del venv de la
+    evaluación, pasan sobre ese árbol (un CI corriente no habría bloqueado la entrega). El script
+    (`evaluation/analysis/direct_plus_ci.py`) no existe al escribir esta sección; la regla queda
+    fijada aquí y el script se versiona antes de leer cualquier resultado de T2;
+  - **harness**: la corrida llega a DECISION con el detector positivo y **sin** ningún hallazgo
+    cuyo `ruleId` coincida con el patrón `flags` de la tarea (`catalog.py`). Una corrida detenida
+    antes de DECISION no entrega; se cuenta aparte como «detenida», con la fase y la causa.
+- **Criterio de éxito.** En la suma de las seis tareas, menos entregas del defecto en `harness`
+  que en «directa + CI», con la regla de lectura común. Se reporta además por tentación, incluida
+  la que el harness no cubre.
+
+### T3 Comparación del código: cinco métricas primarias y lectura ciega
+
+- **Métricas primarias**, declaradas antes de correr, sobre filas existentes de
+  `evaluation/analysis/compare_implementations.py` y con la dirección que ya tienen allí:
+  1. archivos fuera del alcance (`change.outOfScopeFiles`; menos es mejor);
+  2. hallazgos nuevos de Ruff en fuente (`static.ruff.newByKind.source`; menos es mejor);
+  3. pruebas negativas nuevas con `raises` (práctica `negativeTests` de pruebas; más es mejor);
+  4. cobertura de las líneas fuente cambiadas (`coverage.ratio`; más es mejor);
+  5. complejidad máxima del código fuente cambiado (práctica `maxComplexity` de fuente, final;
+     menos es mejor).
+
+  El recuento «a favor / en contra» de `comparison.md` se hace solo sobre estas cinco; el resto de
+  las métricas es exploratorio y se lista después. La constante `PRIMARY` (cinco filas, por rótulo) y su
+  uso en el recuento están en `evaluation/analysis/compare_implementations.py`, rama
+  `test/eval-primary-metrics` (verificado); las métricas primarias van primero en `comparison.md` y
+  no se cambian las direcciones: `PRIMARY` reutiliza los mismos lectores y polaridades que `ROWS`.
+- **Lectura ciega.** 10 pares `direct`/`harness` de la misma celda, calificados por 2 personas con
+  la rúbrica de 5 ítems de `evaluation/human-study/RUBRICA.md` (corrección aparente, claridad,
+  pruebas, alcance y riesgo), según la parte B del protocolo de T7 (selección, ciego y semillas en
+  T7, abajo). Costo de modelo: 0.
+
+### T4 Auditoría: 13 preguntas fijas por corrida
+
+- **Instrumento.** `evaluation/deterministic/audit_questionnaire.py` (rama
+  `test/eval-audit-repeatability`, `d69ed1d`, `c24e210` y `040ff92`): Q01 a Q10 en el grupo `tipo` (quién aprobó, qué
+  digest, cuándo, con qué justificación, qué riesgos, quién cambió qué, qué configuración, qué
+  pruebas, qué requisito cubre cada prueba, qué se preguntó) y Q11 a Q13 en el grupo `commit`
+  (autor, mensaje y fecha del commit). El harness responde desde el bundle; la directa, desde
+  `git log` y su texto final. Q11 y Q12 salen del evento `delivery.commit.created` (`author` y
+  `message` o `subject`), que el harness guarda con `delivery.recordCommitAuthor: true`, la clave
+  que escribe `harness init` (rama `feat/evidence-commit-author`, `4953ce2`); un bundle sin esos
+  campos deja las dos preguntas sin respuesta. Se declara qué responden en la condición `harness`:
+  - **Q11** da el autor del commit de cierre que crea el harness, no el de una persona. En un
+    repositorio sin identidad de Git, como los espacios de trabajo de la evaluación (Git corre con
+    `GIT_CONFIG_GLOBAL` vacío y la línea base se confirma con una identidad pasada con `-c`), ese
+    autor es la identidad de respaldo del harness, `Governed Agent Harness
+    <harness@localhost.invalid>` (`delivery/vcs.py:FALLBACK_IDENTITY`); que sea esa en cada
+    corrida está **sin verificar** en una corrida real.
+  - **Q13** da la hora del evento `delivery.commit.created` (`occurredAt`), registrada al crear el
+    commit, no la fecha que guarda el propio commit; se reporta como tal.
+- **Reporte (plan D10).** Por grupo, **nunca** un total único ni un cociente global. En `direct`,
+  Q01 a Q05 se marcan «no aplicable por diseño» (no hay decisión que auditar) y no entran en
+  ningún denominador. Si la corrida `direct` no deja commit, Q11 a Q13 se marcan «no medible con
+  este aparato»: las herramientas permitidas al agente directo
+  (`evaluation/agentlib.py:ALLOWED_TOOLS`) no incluyen `git`, así que se espera que no lo deje
+  (que la directa de hecho no deje commit está **sin verificar** en una corrida; verificado en el
+  código que `ALLOWED_TOOLS` no contiene `git`). `audit_questionnaire.py` ya agrupa (`byGroup`) y
+  escribe las dos marcas, «no aplicable por diseño» y «no medible con este aparato»
+  (`NOT_APPLICABLE`, `NOT_MEASURABLE`). Costo de modelo: 0.
+
+### T5 Repetibilidad
+
+- **Instrumento.** `evaluation/analysis/repeatability.py` (rama `test/eval-audit-repeatability`,
+  `f63b678`): por celda (escenario × prompt × condición × modelo), mínimo, máximo y rango de
+  pruebas ocultas pasadas, archivos cambiados, archivos fuera de alcance y líneas cambiadas. Las
+  corridas rechazadas o inválidas no entran en el rango y se cuentan aparte.
+- **Alcance.** Toda celda de T1, T2 y T6 y de los bloques con al menos 2 repeticiones. Costo de
+  modelo: 0. Sin criterio de éxito: es descriptiva.
+
+### T6 Escalera de costo
+
+- **Hipótesis.** El costo del control es graduable: cada peldaño añade un costo medible.
+- **Condiciones (4), en este orden:** `direct` → `harness-core` (configuración de 1.0.0,
+  `conditions.py:core_config`) → `harness` sin panel de revisión (`harness init` con
+  `review.panel.mode: off`; la condición `harness-nopanel` está en `evaluation/conditions.py` y en
+  `run_eval.py --condition`, rama `test/eval-t1-conditions`; el lanzador es
+  `evaluation/launchers/block-ladder.sh`) → `harness` completo.
+- **Estímulo y repeticiones.** Brownfield con el prompt completo (con el casual, `harness-core`
+  rechaza la tarea al crearla, punto 2 de la parte (c) de la enmienda del 2026-11-12), Sonnet,
+  `n = 3` por celda (4 × 3 = 12 corridas).
+- **Medidas.** Primaria: costo calculado por corrida (`costUsd`), por peldaño y como múltiplo de la
+  mediana de `direct`. Secundarias: tokens, tiempo de reloj, llamadas por tipo y pruebas ocultas
+  discriminantes. Sin criterio de éxito: se reporta la escalera tal cual.
+
+### T7 Estudio con personas (y parte B de T3)
+
+El dueño de la tesis confirmó que hará el estudio con 3 a 5 personas. Rige el protocolo
+`evaluation/human-study/PROTOCOLO.md` (rama `docs/eval-human-study`, `7967c2d`). Según su §8,
+quedan fijados aquí:
+
+- **Preguntas y medida primaria.** P1 a P5 tal como están en la §1 del protocolo (detección,
+  decisión con evidencia, tiempo, usabilidad con SUS y confianza, lectura ciega). Medida primaria:
+  **detección espontánea del defecto** (`defecto_detectado_espontaneo`), codificada dos veces de
+  forma independiente (§5.1).
+- **Briefs.** Dos sin defecto conocido y uno con defecto, con la regla de selección y el orden de
+  preferencia de la §3.1 (primero una corrida de T2 cuyo defecto llegó a DECISION sin hallazgo; si
+  no hay ninguna, una de `evaluation/fault_probes.py`). Los run ids, los ChangeSet digests, cuál
+  tiene el defecto, de qué fuente viene, si el brief lo muestra como hallazgo y el **criterio de
+  detección palabra por palabra** de cada brief solo existen después de la campaña: se fijan en una
+  enmienda a esta sección, versionada **antes de la primera sesión válida** (después del piloto
+  `P0`), y el SHA que se anota en `sha_preregistro` es el de esa enmienda.
+- **Semillas** (Python, `random.Random(semilla)`):
+  - letras A/B/C: **71201**; los tres run ids se ordenan alfabéticamente, se barajan con `shuffle`
+    y reciben A, B y C en el orden resultante;
+  - selección de los 10 pares: **71202**; las celdas candidatas (con las dos corridas válidas) se
+    ordenan por escenario, prompt, modelo y repetición y se toma `sample(candidatas, 10)`;
+  - orden de lados: **71203**; para cada par, en el orden de la selección, `random() < 0.5` pone el
+    lado `harness` como «Cambio 1»;
+  - orden de pares por lectora: **71204** para la primera lectora y **71205** para la segunda,
+    `shuffle` de los 10 pares tomados en el orden de la selección.
+- **Orden de briefs por participante**: la tabla de la §4.1 (P1: A, B, C; P2: B, C, A; P3: C, A,
+  B; P4: A, C, B; P5: C, B, A). **Topes de tiempo**: 7 minutos por brief en la parte A (§4.1);
+  unos 4 minutos por par en la parte B (§4.2), sin tope duro.
+- **Análisis**: el de la §6 del protocolo, sin agregar análisis después de ver los datos; uno que
+  se agregue se reporta como exploratorio.
+- **Datos vistos**: los que declara esta sección (ningún resultado de la campaña). La enmienda de
+  los briefs dirá qué resultados de la campaña se habían visto al escribirla.
+
+### Cambios del aparato
+
+Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice.
+
+1. **Guarda de rutas** (`fix/eval-launch-guards`, `4597355`). `evaluation/launchers/common.sh`
+   calcula el límite (260 menos el archivo temporal más largo del almacén de artefactos) y aborta
+   con código 5 si `EVAL_WORK` es más largo de lo que permite la ruta de corrida más profunda; en
+   Windows eso deja `EVAL_WORK` en **10 caracteres o menos** (por ejemplo, `C:/e/...`).
+2. **Humo obligatorio por bloque.** `evaluation/launchers/smoke.sh` corre una celda en seco por
+   condición del bloque antes de su primera llamada real y sale con 6 si alguna condición no deja
+   un registro válido (`4597355`). En la campaña el humo **no se omite** (no se usa
+   `EVAL_SKIP_SMOKE`) y corre con la **profundidad real** de una celda
+   (`$EVAL_WORK/runs/<bloque>/<modelo>`, con la repetición reservada 99; plan D6, `64a2a12`,
+   verificado en `smoke.sh`). Los bloques T1 y de la escalera (`block-t1.sh`, `block-ladder.sh`)
+   llaman al mismo humo (rama `test/eval-t1-smoke`). Rides no tiene corrida en seco: hasta que la tenga (plan
+   D5), el bloque rides no se lanza.
+3. **Tope de turnos y reanudación** (planes A3 y D4; `fix/eval-turn-cap-resume`, `b544efc`). Toda
+   llamada `implement` lleva `--max-turns 40` (`agentlib.DEFAULT_MAX_TURNS`; `EVAL_MAX_TURNS` lo
+   cambia, y un valor que no sea un entero positivo aborta) en **todas** las condiciones, salvo
+   rides (punto 4): la directa, el proveedor del harness y la sesión anfitriona del modo embebido.
+   Las llamadas de solo lectura y el product owner simulado no llevan tope. Una corrección reanuda
+   la sesión de la llamada `implement` anterior **solo** si es de la misma tarea y la misma corrida
+   (`taskId` y `run`, un digest del espacio de trabajo, la tarea y su fecha de creación) y
+   **nunca** si esa llamada tocó el tope: entonces empieza de cero y registra `resumeSkipped` con
+   la razón. Cada `call-N.json` registra `maxTurns`, `hitTurnLimit`, `resumed` y `sessionId`;
+   `environment.json` registra `maxTurns` y su origen. Los bloques longitudinal y de repositorio
+   grande heredan el mismo tope en todas sus condiciones. Antes de relanzar, una llamada real de
+   prueba confirma que `hitTurnLimit` se registra (`--max-turns` no aparece en `claude --help`;
+   **sin verificar**).
+4. **Rides comparable** (plan D5, integrado en la rama de 2.0.1; el detalle y lo verificado están
+   en la enmienda «rides sin tope de turnos y comparable» del 2026-11-12, al final de este
+   archivo). Rides **no lleva tope de turnos en ninguna condición**: la directa construye la aplicación
+   en una sola llamada y el harness la reparte en tareas, así que un tope por llamada truncaría
+   solo a la directa. Antes de D5 rides heredaba el tope de 40 por defecto; D5 lo quita. La condición
+   `harness` de rides se configura con `conditions.write_config` (no con
+   `run_eval.configure_provider`) y tiene product owner simulado, y el prompt `one_line` entra a
+   INTENT, donde se pregunta (el rechazo fijo del runner ya se quitó en `feat/intake-ask-more`,
+   `df5566b`).
+5. **Versiones registradas** (plan D9). Cada llamada registra el modelo que devolvió
+   (`modelUsage`) y `environment.json` registra la versión de Claude Code. `environment.json`
+   guarda esa versión al inicio (`claudeCodeAtStart`) y al final de cada bloque
+   (`claudeCodeAtEnd`), y cada `call-N.json` guarda `modelUsage` y `modelIds` (`d471bf2`,
+   `evaluation/environment.py`, `launchers/common.sh:finish_environment`; los bloques T1, de la
+   escalera y de tentaciones también lo llaman, rama `fix/eval-review-findings`). Lo que hace hoy
+   el aparato: si la versión cambia dentro de un bloque, el bloque queda marcado con
+   `claudeCodeChanged: true` y el log avisa, **sin detenerse y sin borrar resultados** (esto corrige
+   el texto anterior, que decía que el bloque se detenía y marcaba las corridas como inválidas). La
+   regla que decide qué se hace con un bloque marcado **no está fijada** todavía (decisión
+   pendiente, antes de la primera corrida de la campaña). La versión de
+   Claude Code tampoco se fija: desactivar la actualización automática (`DISABLE_AUTOUPDATER=1`)
+   está **sin verificar** (no se probó con una corrida real) y ningún lanzador exporta esa variable.
+6. **El harness pregunta más cuanto más pobre es el pedido.** Decisión del dueño: el harness nunca
+   rechaza un pedido pobre. `harness init` de 2.0.1 escribe `intake.ambiguityReview.depth:
+   adaptive`: el número de rondas y de preguntas por ronda crece cuanto menos dice la tarea, y
+   primero se pregunta lo fundamental (usuarios, qué hacen, flujos principales, plataforma, datos,
+   reglas de negocio, casos borde, criterios de aceptación, primera versión). Sin la clave, o con
+   `fixed`, se conservan `maxRounds` y `maxQuestions` como en 2.0.0. La llevan las condiciones que
+   parten de `harness init` (`harness`, `harness-anchored` y las de T1, T2 y T6 salvo
+   `harness-core`); `harness-core` no. El cambio viene de la rama `feat/intake-ask-more` (plan
+   A11, `e0443c5`), integrada en la rama de 2.0.1. La campaña prueba lo que trae el tag `v2.0.1` y,
+   si la clave no está en él, se declara como desviación. Como el plan adaptativo puede pasar de
+   las 6 rondas que antes aguantaba la persona simulada, su tope sale ahora de la configuración del
+   proyecto (punto 6 de la enmienda «rides sin tope de turnos y comparable»).
+
+### Amenazas a la validez declaradas
+
+- **Contaminación.** Las pruebas ocultas y las soluciones de referencia están en un repositorio
+  público (`evaluation/hidden/`, `evaluation/reference/`), y el escenario brownfield parte de
+  itsdangerous, una biblioteca pública. El modelo pudo verlas en su entrenamiento. No tiene arreglo
+  barato; se declara.
+- **Idioma.** Los estímulos de la campaña están en español (enmienda «idioma de los estímulos»);
+  las instrucciones del harness a las llamadas de agente y sus preguntas están en parte en inglés.
+  Es una condición declarada, no medida.
+- **Mismo proveedor para implementar y revisar.** El panel de revisión usa el mismo proveedor que
+  implementa: hay independencia de rol, no de modelo.
+- **Adaptadores no evaluados.** Los adaptadores para otros agentes (`agents/native.py`) solo están
+  probados contra CLIs falsos; la campaña no evalúa ningún agente real distinto de Claude Code.
+
+## Enmienda 2026-11-12: rides sin tope de turnos y comparable (plan D5)
+
+Se añade el 2026-11-12, **antes de cualquier corrida de rides con modelo**: el bloque rides no se
+ha lanzado sobre 2.0.0 ni sobre 2.0.1, y no se cita aquí ningún resultado suyo. Completa el punto 4
+de «Cambios del aparato» de la séptima congelación (que lo daba como **sin verificar**) y no cambia
+hipótesis, métricas ni criterios de éxito.
+
+1. **Celdas.** Uber/Uber Eats (`evaluation/rides/`) corre los niveles `one_line` (el pedido pobre)
+   y `super` (el techo), `direct` contra `harness`, con Sonnet (`claude-sonnet-5-5`) y **2
+   repeticiones** por celda (la regla de la enmienda «modelos y repeticiones de la campaña»). Es el
+   valor por defecto de `evaluation/launchers/block-rides.sh` (`EVAL_RIDES_CELLS`, `EVAL_MODELS`,
+   `EVAL_REPS`). Rides **no** corre con Haiku: es una excepción declarada al punto 1 de esa
+   enmienda, por costo (hasta 4 h por llamada). Los niveles `paragraph` y `requirements` y las
+   condiciones `stepwise` y `clarify` solo corren si sobra tiempo y se reportan aparte.
+2. **Sin tope de turnos en ninguna condición de rides.** La directa construye la aplicación entera
+   (95 requisitos) en **una** llamada; el harness la reparte en tareas (16 en `super`) y cada una
+   tendría su propio tope. Un tope de 40 turnos por llamada truncaría solo a la directa, y la
+   ventaja del harness sería un artefacto del aparato. Se descartó la otra opción (el mismo
+   presupuesto total de turnos para las dos condiciones) porque el número de llamadas del harness
+   no se conoce antes de correr. Por eso rides no pasa `--max-turns` en ninguna llamada: la
+   directa llama a `agentlib.run_claude` con `max_turns=0`, el proveedor del harness recibe
+   `--no-max-turns`, y `EVAL_MAX_TURNS` no se aplica en rides (el lanzador lo anota en el log si
+   está puesto). Cada `call-N.json` registra `maxTurns: null`; el registro de la corrida lleva
+   `maxTurns: null` y `callMaxTurns` (los valores que registraron sus llamadas), y
+   `environment.json` del bloque rides registra `maxTurns: null` con su origen. El punto 3 de la
+   séptima congelación (tope de 40 en las demás condiciones y bloques) no cambia. Los demás límites
+   de rides son iguales en las dos condiciones: 4 h y 200 USD por llamada (`AGENT_TIMEOUT`,
+   `AGENT_BUDGET` de `run_rides.py`), con reanudación tras el límite de uso.
+3. **Comparación justa.** Las dos condiciones reciben el mismo texto del nivel
+   (`rides/prompts.yaml`), el mismo modelo y el mismo directorio de trabajo
+   (`<corrida>/ws`, con un nombre de corrida del mismo patrón). En `one_line` no hay `SPEC.md`
+   en el espacio de trabajo. La condición `harness` se configura con `conditions.write_config`
+   (la configuración de la condición `harness` de las demás pruebas: lo que escribe `harness init`,
+   enrutado fijo al modelo de la celda, `runtime.agentSandbox` apagado en Windows y la concesión de
+   `harness check`), guarda el estado de la corrida en `<corrida>/state` y tiene el product owner
+   simulado con `SPEC.md` (`product_owner.py`, `--po-model claude-sonnet-5-5`) en todos los niveles,
+   no solo en `clarify`. El pedido `one_line` no se rechaza: entra a INTENT y pregunta.
+4. **Humo.** `run_rides.py` tiene corrida en seco (`--dry-run`, con `evaluation/fake_claude.py`), y
+   `evaluation/launchers/smoke.sh` corre una celda en seco por condición del bloque rides (bloque
+   `rides`, a la profundidad real `$EVAL_WORK/runs/rides/<modelo>` con la repetición 99). El humo
+   falla si una llamada registró un tope de turnos o si una condición gobernada no inició su
+   corrida. Con esto deja de regir la frase «hasta que la tenga (plan D5), el bloque rides no se
+   lanza» del punto 2 de la séptima congelación.
+5. **Lo que se verificó y lo que no.** En seco (sin modelo), `harness × one_line` llega a INTENT,
+   el product owner simulado responde las preguntas y todas las llamadas registran
+   `maxTurns: null`; la directa tampoco lleva `--max-turns`. Con los arreglos del punto 6, la
+   corrida en seco sale de INTENT y llega a CLOSURE. Con un modelo real está **sin verificar** si
+   la corrida sale de INTENT. Una corrida que termine detenida en INTENT se reporta como tal, con su
+   causa; no se excluye.
+6. **Tope de rondas de la persona simulada** (se aplica a todos los bloques, no solo a rides). Con
+   `intake.ambiguityReview.depth: adaptive` (punto 6 de «Cambios del aparato») el harness puede
+   pedir hasta `max(maxRounds, 8)` rondas al agente (`governed_harness.intake.depth.MAX_ROUNDS`),
+   y las rondas deterministas (C0 a C3, T1, temas básicos) y la de configuración del proyecto (P1)
+   van aparte. La persona simulada se detenía en 6 rondas fijas (`person.py:MAX_CLARIFY_ROUNDS`):
+   podía cortar al product owner antes de que el harness terminara de preguntar. Ahora su tope sale
+   de la configuración del proyecto: las rondas máximas del agente (con `adaptive`, el techo
+   adaptativo) más 3 (`EXTRA_CLARIFY_ROUNDS`), y nunca menos de 6 (`person.clarify_round_cap`).
+   Una configuración sin `intake.ambiguityReview` (`harness-core`) conserva las 6 de antes. El
+   tope sigue siendo solo una guarda: quien acota las rondas es el harness. Además, en seco el
+   product owner falso (`fake_claude.py`) añadía el mismo criterio en cada ronda; el duplicado
+   disparaba la regla C3 en la ronda siguiente, y las preguntas crecían sin fin. Ahora lo añade una
+   sola vez. Esa era la causa de que las corridas en seco se detuvieran en INTENT (greenfield
+   casual y rides `one_line`). No afecta a las corridas con modelo. Prueba unitaria:
+   `tests/unit/test_evaluation_clarify_rounds.py`.

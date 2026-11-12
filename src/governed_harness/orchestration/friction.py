@@ -9,7 +9,10 @@ code path (``active`` is false and the engine never calls in). What each phase d
   its risk flags: size ``S`` without a risk flag is the fast lane, anything else the full flow.
   The lane, the size, the rule that decided and what the fast lane leaves out are recorded
   (``lane.classified`` and a ``lane-decision`` evidence). A fast-lane run skips the agent's
-  ambiguity review.
+  ambiguity review. Under ``governance.riskProfile`` the fast lane is the light profile: ``auto``
+  as above, ``light`` for any task without a risk flag, ``full`` never; the light profile also
+  skips the ``locate`` call and the ``planApproval: risk`` checkpoint, and is on even without
+  ``friction.fastLane``.
 * PLANNING: no decomposition and no preflight on the baseline in the fast lane; the
   plan-approval checkpoint (``planApproval``) for ``L`` tasks and tasks with a risk flag.
 * VERIFICATION: the ChangeSet is profiled (risk factors, files, change type). A risk factor or
@@ -91,6 +94,9 @@ if TYPE_CHECKING:
     from governed_harness.orchestration.hosts import EngineHost
 
 LANE_FLAG = "lane"
+LIGHT_PROFILE_STEPS: tuple[str, ...] = ("locate", "planApproval")
+"""What the light profile of ``governance.riskProfile`` leaves out beyond the fast lane's
+``skip``: the ``locate`` call of INTENT and the ``planApproval: risk`` checkpoint of PLANNING."""
 PROFILE_FLAG = "changeprofile"
 PREAUTH_FLAG = "preauth"
 PREAUTH_USED_FLAG = "preauthused"
@@ -122,9 +128,24 @@ class Friction:
         return self.project.friction
 
     @property
+    def risk_profile(self) -> str | None:
+        """``governance.riskProfile``: ``auto``, ``light``, ``full`` or ``None`` (1.x)."""
+        return self.project.governance_settings.risk_profile
+
+    @property
     def fast_lane(self) -> FastLaneConfig | None:
+        """The fast lane in effect. Under ``governance.riskProfile`` it is the light profile:
+        ``full`` has none, ``auto`` and ``light`` have one even when ``friction.fastLane`` is
+        absent or ``off`` (its ``skip`` and ``verification`` are kept when present)."""
+        from governed_harness.configuration.friction import FastLaneConfig
+
         config = self.config
         lane = config.fast_lane if config else None
+        profile = self.risk_profile
+        if profile == "full":
+            return None
+        if profile in {"auto", "light"} and (lane is None or not lane.enabled):
+            return (lane or FastLaneConfig()).model_copy(update={"mode": "auto"})
         return lane if lane is not None and lane.enabled else None
 
     @property
@@ -200,8 +221,13 @@ class Friction:
         if known is not None and known.get("taskDigest") == digest:
             return known
         sized = self.task_size(execution, task)
+        profile = self.risk_profile
         reasons: list[str] = []
-        if sized["size"] != "S":
+        if profile == "light":
+            # The light profile whatever the size; a risk flag still asks for the full one.
+            if sized["riskFlags"]:
+                reasons.append(f"risk flag(s) {', '.join(sized['riskFlags'])}")
+        elif sized["size"] != "S":
             reasons.append(f"size {sized['size']} ({sized['rule']})")
         declared = [
             item.criterion_id
@@ -218,17 +244,25 @@ class Friction:
             # A person who asked for stronger evidence asked for the full flow.
             reasons.append("the task declares verification beyond L1 (probes, deferred or manual)")
         lane = "full" if reasons else "fast"
+        skip: list[str] = list(config.skipped) if lane == "fast" else []
+        if profile is not None and lane == "fast":
+            skip += [step for step in LIGHT_PROFILE_STEPS if step not in skip]
+        fallback = "no risk flag" if profile == "light" else "size S and no risk flag"
         record: dict[str, Any] = {
             "lane": lane,
             "size": sized["size"],
             "rule": sized["rule"],
             "riskFlags": sized["riskFlags"],
             "signals": {key: sized[key] for key in ("requirements", "files", "loc")},
-            "reasons": reasons or ["size S and no risk flag"],
-            "skip": list(config.skipped) if lane == "fast" else [],
+            "reasons": reasons or [fallback],
+            "skip": skip,
             "taskDigest": digest,
             "escalated": False,
         }
+        if profile is not None:
+            # governance.riskProfile: the governance profile the lane stands for.
+            record["profile"] = profile
+            record["governance"] = "light" if lane == "fast" else "full"
         ref = self.engine.results.record_json(
             execution,
             PhaseId.INTENT,
@@ -242,7 +276,20 @@ class Friction:
         self.s.events.append(
             execution.execution_id,
             "lane.classified",
-            {key: record[key] for key in ("lane", "size", "rule", "reasons", "skip", "taskDigest")}
+            {
+                key: record[key]
+                for key in (
+                    "lane",
+                    "size",
+                    "rule",
+                    "reasons",
+                    "skip",
+                    "taskDigest",
+                    "profile",
+                    "governance",
+                )
+                if key in record
+            }
             | {"evidenceRef": ref},
             phase_execution_id=phase.phase_execution_id,
         )
@@ -658,8 +705,17 @@ class Friction:
             reasons.append(f"size L ({sized['rule']})")
         if sized["riskFlags"]:
             reasons.append(f"risk flag(s) {', '.join(sized['riskFlags'])}")
+        if reasons and mode == "risk" and self.skips(execution, "planApproval", PhaseId.PLANNING):
+            # governance.riskProfile: the light profile has no plan-approval checkpoint under
+            # ``risk`` (``always`` is a person's request and still applies).
+            reasons = []
+            light = True
+        else:
+            light = False
         if not reasons:
-            reason = f"size {sized['size']} and no risk flag"
+            reason = (
+                "light governance profile" if light else f"size {sized['size']} and no risk flag"
+            )
             self._set_flag(key, {"digest": digest, "status": "NOT_REQUIRED", "reason": reason})
             self.s.events.append(
                 execution.execution_id,

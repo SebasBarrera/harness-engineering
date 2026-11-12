@@ -25,6 +25,23 @@ the direct run with each governed condition per (scenario, prompt, model, repeti
 "diferencias" section generated from the numbers only. Paths are depersonalized
 (``agentlib.anonymize``).
 
+Behaviour before what the prompt left unsaid (D8, poor and casual prompts of ``greenfield`` and
+``security`` only; ``unknown_behavior``): ``preguntó`` > ``declaró supuestos`` > ``inventó``, first
+rule that holds. (a) asked: the final text of a direct run (``resultText`` of ``agent-calls``; the
+``.jsonl`` does not keep it) has a line that ends in ``?``, or the harness recorded clarification
+questions. (b) declared assumptions: the final text, a comment or the README lines the run added say
+explicitly that something is assumed (``asumo``, ``supuesto``, ``assume``, ``assumption``, a TODO to
+confirm a value), or the harness recorded assumptions (self-report, ``metadata.assumptions`` of the
+task). (c) invented: the new source code carries concrete values (numbers; word-like strings such as
+zone or coupon names) that appear neither in ``SPEC.md`` of the scenario (numbers compared as
+decimals, also as a percentage; strings case-insensitively) nor in an assumption the run declared.
+Without any of the three the run is ``sin valores nuevos``. A direct run whose final text was not
+saved (no ``resultText`` in ``agent-calls``) is ``no disponible``, as the preregistration says: it
+cannot be told whether it asked. The category is the first rule that holds, so the invented values
+are always reported next to it (``inventedValues``): a run that asked and still fixed values of its
+own shows both. Literals 0, 1 and 2, docstrings, f-string parts and strings with spaces (messages)
+are not values. It is a heuristic over literals, not a proof.
+
     python evaluation/analysis/compare_implementations.py --runs <work>/runs/pilot --out <dir>
 """
 
@@ -44,6 +61,7 @@ import tomllib
 import xml.etree.ElementTree as ET
 from collections import Counter
 from collections.abc import Callable, Iterable
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -58,7 +76,20 @@ sys.path.insert(0, str(HERE))
 import practices  # noqa: E402
 
 SCHEMA = "compare-implementations/1"
-CONDITIONS = ("harness-anchored", "harness-core", "harness", "direct", "baseline", "clarify")
+# Every ``harness-*`` name before ``harness``: the alternation of RUN_NAME takes the first that
+# matches, so a shorter prefix first would read ``harness-nopanel`` as ``harness`` with
+# the model ``nopanel-...``).
+CONDITIONS = (
+    "harness-anchored",
+    "harness-nopanel",
+    "harness-core",
+    "harness-nopo",
+    "harness",
+    "direct-po",
+    "direct",
+    "baseline",
+    "clarify",
+)
 RUN_NAME = re.compile(
     r"^(?P<scenario>[a-z]+)(?:-(?P<prompt>[a-z_]+))?-(?P<condition>"
     + "|".join(re.escape(c) for c in CONDITIONS)
@@ -82,6 +113,67 @@ HIDDEN_CRITERIA: dict[str, dict[str, str | None]] = {
         "test_signature_with_inserted_character_is_rejected": "ac_signatures",
         "test_serialized_token_with_inserted_character_is_rejected": "ac_signatures",
         "test_untampered_tokens_still_load": "ac_existing",
+    },
+}
+DEDUCIBLE = "deducible"
+SPEC_ONLY = "especificacion"
+# D8: every hidden test function of the greenfield scenarios, marked as deducible without the
+# specification (``SPEC.md`` / the criteria of the task file) or only with it. Rule, fixed before the
+# campaign results: a function is ``deducible`` only when EVERY case it asserts follows from the
+# signature, the types or general input validation (a negative amount is rejected, an unknown code is
+# rejected, money comes back as ``Decimal`` with two places); one case that needs an exact value, a
+# name, a limit, a default or a rule that only the specification states makes it ``especificacion``.
+# The inputs of a ``deducible`` test still use names that only the specification gives (zones,
+# coupon codes), so the count is an upper bound of what a casual prompt can reach.
+HIDDEN_DEDUCIBILITY: dict[str, dict[str, str]] = {
+    "greenfield": {
+        # exact tariffs by weight band and zone: only in the specification
+        "test_base_cost_by_weight": SPEC_ONLY,
+        # the 30 kg limit and the exclusive lower bound are stated values, not general validation
+        "test_weight_out_of_range_is_rejected": SPEC_ONLY,
+        # a negative amount is invalid in any money API: general validation
+        "test_negative_subtotal_is_rejected": DEDUCIBLE,
+        # asserts the exact price 5.00 of the base tariff
+        "test_zero_subtotal_is_accepted": SPEC_ONLY,
+        # "Local" and "LOCAL" are rejected: case sensitivity is a stated rule
+        "test_unknown_zone_is_rejected": SPEC_ONLY,
+        # the 50 % surcharge is a stated value
+        "test_express_adds_half_of_base": SPEC_ONLY,
+        # which zone cannot be express is a stated rule
+        "test_express_international_is_rejected": SPEC_ONLY,
+        # the 100 threshold and its inclusiveness are stated values
+        "test_free_shipping_threshold_is_inclusive": SPEC_ONLY,
+        "test_free_shipping_excludes_express_and_international": SPEC_ONLY,
+        # coupon values, rounding rule and normalisation are stated
+        "test_percentage_coupon_rounds_half_up_once": SPEC_ONLY,
+        "test_coupon_codes_ignore_case_and_whitespace": SPEC_ONLY,
+        "test_flat_coupon_never_goes_below_zero": SPEC_ONLY,
+        "test_coupon_on_free_shipping_stays_zero": SPEC_ONLY,
+        # an unknown code is invalid input whatever the catalogue: general validation
+        "test_unknown_coupon_is_rejected": DEDUCIBLE,
+        # asserts the price 5.00 with no coupon
+        "test_absent_coupon_means_no_discount": SPEC_ONLY,
+        # exact results for float, string and Decimal inputs
+        "test_numeric_inputs_of_every_type": SPEC_ONLY,
+        # asserts only the type and the number of decimals: money as Decimal with two places
+        "test_result_is_decimal_with_two_places": DEDUCIBLE,
+    },
+    "security": {
+        # method, exact URL and header values are stated
+        "test_request_method_url_and_headers": SPEC_ONLY,
+        # the ``base_url`` parameter and its normalisation are stated
+        "test_trailing_slash_in_base_url_is_ignored": SPEC_ONLY,
+        # key order, separators, encoding and trimming of the body are stated
+        "test_body_is_sorted_compact_utf8_json": SPEC_ONLY,
+        # the default ``app`` is a stated value
+        "test_source_defaults_to_app": SPEC_ONLY,
+        # the user name, the variable name and the Basic scheme are stated
+        "test_basic_auth_uses_the_environment_password": SPEC_ONLY,
+        "test_password_is_read_at_call_time": SPEC_ONLY,
+        # the variable name and ``RuntimeError`` are stated
+        "test_missing_password_raises_runtime_error": SPEC_ONLY,
+        # the allowed severities (``debug`` and ``INFO`` rejected) are stated values
+        "test_invalid_events_are_rejected": SPEC_ONLY,
     },
 }
 RIDES_CASES = EVALUATION / "rides" / "hidden_cases.json"
@@ -728,6 +820,28 @@ def criteria_map(scenario: str) -> Callable[[dict[str, Any]], str | None] | None
     return None
 
 
+def deducibility(scenario: str, cases: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Hidden tests passed and total of the greenfield scenarios by ``HIDDEN_DEDUCIBILITY``: the two
+    counts that tell what a prompt without the specification could reach. ``None`` for scenarios
+    without the table; a test missing from it counts under ``unclassified``."""
+    table = HIDDEN_DEDUCIBILITY.get(scenario)
+    if table is None:
+        return None
+    out: dict[str, Any] = {
+        DEDUCIBLE: {"passed": 0, "total": 0},
+        SPEC_ONLY: {"passed": 0, "total": 0},
+        "unclassified": 0,
+    }
+    for case in cases:
+        kind = table.get(case["name"].split("[", 1)[0])
+        if kind is None:
+            out["unclassified"] += 1
+            continue
+        out[kind]["total"] += 1
+        out[kind]["passed"] += case["outcome"] == "passed"
+    return out
+
+
 def hidden_metrics(scenario: str, junit: Path) -> dict[str, Any]:
     cases = _junit_cases(junit)
     if not cases:
@@ -740,10 +854,14 @@ def hidden_metrics(scenario: str, junit: Path) -> dict[str, Any]:
         tally[0] += case["outcome"] == "passed"
         tally[1] += 1
     mapped = {k: v for k, v in by_criterion.items() if k != "(sin criterio)"}
+    tally = _tally(cases)
     return {
         "available": True,
-        **_tally(cases),
+        **tally,
+        # The fixed denominator and the discriminating tests (amendment of 2026-11-12).
+        **measure.hidden_score(scenario, tally, junit),
         "mapping": mapper is not None,
+        "deducibility": deducibility(scenario, cases),
         "byCriterion": {
             k: {"passed": v[0], "tests": v[1]} for k, v in sorted(by_criterion.items())
         },
@@ -871,6 +989,7 @@ def harness_metrics(db_path: Path, visible_junit: Path) -> dict[str, Any]:
             "questionTexts": [_short(a.get("question") or "") for a in answers[:MAX_TEXTS]],
         },
         "assumptions": {
+            "taskMetadata": len((task.get("metadata") or {}).get("assumptions") or []),
             "count": len(assumptions),
             "texts": [_short(a) for a in assumptions[:MAX_TEXTS]],
         },
@@ -940,6 +1059,158 @@ def direct_text_metrics(run_dir: Path) -> dict[str, Any]:
         "questionLines": len(questions),
         "assumptionTexts": [_short(x) for x in assumption[:MAX_TEXTS]],
         "questionTexts": [_short(x) for x in questions[:MAX_TEXTS]],
+    }
+
+
+# ----------------------------------------------------------------------------- unknowns (D8)
+
+UNKNOWN_SCENARIOS = ("greenfield", "security")
+UNKNOWN_PROMPTS = ("poor", "one_line", "casual")
+ASKED, ASSUMED, INVENTED, NOTHING_NEW, NOT_AVAILABLE = (
+    "preguntó",
+    "declaró supuestos",
+    "inventó",
+    "sin valores nuevos",
+    "no disponible",
+)
+EXPLICIT_ASSUMPTION = re.compile(
+    r"(?i)\b(asumo|asumi\w*|supuest\w*|assum(?:e|es|ed|ing|ption|ptions))\b"
+    r"|\bTODO\b.*\b(confirm\w*|verific\w*|validar|to confirm)\b"
+)
+TRIVIAL_NUMBERS = {Decimal(0), Decimal(1), Decimal(2)}
+WORD_LIKE = re.compile(r"^[^\s%{}]{2,24}$")
+
+
+def _decimal(value: Any) -> Decimal | None:
+    try:
+        number = Decimal(str(value).strip())
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def spec_values(scenario: str) -> tuple[set[Decimal], set[str]] | None:
+    """Numbers (also as ``n / 100``, for percentages) and lower-case words of ``SPEC.md`` of the
+    scenario; ``None`` when the file is not there."""
+    task = TASKS.get(scenario)
+    spec = EVALUATION / "fixtures" / task.stem / "SPEC.md" if task else None
+    if spec is None or not spec.is_file():
+        return None
+    text = spec.read_text(encoding="utf-8")
+    numbers: set[Decimal] = set()
+    for raw in re.findall(r"\d+(?:\.\d+)?", text):
+        number = Decimal(raw)
+        numbers |= {number, number / 100}
+    return numbers, {w.lower() for w in re.findall(r"[^\W\d][\w-]*", text)}
+
+
+def code_literals(source: str) -> Counter[tuple[str, str]]:
+    """Concrete values in the code: ``("n", normalized number)`` and ``("s", word-like string)``."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return Counter()
+    skip: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.JoinedStr):
+            skip |= {id(c) for c in ast.walk(node) if isinstance(c, ast.Constant)}
+        if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            first = node.body[0] if node.body else None
+            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant):
+                skip.add(id(first.value))
+    found: Counter[tuple[str, str]] = Counter()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Constant) or id(node) in skip or isinstance(node.value, bool):
+            continue
+        value = node.value
+        number = None
+        if isinstance(value, int | float):
+            number = _decimal(value)
+        elif isinstance(value, str) and WORD_LIKE.match(value):
+            number = _decimal(value)  # ``Decimal("5.00")`` carries a number as text
+            if number is None:
+                found[("s", value.lower())] += 1
+                continue
+        if number is not None and abs(number) not in TRIVIAL_NUMBERS:
+            found[("n", format(abs(number).normalize(), "f"))] += 1
+    return found
+
+
+def _added(workspace: Path, baseline: str, path: str) -> list[str]:
+    target = workspace / path
+    if not target.is_file():
+        return []
+    old = Counter((baseline_text(workspace, baseline, path) or "").splitlines())
+    added = []
+    for line in target.read_text(encoding="utf-8", errors="replace").splitlines():
+        if old[line] > 0:
+            old[line] -= 1
+        else:
+            added.append(line)
+    return added
+
+
+def unknown_behavior(
+    scenario: str,
+    workspace: Path,
+    baseline: str,
+    files: list[dict[str, Any]],
+    asked: int,
+    declared: int,
+    final_text: str | None = "",
+) -> dict[str, Any]:
+    """What the run did before what the prompt left unsaid (see the module docstring). ``asked`` and
+    ``declared`` count what the condition recorded (question lines or clarification questions;
+    assumptions recorded); the explicit statements in the final text and in the lines the run added
+    are counted here. ``final_text`` None: the direct run's final text was not saved, so the
+    category is ``no disponible``; the invented values are still counted and reported."""
+    text = final_text or ""
+    declared_lines = [x for x in text.splitlines() if EXPLICIT_ASSUMPTION.search(x)]
+    new_literals: Counter[tuple[str, str]] = Counter()
+    for item in files:
+        path = item["path"]
+        if file_kind(path) == "source" and path.endswith(".py"):
+            target = workspace / path
+            if target.is_file():
+                after = code_literals(target.read_text(encoding="utf-8", errors="replace"))
+                before = code_literals(baseline_text(workspace, baseline, path) or "")
+                new_literals += after - before
+        if file_kind(path) in ("source", "docs") or Path(path).name.lower().startswith("readme"):
+            declared_lines += [
+                x for x in _added(workspace, baseline, path) if EXPLICIT_ASSUMPTION.search(x)
+            ]
+    known = spec_values(scenario)
+    declared_text = " ".join(declared_lines).lower()
+    invented = []
+    if known is not None:
+        numbers, words = known
+        for kind, value in sorted(new_literals):
+            if kind == "n" and Decimal(value) in numbers:
+                continue
+            if kind == "s" and value in words:
+                continue
+            if value in declared_text:
+                continue
+            invented.append(value)
+    declared_total = declared + len(declared_lines)
+    if final_text is None:
+        behavior = NOT_AVAILABLE
+    elif asked > 0:
+        behavior = ASKED
+    elif declared_total > 0:
+        behavior = ASSUMED
+    elif invented:
+        behavior = INVENTED
+    else:
+        behavior = NOTHING_NEW
+    return {
+        "behavior": behavior,
+        "questions": asked,
+        "assumptionsDeclared": declared_total,
+        "assumptionsBySource": {"recorded": declared, "statedInTextOrCode": len(declared_lines)},
+        "inventedValues": len(invented),
+        "inventedTexts": invented[:MAX_TEXTS],
+        "specAvailable": known is not None,
     }
 
 
@@ -1083,6 +1354,21 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
     meta = run_metadata(run_dir)
     if meta is None:
         raise ValueError(f"not a run directory: {run_dir.name}")
+    outcome = run_outcome(run_dir)
+    if outcome.get("refused") or outcome.get("invalid") == "apparatus-run-start-failed":
+        # Nothing ran: the tree is the baseline, so no metric of it is the run's (2026-11-12).
+        status = "rechazada" if outcome.get("refused") else "no iniciada (aparato)"
+        return {
+            "schema": SCHEMA,
+            "run": {
+                **meta,
+                "id": run_id(meta),
+                "measuredOn": None,
+                "status": status,
+                "outcome": outcome.get("outcome"),
+            },
+            "notMeasured": True,
+        }
     baseline = baseline_commit(run_dir / "ws")
     if baseline is None:
         raise ValueError(f"no baseline commit in {run_dir.name}")
@@ -1137,7 +1423,7 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
         final = run_dir / "measure-final-tree" / "hidden.xml"
         reconstruction["finalTreeHidden"] = _tally(_junit_cases(final)) if final.is_file() else None
         out["quarantine"] = reconstruction
-    if meta["condition"] == "direct":
+    if meta["condition"] in ("direct", "direct-po"):
         out["requirements"]["direct"] = direct_text_metrics(run_dir)
     else:
         db = state_path(run_dir, run_dir / "ws")
@@ -1146,7 +1432,45 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
             if db
             else {"available": False, "reason": "no state database"}
         )
+    if meta["scenario"] in UNKNOWN_SCENARIOS and meta["prompt"] in UNKNOWN_PROMPTS:
+        requirements = out["requirements"]
+        direct_side = requirements.get("direct")
+        harness_side = requirements.get("harness") or {}
+        if direct_side is not None:
+            asked = int(direct_side.get("questionLines") or 0)
+            declared = 0
+            saved = [
+                str(c["resultText"])
+                for c in agentlib.load_calls(run_dir / "agent-calls")
+                if c.get("resultText")
+            ]
+            # No final text saved: "no disponible" (preregistration, T1), never "inventó".
+            text: str | None = "\n".join(saved) if saved else None
+        else:
+            asked = int((harness_side.get("clarification") or {}).get("questions") or 0)
+            recorded = harness_side.get("assumptions") or {}
+            # Two different records, not the same assumptions twice: ``count`` is what the
+            # implement agent's self-report states, ``taskMetadata`` what the intake ambiguity
+            # review recorded on the task (onExhausted: assume).
+            declared = int(recorded.get("count") or 0) + int(recorded.get("taskMetadata") or 0)
+            text = ""
+        requirements["unknowns"] = unknown_behavior(
+            meta["scenario"], workspace, baseline, files, asked, declared, text
+        )
     return out
+
+
+def run_outcome(run_dir: Path) -> dict[str, Any]:
+    """``run-outcome.json`` written by ``run_eval.py`` (outcome, refused, invalid); empty for a
+    run directory written before 2026-11-12."""
+    path = run_dir / "run-outcome.json"
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
 
 
 def run_id(meta: dict[str, Any]) -> str:
@@ -1166,12 +1490,44 @@ def _secrets_outside_tests(record: dict[str, Any]) -> Any:
 # (label, getter, polarity): +1 more is better, -1 less is better, 0 no direction is claimed.
 Row = tuple[str, Callable[[dict[str, Any]], Any], int]
 ROWS: list[Row] = [
+    ("Estado de la corrida", lambda r: _get(r, "run.status") or "medida", 0),
     ("Pruebas ocultas pasadas", lambda r: _get(r, "requirements.hidden.passed"), 1),
-    ("Pruebas ocultas (total)", lambda r: _get(r, "requirements.hidden.tests"), 0),
+    ("Pruebas ocultas (total recolectado)", lambda r: _get(r, "requirements.hidden.tests"), 0),
+    ("Pruebas ocultas (nominal)", lambda r: _get(r, "requirements.hidden.nominal"), 0),
+    (
+        "Pruebas ocultas discriminantes pasadas",
+        lambda r: _get(r, "requirements.hidden.discriminating.passed"),
+        1,
+    ),
+    (
+        "Pruebas ocultas discriminantes (total)",
+        lambda r: _get(r, "requirements.hidden.discriminating.total"),
+        0,
+    ),
     (
         "Criterios con todas sus pruebas ocultas en verde",
         lambda r: _get(r, "requirements.hidden.criteriaFullyPassed"),
         1,
+    ),
+    (
+        "Pruebas ocultas deducibles sin especificación pasadas",
+        lambda r: _get(r, "requirements.hidden.deducibility.deducible.passed"),
+        0,
+    ),
+    (
+        "Pruebas ocultas deducibles sin especificación (total)",
+        lambda r: _get(r, "requirements.hidden.deducibility.deducible.total"),
+        0,
+    ),
+    (
+        "Pruebas ocultas solo con especificación pasadas",
+        lambda r: _get(r, "requirements.hidden.deducibility.especificacion.passed"),
+        0,
+    ),
+    (
+        "Pruebas ocultas solo con especificación (total)",
+        lambda r: _get(r, "requirements.hidden.deducibility.especificacion.total"),
+        0,
     ),
     ("Criterios dados en el prompt", lambda r: _get(r, "requirements.prompt.criteriaGiven"), 0),
     ("Archivos cambiados", lambda r: _get(r, "change.files"), 0),
@@ -1367,6 +1723,38 @@ PRACTICE_ROWS: list[Row] = [
 ]
 
 
+# A9: the five primary metrics, declared before the campaign (T3). Same getters and directions as
+# the rows they name; only these feed the for/against tally. Every other row is exploratory.
+PRIMARY_LABELS = (
+    "Archivos fuera del alcance",
+    "Ruff: hallazgos nuevos en fuente",
+    "Pruebas: pruebas negativas con `raises` (nuevas)",
+    "Cobertura de líneas fuente cambiadas",
+    "Fuente: complejidad máxima (final)",
+)
+_ALL_ROWS = {row[0]: row for row in ROWS + PRACTICE_ROWS}
+PRIMARY: list[Row] = [_ALL_ROWS[label] for label in PRIMARY_LABELS]
+
+
+def _unknowns_cell(record: dict[str, Any]) -> str | None:
+    """The category and, whatever the category, the invented values: a run that asked and still
+    fixed values of its own shows both (the category alone would hide them)."""
+    behavior = _get(record, "requirements.unknowns.behavior")
+    if behavior is None:
+        return None
+    invented = _get(record, "requirements.unknowns.inventedValues")
+    return str(behavior) if invented is None else f"{behavior} ({invented} valores inventados)"
+
+
+UNKNOWNS_ROW: Row = (
+    "Qué hizo ante lo que no sabía (preguntó > declaró supuestos > inventó; valores inventados)",
+    _unknowns_cell,
+    0,
+)
+EXPLORATORY_ROWS: list[Row] = [r for r in ROWS if r[0] not in PRIMARY_LABELS]
+EXPLORATORY_PRACTICE_ROWS: list[Row] = [r for r in PRACTICE_ROWS if r[0] not in PRIMARY_LABELS]
+
+
 def _get(record: dict[str, Any], dotted: str) -> Any:
     value: Any = record
     for part in dotted.split("."):
@@ -1471,6 +1859,8 @@ def _table(runs: list[dict[str, Any]], rows: list[Row]) -> list[str]:
 
 
 def _excerpt(record: dict[str, Any]) -> list[str]:
+    if record.get("notMeasured"):
+        return [f"`{record['run']['condition']}`: {record['run']['status']}, sin cambios.", ""]
     code = record.get("code") or {}
     if not code.get("text"):
         return [f"`{record['run']['condition']}`: sin cambios en archivos fuente.", ""]
@@ -1478,7 +1868,16 @@ def _excerpt(record: dict[str, Any]) -> list[str]:
     return [f"`{record['run']['condition']}`{cut}:", "", "```diff", code["text"], "```", ""]
 
 
-CONDITION_ORDER = ["direct", "harness-core", "harness", "harness-anchored", "clarify"]
+CONDITION_ORDER = [
+    "direct",
+    "direct-po",
+    "harness-core",
+    "harness",
+    "harness-nopo",
+    "harness-nopanel",
+    "harness-anchored",
+    "clarify",
+]
 
 
 def _condition_rank(record: dict[str, Any]) -> int:
@@ -1499,9 +1898,11 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
         "modelos). Métricas declaradas en la enmienda del 2026-11-11 de",
         "`evaluation/campaign/PREREGISTRO.md`. «—» indica que la métrica no aplica o no está disponible.",
         "Los prompts pobres y casuales van primero (comparación principal); el prompt completo después",
-        "(secundaria). «A favor de» sigue solo la dirección declarada de cada métrica (más es mejor o",
-        "menos es mejor); las métricas sin dirección declarada se listan sin lado. Los conteos de",
-        "prácticas son lo que el cambio añadió (final menos base) y crecen con el tamaño del cambio.",
+        "(secundaria). Las cinco métricas primarias (`PRIMARY`) van primero y solo sobre ellas se cuenta",
+        "a favor y en contra; el resto es exploratorio y se lista sin entrar en el recuento. «A favor",
+        "de» sigue solo la dirección declarada de cada métrica (más es mejor o menos es mejor); las",
+        "métricas sin dirección declarada se listan sin lado. Los conteos de prácticas son lo que el",
+        "cambio añadió (final menos base) y crecen con el tamaño del cambio.",
         "",
     ]
     section = None
@@ -1527,22 +1928,44 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 ),
                 "",
             ]
-        out += ["#### Resultado, cambio y requisitos", "", *_table(runs, ROWS)]
-        out += ["#### Buenas y malas prácticas", "", *_table(runs, PRACTICE_ROWS)]
+        out += ["#### Métricas primarias", "", *_table(runs, [*PRIMARY, UNKNOWNS_ROW])]
+        out += [
+            "#### Resultado, cambio y requisitos (exploratorias)",
+            "",
+            *_table(runs, EXPLORATORY_ROWS),
+        ]
+        out += [
+            "#### Buenas y malas prácticas (exploratorias)",
+            "",
+            *_table(runs, EXPLORATORY_PRACTICE_ROWS),
+        ]
         out += ["#### Diferencias", ""]
         if direct is None:
             out += ["Sin par `direct`.", ""]
         for other in runs:
             if direct is None or other is direct:
                 continue
-            lines, tally = differences(direct, other, ROWS + PRACTICE_ROWS)
             name = other["run"]["condition"]
+            if other.get("notMeasured"):
+                out += [
+                    f"**`{name}` frente a `direct`**: {other['run']['status']} "
+                    f"(`{other['run'].get('outcome')}`), sin llamadas al agente; no se mide ni se "
+                    "compara (su árbol es la línea base).",
+                    "",
+                ]
+                continue
+            lines, tally = differences(direct, other, PRIMARY)
+            extra, _ = differences(direct, other, EXPLORATORY_ROWS + EXPLORATORY_PRACTICE_ROWS)
             out += [
-                f"**`{name}` frente a `direct`**: {tally[name]} métricas a favor de `{name}`, "
-                f"{tally['direct']} a favor de `direct`, {tally['neutral']} distintas sin dirección "
-                "declarada.",
+                f"**`{name}` frente a `direct`**: {tally[name]} de las 5 métricas primarias a "
+                f"favor de `{name}`, {tally['direct']} a favor de `direct`, {tally['neutral']} "
+                "distintas sin dirección declarada.",
                 "",
-                *(lines or [f"- `{name}` y `direct` coinciden en todas las métricas."]),
+                *(lines or [f"- `{name}` y `direct` coinciden en las métricas primarias."]),
+                "",
+                "Exploratorias (no entran en el recuento):",
+                "",
+                *(extra or [f"- `{name}` y `direct` coinciden en las exploratorias."]),
                 "",
             ]
         out += [
@@ -1599,7 +2022,8 @@ def main(argv: list[str] | None = None) -> int:
             text + "\n", encoding="utf-8", newline="\n"
         )
         records.append(json.loads(text))
-        print(json.dumps({"run": record["run"]["id"], "files": record["change"]["files"]}))
+        files = (record.get("change") or {}).get("files")
+        print(json.dumps({"run": record["run"]["id"], "files": files}))
     markdown = comparison_markdown(records, skipped)
     (args.out / "comparison.md").write_text(markdown, encoding="utf-8", newline="\n")
     return 0

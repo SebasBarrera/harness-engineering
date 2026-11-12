@@ -25,6 +25,10 @@ from pathlib import Path
 from typing import Any
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+
+import conditions  # noqa: E402
+
 MODEL = "claude-haiku-4-5-20251001"
 # name: (runner, arguments, checks); a check is (description, function of the record, required)
 Check = tuple[str, Any, bool]
@@ -174,10 +178,12 @@ CASES: dict[str, tuple[str, list[str], list[Check]]] = {
                 True,
             ),
             (
-                "the provider command is granted in capabilities.extend, nothing wider (#87)",
+                "the provider command and harness check are granted in capabilities.extend, "
+                "nothing wider (#87, amendment of 2026-11-11)",
                 lambda r: (
                     provider_granted(r, "extend")
-                    and len(r["projectConfig"]["capabilities"]["extend"]) == 1
+                    and len(r["projectConfig"]["capabilities"]["extend"]) == 2
+                    and conditions.CHECK_GRANT in r["projectConfig"]["capabilities"]["extend"]
                 ),
                 True,
             ),

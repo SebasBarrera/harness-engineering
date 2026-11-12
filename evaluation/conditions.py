@@ -9,6 +9,13 @@ Condition             ``.harness/project.yaml``
                       absence keeps the 1.0.0 behaviour and configuration digest).
 ``harness``           what ``harness init`` of the version under test writes (every 2.0.0 setting
                       on), with ``agentRouting.mode: fixed``: every call uses the cell's model.
+``harness-nopo``      the configuration of ``harness`` (same file, same routing); only the person
+                      differs: no product owner, every clarification question is answered "decide
+                      yourself" (``product_owner.NoProductOwner``; test T1, condition 3). A
+                      condition of its own so its runs never share a cell with ``harness``.
+``harness-nopanel``   what ``harness init`` writes (as ``harness``, routing ``fixed``) with
+                      ``review.panel.mode: off``: the review panel is not run, nothing else changes
+                      (the rung of the cost ladder between ``harness-core`` and ``harness``).
 ``harness-anchored``  what ``harness init`` writes, routing left as init writes it (``anchored``,
                       #85) with ``agentRouting.anchorModel`` set to the cell's model: the model the
                       person invoked is the ceiling, cheaper rungs of the routing tables below it
@@ -20,7 +27,8 @@ evaluation adapter ``claude_provider.py`` as a command provider, or the harness'
 ``simulated`` provider in a dry run), the grant of exactly that provider command (wave 9, #87:
 a provider command must be allowed by a ``process.execute`` grant; it goes to
 ``capabilities.extend`` under ``governance.phaseCapabilities`` and to ``capabilities.grants``,
-the 1.0.0 key, in ``harness-core``), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
+the 1.0.0 key, in ``harness-core``), where the gate contract is on the grant of ``harness check``
+to ``capabilities.extend`` (amendment of 2026-11-11), ``runtime.commandTimeoutSeconds`` (1800 s, the agent limit
 of 1500 s plus the harness's own work, as in the 0.9.0 evaluation) and, where the write sandbox
 is on, one extra ``runtime.sandboxWritePaths`` entry: the run's ``agent-calls`` directory outside
 the workspace, where the adapter writes its usage records. The exact file of every run is saved
@@ -33,12 +41,15 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-GOVERNED = ("harness-core", "harness", "harness-anchored")
+GOVERNED = ("harness-core", "harness", "harness-nopo", "harness-nopanel", "harness-anchored")
+# Governed conditions whose simulated person has no product knowledge (NoProductOwner).
+NO_PRODUCT_OWNER = ("harness-nopo",)
 # Read in records of the first 2.0.0 pilot (routing left ``tiered``, before #85).
 LEGACY_GOVERNED = ("harness-tiered",)
 CONDITIONS = ("direct", *GOVERNED)
@@ -90,14 +101,25 @@ def provider_command(
     honor_routing: bool,
     claude_bin: str | None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> list[str]:
-    command = ["python", str(code / "claude_provider.py"), "--model", model]
+    """The adapter's command line. ``extra_args`` (rides: ``--timeout`` and ``--budget``) go after
+    the model; ``turn_cap`` False (rides, amendment of 2026-11-12) gives ``--no-max-turns`` and
+    ignores ``EVAL_MAX_TURNS``: no call of the run carries a turn cap."""
+    command = ["python", str(code / "claude_provider.py"), "--model", model, *extra_args]
     if honor_routing:
         command.append("--honor-routing")
     if claude_bin:
         command += ["--claude-bin", claude_bin]
     if resumable:
         command.append("--resumable")
+    if not turn_cap:
+        command.append("--no-max-turns")
+    elif os.environ.get("EVAL_MAX_TURNS", "").strip():
+        # The harness does not pass the runner's environment to the provider: a turn cap other
+        # than the provider's default (agentlib.MAX_TURNS) goes on its command line (amendment A3).
+        command += ["--max-turns", os.environ["EVAL_MAX_TURNS"].strip()]
     return command
 
 
@@ -111,6 +133,8 @@ def apply_provider(
     provider: str,
     claude_bin: str | None = None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Point the configuration at the agent of the run and set the evaluation's time limit."""
     runtime = config.setdefault("runtime", {})
@@ -125,12 +149,16 @@ def apply_provider(
             honor_routing=condition in ("harness-anchored", "harness-tiered"),
             claude_bin=claude_bin,
             resumable=resumable,
+            turn_cap=turn_cap,
+            extra_args=extra_args,
         )
         config["agentProvider"] = "claude"
         config["agentProviders"] = {
             "claude": {"kind": "command", "command": command, "model": model}
         }
         grant_provider_command(config, command, core=condition == "harness-core")
+        if runtime.get("gateContract"):
+            grant_check_command(config)
     if sys.platform == "win32" and runtime.get("agentSandbox") == "enforce":
         # Windows has no OS write sandbox (no sandbox-exec, no bwrap): under ``enforce`` the
         # harness blocks IMPLEMENTATION by design. The Windows runs set it off, a deviation from
@@ -143,7 +171,7 @@ def apply_provider(
         if calls not in paths:
             paths.append(calls)
         runtime["sandboxWritePaths"] = paths
-    if condition == "harness":
+    if condition in ("harness", "harness-nopo", "harness-nopanel"):
         config.setdefault("agentRouting", {})["mode"] = "fixed"
     if condition == "harness-anchored":
         config.setdefault("agentRouting", {})["anchorModel"] = model
@@ -175,6 +203,22 @@ def grant_provider_command(config: dict[str, Any], command: list[str], *, core: 
     capabilities[key] = rules
 
 
+CHECK_GRANT = {"capability": "process.execute", "scope": ["harness check"]}
+
+
+def grant_check_command(config: dict[str, Any]) -> None:
+    """Grant the agent ``harness check`` (amendment of 2026-11-11 to the pre-registration) where
+    the gate contract is on (``harness``, ``harness-anchored``): without it the contract carries
+    only ``gate.checkCommands`` (#84) and the agent cannot run the command the harness offers for
+    checking its change. The scope is that command and its arguments, never ``harness`` alone
+    (``command_in_scope``); ``harness check`` records nothing."""
+    capabilities = config.setdefault("capabilities", {"default": "deny", "grants": []})
+    rules = [dict(r) for r in capabilities.get("extend") or []]
+    if CHECK_GRANT not in rules:
+        rules.append(dict(CHECK_GRANT))
+    capabilities["extend"] = rules
+
+
 def write_config(
     workspace: Path,
     condition: str,
@@ -186,19 +230,24 @@ def write_config(
     provider: str = "claude",
     claude_bin: str | None = None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Write ``.harness/project.yaml`` of a governed condition and return it.
 
-    ``harness`` runs a harness command in the workspace (``run_eval.harness``)."""
+    ``harness`` runs a harness command in the workspace (``run_eval.harness``). ``turn_cap`` and
+    ``extra_args`` go to the provider's command line (``provider_command``)."""
     path = workspace / ".harness" / "project.yaml"
     if condition == "harness-core":
         # ``harness init`` (since #86 it writes .harness/ to .git/info/exclude, not .gitignore);
         # the core file is then written over its project.yaml.
         harness(workspace, "init", "--path", ".")
         config = core_config(yaml.safe_load(path.read_text(encoding="utf-8"))["projectId"])
-    elif condition in ("harness", "harness-anchored"):
+    elif condition in ("harness", "harness-nopo", "harness-nopanel", "harness-anchored"):
         harness(workspace, "init", "--path", ".")
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
+        if condition == "harness-nopanel":
+            config.setdefault("review", {}).setdefault("panel", {})["mode"] = "off"
         if (
             condition == "harness-anchored"
             and (config.get("agentRouting") or {}).get("mode") != "anchored"
@@ -215,6 +264,8 @@ def write_config(
         provider=provider,
         claude_bin=claude_bin,
         resumable=resumable,
+        turn_cap=turn_cap,
+        extra_args=extra_args,
     )
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     return config

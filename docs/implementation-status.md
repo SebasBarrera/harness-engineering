@@ -1,6 +1,17 @@
 # Implementation status
 
-Version: 0.8.0 research beta
+Snapshot of the 0.8.0 research beta (tag `v0.8.0`), an earlier, obsolete iteration of the thesis;
+the thesis evaluates 2.0.1. It is kept as that cut's record and is not updated with later releases.
+
+> [!NOTE]
+> The current version is 2.0.1. Several rows below have changed since 0.8.0: built-in adapters
+> for the Claude Code, Codex, Gemini CLI and aider CLIs (`agentProviders.<id>.kind`), an MCP
+> server for embedded mode (`harness mcp serve`), token authentication and roles in the local API
+> (#18), retention applied by `harness gc`, the closed `thesis-impact` defects (#3–#8) and 80 CLI
+> commands. See the [README](https://github.com/SebasBarrera/harness-engineering#readme), the
+> [CLI reference](reference/cli.md), the
+> [changelog](https://github.com/SebasBarrera/harness-engineering/blob/develop/CHANGELOG.md) and the
+> [trust model](architecture/trust-model.md).
 
 ## Complete in this repository
 

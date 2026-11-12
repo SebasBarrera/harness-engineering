@@ -29,6 +29,7 @@ from governed_harness.domain.models import (
     PhaseExecution,
     Task,
 )
+from governed_harness.evidence.hashing import sha256_json
 from governed_harness.intake import task_digest
 from governed_harness.ladder.contract import ContractSummary, derive_contract
 from governed_harness.telemetry.metrics import HUMAN_INTERACTION_EVENTS, human_interactions
@@ -282,8 +283,22 @@ class LadderIntake:
                 phase_execution_id=phase.phase_execution_id,
             )
             return IntentResult()
+        friction = hub.engine.friction
+        if friction.active and friction.skips(execution, "locate", PhaseId.INTENT):
+            # governance.riskProfile: the light profile asks for no localisation.
+            return IntentResult()
         key = f"locate:{execution.project_id}:{task.task_id}:{digest}"
+        scope_key = (
+            f"locatescope:{execution.project_id}:{task.task_id}:"
+            f"{self._scope_digest(task, size, config.limit)}"
+            if config.reuses_scope
+            else None
+        )
         cached = results.flag_json(key)
+        if scope_key is not None and not isinstance(cached, dict):
+            reused = self._scope_reuse(execution, phase, digest, results.flag_json(scope_key))
+            if reused is not None:
+                return reused
         if isinstance(cached, dict) and isinstance(cached.get("locations"), list):
             hub.s.events.append(
                 execution.execution_id,
@@ -348,6 +363,8 @@ class LadderIntake:
         )
         stored = {**record, "ref": ref}
         results.set_flag_json(key, stored)
+        if scope_key is not None:
+            results.set_flag_json(scope_key, stored)
         results.set_flag_json(f"located:{execution.execution_id}", stored)
         hub.s.events.append(
             execution.execution_id,
@@ -363,6 +380,46 @@ class LadderIntake:
         return IntentResult(
             self._questions(start, questions), None, None, (*outcome.evidence_refs, ref)
         )
+
+    @staticmethod
+    def _scope_digest(task: Task, size: str, limit: int) -> str:
+        """The scope a locate answer depends on (``context.locate.reuse: scope``): the owned
+        paths, the scope items of the task's contract, the size class and the limit."""
+        contract = task.contract.model_dump(mode="json", by_alias=True) if task.contract else {}
+        return sha256_json(
+            {
+                "ownedPaths": sorted(str(item) for item in task.metadata.get("ownedPaths") or []),
+                "scope": contract.get("scope"),
+                "scopePaths": contract.get("scopePaths"),
+                "outOfScope": contract.get("outOfScope"),
+                "size": size,
+                "limit": limit,
+            }
+        )
+
+    def _scope_reuse(
+        self, execution: Execution, phase: PhaseExecution, digest: str, cached: Any
+    ) -> IntentResult | None:
+        """The locate result of an earlier revision with the same scope, reused without a call
+        and without its questions (the clarification that produced this revision answered
+        them); ``None`` when there is none."""
+        if not isinstance(cached, dict) or not isinstance(cached.get("locations"), list):
+            return None
+        hub = self.ladder
+        hub.s.events.append(
+            execution.execution_id,
+            "locate.reused",
+            {
+                "taskDigest": digest,
+                "fromTaskDigest": cached.get("taskDigest"),
+                "scope": True,
+                "locations": len(cached["locations"]),
+                "evidenceRef": cached["ref"],
+            },
+            phase_execution_id=phase.phase_execution_id,
+        )
+        hub.engine.results.set_flag_json(f"located:{execution.execution_id}", cached)
+        return IntentResult((), None, None, (cached["ref"],))
 
     @staticmethod
     def _validated(result: dict[str, Any], limit: int) -> tuple[list[dict[str, Any]], list[str]]:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from datetime import UTC, datetime
 
 from governed_harness.domain.enums import (
@@ -22,7 +21,7 @@ from governed_harness.domain.models import (
     ToolInvocation,
     ValidationResult,
 )
-from governed_harness.runtime.process_runner import CommandSpec, ProcessResult
+from governed_harness.runtime.process_runner import CommandSpec, ProcessResult, find_executable
 from governed_harness.validators.base import ValidationContext, ValidatorOutput
 from governed_harness.validators.parsers import MAX_ISSUES, parse_output, report_files
 
@@ -102,6 +101,12 @@ class CommandValidator:
             {
                 "validatorId": self.validator_id,
                 "argv": list(command),
+                # The absolute program a bare name resolved to (Windows, F12).
+                **(
+                    {"executable": process.executable}
+                    if process.executable not in (None, command[0])
+                    else {}
+                ),
                 "exitCode": process.exit_code,
                 "status": process.status,
                 "durationMs": process.duration_ms,
@@ -279,7 +284,7 @@ class CommandValidator:
             if undefined is not None:
                 return undefined
         argv0 = definition.command[0]
-        if shutil.which(argv0) is None:
+        if find_executable(argv0) is None:
             status = missing_command if definition.mandatory else ResultStatus.NOT_APPLICABLE
             return status, f"executable {argv0!r} is not available"
         if len(definition.command) >= 3 and definition.command[1] == "-m":

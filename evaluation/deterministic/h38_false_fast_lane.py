@@ -10,7 +10,8 @@ lines, above the 20 of ``deletedWithoutTests``) so a change can delete source wi
 the tests. Each risk rides on the two tasks of N03-a
 (``at-threshold`` and ``above-threshold``), under the three conditions of N03-a:
 
-* ``full``: ``harness init`` without the ``friction`` section: ``task create``, ``run start`` and
+* ``full``: ``harness init`` without the ``friction`` section and with
+  ``governance.riskProfile: full``: ``task create``, ``run start`` and
   ``gate decide``;
 * ``fast-lane``: ``harness init`` as written: ``harness do TEXT`` and ``gate decide``;
 * ``fast-lane+pre-approval``: ``harness do TEXT --pre-approve`` (``gate decide`` only when the
@@ -240,6 +241,9 @@ def configure(ws: Path, change: Path, *, friction: bool) -> tuple[dict[str, Any]
     config = yaml.safe_load(path.read_text(encoding="utf-8"))
     if not friction:
         config.pop("friction", None)
+        # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+        # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+        config.setdefault("governance", {})["riskProfile"] = "full"
     deviations = interception.point_at_fixture(config, change, core=False)
     interception.write_text(path, yaml.safe_dump(config, sort_keys=False))
     return config, deviations

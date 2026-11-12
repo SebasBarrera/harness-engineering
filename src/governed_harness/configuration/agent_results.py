@@ -63,6 +63,7 @@ def off_from_yaml(value: Any) -> Any:
 
 
 AmbiguityExhausted = Literal["assume", "block"]
+AmbiguityDepth = Literal["fixed", "adaptive"]
 DEFAULT_AMBIGUITY_ROUNDS = 3
 """Rounds of agent questions a person answers before the review is exhausted (#79)."""
 DEFAULT_AMBIGUITY_QUESTIONS = 8
@@ -85,6 +86,17 @@ class AmbiguityReviewConfig(_Section):
     max_rounds: int | None = Field(default=None, alias="maxRounds", ge=1, le=20)
     max_questions: int | None = Field(default=None, alias="maxQuestions", ge=1, le=40)
     on_exhausted: AmbiguityExhausted | None = Field(default=None, alias="onExhausted")
+    skip_settled: bool | None = Field(default=None, alias="skipSettled")
+    """Since 2.0.1: the review is not called again for a new revision of the task when the
+    previous round of this run left no agent question, or once the ``unresolvable-ambiguity``
+    stop condition was recorded; the run goes straight to ``onExhausted``. Absent: the review
+    runs for every revision, as in 2.0.0."""
+    depth: AmbiguityDepth | None = None
+    """Since 2.0.1: ``adaptive`` scales the rounds and the questions per round with how little
+    the task says and asks the fundamental topics first (users, what they do, main flows,
+    platform, data, business rules, edge cases, acceptance criteria, first version), see
+    :mod:`governed_harness.intake.depth`. Absent or ``fixed``: ``maxRounds`` and
+    ``maxQuestions`` as written and no topic questions, as in 2.0.0."""
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -106,6 +118,14 @@ class AmbiguityReviewConfig(_Section):
     @property
     def exhausted(self) -> AmbiguityExhausted:
         return self.on_exhausted or "block"
+
+    @property
+    def skips_settled(self) -> bool:
+        return self.skip_settled is True
+
+    @property
+    def adaptive(self) -> bool:
+        return self.depth == "adaptive"
 
 
 # ----- read-only calls (#80) ----------------------------------------------------------------
@@ -323,6 +343,7 @@ DEFAULT_CONTEXT_MAX_BYTES = 400_000
 
 
 LocateMode = Literal["agent", "off"]
+LocateReuse = Literal["revision", "scope"]
 DEFAULT_LOCATE_MAX = 20
 
 
@@ -335,6 +356,10 @@ class LocateConfig(_Section):
     mode: LocateMode | None = None
     agent: AgentCallConfig | None = None
     max_locations: int | None = Field(default=None, alias="maxLocations", ge=1, le=200)
+    reuse: LocateReuse | None = None
+    """Since 2.0.1: ``scope`` reuses the last locate result of the task while its scope (owned
+    paths, contract scope, size class and limit) is unchanged, so a clarified revision does
+    not call again; ``revision`` (the default) calls once per task revision, as in 2.0.0."""
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -348,6 +373,10 @@ class LocateConfig(_Section):
     @property
     def limit(self) -> int:
         return self.max_locations or DEFAULT_LOCATE_MAX
+
+    @property
+    def reuses_scope(self) -> bool:
+        return self.reuse == "scope"
 
 
 class ContextConfig(_Section):
@@ -476,6 +505,19 @@ class FamilyTable(_Section):
     ladder: tuple[Rung, ...] | None = None
 
 
+ReadOnlyKind = Literal["clarify", "locate", "architecture", "review", "plan", "acceptance"]
+ReadOnlyEffort = Literal["low", "medium", "high"]
+
+DEFAULT_READ_ONLY_EFFORT: dict[str, str] = {
+    "clarify": "low",
+    "locate": "low",
+    "architecture": "medium",
+    "review": "medium",
+}
+"""Since 2.0.1: the read-only effort ``harness init`` writes (``agentRouting.readOnlyEffort``);
+starting values, not a measured optimum."""
+
+
 class AgentRoutingConfig(_Section):
     """Model and effort of each agent call (#44): ``fixed`` keeps the provider's own model,
     ``tiered`` chooses from the tables by call kind and task size and escalates on quality
@@ -498,6 +540,13 @@ class AgentRoutingConfig(_Section):
     tables: dict[ProviderFamily, FamilyTable] | None = None
     max_escalations: int | None = Field(default=None, alias="maxEscalations", ge=0, le=10)
     risk_paths: tuple[str, ...] | None = Field(default=None, alias="riskPaths")
+    read_only_effort: dict[ReadOnlyKind, ReadOnlyEffort] | None = Field(
+        default=None, alias="readOnlyEffort"
+    )
+    """Since 2.0.1: the effort of the first attempt of a routed read-only call by kind (and of
+    the reviewers of the panel under ``review``), in place of the table's; escalations climb the
+    ladder as before, ``implement`` never changes and a model that takes no effort (Claude 3,
+    Haiku 4.x, Sonnet and Opus 4.0-4.5) keeps none. Absent: the table's effort, as in 2.0.0."""
 
 
 DEFAULT_SIZE_THRESHOLDS: dict[str, tuple[int, int]] = {

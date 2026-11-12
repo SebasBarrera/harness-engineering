@@ -310,6 +310,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "phaseCapabilities",
         "applyRepositoryPolicies",
         "enforceWorkflow",
+        "riskProfile",
     ),
 }
 
@@ -931,13 +932,31 @@ answers:
 """
 
 
+WISH_TASK = """\
+taskId: task_python_wish
+title: Discount app
+intent: Make an app with discounts.
+"""
+
+
+def set_intake_depth(root: Path, depth: str) -> None:
+    """Switch ``intake.ambiguityReview.depth`` that init writes (``adaptive``)."""
+    config = root / ".harness" / "project.yaml"
+    text = config.read_text()
+    current = "fixed" if depth == "adaptive" else "adaptive"
+    config.write_text(text.replace(f"depth: {current}", f"depth: {depth}"), newline="\n")
+
+
 def flow_clarification(t: Transcript, root: Path) -> None:
     """A task whose only criterion is "It works." blocks INTENT under the enforce policy written
     by init (exit 6). A person answers the questions; the revised task passes INTENT on
     run continue and the run reaches DECISION. Unknown question ids exit with 2 and clarifying a
     task whose run is past INTENT exits with 5. A one-sentence task without criteria is accepted
     under enforce; INTENT asks the seven C0 questions (exit 6), and the answer about results
-    becomes its criteria, so run continue reaches DECISION."""
+    becomes its criteria, so run continue reaches DECISION. These two tasks run with
+    ``intake.ambiguityReview.depth: fixed``, the rules as they were before 2.0.1; with the
+    ``adaptive`` depth init writes, a one-line wish is asked the fundamental topics first (users,
+    what they do, main flows) before the C0 questions."""
     flow = "clarification"
     python_project(root)
     (root / "task.yaml").write_text(VAGUE_TASK, newline="\n")
@@ -947,6 +966,7 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     )
     here = ["--path", "."]
     t.run(flow, root, ["init", *here], 0)
+    set_intake_depth(root, "fixed")
     t.run(flow, root, ["task", "create", *here, "--file", "task.yaml"], 0)
     run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_vague"], 6)[
         "executionId"
@@ -991,6 +1011,23 @@ def flow_clarification(t: Transcript, root: Path) -> None:
     )
     t.run(flow, root, ["run", "continue", *here, "--run", run_id], 4)
     approve(t, flow, root, run_id, "Elicited criteria covered by the validators")
+
+    set_intake_depth(root, "adaptive")
+    (root / "wish.yaml").write_text(WISH_TASK, newline="\n")
+    t.run(flow, root, ["task", "create", *here, "--file", "wish.yaml"], 0)
+    run_id = t.json(flow, root, ["run", "start", *here, "--task", "task_python_wish"], 6)[
+        "executionId"
+    ]
+    questions = t.json(flow, root, ["task", "questions", *here, "--task", "task_python_wish"], 0)
+    asked = (questions["openRequest"] or {}).get("questions", [])
+    t.check(
+        flow,
+        [item["target"] for item in asked[:3]] == ["task:users", "task:actions", "task:flows"]
+        and all(item.get("category") == "basics" for item in asked[:3])
+        and [item["ruleId"] for item in asked[3:]] == ["C0"] * 7,
+        "under depth: adaptive a one-line wish is asked the basics first, then the C0 questions",
+    )
+    t.run(flow, root, ["run", "cancel", *here, "--run", run_id], 0)
 
 
 UNTRACED_TASK = """\
