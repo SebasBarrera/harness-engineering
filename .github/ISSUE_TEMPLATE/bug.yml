@@ -45,5 +45,5 @@ body:
   - type: dropdown
     id: thesis
     attributes:
-      label: Does it concern behavior evaluated in the thesis (v0.8.0)?
+      label: Does it concern behavior that already existed in v0.8.0 (an earlier iteration of the thesis)?
       options: ["I don't know", "Yes", "No"]

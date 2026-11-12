@@ -1,13 +1,15 @@
 name: Thesis-impact decision
-description: A change that would alter behavior evaluated in the thesis on v0.8.0.
+description: A behavior change that touches what v0.8.0 (an earlier, obsolete iteration of the thesis) did; optional, since such defects may be fixed directly.
 title: "decision: "
 labels: ["thesis-impact", "needs-decision"]
 body:
   - type: markdown
     attributes:
       value: |
-        The v0.8.0 cut is frozen for the thesis evaluation. Behavior changes are decided
-        explicitly and tracked in the milestone "backlog — thesis-impact".
+        v0.8.0 is an earlier, obsolete iteration of the thesis (its tag stays immutable and
+        reproducible); its behavior may change in new versions and `thesis-impact` defects can
+        be fixed. Use this form only when a change needs an explicit decision; the label and the
+        milestone "backlog — thesis-impact" remain for tracking.
   - type: textarea
     id: behavior
     attributes:
@@ -25,7 +27,7 @@ body:
   - type: textarea
     id: evaluation
     attributes:
-      label: Effect on the thesis evaluation
-      description: Which measurements or demonstrations of the thesis would change?
+      label: Effect on the 2.0.1 evaluation
+      description: Which measurements of the 2.0.1 campaign, if any, would change?
     validations:
       required: true
