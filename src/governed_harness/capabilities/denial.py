@@ -12,17 +12,19 @@ class CapabilityDenied(PermissionError):
 
 def command_in_scope(argv: Sequence[str], scope: str) -> bool:
     """Whether a ``process.execute`` scope allows the command ``argv``: every command (``**``),
-    its executable, the whole command, or its first arguments. The scope's words are compared
-    with whole arguments: ``python -m pytest`` allows ``python -m pytest -q`` but not the single
-    argument ``-m pytest``, and ``python`` does not allow an executable named ``python evil.py``
-    (comparing the joined text did)."""
+    its executable, or its first arguments joined by spaces. Only the executable may itself
+    contain spaces (``C:/Users/John Doe/agent.exe``): ``python -m pytest`` allows
+    ``python -m pytest -q`` but not the single argument ``-m pytest``, and ``python`` does not
+    allow an executable named ``python evil.py`` (comparing the joined text did)."""
     if scope == "**":
         return True
     if not argv:
         return False
     if argv[0] == scope:
         return True
-    if not scope.startswith(f"{argv[0]} "):
-        return False
-    words = scope[len(argv[0]) + 1 :].split(" ")
-    return tuple(argv[1 : 1 + len(words)]) == tuple(words)
+    for count in range(2, len(argv) + 1):
+        if " " in argv[count - 1]:
+            return False
+        if " ".join(argv[:count]) == scope:
+            return True
+    return False
