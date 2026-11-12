@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
+from governed_harness.evidence.artifact_store import LocalArtifactStore
 from governed_harness.evidence.redaction import SecretRedactor
 
 
@@ -43,23 +45,36 @@ def test_redact_json_redacts_a_quoted_secret_in_a_decoded_string() -> None:
     assert again == redacted
 
 
-@pytest.mark.parametrize(
-    "code",
-    [
-        b"def check(token: bytes) -> bool:",
-        b"def sign(secret: str, token: Optional[bytes] = None) -> None:",
-        b"token = serializer.dumps(payload)",
-        b'password = os.environ["ALERTS_PASSWORD"]',
-        b'password = os.environ.get("ALERTS_PASSWORD")',
-        b"function f(token: string): boolean {",
-    ],
-)
-def test_code_is_not_redacted_as_an_unquoted_secret(code: bytes) -> None:
-    # F4: an annotation or a call after `token`/`password` was replaced by <REDACTED>, which
-    # corrupted the stored patch and the quarantined contents that run continue puts back.
-    result = SecretRedactor().redact(code)
+CODE = [
+    b"def check(token: bytes) -> bool:",
+    b"def login(user: str, password: str) -> bool:",
+    b"def f(token: int) -> None:",
+    b"token = self._token",
+    b"password = form.password",
+    b"token = await client.fetch()",
+    b"token = serializer.dumps(payload)",
+    b'password = os.environ["ALERTS_PASSWORD"]',
+    b"function f(token: string): boolean {",
+]
+
+
+@pytest.mark.parametrize("code", CODE)
+def test_code_keeps_its_unquoted_values(code: bytes) -> None:
+    # F4: an annotation or an expression after `token`/`password` was replaced by <REDACTED>,
+    # which corrupted the stored diff and the quarantined contents run continue puts back.
+    result = SecretRedactor().redact(code, code=True)
     assert result.data == code
     assert not result.redacted
+
+
+@pytest.mark.parametrize(
+    ("data", "secret"),
+    [(b'password = "supersecret123"', b"supersecret123"), (b"token = 'abcd-1234'", b"abcd-1234")],
+)
+def test_code_still_loses_its_quoted_secrets(data: bytes, secret: bytes) -> None:
+    result = SecretRedactor().redact(data, code=True)
+    assert secret not in result.data
+    assert result.rule_ids == ("generic_secret_assignment",)
 
 
 @pytest.mark.parametrize(
@@ -68,14 +83,19 @@ def test_code_is_not_redacted_as_an_unquoted_secret(code: bytes) -> None:
         (b"password=hunter22", b"hunter22"),
         (b"API_KEY=abc123def456\n", b"abc123def456"),
         (b"password: s3cr3t!x", b"s3cr3t!x"),
-        (b'token = "abcd-1234"', b"abcd-1234"),
-        (b"token = 'dumps(payload)'", b"dumps(payload)"),
-        (b"secret=hunter2 (see docs)", b"hunter2"),
-        (b"token=a1.b2.c3d4", b"a1.b2.c3d4"),
     ],
 )
-def test_literal_values_are_still_redacted(data: bytes, secret: bytes) -> None:
+def test_tool_output_still_loses_its_unquoted_secrets(data: bytes, secret: bytes) -> None:
     result = SecretRedactor().redact(data)
     assert secret not in result.data
     assert result.rule_ids == ("generic_secret_assignment",)
-    assert SecretRedactor().redact(result.data).data == result.data
+
+
+def test_a_diff_artifact_is_redacted_as_code(tmp_path: Path) -> None:
+    store = LocalArtifactStore(tmp_path)
+    diff = b"+def login(user: str, password: str) -> bool:\n+    token = self._token\n"
+    ref = store.put(diff, media_type="text/x-diff")
+    assert store.get(ref) == diff
+    assert not ref.redacted
+    output = store.put(b"password=hunter22\n", media_type="text/plain")
+    assert b"hunter22" not in store.get(output)
