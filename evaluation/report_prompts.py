@@ -54,6 +54,8 @@ def delivered(r: dict[str, Any]) -> bool:
 
 def correct(r: dict[str, Any]) -> bool:
     h = r["measures"]["hidden"]  # in 2.0.0 a stopped run is measured on its quarantined change
+    if h.get("nominal"):  # the fixed denominator (amendment of 2026-11-12)
+        return h["passed"] == h["nominal"]
     return h["tests"] > 1 and h["passed"] == h["tests"]
 
 

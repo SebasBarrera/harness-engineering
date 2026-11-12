@@ -339,9 +339,20 @@ def refused(r: dict[str, Any]) -> bool:
     return bool(r.get("refused")) or outcome.startswith("task-refused")
 
 
+def hidden_total(h: dict[str, Any]) -> int:
+    """The denominator: the scenario's nominal number of hidden tests (amendment of 2026-11-12),
+    or the collected number in a record written before it (a collection error counts as 1)."""
+    return int(h.get("nominal") or h["tests"])
+
+
 def hidden_ok(r: dict[str, Any]) -> bool:
     h = r["measures"]["hidden"]
-    return bool(h["tests"]) and h["passed"] == h["tests"]
+    return bool(hidden_total(h)) and h["passed"] == hidden_total(h)
+
+
+def discriminating(h: dict[str, Any]) -> str | None:
+    d = h.get("discriminating")
+    return f"{d['passed']}/{d['total']}" if d else None
 
 
 def _harness_measures(r: dict[str, Any]) -> dict[str, Any]:
@@ -356,7 +367,9 @@ def run_row(r: dict[str, Any]) -> dict[str, Any]:
         "rep": r["rep"],
         "outcome": h.get("outcome", "direct"),
         "delivered": delivered_v2(r),
-        "hidden": "rechazada" if refused(r) else f"{hidden['passed']}/{hidden['tests']}",
+        "hidden": "rechazada" if refused(r) else f"{hidden['passed']}/{hidden_total(hidden)}",
+        "hiddenDiscriminating": None if refused(r) else discriminating(hidden),
+        "hiddenCollectionError": None if refused(r) else hidden.get("collectionError"),
         "measuredOn": r["measures"].get("measuredOn", "workspace"),
         "calls": r["agent"]["calls"],
         "costUsd": r["agent"]["costUsd"],
@@ -384,10 +397,20 @@ def summarize_cell_v2(runs: list[dict[str, Any]]) -> dict[str, Any]:
         "notDeliveredDefective": sum(1 for r in runs if not delivered_v2(r) and not hidden_ok(r)),
         "hiddenRatio": spread(
             [
-                x["hidden"]["passed"] / x["hidden"]["tests"] if x["hidden"]["tests"] else 0.0
+                x["hidden"]["passed"] / hidden_total(x["hidden"])
+                if hidden_total(x["hidden"])
+                else 0.0
                 for x in m
             ]
         ),
+        "hiddenDiscriminatingRatio": spread(
+            [
+                x["hidden"]["discriminating"]["passed"] / x["hidden"]["discriminating"]["total"]
+                for x in m
+                if (x["hidden"].get("discriminating") or {}).get("total")
+            ]
+        ),
+        "hiddenCollectionErrors": sum(1 for x in m if x["hidden"].get("collectionError")),
         "visibleGreen": sum(
             1
             for x in m

@@ -740,9 +740,12 @@ def hidden_metrics(scenario: str, junit: Path) -> dict[str, Any]:
         tally[0] += case["outcome"] == "passed"
         tally[1] += 1
     mapped = {k: v for k, v in by_criterion.items() if k != "(sin criterio)"}
+    tally = _tally(cases)
     return {
         "available": True,
-        **_tally(cases),
+        **tally,
+        # The fixed denominator and the discriminating tests (amendment of 2026-11-12).
+        **measure.hidden_score(scenario, tally, junit),
         "mapping": mapper is not None,
         "byCriterion": {
             k: {"passed": v[0], "tests": v[1]} for k, v in sorted(by_criterion.items())
@@ -1196,7 +1199,18 @@ Row = tuple[str, Callable[[dict[str, Any]], Any], int]
 ROWS: list[Row] = [
     ("Estado de la corrida", lambda r: _get(r, "run.status") or "medida", 0),
     ("Pruebas ocultas pasadas", lambda r: _get(r, "requirements.hidden.passed"), 1),
-    ("Pruebas ocultas (total)", lambda r: _get(r, "requirements.hidden.tests"), 0),
+    ("Pruebas ocultas (total recolectado)", lambda r: _get(r, "requirements.hidden.tests"), 0),
+    ("Pruebas ocultas (nominal)", lambda r: _get(r, "requirements.hidden.nominal"), 0),
+    (
+        "Pruebas ocultas discriminantes pasadas",
+        lambda r: _get(r, "requirements.hidden.discriminating.passed"),
+        1,
+    ),
+    (
+        "Pruebas ocultas discriminantes (total)",
+        lambda r: _get(r, "requirements.hidden.discriminating.total"),
+        0,
+    ),
     (
         "Criterios con todas sus pruebas ocultas en verde",
         lambda r: _get(r, "requirements.hidden.criteriaFullyPassed"),
