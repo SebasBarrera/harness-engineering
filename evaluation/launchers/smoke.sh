@@ -11,6 +11,42 @@
 # Blocks: A, B (run_eval.py via run_matrix.py cells), D (longitudinal/run_session.py), embedded
 # (run_embedded.py). The rides block has no dry run (run_rides.py), so its smoke test is a declared skip.
 # The records go to $EVAL_WORK/smoke/<block>, never to the block's results directory.
+#
+# Depth: the dry cells run in the SAME work directory a real cell of the block uses
+# ($EVAL_WORK/runs/<block directory>/<model>), so the state path of a run is as long as in the
+# campaign (the Windows MAX_PATH guard in common.sh depends on it). Their repetition is the reserved
+# SMOKE_REP (99): "-r99" is as long as the longest real one ("-r10"), and the run directories it
+# leaves (named ...-r99-...) are removed before and after, so they never mix with real runs.
+SMOKE_REP=99
+
+# smoke_work <block> <model>: the work directory of a real cell of the block, for the smoke cells.
+smoke_work() {
+  local dir
+  case "$1" in
+    A) dir=block-a ;;
+    B) dir=block-b ;;
+    D) dir=block-d ;;
+    *) dir="block-$1" ;;
+  esac
+  echo "$EVAL_WORK/runs/$dir/$2"
+}
+
+# smoke_clean <work>: removes the run directories of the reserved repetition.
+smoke_clean() {
+  [ -d "$1" ] && find "$1" -mindepth 1 -maxdepth 1 -type d -name "*-r${SMOKE_REP}-*" -exec rm -rf {} +
+  return 0
+}
+
+# smoke_report_depth <block> <work>: logs the length of the state path of the smoke run (Windows
+# form) next to the one of a real cell with the same name length.
+smoke_report_depth() {
+  local run state
+  run=$(find "$2" -mindepth 1 -maxdepth 1 -type d -name "*-r${SMOKE_REP}-*" | head -n 1)
+  [ -n "$run" ] || return 0
+  state="$run/state"
+  [ "$EVAL_WINDOWS" = "1" ] && state="$(cygpath -w "$state")"
+  log "smoke $1: state path of a smoke run is ${#state} characters (a real cell of the same name: the same; limit 140)"
+}
 
 # check_smoke <slot> <kind> <records.jsonl> <mode>: exit 0 when the record is valid. Mode 0: not
 # governed; 1: governed (needs a started run); 2: governed, and the 1.0.0 configuration's refusal of
@@ -72,13 +108,15 @@ run_smoke() {
     log "smoke rides skipped: run_rides.py has no dry run"
     return 0
   fi
-  local slot model scenario dir failed=0 condition governed
+  local slot model scenario dir work failed=0 condition governed
   slot=$(make_slot "$slot_name")
   model="${EVAL_MODELS%% *}"
   scenario="${EVAL_SCENARIOS%% *}"
   dir="$EVAL_WORK/smoke/$block"
   rm -rf "$dir"
   mkdir -p "$dir"
+  work=$(smoke_work "$block" "$model")
+  smoke_clean "$work"
   log "smoke $block: one dry cell per condition ($model, $scenario)"
   case "$block" in
     A | B)
@@ -96,7 +134,7 @@ run_smoke() {
         [ "$condition" = "harness-core" ] && [ "$prompt" = "casual" ] && governed=2
         smoke_cell "$slot" "$block" matrix "$condition" "$governed" \
           "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$condition" --model "$model" \
-          --rep 0 --prompt "$prompt" --work "$dir/runs" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
+          --rep "$SMOKE_REP" --prompt "$prompt" --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
           --dry-run ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} || failed=1
       done
       ;;
@@ -106,13 +144,13 @@ run_smoke() {
         case "$condition" in baseline | structured) governed=0 ;; esac
         smoke_cell "$slot" "$block" longitudinal "$condition" "$governed" \
           "$slot/$VENV_BIN/python" "$CODE/longitudinal/run_session.py" --condition "$condition" --model "$model" \
-          --rep 0 --work "$dir/runs" --out "$dir/records-$condition.jsonl" --dry-run || failed=1
+          --rep "$SMOKE_REP" --work "$work" --out "$dir/records-$condition.jsonl" --dry-run || failed=1
       done
       ;;
     embedded)
       smoke_cell "$slot" "$block" embedded embedded 1 \
         "$slot/$VENV_BIN/python" "$CODE/run_embedded.py" --scenario "${EVAL_EMBEDDED_SCENARIO:-brownfield}" --model "$model" \
-        --rep 0 --variant "${EVAL_EMBEDDED_VARIANT:-init}" --work "$dir/runs" --cache "$EVAL_CACHE" \
+        --rep "$SMOKE_REP" --variant "${EVAL_EMBEDDED_VARIANT:-init}" --work "$work" --cache "$EVAL_CACHE" \
         --out "$dir/records-embedded.jsonl" --dry-run || failed=1
       ;;
     *)
@@ -120,6 +158,8 @@ run_smoke() {
       exit 6
       ;;
   esac
+  smoke_report_depth "$block" "$work"
+  smoke_clean "$work"
   if [ "$failed" != "0" ]; then
     log "SMOKE FAILED in $block: no real call was made"
     exit 6
