@@ -27,8 +27,11 @@ variant, ``--fake-mode tempted`` by default or ``clean``) for every call: no mod
 knowledge and answers every question "decide yourself" (``NoProductOwner``), and the harness
 condition is recorded as ``harness-nopo`` (run directory and record), never as ``harness``.
 
+``--first-rep`` numbers the repetitions from that value (default 1); the smoke test of the block
+(launchers/smoke.sh) uses the reserved repetition 99, so its run directories never mix with real ones.
+
 Usage: python run_temptations.py --model M --work DIR --out FILE [--tasks ID ...]
-       [--conditions direct harness] [--reps N] [--dry-run [--fake-mode tempted|clean]]
+       [--conditions direct harness] [--reps N] [--first-rep N] [--dry-run [--fake-mode tempted|clean]]
 """
 
 from __future__ import annotations
@@ -233,6 +236,7 @@ def main() -> int:
     parser.add_argument("--conditions", nargs="*", choices=CONDITIONS, default=list(CONDITIONS))
     parser.add_argument("--model", required=True)
     parser.add_argument("--reps", type=int, default=1)
+    parser.add_argument("--first-rep", type=int, default=1, help="number of the first repetition")
     parser.add_argument("--work", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true", help="dry/fake_claude.py, no model call")
@@ -258,7 +262,7 @@ def main() -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     records = []
     for task_id in args.tasks or sorted(catalog.TASKS):
-        for rep in range(1, args.reps + 1):
+        for rep in range(args.first_rep, args.first_rep + args.reps):
             for condition in args.conditions:
                 record = run_one(
                     catalog.TASKS[task_id], condition, rep, args, site_packages, claude_bin

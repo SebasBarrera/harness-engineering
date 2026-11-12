@@ -8,7 +8,8 @@
 # executionId; the record keeps it anonymized as harness.runId "run"). Any failure leaves the block
 # with exit code 6 before its first real call. EVAL_SKIP_SMOKE=1 skips it.
 #
-# Blocks: A, B, T1 and LADDER (run_eval.py cells), D (longitudinal/run_session.py), embedded
+# Blocks: A, B, T1 and LADDER (run_eval.py cells), T2 (temptations/run_temptations.py: one task,
+# EVAL_T2_SMOKE_TASK, default the first of the catalog, in each condition), D (longitudinal/run_session.py), embedded
 # (run_embedded.py) and rides (rides/run_rides.py --dry-run: one cell per condition of the block's
 # CELLS, at the first level the block runs it, plan D5). EVAL_SMOKE_MODEL overrides the model of the
 # smoke cells (T1 and LADDER set it).
@@ -30,6 +31,7 @@ smoke_work() {
     D) dir=block-d ;;
     T1) dir=block-t1 ;;
     LADDER) dir=block-ladder ;;
+    T2) dir=block-temptations ;;
     rides) dir=rides ;;
     *) dir="block-$1" ;;
   esac
@@ -173,6 +175,20 @@ run_smoke() {
           "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$condition" --model "$model" \
           --rep "$SMOKE_REP" --prompt full --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
           --dry-run ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} || failed=1
+      done
+      ;;
+    T2)
+      # One dry cell per condition of block-temptations.sh (direct, harness or harness-nopo).
+      local t2task t2flag=()
+      t2task="${EVAL_T2_SMOKE_TASK:-$("$slot/$VENV_BIN/python" -c "import sys; sys.path.insert(0, sys.argv[1]); import catalog; print(sorted(catalog.TASKS)[0])" "$CODE/temptations")}"
+      [ "${EVAL_T2_NO_PO:-0}" = "1" ] && t2flag=(--no-product-owner)
+      for condition in direct harness; do
+        governed=1
+        [ "$condition" = "direct" ] && governed=0
+        smoke_cell "$slot" "$block" matrix "$condition" "$governed" \
+          "$slot/$VENV_BIN/python" "$CODE/temptations/run_temptations.py" --model "$model" --tasks "$t2task" \
+          --conditions "$condition" --reps 1 --first-rep "$SMOKE_REP" --work "$work" \
+          --out "$dir/records-$condition.jsonl" --dry-run ${t2flag[@]+"${t2flag[@]}"} || failed=1
       done
       ;;
     D)
