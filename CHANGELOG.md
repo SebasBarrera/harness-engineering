@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `harness init` on Windows no longer writes the POSIX-only `runtime.sandboxWritePaths` entries (`/tmp`,
+  `/var/folders`, `~/Library/Caches`); the entries under the home directory stay and POSIX is unchanged.
+  `docs/architecture/trust-model.md` now states what the excluded-path guard fingerprints (size,
+  modification time and the first 8 KB).
 - `delivery.recordCommitAuthor: true` (written by `harness init`): the `delivery.commit.created`
   event, and the closure-commit record it carries, also hold the commit's `author` (`Name <email>`
   as Git shows it) and its `subject`, after the redaction of secrets, so a bundle answers who wrote

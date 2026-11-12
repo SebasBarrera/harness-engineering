@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import yaml
@@ -63,6 +64,24 @@ def project_id_from_path(path: Path) -> str:
     return f"project_{slug[:80]}"
 
 
+# Default write-sandbox entries that only exist on POSIX systems. The sandbox paths must be absolute
+# POSIX paths or start with ``~/`` (the validator rejects drive letters and backslashes), so on
+# Windows these are left out instead of written as paths that mean nothing there; the entries
+# under the home directory (``~/.claude``, ``~/.cache``, ...) stay.
+POSIX_ONLY_SANDBOX_PATHS = frozenset({"/tmp", "/var/folders", "~/Library/Caches"})  # nosec B108
+
+
+def default_sandbox_write_paths(platform: str | None = None) -> list[str]:
+    """``runtime.sandboxWritePaths`` that ``harness init`` writes: the defaults, without the
+    POSIX-only temporary and cache directories on Windows. POSIX is unchanged."""
+    windows = (platform or sys.platform) == "win32"
+    return [
+        path
+        for path, _ in DEFAULT_SANDBOX_WRITE_PATHS
+        if not (windows and path in POSIX_ONLY_SANDBOX_PATHS)
+    ]
+
+
 def initialize_project(path: Path, *, force: bool = False) -> Path:
     target = path.resolve(strict=True)
     if not target.is_dir():
@@ -101,7 +120,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             # Enforced under governance.applyNetworkPolicy: agent CLIs call their model API.
             "allowNetwork": True,
             "agentSandbox": "enforce",
-            "sandboxWritePaths": [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS],
+            "sandboxWritePaths": default_sandbox_write_paths(),
             "verificationCorrections": 2,
             "providerFeedback": True,
             "unsupportedClaimSeverity": "MEDIUM",
