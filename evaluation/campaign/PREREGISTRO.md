@@ -3070,3 +3070,50 @@ hipótesis, métricas ni criterios de éxito.
    sola vez. Esa era la causa de que las corridas en seco se detuvieran en INTENT (greenfield
    casual y rides `one_line`). No afecta a las corridas con modelo. Prueba unitaria:
    `tests/unit/test_evaluation_clarify_rounds.py`.
+
+## Enmienda 2026-11-12 (2): el product owner simulado no cita documentos por su nombre
+
+Se añade el 2026-11-12, **después de las corridas con modelo de Haiku del bloque B** sobre el wheel de
+2.0.1 y **antes de cualquier otra corrida de la campaña** (Sonnet del bloque B, T1, T2, T6 y rides no
+se han lanzado). No cambia hipótesis, métricas ni criterios de éxito; corrige una falla del aparato y
+declara qué se repite.
+
+**Qué falló.** En los niveles casual y pobre de greenfield y security el espacio de trabajo no trae
+`SPEC.md` (parte (c), punto 4, de la enmienda del 2026-11-12), pero el product owner simulado la
+conoce y la citaba por su nombre en cada respuesta («SPEC.md no existe todavía… esta tarea lo crea…»).
+La regla A2 del harness (`intake.validateAnswers`, `orchestration/intent_review.py`: una respuesta
+que cita un documento ausente del espacio de trabajo) preguntaba de nuevo cada ronda («The answer to
+Q-1 refers to SPEC.md, which is not in the workspace: attach the document or transcribe the part the
+answer relies on.»), el product owner respondía otra vez citando el documento y la corrida se
+detenía en INTENT al llegar al tope de rondas de la persona simulada (11: el techo adaptativo, 8, más
+3). Las corridas `harness` de Haiku de greenfield y security (casual y pobre) quedaron así detenidas
+en INTENT, de unos 600 s cada una y sin pruebas ocultas medidas. Es una interacción del aparato (el
+product owner nombra el documento) con una regla del producto que funciona como está escrita; no se
+cambia `src/`.
+
+**Datos vistos al escribir esta enmienda.** Los registros de Haiku del bloque B (`C:/e/out/block-b`,
+fuera del repositorio): el diagnóstico de arriba sale de los registros de rondas de aclaración
+(`harness.clarification`), de las preguntas A2 guardadas en el almacén de la corrida y de
+`harness.waits`. En brownfield las corridas `harness` de Haiku se detuvieron en IMPLEMENTATION
+(`max_turns` con el tope de 40 turnos, o `agent.iterations.exhausted`) con las seis pruebas
+discriminantes pasadas: es el resultado del diseño preregistrado (tarea ampliada por el product owner a
+16-17 requisitos, tamaño L) y **no se repite ni se corrige**. `harness-core` × casual rechaza la tarea
+(F6.3) y tampoco cambia. No se vio ningún resultado de Sonnet.
+
+**Arreglo.** `evaluation/product_owner.py` (rama `fix/eval-po-no-doc-refs`): (1) el prompt del product
+owner indica que no cite documentos por su nombre y transcriba con sus palabras lo que el desarrollador
+necesita de ellos; (2) si una respuesta, aun así, cita un documento que `<corrida>/ws` no tiene
+(lector de nombres de documento igual al de la regla A2), se pide una vez más la respuesta sin nombres, y
+si el nombre persiste se reemplaza por «la descripción del producto» y la sustitución se registra
+(`scrubbedDocuments` en la ronda del product owner). Prueba:
+`tests/unit/test_evaluation_po_document_names.py`. Se aplica a todas las condiciones con product owner y
+a todos los bloques; no afecta a `direct`, `harness-core` ni a `harness-nopo`.
+
+**Qué se repite.** Las celdas Haiku × {greenfield, security} × {casual, pobre} del bloque B, con sus
+tres condiciones (`direct`, `harness-core`, `harness`) y 2 repeticiones, en una salida nueva
+(`block-b2`), de modo que la celda se compare entera con el mismo aparato. Las corridas originales de
+esas celdas se conservan (`block-b`) y se reportan como detenidas por una falla declarada del aparato;
+no entran en las medianas ni en los conteos de la celda repetida. Las celdas de brownfield de Haiku y
+todas las de Sonnet (bloque B) y de T1, T2, T6 y rides se corren una sola vez, ya con el arreglo. El
+producto sigue siendo el wheel de 2.0.1; el aparato (`evaluation/`) sale del commit de esa rama, que
+`environment.json` registra en `code`/`codeDigest` y la bitácora con su SHA.

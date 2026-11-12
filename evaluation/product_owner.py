@@ -69,6 +69,8 @@ aclaración escrita breve y en español:
 - responde cada pregunta con decisiones concretas: valores, límites, comportamiento ante errores, casos
   borde, implicaciones de seguridad y privacidad, y coherencia con el resto del producto;
 - cuando una decisión no la dicta la descripción del producto, agrega una justificación de una línea;
+- no cites documentos por su nombre (por ejemplo SPEC.md, README.md o un archivo .md, .txt o .yaml): el
+  desarrollador no los tiene, así que transcribe con tus palabras lo que necesita de ellos;
 - nunca contradigas la descripción del producto; si algo está fuera del alcance, dilo de forma explícita;
 - responde solo lo que pregunta cada pregunta, con tus propias palabras; no pegues la descripción del
   producto;
@@ -143,6 +145,49 @@ Descripción del producto:
 {knowledge}
 """
 
+# Document names in a text, read as the harness reads them for its rule A2 (an answer that cites a
+# document the workspace lacks, ``orchestration/intent_review.py:_doc_references``): a run of path
+# characters whose stem is followed by a dot and a known document extension.
+_PATH_RUN = re.compile(r"[\w/.-]+", re.I)
+_DOC_EXTENSION = re.compile(r"(?:md|txt|rst|pdf|docx?|ya?ml|json)(?!\w)", re.I)
+DOCUMENT_STAND_IN = "la descripción del producto"
+
+
+def document_references(text: str) -> list[str]:
+    """The document names ``text`` cites, such as ``SPEC.md`` or ``docs/spec.md``."""
+    found: list[str] = []
+    for run in _PATH_RUN.finditer(text):
+        stem, dot, rest = run.group().partition(".")
+        if not dot or not stem or stem[0] == "/" or stem[-1] == "/" or "//" in stem:
+            continue
+        extension = _DOC_EXTENSION.match(rest)
+        if extension is not None:
+            found.append(f"{stem}.{extension.group()}")
+    return found
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [t for item in value.values() for t in _strings(item)]
+    if isinstance(value, list):
+        return [t for item in value for t in _strings(item)]
+    return []
+
+
+def _scrub(value: Any, names: set[str]) -> Any:
+    if isinstance(value, str):
+        for name in sorted(names, key=len, reverse=True):
+            value = re.sub(re.escape(name), DOCUMENT_STAND_IN, value, flags=re.I)
+        return value
+    if isinstance(value, dict):
+        return {key: _scrub(item, names) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_scrub(item, names) for item in value]
+    return value
+
+
 _YAML_BLOCK = re.compile(r"```ya?ml\s*\n(.*?)```", re.DOTALL)
 
 
@@ -195,6 +240,7 @@ class ProductOwner:
         self.calls = run_dir / "po-calls"
         self.scratch = run_dir / "po-scratch"
         self.rounds: list[dict[str, Any]] = []
+        self._scrubbed: list[str] = []
 
     def __call__(self, task: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         self.calls.mkdir(parents=True, exist_ok=True)
@@ -237,6 +283,7 @@ class ProductOwner:
                 max_turns=0,
             )
             answers = parse_answers(record.get("resultText", ""), ids)
+        answers = self._without_document_names(prompt, ids, answers)
         # A rewrite of a criterion the task does not have becomes a new criterion instead of an error.
         known = {c.get("criterionId") for c in task.get("acceptanceCriteria", [])}
         replace = [
@@ -261,10 +308,57 @@ class ProductOwner:
             {
                 "questions": questions,
                 "answers": answers,
+                **({"scrubbedDocuments": self._scrubbed} if self._scrubbed else {}),
             },
             record,
         )
         return answers
+
+    def _cited(self, answers: dict[str, Any]) -> set[str]:
+        """The documents ``answers`` cite that the workspace (``<run>/ws``) does not hold."""
+        workspace = self.scratch.parent / "ws"
+        held = (
+            {p.name.lower() for p in workspace.rglob("*") if p.is_file()}
+            if workspace.is_dir()
+            else set()
+        )
+        return {
+            name
+            for text in _strings(answers)
+            for name in document_references(text)
+            if name.rsplit("/", 1)[-1].lower() not in held
+        }
+
+    def _without_document_names(
+        self, prompt: str, ids: list[str], answers: dict[str, Any]
+    ) -> dict[str, Any]:
+        """A document name in an answer is a dangling reference for the harness (rule A2): the
+        workspace of the poor and casual levels has no SPEC.md, so the harness asks again every
+        round and the person runs out of rounds (block B, 2026-11-12). One retry asks for the
+        content instead of the name; a name that remains is replaced by ``DOCUMENT_STAND_IN`` and
+        the replacement is recorded."""
+        self._scrubbed = []
+        cited = self._cited(answers)
+        if not cited:
+            return answers
+        retry = (
+            prompt
+            + "\n\nTu respuesta anterior cita documentos por su nombre ("
+            + ", ".join(sorted(cited))
+            + "). El desarrollador no los tiene. Responde de nuevo con un solo bloque ```yaml"
+            + " válido, sin nombrar ningún documento y transcribiendo con tus palabras lo que"
+            + " necesita."
+        )
+        record = self._ask(retry)
+        try:
+            again = parse_answers(record.get("resultText", ""), ids)
+        except (ValueError, yaml.YAMLError):
+            again = answers
+        cited = self._cited(again)
+        if cited:
+            again = _scrub(again, cited)
+            self._scrubbed = sorted(cited)
+        return again
 
     def _record(self, entry: dict[str, Any], record: dict[str, Any]) -> None:
         usage = ("costUsd", "inputTokens", "outputTokens", "numTurns", "wallSeconds")
