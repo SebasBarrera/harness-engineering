@@ -161,8 +161,8 @@ intake:
   five: 5), the requirements (none: 25, one to four: 15, five to fourteen: 5) and the entities,
   distinct anchors in the intent, requirements and criteria such as numbers, quoted text, code
   identifiers and file names (under three: 15, under eight: 8). 90 or more is `very-poor`, 75 or
-  more `poor`, 30 or more `partial`, the rest `detailed`. A task with a precise criterion (one with
-  an anchor, as rule `T1` reads it) is at most `partial`.
+  more `poor`, 30 or more `partial`, the rest `detailed`. A task with an observable criterion is
+  at most `partial`: only a request without one is asked the basics deterministically.
 - **The plan**, from the configured `maxRounds` and `maxQuestions`:
 
   | Level | Rounds | Questions per round | Fundamental topics per round |
@@ -538,7 +538,7 @@ same model once.
 | Setting | Tests |
 |---|---|
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
-| `intake.ambiguityReview.depth` | `tests/unit/test_intake_depth.py`, `tests/integration/test_intake_depth.py` |
+| `intake.ambiguityReview.depth` | `tests/unit/test_intake_depth.py`, `tests/integration/test_intake_depth_flow.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_run_outcome.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |

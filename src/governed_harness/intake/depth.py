@@ -15,8 +15,8 @@ The measure (``poverty``) adds four parts, 0 to 100 in total:
   (numbers, quoted text, code identifiers, paths and file names): under three 15, under eight 8.
 
 A score of 90 or more is ``very-poor``, 75 or more ``poor``, 30 or more ``partial``, anything
-else ``detailed``. A task with a precise criterion (one with an anchor, as rule ``T1`` reads
-it) is at most ``partial``: its criterion already bounds it. The plan starts from the configured ``maxRounds`` and ``maxQuestions``
+else ``detailed``. A task with an observable criterion is at most ``partial``: it already says
+what the work must show, so only a request without one is asked the basics deterministically. The plan starts from the configured ``maxRounds`` and ``maxQuestions``
 (defaults 3 and 8): ``very-poor`` adds three rounds and four questions per round, ``poor`` one
 round and two questions, ``partial`` and ``detailed`` keep the configured values. The plan never
 goes over ``MAX_ROUNDS`` rounds and ``MAX_QUESTIONS`` questions per round (or the configured
@@ -290,7 +290,7 @@ def poverty(task: Task) -> Poverty:
     """The measure of a task as it stands (see the module). Criteria are read with the Spanish
     vocabularies, which include the English ones, so the measure does not depend on
     ``intake.language``."""
-    from .clarification import _has_anchor, _lexicon, _statement, no_observable_result
+    from .clarification import no_observable_result
 
     words = len(task.intent.split())
     criteria = sum(
@@ -307,12 +307,9 @@ def poverty(task: Task) -> Poverty:
         + _points(entities, ((3, 15), (8, 8)))
     )
     level = _level(score)
-    lexicon = _lexicon("es")
-    if level in ("very-poor", "poor") and any(
-        _has_anchor(_statement(criterion), lexicon) for criterion in task.acceptance_criteria
-    ):
-        # A precise criterion (a number, a quoted value, a code identifier or a result verb)
-        # already bounds the task, as rule T1 holds: it is never asked the basics.
+    if level in ("very-poor", "poor") and criteria:
+        # An observable criterion already says what the task must show: the person wrote more
+        # than a wish, so the basics are left to the agent review.
         level = "partial"
     return Poverty(words, criteria, requirements, entities, score, level)
 
