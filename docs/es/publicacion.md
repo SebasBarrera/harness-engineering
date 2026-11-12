@@ -28,7 +28,7 @@ El flujo de ramas está en `CONTRIBUTING.md` y `CLAUDE.md`. Para una versión:
 
 5. Mezcla `main` de vuelta en `develop`.
 
-Nunca muevas ni reescribas la etiqueta `v0.8.0` (el corte evaluado en la tesis) ni la historia publicada.
+Nunca muevas ni reescribas la etiqueta `v0.8.0` (una iteración anterior y obsoleta de la tesis, reproducible) ni la historia publicada.
 
 ## Qué hace `release.yml`
 

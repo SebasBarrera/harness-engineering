@@ -219,7 +219,7 @@ Qué cambia frente a un proyecto nuevo:
   entonces **298 pruebas**, todas satisfactorias, con el mismo digest del ChangeSet; el gate cuenta
   el último intento de cada validador, así que quedó en `PASSED` y un `APPROVE` simple cerró la
   ejecución: 46 eventos, cadena válida), o cerrar con `APPROVE_EXCEPTION` y una justificación
-  escrita. En el corte evaluado 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
+  escrita. En la iteración anterior 0.8.0 el gate conservaba el fallo del primer intento y el caso cerró
   por excepción.
 - **Respeta las convenciones.** La detección es de solo lectura (en el caso: Python, confianza 1,0
   por `pyproject.toml` y `tox.ini`). Varios lockfiles elevan la confianza de Node.js, pero el perfil
@@ -431,7 +431,7 @@ de ejecución en runners compartidos, no productividad ni calidad. Ver
 
 Defectos de comportamiento abiertos (hito
 [backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); el tag
-`v0.8.0` conserva el comportamiento evaluado, la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, y la
+`v0.8.0` conserva el comportamiento de la iteración anterior, la 0.9.0 corrigió #1, #2, #9, #19, #29, #30 y #31, y la
 1.0.0 hizo operable la memoria (#6) ([changelog](CHANGELOG.md)):
 
 - [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) la configuración de fases del workflow (capacidades, intentos, tiempos, gates de salida) se registra pero no se aplica;
@@ -448,7 +448,7 @@ reporta.
 
 ## Hoja de ruta
 
-- Decidir y resolver el resto del backlog `thesis-impact` cuando se cierre la evaluación de la tesis (#3–#8).
+- Resolver el resto del backlog `thesis-impact` (#3–#8); `v0.8.0` es una iteración anterior y ya no lo frena.
 - Aplicar capacidades por fase y los ajustes del workflow que hoy solo se registran (#3, #4).
 - Un adaptador de sandbox a nivel de sistema operativo (contenedor) y una política de red aplicada (#5, #18).
 - Distinguir fallos preexistentes de fallos introducidos en repositorios brownfield (#7).
@@ -459,13 +459,14 @@ reporta.
 Este software es el artefacto de la tesis de maestría *Diseño y evaluación de una arquitectura de
 harness engineering para el desarrollo de software asistido por inteligencia artificial, con
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
-Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis documenta el corte
-[**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), que lo reproduce
-byte a byte ([procedencia](docs/provenance.md)), y su evaluación reporta solo la versión 2.0.0
-(campaña en curso, [`evaluation/campaign/`](evaluation/campaign/)); los resultados de versiones
-anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de ese análisis.
+Informática, Escuela Colombiana de Ingeniería Julio Garavito). La tesis evalúa la versión 2.0.1 (campaña en curso,
+[`evaluation/campaign/`](evaluation/campaign/)). [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0)
+es una iteración anterior y obsoleta de Design Science Research: sigue documentada y se reproduce
+byte a byte ([procedencia](docs/provenance.md)), su tag no se mueve y su comportamiento puede
+cambiar en versiones nuevas. Los resultados de versiones anteriores están en el historial de git y
+en el tag `v0.8.0`, y no forman parte del análisis de la 2.0.1.
 
-Snapshot reportado por la tesis para v0.8.0 (los badges de CI muestran el estado actual):
+Snapshot de la iteración anterior v0.8.0, reportado por su manuscrito (los badges de CI muestran el estado actual):
 
 | Hecho | v0.8.0 |
 |---|---|
@@ -481,6 +482,6 @@ Más en [docs/thesis.md](docs/thesis.md). Para citar el software, usa [CITATION.
 ## Contribuir, seguridad y licencia
 
 - [CONTRIBUTING.md](CONTRIBUTING.md): entorno, comandos de verificación, flujo de ramas y las reglas
-  que protegen el corte evaluado. [Código de conducta](CODE_OF_CONDUCT.md). [Soporte](SUPPORT.md).
+  que mantienen reproducible el tag `v0.8.0` y registrados los cambios de comportamiento. [Código de conducta](CODE_OF_CONDUCT.md). [Soporte](SUPPORT.md).
 - [SECURITY.md](SECURITY.md): reporta vulnerabilidades de forma privada a través de GitHub.
 - Licencia [Apache 2.0](LICENSE).
