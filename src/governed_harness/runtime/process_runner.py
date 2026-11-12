@@ -296,7 +296,12 @@ class SafeProcessRunner:
             name: os.environ[name] for name in spec.allowed_environment if name in os.environ
         }
         # Preserve only minimal executable lookup and locale by default.
-        for name in ("PATH", "HOME", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG", "LC_ALL"):
+        names = ["PATH", "HOME", "SYSTEMROOT", "TMPDIR", "TEMP", "LANG", "LC_ALL"]
+        if sys.platform == "win32":
+            # Windows has no HOME outside Git Bash: Python's ``Path.home()`` (an agent provider
+            # started without HOME) reads USERPROFILE, or HOMEDRIVE and HOMEPATH.
+            names += ["USERPROFILE", "HOMEDRIVE", "HOMEPATH"]
+        for name in names:
             if name in os.environ:
                 environment.setdefault(name, os.environ[name])
         if extra_env:

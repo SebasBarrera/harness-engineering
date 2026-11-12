@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- On Windows the process runner also passes `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` (when set) to
+  the commands it starts, besides `HOME`. An agent provider started without `HOME` failed with
+  `RuntimeError: Could not determine home directory` from `Path.home()`. POSIX is unchanged.
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`

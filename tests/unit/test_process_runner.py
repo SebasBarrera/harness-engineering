@@ -150,3 +150,33 @@ def test_sandbox_prefix_does_not_authorize_the_command(tmp_path: Path) -> None:
     )
     with pytest.raises(CapabilityDenied):
         runner.run(command_spec, actor=actor, grants=grants)
+
+
+def _spec(tmp_path: Path) -> CommandSpec:
+    return CommandSpec(argv=("x",), cwd=tmp_path, timeout_seconds=1)
+
+
+def test_windows_environment_passes_the_user_profile_without_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.delenv("HOME", raising=False)
+    monkeypatch.setenv("USERPROFILE", r"C:\Users\dev")
+    monkeypatch.setenv("HOMEDRIVE", "C:")
+    monkeypatch.setenv("HOMEPATH", r"\Users\dev")
+    monkeypatch.setenv("SECRET_TOKEN", "x")
+    env = SafeProcessRunner._environment(_spec(tmp_path), None)
+    assert env["USERPROFILE"] == r"C:\Users\dev"
+    assert env["HOMEDRIVE"] == "C:" and env["HOMEPATH"] == r"\Users\dev"
+    assert "HOME" not in env and "SECRET_TOKEN" not in env
+
+
+def test_posix_environment_keeps_only_the_minimal_variables(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(sys, "platform", "linux")
+    monkeypatch.setenv("HOME", "/home/dev")
+    monkeypatch.setenv("USERPROFILE", "/should/not/pass")
+    env = SafeProcessRunner._environment(_spec(tmp_path), None)
+    assert env["HOME"] == "/home/dev"
+    assert "USERPROFILE" not in env
