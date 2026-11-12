@@ -311,12 +311,13 @@ def _product_owner(prompt: str) -> str | None:
             f"  {qid}: |",
             "    La entrada válida más pequeña devuelve el resultado documentado; una entrada inválida lanza el error documentado.",
         ]
-    lines += [
-        "addCriteria:",
-        "  - |",
-        "    Ejecutar python -m pytest -q termina con código 0.",
-        "```",
-    ]
+    criterion = "Ejecutar python -m pytest -q termina con código 0."
+    task = prompt.split("\nPreguntas:\n", 1)[0]
+    # The criterion is added once: a task that already has it would get a duplicate (rule C3),
+    # and every later round would ask about the duplicates again.
+    if criterion not in task:
+        lines += ["addCriteria:", "  - |", f"    {criterion}"]
+    lines.append("```")
     return "\n".join(lines)
 
 
