@@ -214,7 +214,7 @@ def _path_length_check(project: Any, workspace: Path) -> dict[str, Any]:
         "path": str(root),
         "length": len(str(root)),
         "message": path_too_long_message(root),
-        "hint": "Set runtime.stateDir to a short path (for example C:\h\state) or enable "
+        "hint": "Set runtime.stateDir to a short path (for example C:\\h\\state) or enable "
         "Windows long paths, then run harness doctor again.",
     }
 
