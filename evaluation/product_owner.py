@@ -34,6 +34,31 @@ PO_BUDGET_USD = "20"
 # The product owner's model in every cell and condition (amendment of 2026-11-11).
 DEFAULT_PO_MODEL = "claude-sonnet-5-5"
 
+NO_PRODUCT_OWNER_ACTOR = "human.product-owner-none"
+NO_PRODUCT_OWNER_ANSWER = (
+    "No tengo esa información; decide tú lo razonable y regístralo como supuesto."
+)
+
+
+class NoProductOwner:
+    """The person of the condition ``harness`` without product owner (tests T1 and T6).
+
+    It holds no product knowledge and makes no model call: it answers every clarification question
+    with ``NO_PRODUCT_OWNER_ANSWER``, so the run goes on instead of stopping in INTENT. The harness
+    records the points the agent still raises as explicit assumptions once its rounds are exhausted
+    (``intake.ambiguityReview.onExhausted: assume``, what ``harness init`` writes)."""
+
+    actor = NO_PRODUCT_OWNER_ACTOR
+
+    def __init__(self) -> None:
+        self.rounds: list[dict[str, Any]] = []
+
+    def __call__(self, task: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
+        ids = [str(q["questionId"]) for q in request.get("questions") or []]
+        self.rounds.append({"questions": ids, "answer": "none", "usage": {}})
+        return {"answers": dict.fromkeys(ids, NO_PRODUCT_OWNER_ANSWER)}
+
+
 PO_PROMPT = """Eres el product owner del producto que se describe al final de este mensaje, y además un
 ingeniero de software con experiencia que conoce ese producto a fondo. Un desarrollador escribió la tarea de
 abajo para un agente de programación, y la herramienta de proceso de desarrollo la detuvo antes de cualquier

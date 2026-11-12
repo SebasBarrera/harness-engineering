@@ -290,7 +290,14 @@ def summarize_probes(path: Path) -> dict[str, Any]:
 
 
 # ----- 2.0.0 evaluation (blocks A and B) -------------------------------------------------------
-GOVERNED_V2 = ("harness-core", "harness", "harness-anchored", "harness-tiered", "clarify")
+GOVERNED_V2 = (
+    "harness-core",
+    "harness",
+    "harness-nopanel",
+    "harness-anchored",
+    "harness-tiered",
+    "clarify",
+)
 BLOCKS_V2 = {"full": "A", "poor": "B", "casual": "B"}
 
 
