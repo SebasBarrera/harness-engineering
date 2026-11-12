@@ -592,7 +592,7 @@ function renderDecision(id, b){
  }
  target.innerHTML=`<h3>Human gate</h3>
  <div class="notice">The decision will be bound to <code>${esc(b.run.changeSetDigest)}</code> (${b.changed.files.length} file(s)). Any later change invalidates it.</div>
- ${session.authentication==='token'?`<label>Actor<input id="actor" value="${esc(session.userId)}" readonly></label>`:'<label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>'}
+ <label>Actor<input id="actor" value="${esc(session.userId)}" readonly></label>
  <label>Rationale<textarea id="rationale" placeholder="Explain the evidence considered and the reason for the decision. For REQUEST_CHANGES, say what must change."></textarea></label>
  ${(b.checklist||[]).map(c=>`<label><input type="checkbox" class="check" value="${esc(c.itemId)}" style="width:auto"> ${esc(c.itemId)}: ${esc(c.text)}</label>`).join('')}
  <div class="actions">
