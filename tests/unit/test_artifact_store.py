@@ -24,14 +24,14 @@ def test_redacted_json_artifact_stays_valid_json(tmp_path: Path) -> None:
     # A workspace snapshot stored with put_json carries file texts. Redacting the serialized
     # document matched `password = os.environ.get(\` and dropped the backslash that escaped
     # the next quote, so reading the snapshot back raised JSONDecodeError (a correction round
-    # ended in phase.error and quarantine).
+    # ended in phase.error and quarantine). Since F4 the call is code and stays as written.
     store = LocalArtifactStore(tmp_path)
     source = 'password = os.environ.get("ALERTS_PASSWORD")\ntoken = "abcd-1234"\n'
     ref = store.put_json({"files": {"src/alerts.py": {"text": source}}, "next": "kept"})
     value = json.loads(store.get(ref))
     text = value["files"]["src/alerts.py"]["text"]
     assert value["next"] == "kept"
-    assert "os.environ.get(" not in text
+    assert 'password = os.environ.get("ALERTS_PASSWORD")' in text
     assert "abcd-1234" not in text
     assert ref.redacted
     assert ref.metadata == {"redactionRuleIds": ["generic_secret_assignment"]}
@@ -70,7 +70,7 @@ def test_private_key_split_across_strings_in_a_document_redacted_string_by_strin
     ref = store.put_json(value)
     stored = store.get(ref)
     assert b"MIIBOgIBAAJBAKj34GkxFhD90vcN" not in stored
-    assert b"os.environ.get(" not in stored
+    assert b"os.environ.get(" in stored  # code, not a secret (F4)
     json.loads(stored)
     assert ref.redacted
 
