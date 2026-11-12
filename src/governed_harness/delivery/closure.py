@@ -114,7 +114,7 @@ def commit_message(
 def commit_author(git: Git, commit: str) -> tuple[str, str]:
     """Author (``Name <email>``) and subject of ``commit``, as Git shows them."""
     shown = git.text("show", "-s", "--format=%an <%ae>%x1f%s", commit)
-    author, _, subject = shown.partition("")
+    author, _, subject = shown.partition("\x1f")
     return author, subject
 
 
