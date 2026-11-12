@@ -32,6 +32,8 @@ Every implement call carries the turn cap (``--max-turns``, default ``agentlib.M
 its Claude Code session; a correction (a later implement call of the same run) resumes the session
 of the previous implement call instead of starting over, and starts a new one when there is none
 (amendment A3). The record says ``maxTurns``, ``hitTurnLimit`` and ``resumed``.
+``--no-max-turns`` (the rides block, amendment of 2026-11-12) removes the cap: no call carries
+``--max-turns`` and every record says ``maxTurns: null``.
 """
 
 from __future__ import annotations
@@ -199,6 +201,12 @@ def main() -> int:
         help="the turn cap of every implement call (Claude Code --max-turns)",
     )
     parser.add_argument(
+        "--no-max-turns",
+        action="store_true",
+        help="no turn cap on any call (the rides block, amendment of 2026-11-12); "
+        "overrides --max-turns",
+    )
+    parser.add_argument(
         "--honor-routing",
         action="store_true",
         help="use the model and effort of the request's routing (anchored condition)",
@@ -208,6 +216,9 @@ def main() -> int:
         "--claude-bin", default=None, help="the CLI to run (the dry runs use fake_claude.py)"
     )
     args = parser.parse_args()
+    if args.no_max_turns:
+        # 0: agentlib.run_claude passes no --max-turns and records maxTurns null.
+        args.max_turns = 0
     if args.claude_bin:
         agentlib.CLAUDE_BIN = args.claude_bin
     request = json.load(sys.stdin)

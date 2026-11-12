@@ -66,6 +66,9 @@ def _scenario(cwd: Path) -> str | None:
         return "security"
     if 'name = "shipping"' in text:
         return "greenfield"
+    if 'name = "rides"' in text:
+        # The rides fixture (rides/fixture/pyproject.toml); its SPEC.md is docs/SPEC.md or absent.
+        return "rides"
     return None
 
 
@@ -80,6 +83,7 @@ PACKAGE = {
     "security": "alerts",
     "brownfield": "itsdangerous",
     "inventory": "inventory",
+    "rides": "rides",
 }
 
 
@@ -100,6 +104,14 @@ def _implement(cwd: Path, prompt: str) -> str:
         source = REFERENCE / f"greenfield-{'shipping' if scenario == 'greenfield' else 'alerts'}"
         for package in source.iterdir():
             shutil.copytree(package, cwd / "src" / package.name, dirs_exist_ok=True)
+    elif scenario == "rides":
+        # A minimal importable package: the dry run checks the apparatus, not the platform (the
+        # code copy of a block has no rides/reference).
+        package_dir = cwd / "src" / "rides"
+        package_dir.mkdir(parents=True, exist_ok=True)
+        init = package_dir / "__init__.py"
+        if not init.exists():
+            init.write_text('"""Dry run: the rides package."""\n', encoding="utf-8")
     else:
         return "Nothing to implement: unknown scenario."
     package = PACKAGE[scenario]

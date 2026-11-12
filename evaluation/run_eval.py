@@ -36,6 +36,7 @@ import subprocess
 import sys
 import tarfile
 import time
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -249,12 +250,16 @@ def run_harness(
     condition: str | None = None,
     provider: str = "claude",
     claude_bin: str | None = None,
+    resumable: bool | None = None,
+    turn_cap: bool = True,
+    provider_args: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Run one task through the harness and drive it with the simulated person.
 
     ``condition`` None keeps the configuration of the earlier evaluations (``harness init`` and
-    ``configure_provider``, used by rides/ and large/); otherwise ``conditions.write_config``
-    writes the configuration of that condition."""
+    ``configure_provider``, used by large/); otherwise ``conditions.write_config`` writes the
+    configuration of that condition, with ``resumable`` (None: ``RESUMABLE_PROVIDER``),
+    ``turn_cap`` and ``provider_args`` for the provider's command line (rides/)."""
     events: list[dict[str, Any]] = []
 
     def step(*args: str) -> subprocess.CompletedProcess[str]:
@@ -285,7 +290,9 @@ def run_harness(
             harness=tracked,
             provider=provider,
             claude_bin=claude_bin,
-            resumable=RESUMABLE_PROVIDER,
+            resumable=RESUMABLE_PROVIDER if resumable is None else resumable,
+            turn_cap=turn_cap,
+            extra_args=provider_args,
         )
     shutil.copy2(workspace / ".harness" / "project.yaml", run_dir / "project.yaml")
     created = step("task", "create", "--path", ".", "--file", str(task_file))
