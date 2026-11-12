@@ -223,9 +223,9 @@ calibrate, not measured optima. See [local metrics](local-metrics.md).
 
 ## Known limits
 
-- The affected-test selection reads Python imports and file names; it does not trace dynamic
+* The affected-test selection reads Python imports and file names; it does not trace dynamic
   imports or fixtures. The full suite runs before the gate whatever it selects.
-- The change type is decided from paths: a `.json` file that is data, not configuration, is
+* The change type is decided from paths: a `.json` file that is data, not configuration, is
   treated as configuration.
-- A reused validator result assumes the validator is deterministic for the same files; a flaky
+* A reused validator result assumes the validator is deterministic for the same files; a flaky
   test that passed once is reused within the same digest.
