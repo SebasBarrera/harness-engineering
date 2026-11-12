@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
+evaluation apparatus, the poor-prompt intake that asks more instead of refusing, and the
+pre-registered tests T1 to T7 with the apparatus they run on.
+
 - A poor request is never refused, and the poorer it is the more INTENT asks, starting with the
   basics: `intake.ambiguityReview.depth: adaptive`, which `harness init` now writes, measures
   deterministically how little the task says (intent words, observable criteria, requirements,
