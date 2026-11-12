@@ -134,6 +134,9 @@ def run_governed(
         tree, source = (rebuilt, "quarantine-patch") if rebuilt else (workspace, "workspace")
     rule_ids = [str(f.get("ruleId")) for f in result.get("findings") or []]
     harness = {
+        # "run" when the harness started a run (anonymized), None when it did not (smoke.sh).
+        "runId": result.get("runId"),
+        "runKey": result.get("runKey"),
         "outcome": result.get("outcome"),
         "reachedDecision": bool(result.get("decisions")),
         "decisions": [d.get("decision") for d in result.get("decisions") or []],
