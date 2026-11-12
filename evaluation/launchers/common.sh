@@ -235,4 +235,17 @@ record_environment() {
   unset CLAUDECODE CLAUDE_CODE_ENTRYPOINT PYTHONPATH
 }
 
+# finish_environment <block>: Claude Code version at the end of the block. If it differs from the
+# start, the block is flagged in environment.json (claudeCodeChanged) and the log warns; no result
+# is deleted.
+finish_environment() {
+  local slot out
+  slot=$(make_slot env)
+  out=$(PATH="$(slot_path "$slot")" "$slot/$VENV_BIN/python" "$CODE/environment.py" "$EVAL_OUT/environment.json"     --block "$1" --finish)
+  log "$out"
+  case "$out" in
+    *"changed=True"*) log "WARNING: Claude Code changed during block $1: the block is flagged (claudeCodeChanged), results kept" ;;
+  esac
+}
+
 log() { echo "$(date -u +%FT%TZ) $*" | tee -a "$EVAL_OUT/log.txt"; }

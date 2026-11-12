@@ -38,4 +38,5 @@ done
 SLOT=$(make_slot b1)
 "$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
 "$SLOT/$VENV_BIN/python" "$CODE/report_prompts.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-prompts.json" > /dev/null
+finish_environment B
 log "BLOCK-B-DONE"

@@ -96,4 +96,5 @@ if [ -f "$OUT" ] && ! PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$EVA
   log "FAILED rescore (see summary-rescore.txt)"
   exit 1
 fi
+finish_environment rides
 log "BLOCK-RIDES-DONE"

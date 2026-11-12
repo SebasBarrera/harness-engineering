@@ -559,6 +559,7 @@ def _run_resumable(
         "costUsd": cumulative["costUsd"],
         "durationApiMs": cumulative["durationApiMs"],
         "modelUsage": cumulative["modelUsage"],
+        "modelIds": cumulative.get("modelIds", sorted(cumulative["modelUsage"] or {})),
         "inputTokens": total("inputTokens"),
         "outputTokens": total("outputTokens"),
         "cacheReadTokens": total("cacheReadTokens"),
@@ -678,6 +679,7 @@ def _invoke(
             name: {k: v for k, v in data.items() if k != "contextWindow"}
             for name, data in (result.get("modelUsage") or {}).items()
         },
+        "modelIds": sorted((result.get("modelUsage") or {}).keys()),
         "summary": str(result.get("result", ""))[:2000],
         "resultText": str(result.get("result", "")),
     }

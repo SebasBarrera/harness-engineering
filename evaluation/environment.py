@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Record the environment of an evaluation block in ``environment.json`` (no model call).
 
-Usage: python environment.py <out.json> [--wheel PATH] [--code DIR] [--block NAME] [--claude-bin BIN]
+Usage: python environment.py <out.json> [--wheel PATH] [--code DIR] [--block NAME] [--claude-bin BIN] [--finish]
+
+``--finish`` (end of the block) adds ``claudeCodeAtEnd`` and ``claudeCodeChanged`` to the block's entry.
 
 Records the harness executable (``EVAL_HARNESS``, default ``harness``) and its version, the SHA-256
 of the wheel it was installed from, the Claude Code version, the Python and tool versions of the
@@ -80,6 +82,26 @@ def agent_calls() -> dict[str, object]:
     }
 
 
+def finish_block(out: Path, block: str, claude_bin: str) -> int:
+    """Record the Claude Code version at the end of a block; flag the block when it changed.
+
+    Nothing is deleted: the results stay, the entry gets ``claudeCodeAtEnd`` and
+    ``claudeCodeChanged`` and the caller warns in the block log.
+    """
+    data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    entry = data.setdefault("blocks", {}).setdefault(block, {})
+    at_end = version([claude_bin, "--version"])
+    entry["claudeCodeAtEnd"] = at_end
+    entry["finishedAt"] = datetime.now(UTC).isoformat(timespec="seconds")
+    changed = entry.get("claudeCodeAtStart") != at_end
+    entry["claudeCodeChanged"] = changed
+    out.write_text(
+        json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
+    print(f"claudeCode start={entry.get('claudeCodeAtStart')!r} end={at_end!r} changed={changed}")
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("out", type=Path)
@@ -93,8 +115,16 @@ def main() -> int:
         help="a source tree used instead of a wheel (its Git commit)",
     )
     parser.add_argument("--claude-bin", default=os.environ.get("EVAL_CLAUDE_BIN", "claude"))
+    parser.add_argument(
+        "--finish",
+        action="store_true",
+        help="end of the block: record the Claude Code version again and flag a change",
+    )
     args = parser.parse_args()
+    if args.finish:
+        return finish_block(args.out, args.block or "default", args.claude_bin)
     harness = shlex.split(os.environ.get("EVAL_HARNESS", "harness"))
+    claude_code = version([args.claude_bin, "--version"])
     entry = {
         "recordedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "harnessVersion": version([*harness, "--version"]),
@@ -110,7 +140,8 @@ def main() -> int:
         }
         if args.source
         else None,
-        "claudeCode": version([args.claude_bin, "--version"]),
+        "claudeCode": claude_code,
+        "claudeCodeAtStart": claude_code,
         "python": platform.python_version(),
         "tools": {
             name: package(name)

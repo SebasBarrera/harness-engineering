@@ -80,6 +80,24 @@ marca de tiempo) lo fijo mide 130, así que `EVAL_WORK` admite a lo sumo 10 cara
 (`cygpath -w`). Si `EVAL_WINDOWS=1` y lo supera, `launchers/common.sh` aborta con código 5 antes de crear
 nada. El cálculo completo está comentado en ese archivo. Usa algo como `C:/e/b`.
 
+### Versiones fijadas y registradas
+
+- **Humo con la profundidad real.** El humo de cada bloque corre sus celdas en seco en el mismo
+  directorio de trabajo que una celda real (`$EVAL_WORK/runs/<bloque>/<modelo>`), con la repeticion
+  reservada 99 (`-r99`, igual de larga que `-r10`); borra esos directorios antes y despues, y registra
+  la longitud de la ruta de estado.
+- **Version de Claude Code.** `environment.json` guarda por bloque `claudeCodeAtStart` (y
+  `claudeCode`, igual) al iniciar y `claudeCodeAtEnd` al terminar. Si difieren, el bloque queda
+  marcado con `claudeCodeChanged: true` y el log avisa; no se borra ningun resultado, y la decision de
+  usarlo o repetirlo es del investigador.
+- **Modelo por llamada.** Cada `call-N.json` guarda `modelUsage` y `modelIds` (los identificadores que
+  devolvio Claude Code); permite detectar un alias que cambie de modelo.
+- **Como fijar la version de Claude Code (sin verificar).** Antes del bloque, instalar una version
+  concreta y desactivar la actualizacion automatica, por ejemplo con la variable de entorno
+  `DISABLE_AUTOUPDATER=1` (o `"autoUpdates": false` en la configuracion del CLI). No se comprobo en
+  esta maquina que esa variable o clave baste: sin verificar. Mientras tanto el registro de inicio y
+  fin detecta el cambio.
+
 ### Pendiente para la Mac
 
 Cuando haya una Mac disponible:

@@ -29,4 +29,5 @@ for MODEL in $EVAL_MODELS; do
       >> "$EVAL_OUT/log-$MODEL.txt" 2>&1 || log "FAILED host $MODEL rep $REP"
   done
 done
+finish_environment embedded
 log "BLOCK-EMBEDDED-DONE"

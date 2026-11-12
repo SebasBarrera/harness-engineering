@@ -39,4 +39,5 @@ run_part "${EVAL_CONDITIONS:-direct,harness}" "$EVAL_REPS" main
 run_part harness-anchored "${EVAL_ANCHORED_REPS:-2}" anchored
 SLOT=$(make_slot a1)
 "$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+finish_environment A
 log "BLOCK-A-DONE"

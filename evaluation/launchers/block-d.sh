@@ -50,4 +50,5 @@ for MODEL in $EVAL_MODELS; do
 done
 SLOT=$(make_slot d1)
 "$SLOT/$VENV_BIN/python" "$CODE/longitudinal/report.py" "$EVAL_OUT" "$EVAL_OUT/summary-longitudinal.json" > /dev/null
+finish_environment D
 log "BLOCK-D-DONE"
