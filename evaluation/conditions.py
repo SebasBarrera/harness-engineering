@@ -99,6 +99,10 @@ def provider_command(
         command += ["--claude-bin", claude_bin]
     if resumable:
         command.append("--resumable")
+    if os.environ.get("EVAL_MAX_TURNS", "").strip():
+        # The harness does not pass the runner's environment to the provider: a turn cap other
+        # than the provider's default (agentlib.MAX_TURNS) goes on its command line (amendment A3).
+        command += ["--max-turns", os.environ["EVAL_MAX_TURNS"].strip()]
     return command
 
 
