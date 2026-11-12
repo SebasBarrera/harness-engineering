@@ -147,6 +147,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "onExhausted": "assume",
                 # 2.0.1: no new call once a round left no question or the stop was recorded.
                 "skipSettled": True,
+                # 2.0.1: a poorer request gets more rounds and questions, the basics first.
+                "depth": "adaptive",
             },
             "validateAnswers": True,
             "operationalContract": "batch",

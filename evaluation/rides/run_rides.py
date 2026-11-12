@@ -12,8 +12,10 @@ Conditions:
   stepwise  (super only) the 16 steps sent one by one to the agent, without the harness and without
             any verification between steps;
   harness   governed tasks: one for paragraph (only criterion "Funciona.") and requirements, one per step
-            for super; one_line is refused when the task is created (no acceptance criteria).
-  clarify   (paragraph only; harness 1.1.0 or later) the governed paragraph task with
+            for super; one_line has no acceptance criterion: the configuration of harness init
+            (intake.criteriaPolicy enforce) stores it with criteriaPending and INTENT asks for its
+            criteria (rule C0), so the task is not refused when it is created.
+  clarify   (one_line and paragraph; harness 1.1.0 or later) the governed task with
             intake.criteriaPolicy enforce: INTENT asks clarification questions and a simulated product
             owner who holds SPEC.md answers them (product_owner.py) before the run continues.
 
@@ -84,7 +86,7 @@ AGENT_TIMEOUT = 4 * 3600
 AGENT_BUDGET = "200"
 VALID = {("direct", lvl) for lvl in ("one_line", "paragraph", "requirements", "super")} | {
     ("stepwise", "super"), ("harness", "one_line"), ("harness", "paragraph"), ("harness", "requirements"),
-    ("harness", "super"), ("clarify", "paragraph")}
+    ("harness", "super"), ("clarify", "one_line"), ("clarify", "paragraph")}
 
 
 def requirements_by_section() -> dict[str, list[tuple[str, str]]]:
@@ -233,10 +235,6 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
     (run_dir / "feedback.md").unlink(missing_ok=True)
     task_file = run_dir / f"{name}.yaml"
     task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8", newline="\n")
-    if "acceptanceCriteria" not in task:
-        harness(workspace, "init", "--path", ".")
-        created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
-        return {"outcome": f"task-refused-exit-{created.returncode}", "delivered": False, "corrections": 0}
     original = run_eval.configure_provider
 
     def with_limits(ws: Path, m: str, agent: str = "claude", effort: str = "") -> None:
@@ -250,6 +248,8 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
         run_eval.configure_provider = original
     keep = ("outcome", "delivered", "corrections", "gateHistory", "finalStatus", "finalPhase", "eventCount",
             "eventChainValid", "validationSummary", "clarification")
+    if outcome["outcome"].startswith("task-refused"):
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "taskCreateError")}
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]

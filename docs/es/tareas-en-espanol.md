@@ -67,6 +67,26 @@ works.", "It must be fast."), con las mismas reglas y los mismos ids:
 Sin la clave, el mismo archivo recibe solo la pregunta `C1`, en inglés: la palabra "rápido" se
 parte en "r" y "pido" y el harness no reconoce la cualidad.
 
+## Un pedido pobre: más preguntas, primero lo básico
+
+El harness no rechaza un pedido pobre como «haz una app como Uber con Uber Eats, viajes y
+domicilios de comida»: con la configuración de `harness init` la tarea se guarda con
+`criteriaPending` y `INTENT` pregunta. Con `intake.ambiguityReview.depth: adaptive`, que `init`
+escribe, pregunta más cuanto menos dice el pedido. Una medida determinista (palabras de la
+intención, criterios observables, requisitos y entidades concretas) da un nivel: `very-poor`
+recibe 3 rondas y 4 preguntas por ronda más que `maxRounds` y `maxQuestions`, `poor` 1 y 2 más,
+con un tope de 8 rondas y 16 preguntas. Con los valores de `init`, un pedido de una línea tiene
+hasta 6 rondas de 12 preguntas.
+
+Las primeras rondas cubren, en este orden, los temas básicos: usuarios y roles, qué hace cada
+usuario, flujos principales, plataforma y stack, datos, reglas de negocio, límites y casos borde,
+criterios de aceptación observables, y prioridades y alcance de la primera versión. Las preguntas
+deterministas de esos temas (categoría `basics`, objetivo `task:<tema>`) van antes que las de `C0`
+y salen en el idioma de `intake.language`; cada respuesta se vuelve un requisito con la etiqueta
+del tema. La revisión del agente recibe el nivel, el plan y los temas de la ronda. Sin la clave
+nada cambia. Los detalles están en
+[la guía](../guides/agent-results.md#more-questions-for-a-poorer-request-depth-adaptive-201).
+
 ## Lo que todavía sale en inglés
 
 `intake.language` cubre las reglas deterministas `C0` a `C3` y `T1`. Las preguntas del contrato
