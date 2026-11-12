@@ -73,10 +73,18 @@ class SecretRedactor:
         """Whether redaction beyond the 1.0.0 rules is configured."""
         return bool(self.literals) or self.extended
 
-    def redact(self, data: bytes, extra_literals: Iterable[bytes] = ()) -> RedactionResult:
+    def redact(
+        self, data: bytes, extra_literals: Iterable[bytes] = (), *, code: bool = False
+    ) -> RedactionResult:
+        """``code``: ``data`` is source code (a diff), where an unquoted value after ``token``,
+        ``password`` or ``secret`` is an annotation or an expression (``password: str``,
+        ``token = self._token``), not a secret; only a quoted literal is redacted there (F4).
+        Everywhere else (tool output, logs, ``.env`` text) unquoted values still are."""
         result = data
         applied: list[str] = []
         for rule_id, pattern, replacement in self._RULES:
+            if code and rule_id == "generic_secret_assignment":
+                pattern = QUOTED_SECRET_ASSIGNMENT
             result, count = pattern.subn(replacement, result)
             if count:
                 applied.append(rule_id)
@@ -149,13 +157,20 @@ class SecretRedactor:
         return data, applied
 
 
+QUOTED_SECRET_ASSIGNMENT = re.compile(
+    rb"(?i)\b(api[_-]?key|token|secret|password|passwd|access[_-]?token)\b"
+    rb"(\s*[:=]\s*)"
+    rb"(\"[^\"]{4,}\"|'[^']{4,}')"
+)
+"""``generic_secret_assignment`` in code: the quoted values only."""
+
 MIN_LITERAL_BYTES = 8
 """Environment values shorter than this are not redacted as literals."""
 
 _API_KEY_MARK = b"<REDACTED_API_KEY>"
 
 EXTENDED_RULES: tuple[tuple[str, re.Pattern[bytes], bytes], ...] = (
-    # runtime.extendedRedaction (since 1.1)
+    # runtime.extendedRedaction (since 2.0)
     (
         "anthropic_api_key",
         re.compile(rb"\bsk-ant-[A-Za-z0-9_-]{16,}"),

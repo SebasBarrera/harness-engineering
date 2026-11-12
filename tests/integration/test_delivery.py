@@ -347,3 +347,39 @@ def test_api_transport_reads_the_token_from_the_environment(
     assert transport.token == "t0ken"
     assert GitHubPublisher(transport, "o/r").repository == "o/r"
     assert json.dumps({"ok": True})
+
+
+def _commit_event(application: HarnessApplication, root: Path, run: str) -> dict[str, Any]:
+    created = [
+        e for e in _events(application, root, run) if e.event_type == "delivery.commit.created"
+    ]
+    return dict(created[-1].payload)
+
+
+def test_commit_event_records_author_and_subject_with_the_key(python_workspace: Path) -> None:
+    configure(python_workspace, closureCommit="branch", recordCommitAuthor=True)
+    application, run, digest = run_to_decision(python_workspace)
+    approve(application, python_workspace, run, digest)
+    payload = _commit_event(application, python_workspace, run)
+    commit = payload["commit"]
+    assert payload["author"] == git(python_workspace, "log", "-1", "--format=%an <%ae>", commit)
+    assert payload["subject"] == git(python_workspace, "log", "-1", "--format=%s", commit)
+    assert payload["subject"] == "Implement threshold discount"
+
+
+def test_commit_event_without_the_key_is_as_before(python_workspace: Path) -> None:
+    configure(python_workspace, closureCommit="branch")
+    application, run, digest = run_to_decision(python_workspace)
+    approve(application, python_workspace, run, digest)
+    payload = _commit_event(application, python_workspace, run)
+    assert "author" not in payload and "subject" not in payload
+
+
+def test_commit_event_redacts_secrets_in_the_author(python_workspace: Path) -> None:
+    git(python_workspace, "config", "user.name", "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8")
+    configure(python_workspace, closureCommit="branch", recordCommitAuthor=True)
+    application, run, digest = run_to_decision(python_workspace)
+    approve(application, python_workspace, run, digest)
+    payload = _commit_event(application, python_workspace, run)
+    assert "ghp_a1B2" not in payload["author"]
+    assert "REDACTED" in payload["author"]

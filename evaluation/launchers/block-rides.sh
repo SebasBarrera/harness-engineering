@@ -8,6 +8,7 @@
 # run_rides.py has no dry run: EVAL_DRY=1 is refused.
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-rides.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 # run_rides.VALID, in the order the block runs them.
 RIDES_VALID=(direct:one_line direct:paragraph direct:requirements direct:super stepwise:super harness:one_line
   harness:paragraph harness:requirements harness:super clarify:paragraph)
@@ -45,6 +46,7 @@ check_account
 take_lock block-rides
 copy_code
 record_environment rides
+run_smoke rides r1
 SLOT=$(make_slot r1)
 OUT="$EVAL_OUT/rides.jsonl"
 
@@ -94,4 +96,5 @@ if [ -f "$OUT" ] && ! PATH="$(slot_path "$SLOT")" "$SLOT/$VENV_BIN/python" "$EVA
   log "FAILED rescore (see summary-rescore.txt)"
   exit 1
 fi
+finish_environment rides
 log "BLOCK-RIDES-DONE"

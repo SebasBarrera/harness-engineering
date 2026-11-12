@@ -14,6 +14,12 @@ Claude Code prints (``result``, ``is_error``, ``subtype``, ``usage``, ``total_co
 * anything else is an implementation: the reference solution of the scenario found in the working
   directory is copied in, with one test that names every requirement and criterion id.
 
+Sessions and the turn cap (amendment A3) are simulated as Claude Code handles them: ``--session-id``
+keeps a session (a marker file in ``fake-sessions`` next to the workspace), ``--resume`` of a session
+it does not have fails with "No conversation found" and no turn, and the result names the session.
+In the ``turn-limit`` mode the first implement call that carries ``--max-turns`` stops on the cap
+(``subtype: error_max_turns``, ``terminal_reason: max_turns``, no change), and later calls work.
+
 It is used by ``run_eval.py --dry-run`` and by ``selftest.py``; it never calls a model.
 """
 
@@ -52,6 +58,13 @@ def _scenario(cwd: Path) -> str | None:
     if "`alerts`" in spec:
         return "security"
     if "shipping" in spec:
+        return "greenfield"
+    # The poor and casual levels have no SPEC.md (amendment of 2026-11-12): the project's name.
+    project = cwd / "pyproject.toml"
+    text = project.read_text(encoding="utf-8") if project.is_file() else ""
+    if 'name = "alerts"' in text:
+        return "security"
+    if 'name = "shipping"' in text:
         return "greenfield"
     return None
 
@@ -376,6 +389,29 @@ def _host(prompt: str, cwd: Path, config: str) -> str:
     return "; ".join(steps)
 
 
+def _session(argv: list[str], cwd: Path) -> tuple[str | None, bool]:
+    """The session of the call and whether ``--resume`` names one this stand-in kept."""
+    sessions = cwd.parent / "fake-sessions"
+    resume = _arg(argv, "--resume")
+    if resume:
+        return resume, (sessions / resume).is_file()
+    session = _arg(argv, "--session-id")
+    if session:
+        sessions.mkdir(exist_ok=True)
+        (sessions / session).write_text("1", encoding="utf-8")
+    return session, True
+
+
+def _turn_limit(argv: list[str], cwd: Path) -> int | None:
+    """The cap an implement call stops on in the ``turn-limit`` mode (the first such call only)."""
+    cap = _arg(argv, "--max-turns")
+    marker = cwd.parent / "fake-turn-limit-done"
+    if _mode(cwd) != "turn-limit" or not cap or marker.exists():
+        return None
+    marker.write_text("1", encoding="utf-8")
+    return int(cap)
+
+
 def main(argv: list[str]) -> int:
     prompt = _arg(argv, "-p") or sys.stdin.read()
     if sys.platform == "win32" and prompt.startswith("--"):
@@ -386,20 +422,33 @@ def main(argv: list[str]) -> int:
         prompt = sys.stdin.buffer.read().decode("utf-8").replace("\r\n", "\n")
     model = _arg(argv, "--model") or "fake"
     cwd = Path.cwd()
+    session, known = _session(argv, cwd)
+    if not known:
+        return _print(
+            f"No conversation found with session ID: {session}", model, session, "missing"
+        )
     if "--mcp-config" in argv:
         text = _host(prompt, cwd, _arg(argv, "--mcp-config") or "{}")
-        return _print(text, model)
+        return _print(text, model, session)
     text = _product_owner(prompt)
+    if text is None and prompt.startswith("Antes de implementar la tarea de abajo puedes"):
+        # direct-po's questions turn (direct_po.QUESTIONS_PROMPT): one question.
+        text = "```yaml\nquestions:\n  - |\n    ¿Qué pasa con una entrada inválida?\n```"
     if text is None:
         result = _call(prompt, cwd)
         if result is not None:
             text = json.dumps({"status": "PASSED", "summary": "Dry-run answer.", "result": result})
+        elif (cap := _turn_limit(argv, cwd)) is not None:
+            return _print(f"Reached maximum number of turns ({cap})", model, session, "cap", cap)
         else:
             text = _implement(cwd, prompt)
-    return _print(text, model)
+    return _print(text, model, session)
 
 
-def _print(text: str, model: str) -> int:
+def _print(
+    text: str, model: str, session: str | None = None, error: str = "", turns: int = 1
+) -> int:
+    """Print the result object; ``error`` is ``cap`` (the turn cap) or ``missing`` (no session)."""
     usage = {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -410,21 +459,21 @@ def _print(text: str, model: str) -> int:
         json.dumps(
             {
                 "type": "result",
-                "subtype": "success",
-                "is_error": False,
+                "subtype": "error_max_turns" if error == "cap" else "success",
+                "is_error": bool(error),
                 "result": text,
-                "num_turns": 1,
+                "num_turns": 0 if error == "missing" else turns,
                 "duration_api_ms": 0,
                 "total_cost_usd": 0.0,
-                "session_id": str(uuid.uuid4()),
+                "session_id": session or str(uuid.uuid4()),
                 "usage": usage,
                 "modelUsage": {model: {"inputTokens": 0, "outputTokens": 0, "costUSD": 0.0}},
                 "permission_denials": [],
-                "terminal_reason": "completed",
+                "terminal_reason": "max_turns" if error == "cap" else "completed",
             }
         )
     )
-    return 0
+    return 1 if error else 0
 
 
 if __name__ == "__main__":

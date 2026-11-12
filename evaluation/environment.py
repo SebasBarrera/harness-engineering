@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """Record the environment of an evaluation block in ``environment.json`` (no model call).
 
-Usage: python environment.py <out.json> [--wheel PATH] [--code DIR] [--block NAME] [--claude-bin BIN]
+Usage: python environment.py <out.json> [--wheel PATH] [--code DIR] [--block NAME] [--claude-bin BIN] [--finish]
+
+``--finish`` (end of the block) adds ``claudeCodeAtEnd`` and ``claudeCodeChanged`` to the block's entry.
 
 Records the harness executable (``EVAL_HARNESS``, default ``harness``) and its version, the SHA-256
 of the wheel it was installed from, the Claude Code version, the Python and tool versions of the
 interpreter running it (pytest, coverage, ruff, bandit, mypy), a digest of the evaluation code
 copy, the operating system, the start time and what every agent call gets (``agentCalls``: the
-prompt-cache TTL variables, the allowed tools and the validator commands of the prompt). Paths of the machine are not recorded. Existing
+prompt-cache TTL variables, the allowed tools, the validator commands of the prompt and the turn
+cap of the implement calls). Paths of the machine are not recorded. Existing
 entries of the file are kept under ``blocks``.
 """
 
@@ -77,7 +80,35 @@ def agent_calls() -> dict[str, object]:
         "allowedTools": list(agentlib.ALLOWED_TOOLS),
         "readOnlyTools": list(agentlib.READ_ONLY_TOOLS),
         "validatorCommands": list(agentlib.VALIDATOR_COMMANDS),
+        # The turn cap of every implement call (direct, the governed provider, the embedded host
+        # session; read-only calls and the simulated product owner have none) and the resume of
+        # the previous implement session in a correction (amendment A3).
+        "maxTurns": agentlib.MAX_TURNS,
+        "maxTurnsSource": "EVAL_MAX_TURNS"
+        if os.environ.get("EVAL_MAX_TURNS", "").strip()
+        else "default",
+        "correctionResumesSession": True,
     }
+
+
+def finish_block(out: Path, block: str, claude_bin: str) -> int:
+    """Record the Claude Code version at the end of a block; flag the block when it changed.
+
+    Nothing is deleted: the results stay, the entry gets ``claudeCodeAtEnd`` and
+    ``claudeCodeChanged`` and the caller warns in the block log.
+    """
+    data = json.loads(out.read_text(encoding="utf-8")) if out.exists() else {}
+    entry = data.setdefault("blocks", {}).setdefault(block, {})
+    at_end = version([claude_bin, "--version"])
+    entry["claudeCodeAtEnd"] = at_end
+    entry["finishedAt"] = datetime.now(UTC).isoformat(timespec="seconds")
+    changed = entry.get("claudeCodeAtStart") != at_end
+    entry["claudeCodeChanged"] = changed
+    out.write_text(
+        json.dumps(data, indent=1, sort_keys=True) + "\n", encoding="utf-8", newline="\n"
+    )
+    print(f"claudeCode start={entry.get('claudeCodeAtStart')!r} end={at_end!r} changed={changed}")
+    return 0
 
 
 def main() -> int:
@@ -93,8 +124,16 @@ def main() -> int:
         help="a source tree used instead of a wheel (its Git commit)",
     )
     parser.add_argument("--claude-bin", default=os.environ.get("EVAL_CLAUDE_BIN", "claude"))
+    parser.add_argument(
+        "--finish",
+        action="store_true",
+        help="end of the block: record the Claude Code version again and flag a change",
+    )
     args = parser.parse_args()
+    if args.finish:
+        return finish_block(args.out, args.block or "default", args.claude_bin)
     harness = shlex.split(os.environ.get("EVAL_HARNESS", "harness"))
+    claude_code = version([args.claude_bin, "--version"])
     entry = {
         "recordedAt": datetime.now(UTC).isoformat(timespec="seconds"),
         "harnessVersion": version([*harness, "--version"]),
@@ -110,7 +149,8 @@ def main() -> int:
         }
         if args.source
         else None,
-        "claudeCode": version([args.claude_bin, "--version"]),
+        "claudeCode": claude_code,
+        "claudeCodeAtStart": claude_code,
         "python": platform.python_version(),
         "tools": {
             name: package(name)

@@ -77,7 +77,7 @@ _WEAK: Final[dict[str, re.Pattern[str]]] = {
         r"banks?|credit|tarjetas?"
     ),
 }
-_WEAK_FORMS: Final[dict[str, str]] = {
+_WEAK_FORMS: Final[dict[str, str]] = {  # nosec B105 - word forms of the risk terms, not credentials
     "token": "token",
     "tokens": "token",
     "secret": "secret",

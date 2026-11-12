@@ -1,7 +1,9 @@
-# Provenance of the thesis cut
+# Provenance of the v0.8.0 iteration
 
 The tag `v0.8.0` reproduces the cut of the Governed Agent Harness that the master's thesis
-designed, implemented and evaluated. This page records how that fidelity is established and
+designed, implemented and evaluated in an earlier Design Science Research iteration. That iteration
+is now obsolete: the thesis evaluates `2.0.1`, and the behavior of `v0.8.0` may change in new
+versions. The tag itself is immutable and stays reproducible. This page records how that fidelity is established and
 checked, and every exception to it.
 
 ## Reference
@@ -68,14 +70,15 @@ The binary assets of the release are checked with the `SHA256SUMS` file attached
 ## After v0.8.0
 
 From `v0.8.1` the code evolves, so the tree no longer matches the manifest. `v0.8.1` only adds
-infrastructure, documentation and quality fixes that do not change the behavior evaluated in the
-thesis. `v0.9.0` fixes seven behavioral defects of the cut (#1, #2, #9, #19, #29, #30, #31); the
+infrastructure, documentation and quality fixes that do not change behavior. `v0.9.0` fixes seven behavioral defects of the cut (#1, #2, #9, #19, #29, #30, #31); the
 [changelog](https://github.com/SebasBarrera/harness-engineering/blob/main/CHANGELOG.md) and the
 [brownfield guide](guides/brownfield.md) state where the results differ from the thesis. `v1.0.0` adds
 governed memory operations, decisions on retrospective recommendations and reported usage without
-changing the run path of earlier versions. The evaluation reports only version 2.0.0 (campaign in
+changing the run path of earlier versions. `v2.0.0` adds the governance features of the
+changelog behind configuration keys that `harness init` writes; a `project.yaml` without them keeps
+the earlier behaviour and configuration digest. The evaluation reports `2.0.1` (campaign in
 progress); results of earlier versions are in the git history and the `v0.8.0` tag and are not part of
-that analysis. The
-remaining defects stay in the milestone *backlog — thesis-impact*. `v0.8.1` and later releases are built by CI with an SPDX SBOM and a build
+that analysis. `v2.0.0`
+closed the remaining defects of the milestone *backlog — thesis-impact* (#3, #4, #5, #7, #8). `v0.8.1` and later releases are built by CI with an SPDX SBOM and a build
 provenance attestation (`gh attestation verify`); the `v0.8.0` binaries are the original ones and
 have no attestation.

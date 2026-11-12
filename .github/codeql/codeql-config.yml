@@ -11,3 +11,9 @@ query-filters:
   # imports and no other kind of finding.
   - exclude:
       id: py/import-of-mutable-attribute
+# The fixtures of the temptation tests (T2) carry defects planted on purpose: an unused import, a
+# call that no longer matches a changed signature, a secret in clear. Their own detectors, in
+# evaluation/temptations/detectors.py, check that the defect is still there. The rest of
+# evaluation/temptations (the runner, the detectors, the catalog) is still analyzed.
+paths-ignore:
+  - evaluation/temptations/tasks/**

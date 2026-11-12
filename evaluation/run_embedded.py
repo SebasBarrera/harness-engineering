@@ -77,7 +77,9 @@ RESUME_TEMPLATE = (
 
 def session_command(prompt: str, model: str, run_dir: Path, session: list[str]) -> list[str]:
     """The direct condition's command line (agentlib._command) adapted to a host session."""
-    command = agentlib._command(prompt, model, agentlib.MAX_BUDGET_USD, session)
+    command = agentlib._command(
+        prompt, model, agentlib.MAX_BUDGET_USD, session, max_turns=agentlib.MAX_TURNS
+    )
     command.remove("--safe-mode")
     index = command.index("--allowedTools") + 1
     command.insert(index, "mcp__harness")
@@ -120,7 +122,17 @@ class HostSession:
         record, stderr, _ = agentlib._invoke(
             command, self.workspace, self.model, agentlib.AGENT_TIMEOUT_SECONDS
         )
-        record.update({"kind": "host-session", "segment": len(self.segments) + 1})
+        record.update(
+            {
+                "kind": "host-session",
+                "segment": len(self.segments) + 1,
+                # Every segment is an implement call with the turn cap; a later one resumes the
+                # host session (amendment A3).
+                "maxTurns": agentlib.MAX_TURNS,
+                "resumed": not first,
+                "sessionId": self.session_id,
+            }
+        )
         log = agentlib.allocate_call(self.run_dir / "session-calls")
         log.write_text(json.dumps(record, indent=2), encoding="utf-8")
         log.with_suffix(".stderr.txt").write_text(stderr[-20000:], encoding="utf-8")
@@ -135,6 +147,7 @@ class HostSession:
                     "costUsd",
                     "wallSeconds",
                     "terminalReason",
+                    "hitTurnLimit",
                 )
             }
         )
@@ -239,7 +252,9 @@ def main() -> int:
     task_file = run_eval.SCENARIOS[args.scenario]["task"]
     task = yaml.safe_load(task_file.read_text(encoding="utf-8"))
     document = {**task, "implementation": {"mode": "none"}}
-    prompt = agentlib.build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(task=json.dumps(document, indent=2))
+    prompt = agentlib.build_prompt(task) + EMBEDDED_INSTRUCTIONS.format(
+        task=json.dumps(document, indent=2)
+    )
     host = HostSession(workspace, run_dir, args.model, args.max_segments)
     host.call(prompt)
     run_id, task_id = latest_run(workspace)
@@ -294,6 +309,7 @@ def main() -> int:
                     "personSeconds",
                 )
             },
+            "runKey": run_eval.run_key(run_id, run_dir),
             "delivered": driven["outcome"] == "approved",
             "finalStatus": final["execution"]["status"],
             "finalPhase": final["execution"]["currentPhase"],
@@ -307,7 +323,9 @@ def main() -> int:
     record["wallSeconds"] = round(time.monotonic() - started, 3)
     record["agent"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "agent-calls"))
     record["hostSession"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "session-calls"))
-    record["productOwnerCalls"] = run_eval.summarize_calls(agentlib.load_calls(run_dir / "po-calls"))
+    record["productOwnerCalls"] = run_eval.summarize_calls(
+        agentlib.load_calls(run_dir / "po-calls")
+    )
     quarantine = ((record["harness"].get("state") or {}).get("measures") or {}).get("quarantine")
     if quarantine and quarantine.get("patchRef"):
         record["measures"] = run_eval.measure_quarantine(

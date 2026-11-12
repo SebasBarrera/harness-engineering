@@ -1,7 +1,14 @@
-# Current delivery status
+# Delivery status of the 0.8.0 cut
+
+> This file records the 0.8.0 delivery (an earlier iteration) and is kept as it was. The current
+> release and its changes are in [CHANGELOG.md](CHANGELOG.md) and [README.md](README.md).
 
 Version: 0.8.0 research beta
 Delivery date: 2026-08-30
+
+This file records the 0.8.0 delivery and is not updated with later releases. The current version
+is 2.0.1: see [README.md](README.md), [CHANGELOG.md](CHANGELOG.md) and the
+[trust model](docs/architecture/trust-model.md) for what it implements and does not guarantee.
 
 ## Verified in this environment
 

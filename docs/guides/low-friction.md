@@ -1,6 +1,6 @@
 # Low friction for small changes
 
-A one-line fix should not cost the same as a feature. Since 1.1 (issue #58) the governance of a
+A one-line fix should not cost the same as a feature. Since 2.0 (issue #58) the governance of a
 run is proportional to its size and risk: a small, risk-free task takes a fast lane, a person can
 approve it in advance under a condition the harness checks, several decisions can be taken from
 the inbox at once, and a documentation-only or configuration-only change does not need new
@@ -223,9 +223,9 @@ calibrate, not measured optima. See [local metrics](local-metrics.md).
 
 ## Known limits
 
-- The affected-test selection reads Python imports and file names; it does not trace dynamic
+* The affected-test selection reads Python imports and file names; it does not trace dynamic
   imports or fixtures. The full suite runs before the gate whatever it selects.
-- The change type is decided from paths: a `.json` file that is data, not configuration, is
+* The change type is decided from paths: a `.json` file that is data, not configuration, is
   treated as configuration.
-- A reused validator result assumes the validator is deterministic for the same files; a flaky
+* A reused validator result assumes the validator is deterministic for the same files; a flaky
   test that passed once is reused within the same digest.

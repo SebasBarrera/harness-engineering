@@ -34,7 +34,7 @@ def unified_file_diff(
     one to it, and a last line without a newline is followed by the ``\\ No newline at end of
     file`` marker.
 
-    Before 1.1 the lines were joined with an extra newline (every line was followed by an empty
+    Before 2.0 the lines were joined with an extra newline (every line was followed by an empty
     line), so ChangeSet diffs recorded by earlier versions are not valid patches; their digests
     stay as recorded."""
     lines: list[str] = []

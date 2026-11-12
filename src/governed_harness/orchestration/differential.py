@@ -1,6 +1,6 @@
 """Differential verification against the baseline (#7, #52) and the Ruff/Mypy ratchet.
 
-Before 1.1 a mandatory validator that failed blocked the gate whether or not the change caused
+Before 2.0 a mandatory validator that failed blocked the gate whether or not the change caused
 the failure: Mypy failed on every governed brownfield run because of an error the repository
 already had, and a step that inherited a red test from an earlier step was blamed for it.
 Under ``verification.differential`` the harness runs each failing mandatory command validator

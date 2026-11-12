@@ -1,6 +1,6 @@
 """Stop the line (#52, N2): what happens to the changes of a run that stops without approval.
 
-Before 1.1 a rejected, failed, timed-out or cancelled run left its changes in the workspace: the
+Before 2.0 a rejected, failed, timed-out or cancelled run left its changes in the workspace: the
 next step of a plan started on top of code the harness never approved, and the evaluated
 deliverable contained seven such steps. Under ``governance.stopTheLine``:
 
@@ -234,13 +234,17 @@ class StopLine:
                 except OSError:
                     data = None
                 if data is not None and sha256_bytes(data) == item.after_digest:
+                    # Stored as written (F4): run continue puts back exactly these bytes, which
+                    # a redaction would change; the workspace held them already.
                     entry["contentRef"] = self.results.s.artifacts.put(
                         data,
                         metadata={
                             "kind": "quarantined-content",
                             "executionId": execution.execution_id,
                             "path": item.path,
+                            "unredacted": True,
                         },
+                        redact=False,
                     ).uri
             captured[item.path] = entry
         return captured

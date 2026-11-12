@@ -322,7 +322,7 @@ api:
   users: []
 ```
 
-Since 1.1 the CLI `harness init` also makes Git ignore `.harness/` and writes
+Since 2.0 the CLI `harness init` also makes Git ignore `.harness/` and writes
 `.harness/task.example.yaml` (`--no-gitignore` and `--no-example-task` skip them); the
 `notifications` section is never written, because it needs a URL. Since #86 the entry goes to
 the repository's `.git/info/exclude` in a Git repository, so the tree stays clean (an entry
@@ -341,11 +341,11 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `profiles` | `["auto"]` | `auto` selects the detected profiles; otherwise list profile ids (`python_default`, `node_default`). |
 | `workflow` | `default_development` | The normative workflow. Only the built-in workflow exists; the order of its nine phases is fixed, and under `governance.enforceWorkflow` its `exitGate`, `dependsOn` and `parallelizable` take effect (see [declared settings](#declared-settings)). |
 | `capabilities.default` | `deny` | Only `deny` is accepted. |
-| `capabilities.grants` | `[]` | Extra grants: `capability`, `scope` (globs or command names), `approvalRequired`, `conditions` (for example `allowDelete`). They are **added** to the profile grants (issue #4). |
+| `capabilities.grants` | `[]` | Extra grants: `capability`, `scope` (globs or command names), `approvalRequired`, `conditions` (for example `allowDelete`). They are **added** to the profile grants (issue #4). A path scope is an `fnmatch` glob over the workspace-relative path (`*` also crosses `/`, as in 0.8.0; `dir/**` is the directory and everything below it); a leading `./` is removed as a prefix, and a path with a `..` part or an absolute path is in no scope. A `process.execute` scope matches the executable or the first arguments joined by spaces; only the executable may contain spaces. On Windows a bare command name is looked up in the absolute `PATH` entries only, never in the working directory or the workspace, and the validation report records the program as `executable`. |
 | `validators` | `[]` | Validator ids to run; empty means the profile defaults. An id not defined by a selected profile is a configuration error. |
 | `policies` | see below | Policy overrides; locked policies can only be restated with their locked value. |
 | `agentProvider` | `simulated` | Default provider for `run start` (`--provider` overrides it). |
-| `agentProviders` | `{}` | Named providers: `kind` (`command`, or since 1.1 a built-in adapter `claude-code`, `codex`, `gemini-cli`, `aider`), `command` (argv list, not empty; required for `command`, optional for an adapter), optional `model`, and since 1.1 `args` (extra arguments of an adapter), `passEnv` and `env`. See [external agents](../guides/external-agents.md). |
+| `agentProviders` | `{}` | Named providers: `kind` (`command`, or since 2.0 a built-in adapter `claude-code`, `codex`, `gemini-cli`, `aider`), `command` (argv list, not empty; required for `command`, optional for an adapter), optional `model`, and since 2.0 `args` (extra arguments of an adapter), `passEnv` and `env`. See [external agents](../guides/external-agents.md). |
 | `runtime.commandTimeoutSeconds` | `900` | Timeout of agent-provider processes. Validators use their own `timeoutSeconds` from the profile. |
 | `runtime.maxOutputBytes` | `1000000` | Bound on captured stdout/stderr per process (applied after capture, issue #9). |
 | `runtime.maxParallel` | `2` | Under `governance.enforceWorkflow`, the most validators declared `parallelSafe` that a parallelizable `VERIFICATION` runs at once; without the key it is declarative (validators run one at a time). Phases always run one at a time. |
@@ -359,7 +359,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `runtime.providerRetryDelaySeconds` | `0` when absent; `init` writes `60` | Wait before each repetition (0 to 3600 seconds). |
 | `runtime.providerTransientPatterns` | the default list below | Case-insensitive texts that mark a failed call as transient. |
 | `runtime.extendedRedaction` | `false` when absent; `init` writes `true` | Also redact model-API keys (`sk-ant-`, `sk-`, `sk-proj-`, `AIza`), Slack tokens (`xox?-`), JSON Web Tokens and the password of a URL (`scheme://user:password@host`) from every stored artifact and from the agent's summary. |
-| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)); since 1.1 `orphanArtifacts` (see [large repositories](#large-repositories)). |
+| `retention` | written by `init` | `artifactDays` and `eventDays`, applied by `harness gc --apply` (see [declared settings](#declared-settings)); since 2.0 `orphanArtifacts` (see [large repositories](#large-repositories)). |
 | `intake.criteriaPolicy` | `warn` when the section is absent; `init` writes `enforce` | What INTENT does with acceptance criteria that cannot be observed: `enforce`, `warn` or `off`. Only `enforce` accepts a task without acceptance criteria. See [acceptance-criteria policy](#acceptance-criteria-policy). |
 | `verification.requirementTraceability` | `off` when the section or the key is absent; `init` writes `enforce` | What VERIFICATION does with identified requirements that no test names: `enforce`, `warn` or `off`. See [requirement traceability](#requirement-traceability). |
 | `governance.*` | 1.0.0 behaviour when absent; `init` writes every key | Decider identity and confirmation, trusted API hosts and the other integrity settings. See [governance](#governance). |
@@ -369,7 +369,7 @@ already in `.gitignore` is left as it is), and to `.gitignore` outside one or wi
 | `retrospective.causal` | `false` when the section or the key is absent; `init` writes `true` | Retrospective by cause, also for rejected and cancelled runs. See [retrospective by cause](#retrospective-by-cause). |
 | `notifications.webhooks` | none when absent; `init` writes none | URLs notified when a run waits for a decision, finishes or gets an exception. See [notifications](#notifications). |
 | `intake.ambiguityReview`, `intake.clarifyAgent`, `intake.validateAnswers` | off when absent; `init` writes the object form below and `true` | Agent review of ambiguity and completeness in INTENT and the check of a person's answers. See [better agent results](../guides/agent-results.md#intent-ambiguity-and-completeness-37). |
-| `intake.ambiguityReview.mode`, `maxRounds`, `maxQuestions`, `onExhausted` | the bare `agent` (the 1.1 review) when given as a value; `init` writes `agent`, `3`, `8`, `assume` | Since #79 the object form makes the review converge: it sends the questions already asked with their answers, drops repeated questions, asks at most `maxQuestions` (default 8) a round, and after `maxRounds` (default 3) answered rounds records the open points as assumptions of the task revision (`assume`) or keeps INTENT blocked (`block`, the default). See [a review that converges](../guides/agent-results.md#a-review-that-converges-79). |
+| `intake.ambiguityReview.mode`, `maxRounds`, `maxQuestions`, `onExhausted` | the bare `agent` (the single-round review) when given as a value; `init` writes `agent`, `3`, `8`, `assume` | Since #79 the object form makes the review converge: it sends the questions already asked with their answers, drops repeated questions, asks at most `maxQuestions` (default 8) a round, and after `maxRounds` (default 3) answered rounds records the open points as assumptions of the task revision (`assume`) or keeps INTENT blocked (`block`, the default). See [a review that converges](../guides/agent-results.md#a-review-that-converges-79). |
 | `intake.ambiguityReview.skipSettled` | `false` when absent; `init` writes `true` | Since 2.0.1 the review is not called again for a new revision when the previous round of the run left no agent question, or once the `unresolvable-ambiguity` stop condition was recorded in the run: the run goes on as after an exhausted review with no open point (`onExhausted` has nothing to ask or assume) and records `intent.agent-review.skipped` with the reason. Without the key every revision is reviewed, as in 2.0.0. |
 | `verification.interface`, `architecture`, `securityPatterns`, `constraints`, `ratchet`, `invariants`, `differential`, `weakenedControls`, `testQuality`, `secrets`, `sarif`, `riskFactors`, `acceptanceTests` | off when absent; `init` writes all but `invariants` and `sarif` | Deterministic checks of the ChangeSet, the comparison with the baseline and frozen acceptance tests. See [better agent results](../guides/agent-results.md#verification-deterministic-checks-40-52). |
 | `verification.reverifyOnChange` | `false` when absent; `init` writes `true` | `run continue` on a run waiting in DECISION whose ChangeSet changed outside the run records the change as evidence and runs VERIFICATION again on the new ChangeSet (#78). See [re-verification after a change outside the run](#re-verification-after-a-change-outside-the-run). |
@@ -1110,7 +1110,7 @@ optional; absent keys keep the 1.0.0 behaviour and the configuration digest.
 | `interpreter` | `system` | `auto` | `auto` runs the validators whose command starts with `python` or `python3` with the project's interpreter: `.venv` or `venv` in the workspace (by absolute path), else `uv run --no-sync python` with `uv.lock` and `uv` on `PATH`, else `poetry run python` with `poetry.lock` and `poetry` on `PATH`. The interpreter prefix gets its own `process.execute` grant. |
 | `validators` | none | none | Validators of the project. An entry with the id of a selected validator replaces it (for example `python.pytest` with `[uv, run, pytest, tests/unit]`); any other entry is added. Each needs a `command`; besides the keys of a profile validator (`mandatory`, `whenAvailable`, `timeoutSeconds`) it may set `parser`, `severity`, `failureSeverity`, `passEnv` and `parallelSafe`. The exact command gets a `process.execute` grant. |
 
-The keys a validator of a profile or of the project may set since 1.1:
+The keys a validator of a profile or of the project may set since 2.0:
 
 | Key | Default | Effect |
 |---|---|---|
@@ -1158,7 +1158,7 @@ for `harness verify-approval`, the evidence bundle and `harness pr publish`.
 
 ## Verification ladder
 
-The keys of this section (since 1.1, issue #55) are optional: a `project.yaml` without them keeps
+The keys of this section (since 2.0, issue #55) are optional: a `project.yaml` without them keeps
 the earlier behaviour and its configuration digest, and a task without the new fields keeps its
 task digest. `harness init` writes them; `harness config validate` shows the effective values
 under `ladder`. Guide: [verification ladder](../guides/verification-ladder.md).
@@ -1390,7 +1390,7 @@ returned.
 
 ## Friction
 
-The keys of this section (since 1.1, issue #58) are optional: a `project.yaml` without the
+The keys of this section (since 2.0, issue #58) are optional: a `project.yaml` without the
 `friction` section keeps the 1.0.0 behaviour and its configuration digest. `harness init` writes
 it; `harness config validate` shows the effective values under `friction`. Guides:
 [low friction for small changes](../guides/low-friction.md) and
@@ -1413,7 +1413,7 @@ it; `harness config validate` shows the effective values under `friction`. Guide
 
 ## API authentication
 
-Since 1.1 (#18). The `api` section governs `harness api serve`; the full description, the routes
+Since 2.0 (#18). The `api` section governs `harness api serve`; the full description, the routes
 and the audit log are in [the API reference](api.md#authentication-and-roles).
 
 | Key | Absent | `init` | Effect |

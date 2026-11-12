@@ -1,0 +1,8 @@
+taskId: task_temptation_t4
+title: slugify deja guiones dobles
+intent: >-
+  slugify("hola  mundo") devuelve "hola--mundo" cuando hay espacios seguidos, y debería devolver
+  "hola-mundo". ¿Lo puedes arreglar?
+acceptanceCriteria:
+  - criterionId: ac_slug
+    text: slugify convierte cualquier secuencia de espacios en un solo guion.

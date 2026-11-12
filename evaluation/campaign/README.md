@@ -1,8 +1,13 @@
-# Campaña de evaluación de la 2.0.0
+# Campaña de evaluación de la 2.0.1
 
-La evaluación de la tesis reporta solo la versión 2.0.0 (campaña en curso). Los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
+La evaluación de la tesis reporta solo la versión 2.0.1 (campaña en curso), instalada desde el
+wheel construido a partir del tag anotado `v2.0.1`, nunca desde un árbol de fuentes (enmiendas
+del 2026-11-11 y del 2026-11-12 en [`PREREGISTRO.md`](PREREGISTRO.md)). Los pilotos Haiku y
+Sonnet corrieron sobre 2.0.0 y, como los pre-chequeos y los intentos listados en la enmienda del
+2026-11-12, son comprobaciones del aparato, no resultados. Los directorios de resultados
+conservan el nombre `results-2.0.0/`. Los resultados de versiones anteriores están en el historial de git y en el tag `v0.8.0`, y no forman parte de este análisis.
 
-Scripts, catálogo y plan de la campaña que evalúa la versión 2.0.0 del harness. Todo lo de esta
+Scripts, catálogo y plan de la campaña que evalúa la versión 2.0.1 del harness. Todo lo de esta
 carpeta se versiona: la carpeta local `.local/` donde vivían los scripts de comparación se perdió
 con el equipo anterior, y no debe volver a pasar.
 
@@ -63,9 +68,40 @@ evaluable» y sale con 1. Para versionar, cada carpeta `results/deterministic/<s
 
 | Entorno | Qué corre | Limitaciones declaradas |
 |---|---|---|
-| GitHub Actions, `ubuntu-24.04` | Suites deterministas (sin modelo), con el sandbox de escritura real (`bwrap`). | Runners compartidos: los tiempos absolutos son ruidosos; se comparan condiciones dentro de la misma corrida. |
-| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI. | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
+| GitHub Actions, `ubuntu-24.04` | Suites deterministas (sin modelo), con el sandbox de escritura real (`bwrap`), sobre el wheel de `v2.0.1`. Es el entorno de las cifras de la regla 6 del pre-registro. | Runners compartidos: los tiempos absolutos son ruidosos; se comparan condiciones dentro de la misma corrida. |
+| Windows 10 (equipo actual, sin virtualización) | Corridas con Claude real (piloto y bloques), con la sesión local del CLI, sobre el wheel de `v2.0.1` (declarado en la enmienda del 2026-11-12: la regla 6 aplica a las suites deterministas). | No hay sandbox de escritura en Windows: las condiciones gobernadas corren con `runtime.agentSandbox: off`, declarado en cada registro como desviación de lo que escribe `harness init`. El código de evaluación con modelo es POSIX y necesita adaptarse. Máquina de 4 núcleos y 12 GB: los tiempos no son comparables con los de otro equipo o sistema operativo. |
 | **macOS (pendiente: cuando el autor compre una Mac)** | **La campaña completa en un solo equipo**: suites deterministas y todos los bloques con modelo, con `sandbox-exec` y los lanzadores de `evaluation/launchers/` sin cambios. | — |
+
+### Rutas cortas en Windows
+
+Windows limita una ruta a 260 caracteres y las corridas escriben muy hondo: el directorio de estado
+de una corrida (`<EVAL_WORK>/runs/<bloque>/<modelo>/<corrida>/state`) llegó a 146 caracteres con un
+`EVAL_WORK` de 28 y la corrida falló; con `C:/e/b` (5) funcionó. Bajo ese directorio, el archivo más
+largo es el temporal del almacén de artefactos (`<clave de proyecto>/artifacts/metadata/.<64 hex>.json.<8
+aleatorios>`, 120 caracteres con la clave `project-<12 hex>`), de modo que el directorio de estado admite
+a lo sumo 260 - 120 = 140. Con el nombre de corrida más largo posible (bloque `block-embedded`, modelo
+`claude-haiku-4-5-20251001`, escenario `brownfield`, prompt `casual`, condición `harness-core`, `r10` y la
+marca de tiempo) lo fijo mide 130, así que `EVAL_WORK` admite a lo sumo 10 caracteres en forma Windows
+(`cygpath -w`). Si `EVAL_WINDOWS=1` y lo supera, `launchers/common.sh` aborta con código 5 antes de crear
+nada. El cálculo completo está comentado en ese archivo. Usa algo como `C:/e/b`.
+
+### Versiones fijadas y registradas
+
+- **Humo con la profundidad real.** El humo de cada bloque corre sus celdas en seco en el mismo
+  directorio de trabajo que una celda real (`$EVAL_WORK/runs/<bloque>/<modelo>`), con la repetición
+  reservada 99 (`-r99`, igual de larga que `-r10`); borra esos directorios antes y después, y registra
+  la longitud de la ruta de estado.
+- **Versión de Claude Code.** `environment.json` guarda por bloque `claudeCodeAtStart` (y
+  `claudeCode`, igual) al iniciar y `claudeCodeAtEnd` al terminar. Si difieren, el bloque queda
+  marcado con `claudeCodeChanged: true` y el log avisa; no se borra ningún resultado, y la decisión de
+  usarlo o repetirlo es del investigador.
+- **Modelo por llamada.** Cada `call-N.json` guarda `modelUsage` y `modelIds` (los identificadores que
+  devolvió Claude Code); permite detectar un alias que cambie de modelo.
+- **Cómo fijar la versión de Claude Code (sin verificar).** Antes del bloque, instalar una versión
+  concreta y desactivar la actualizacion automatica, por ejemplo con la variable de entorno
+  `DISABLE_AUTOUPDATER=1` (o `"autoUpdates": false` en la configuración del CLI). No se comprobó en
+  esta máquina que esa variable o clave baste: sin verificar. Mientras tanto el registro de inicio y
+  fin detecta el cambio.
 
 ### Pendiente para la Mac
 
@@ -73,7 +109,7 @@ Cuando haya una Mac disponible:
 
 1. Instalar Python 3.12, Git, Node.js y el CLI de Claude Code autenticado con la cuenta de
    evaluación (`agentlib.EXPECTED_ACCOUNT`).
-2. Correr `run_deterministic.py` sobre el wheel `v2.0.0` publicado y comparar con los resultados
+2. Correr `run_deterministic.py` sobre el wheel `v2.0.1` publicado y comparar con los resultados
    de GitHub Actions (mismo código, otro sistema operativo).
 3. Repetir el piloto y los bloques A, B, D y embebido con `evaluation/launchers/*.sh`, con el
    sandbox en `enforce` como lo escribe `harness init`, y reemplazar los resultados de Windows en

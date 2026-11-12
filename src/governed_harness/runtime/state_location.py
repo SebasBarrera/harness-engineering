@@ -1,4 +1,4 @@
-"""Where a project's run registry lives (``runtime.stateDir``, since 1.1, #55).
+"""Where a project's run registry lives (``runtime.stateDir``, since 2.0, #55).
 
 In 1.0.0 the state database and the artifact store live in the workspace's ``.harness/``: an
 agent with write access to the workspace could reach them (only the sandbox and the excluded

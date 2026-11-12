@@ -194,6 +194,31 @@ def _state_dir_check(project: Any, workspace: Path) -> dict[str, Any]:
     return check
 
 
+def _path_length_check(project: Any, workspace: Path) -> dict[str, Any]:
+    """Windows without long path support: whether the artifact files of the state directory
+    stay under the path limit (a long one made ``run start`` die with a raw error)."""
+    from governed_harness.evidence.artifact_store import (
+        artifact_path_too_long,
+        path_too_long_message,
+    )
+    from governed_harness.runtime.state_location import resolve_state_location
+
+    location = resolve_state_location(
+        workspace, project.project_id, project.runtime.state_dir, create=False
+    )
+    root = location.artifacts
+    if not artifact_path_too_long(root):
+        return {"status": "PASSED", "path": str(root), "length": len(str(root))}
+    return {
+        "status": "FAILED",
+        "path": str(root),
+        "length": len(str(root)),
+        "message": path_too_long_message(root),
+        "hint": "Set runtime.stateDir to a short path (for example C:\\h\\state) or enable "
+        "Windows long paths, then run harness doctor again.",
+    }
+
+
 def _hooks_install_check(command: tuple[str, ...], workspace: Path) -> dict[str, Any]:
     """``harness doctor --install-hooks``: run the project's declared hook installation."""
     import subprocess  # nosec B404 - runs the project's declared hook installer
@@ -389,7 +414,7 @@ class HarnessApplication(ReviewCodeCommands):
 
     @staticmethod
     def _wave4_settings(resolved: Any) -> dict[str, Any]:
-        """Effective workspace, toolchain, provenance and delivery settings (since 1.1;
+        """Effective workspace, toolchain, provenance and delivery settings (since 2.0;
         absent keys resolve to the 1.0.0 behaviour)."""
         project = resolved.project
         workspace = project.workspace
@@ -2157,6 +2182,8 @@ class HarnessApplication(ReviewCodeCommands):
         workspace = resolved.workspace_root
         if project.runtime.state_dir is not None:
             checks["stateDir"] = _state_dir_check(project, workspace)
+        if sys.platform == "win32":
+            checks["pathLength"] = _path_length_check(project, workspace)
         environment = project.environment
         if environment is not None:
             hooks = environment.git_hooks

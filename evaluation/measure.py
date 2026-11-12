@@ -37,6 +37,27 @@ HIDDEN = {
     "brownfield": "hidden/brownfield-itsdangerous/test_hidden_strict_base64.py",
     "security": "hidden/greenfield-alerts/test_hidden_alerts.py",
 }
+# The number of hidden tests each scenario's file collects (amendment of 2026-11-12): the fixed
+# denominator of the score, so a collection error (junit: tests 1, errors 1) scores 0 of the nominal
+# instead of 0 of 1. Counted with pytest --collect-only against the reference solutions.
+HIDDEN_NOMINAL = {"greenfield": 33, "brownfield": 24, "security": 14}
+# The hidden tests the untouched baseline fails, by junit name: the discriminating tests. In the
+# greenfield scenarios the baseline has no package, so every hidden test discriminates (None). The
+# brownfield baseline (itsdangerous 2.2.0, run unchanged against this file) passes the other 18.
+HIDDEN_DISCRIMINATING: dict[str, frozenset[str] | None] = {
+    "greenfield": None,
+    "security": None,
+    "brownfield": frozenset(
+        {
+            "test_characters_outside_the_url_safe_alphabet_are_rejected[YW+j]",
+            "test_characters_outside_the_url_safe_alphabet_are_rejected[YW/j]",
+            r"test_characters_outside_the_url_safe_alphabet_are_rejected[YWJj\n]",
+            "test_characters_outside_the_url_safe_alphabet_are_rejected[ YWJj]",
+            r"test_non_ascii_and_control_bytes_are_rejected[YWJj\xe9]",
+            r"test_non_ascii_and_control_bytes_are_rejected[\x00YWJj]",
+        }
+    ),
+}
 GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 
@@ -55,6 +76,34 @@ def _junit(path: Path) -> dict[str, int]:
     }
     totals["passed"] = totals["tests"] - totals["failures"] - totals["errors"] - totals["skipped"]
     return totals
+
+
+def _passed_cases(path: Path) -> set[str]:
+    """The names of the passed test cases of a junit file."""
+    if not path.exists():
+        return set()
+    return {
+        str(case.get("name"))
+        for case in ET.parse(path).getroot().iter("testcase")
+        if not any(child.tag in ("failure", "error", "skipped") for child in case)
+    }
+
+
+def hidden_score(scenario: str, hidden: dict[str, Any], junit: Path) -> dict[str, Any]:
+    """The nominal denominator and the discriminating tests of a hidden-test result."""
+    nominal = HIDDEN_NOMINAL.get(scenario)
+    if nominal is None:
+        return {}
+    names = HIDDEN_DISCRIMINATING.get(scenario)
+    passed = _passed_cases(junit)
+    discriminating_passed = len(passed & names) if names is not None else hidden["passed"]
+    total = len(names) if names is not None else nominal
+    return {
+        "nominal": nominal,
+        "collectionError": hidden["tests"] < nominal,
+        "discriminating": {"total": total, "passed": discriminating_passed},
+        "baselinePassing": nominal - total,
+    }
 
 
 def _pytest(cwd: Path, target: list[str], junit: Path, timeout: int = 600) -> dict[str, Any]:
@@ -246,6 +295,7 @@ def measure(
     hidden_dir.mkdir()
     shutil.copy2(here / HIDDEN[scenario], hidden_dir)
     hidden = _pytest(workspace, [str(hidden_dir)], scratch / "hidden.xml")
+    hidden.update(hidden_score(scenario, hidden, scratch / "hidden.xml"))
     shutil.rmtree(hidden_dir)
     change = {
         "files": len(files),

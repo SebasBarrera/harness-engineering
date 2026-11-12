@@ -95,7 +95,7 @@ class NormativeStateMachine:
         )
 
     def authorize_review_correction(self, phase: PhaseId) -> TransitionDecision:
-        """Since 1.1 (``review.agentReview``, #38): blocking findings of the second reviewer
+        """Since 2.0 (``review.agentReview``, #38): blocking findings of the second reviewer
         return INDEPENDENT_REVIEW to IMPLEMENTATION within the correction budget."""
         if phase is not PhaseId.INDEPENDENT_REVIEW:
             raise InvalidTransition("a review correction may only start from INDEPENDENT_REVIEW")
@@ -111,7 +111,7 @@ class NormativeStateMachine:
         )
 
     def authorize_next_subtask(self, phase: PhaseId) -> TransitionDecision:
-        """Since 1.1 (``planning.decomposition``, #39): a sub-task whose gate passed hands the
+        """Since 2.0 (``planning.decomposition``, #39): a sub-task whose gate passed hands the
         workspace to the next sub-task's IMPLEMENTATION."""
         if phase is not PhaseId.VERIFICATION:
             raise InvalidTransition("the next sub-task may only start after VERIFICATION")
@@ -122,7 +122,7 @@ class NormativeStateMachine:
         )
 
     def authorize_replanning(self, phase: PhaseId) -> TransitionDecision:
-        """Since 1.1 (``planning.granularity: adaptive``, #39): a coarse attempt that failed
+        """Since 2.0 (``planning.granularity: adaptive``, #39): a coarse attempt that failed
         its corrections returns to PLANNING to be decomposed."""
         if phase is not PhaseId.VERIFICATION:
             raise InvalidTransition("replanning may only start after VERIFICATION")

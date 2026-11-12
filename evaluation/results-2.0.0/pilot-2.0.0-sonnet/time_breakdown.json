@@ -1,0 +1,1068 @@
+[
+  {
+    "condition": "harness-core",
+    "scenario": "brownfield",
+    "rep": 1,
+    "startedAt": "2026-11-11T17:05:29+00:00",
+    "wallSeconds": 86.453,
+    "commandSeconds": {
+      "short": 9.031,
+      "intent_planning": 0.0,
+      "implementation": 60.063,
+      "closure": 3.204
+    },
+    "agentSeconds": {
+      "short": 0.0,
+      "intent_planning": 0.0,
+      "implementation": 34.781,
+      "closure": 0.0
+    },
+    "ownSeconds": {
+      "short": 9.031,
+      "intent_planning": 0.0,
+      "implementation": 25.282,
+      "closure": 3.204
+    },
+    "commands": {
+      "short": 5,
+      "intent_planning": 0,
+      "implementation": 1,
+      "closure": 1
+    },
+    "ownTotalSeconds": 37.517,
+    "shortCommandMeanSeconds": 1.806,
+    "perCommand": [
+      {
+        "command": "init --path",
+        "seconds": 1.813,
+        "exitCode": 0
+      },
+      {
+        "command": "task create",
+        "seconds": 2.406,
+        "exitCode": 0
+      },
+      {
+        "command": "run start",
+        "seconds": 60.063,
+        "exitCode": 4
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.437,
+        "exitCode": 0
+      },
+      {
+        "command": "review --run",
+        "seconds": 1.485,
+        "exitCode": 0
+      },
+      {
+        "command": "gate decide",
+        "seconds": 1.89,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 3.204,
+        "exitCode": 0
+      }
+    ],
+    "validators": []
+  },
+  {
+    "condition": "harness",
+    "scenario": "brownfield",
+    "rep": 1,
+    "startedAt": "2026-11-11T17:07:15+00:00",
+    "wallSeconds": 518.906,
+    "commandSeconds": {
+      "short": 57.907,
+      "intent_planning": 181.344,
+      "implementation": 234.703,
+      "closure": 11.484
+    },
+    "agentSeconds": {
+      "short": 0.0,
+      "intent_planning": 120.78,
+      "implementation": 118.732,
+      "closure": 0.0
+    },
+    "ownSeconds": {
+      "short": 57.907,
+      "intent_planning": 60.564,
+      "implementation": 115.971,
+      "closure": 11.484
+    },
+    "commands": {
+      "short": 27,
+      "intent_planning": 5,
+      "implementation": 1,
+      "closure": 1
+    },
+    "ownTotalSeconds": 245.926,
+    "shortCommandMeanSeconds": 2.145,
+    "perCommand": [
+      {
+        "command": "init --path",
+        "seconds": 1.438,
+        "exitCode": 0
+      },
+      {
+        "command": "task create",
+        "seconds": 2.563,
+        "exitCode": 0
+      },
+      {
+        "command": "run start",
+        "seconds": 36.812,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.0,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.969,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.781,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.766,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 2.359,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 36.953,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.016,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.703,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.735,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.64,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 3.203,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 59.188,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.953,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.64,
+        "exitCode": 0
+      },
+      {
+        "command": "architecture decide",
+        "seconds": 2.313,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 42.609,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.125,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.688,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance show",
+        "seconds": 1.828,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.75,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance decide",
+        "seconds": 2.359,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 5.782,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.234,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 2.203,
+        "exitCode": 0
+      },
+      {
+        "command": "plan show",
+        "seconds": 2.469,
+        "exitCode": 0
+      },
+      {
+        "command": "plan decide",
+        "seconds": 3.062,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 234.703,
+        "exitCode": 4
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.36,
+        "exitCode": 0
+      },
+      {
+        "command": "review --run",
+        "seconds": 1.859,
+        "exitCode": 0
+      },
+      {
+        "command": "gate decide",
+        "seconds": 3.891,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 11.484,
+        "exitCode": 0
+      }
+    ],
+    "validators": [
+      {
+        "phase": "VERIFICATION",
+        "validators": [
+          {
+            "validatorId": "python.pytest",
+            "status": "PASSED",
+            "seconds": 7.871
+          },
+          {
+            "validatorId": "python.ruff",
+            "status": "PASSED",
+            "seconds": 1.065
+          },
+          {
+            "validatorId": "python.mypy",
+            "status": "FAILED",
+            "seconds": 13.655
+          },
+          {
+            "validatorId": "traceability.requirements",
+            "status": "PASSED",
+            "seconds": 0.391
+          },
+          {
+            "validatorId": "harness.principles",
+            "status": "PASSED",
+            "seconds": 0.844
+          },
+          {
+            "validatorId": "harness.layers",
+            "status": "PASSED",
+            "seconds": 0.249
+          },
+          {
+            "validatorId": "harness.architecture",
+            "status": "PASSED",
+            "seconds": 0.236
+          },
+          {
+            "validatorId": "harness.security-patterns",
+            "status": "PASSED",
+            "seconds": 0.196
+          },
+          {
+            "validatorId": "harness.constraints",
+            "status": "PASSED",
+            "seconds": 0.331
+          },
+          {
+            "validatorId": "harness.weakened-controls",
+            "status": "FAILED",
+            "seconds": 0.535
+          },
+          {
+            "validatorId": "harness.secrets",
+            "status": "PASSED",
+            "seconds": 0.396
+          },
+          {
+            "validatorId": "harness.test-quality",
+            "status": "PASSED",
+            "seconds": 7.52
+          },
+          {
+            "validatorId": "harness.risk-factors",
+            "status": "PASSED",
+            "seconds": 0.665
+          },
+          {
+            "validatorId": "baseline",
+            "status": null,
+            "seconds": 5.975
+          },
+          {
+            "validatorId": "harness.ratchet",
+            "status": "PASSED",
+            "seconds": 0.549
+          },
+          {
+            "validatorId": "harness.mutation",
+            "status": "NOT_APPLICABLE",
+            "seconds": 0.668
+          }
+        ],
+        "seconds": 41.146
+      },
+      {
+        "phase": "VERIFICATION",
+        "validators": [
+          {
+            "validatorId": "python.pytest",
+            "status": "PASSED",
+            "seconds": 3.596
+          },
+          {
+            "validatorId": "python.ruff",
+            "status": "PASSED",
+            "seconds": 0.803
+          },
+          {
+            "validatorId": "python.mypy",
+            "status": "FAILED",
+            "seconds": 7.404
+          },
+          {
+            "validatorId": "traceability.requirements",
+            "status": "PASSED",
+            "seconds": 0.275
+          },
+          {
+            "validatorId": "harness.reproduce-first",
+            "status": "PASSED",
+            "seconds": 0.435
+          },
+          {
+            "validatorId": "harness.principles",
+            "status": "PASSED",
+            "seconds": 0.483
+          },
+          {
+            "validatorId": "harness.layers",
+            "status": "PASSED",
+            "seconds": 0.201
+          },
+          {
+            "validatorId": "harness.architecture",
+            "status": "PASSED",
+            "seconds": 0.157
+          },
+          {
+            "validatorId": "harness.security-patterns",
+            "status": "PASSED",
+            "seconds": 0.185
+          },
+          {
+            "validatorId": "harness.constraints",
+            "status": "PASSED",
+            "seconds": 0.169
+          },
+          {
+            "validatorId": "harness.weakened-controls",
+            "status": "PASSED",
+            "seconds": 0.181
+          },
+          {
+            "validatorId": "harness.secrets",
+            "status": "PASSED",
+            "seconds": 0.321
+          },
+          {
+            "validatorId": "harness.test-quality",
+            "status": "PASSED",
+            "seconds": 6.47
+          },
+          {
+            "validatorId": "harness.risk-factors",
+            "status": "PASSED",
+            "seconds": 0.23
+          },
+          {
+            "validatorId": "harness.ratchet",
+            "status": "PASSED",
+            "seconds": 0.115
+          },
+          {
+            "validatorId": "harness.mutation",
+            "status": "PASSED",
+            "seconds": 22.012
+          },
+          {
+            "validatorId": "harness.certification",
+            "status": "PASSED",
+            "seconds": 0.823
+          }
+        ],
+        "seconds": 43.86
+      }
+    ]
+  },
+  {
+    "condition": "harness-anchored",
+    "scenario": "brownfield",
+    "rep": 1,
+    "startedAt": "2026-11-11T17:16:11+00:00",
+    "wallSeconds": 590.406,
+    "commandSeconds": {
+      "short": 61.734,
+      "intent_planning": 294.344,
+      "implementation": 184.469,
+      "closure": 14.329
+    },
+    "agentSeconds": {
+      "short": 0.0,
+      "intent_planning": 213.844,
+      "implementation": 65.109,
+      "closure": 0.0
+    },
+    "ownSeconds": {
+      "short": 61.734,
+      "intent_planning": 80.5,
+      "implementation": 119.36,
+      "closure": 14.329
+    },
+    "commands": {
+      "short": 27,
+      "intent_planning": 5,
+      "implementation": 1,
+      "closure": 1
+    },
+    "ownTotalSeconds": 275.923,
+    "shortCommandMeanSeconds": 2.286,
+    "perCommand": [
+      {
+        "command": "init --path",
+        "seconds": 1.656,
+        "exitCode": 0
+      },
+      {
+        "command": "task create",
+        "seconds": 2.735,
+        "exitCode": 0
+      },
+      {
+        "command": "run start",
+        "seconds": 48.375,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.906,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.672,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.703,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.641,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 3.516,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 36.313,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.0,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.578,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.593,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.782,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 3.031,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 73.266,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.171,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.672,
+        "exitCode": 0
+      },
+      {
+        "command": "architecture decide",
+        "seconds": 2.469,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 124.547,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.062,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.657,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance show",
+        "seconds": 1.672,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.687,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance decide",
+        "seconds": 5.5,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 11.843,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.938,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.687,
+        "exitCode": 0
+      },
+      {
+        "command": "plan show",
+        "seconds": 1.891,
+        "exitCode": 0
+      },
+      {
+        "command": "plan decide",
+        "seconds": 3.031,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 184.469,
+        "exitCode": 4
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.594,
+        "exitCode": 0
+      },
+      {
+        "command": "review --run",
+        "seconds": 1.64,
+        "exitCode": 0
+      },
+      {
+        "command": "gate decide",
+        "seconds": 5.25,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 14.329,
+        "exitCode": 0
+      }
+    ],
+    "validators": [
+      {
+        "phase": "VERIFICATION",
+        "validators": [
+          {
+            "validatorId": "python.pytest",
+            "status": "PASSED",
+            "seconds": 5.203
+          },
+          {
+            "validatorId": "python.ruff",
+            "status": "FAILED",
+            "seconds": 4.567
+          },
+          {
+            "validatorId": "python.mypy",
+            "status": "FAILED",
+            "seconds": 18.377
+          },
+          {
+            "validatorId": "traceability.requirements",
+            "status": "PASSED",
+            "seconds": 0.416
+          },
+          {
+            "validatorId": "harness.acceptance-tests",
+            "status": "PASSED",
+            "seconds": 2.36
+          },
+          {
+            "validatorId": "harness.principles",
+            "status": "PASSED",
+            "seconds": 0.892
+          },
+          {
+            "validatorId": "harness.layers",
+            "status": "PASSED",
+            "seconds": 0.658
+          },
+          {
+            "validatorId": "harness.architecture",
+            "status": "PASSED",
+            "seconds": 0.524
+          },
+          {
+            "validatorId": "harness.security-patterns",
+            "status": "PASSED",
+            "seconds": 0.614
+          },
+          {
+            "validatorId": "harness.constraints",
+            "status": "PASSED",
+            "seconds": 0.918
+          },
+          {
+            "validatorId": "harness.weakened-controls",
+            "status": "PASSED",
+            "seconds": 1.021
+          },
+          {
+            "validatorId": "harness.secrets",
+            "status": "PASSED",
+            "seconds": 1.14
+          },
+          {
+            "validatorId": "harness.test-quality",
+            "status": "PASSED",
+            "seconds": 12.635
+          },
+          {
+            "validatorId": "harness.risk-factors",
+            "status": "PASSED",
+            "seconds": 0.758
+          },
+          {
+            "validatorId": "baseline",
+            "status": null,
+            "seconds": 3.241
+          },
+          {
+            "validatorId": "baseline",
+            "status": null,
+            "seconds": 4.589
+          },
+          {
+            "validatorId": "harness.ratchet",
+            "status": "PASSED",
+            "seconds": 1.906
+          },
+          {
+            "validatorId": "harness.mutation",
+            "status": "PASSED",
+            "seconds": 24.317
+          },
+          {
+            "validatorId": "harness.certification",
+            "status": "PASSED",
+            "seconds": 1.924
+          }
+        ],
+        "seconds": 86.06
+      }
+    ]
+  },
+  {
+    "condition": "harness",
+    "scenario": "brownfield",
+    "rep": 1,
+    "startedAt": "2026-11-11T17:26:32+00:00",
+    "wallSeconds": 448.094,
+    "commandSeconds": {
+      "short": 71.094,
+      "intent_planning": 195.063,
+      "implementation": 135.359,
+      "closure": 10.922
+    },
+    "agentSeconds": {
+      "short": 0.0,
+      "intent_planning": 83.188,
+      "implementation": 64.688,
+      "closure": 0.0
+    },
+    "ownSeconds": {
+      "short": 71.094,
+      "intent_planning": 111.875,
+      "implementation": 70.671,
+      "closure": 10.922
+    },
+    "commands": {
+      "short": 27,
+      "intent_planning": 5,
+      "implementation": 1,
+      "closure": 1
+    },
+    "ownTotalSeconds": 264.562,
+    "shortCommandMeanSeconds": 2.633,
+    "perCommand": [
+      {
+        "command": "init --path",
+        "seconds": 1.625,
+        "exitCode": 0
+      },
+      {
+        "command": "task create",
+        "seconds": 5.25,
+        "exitCode": 0
+      },
+      {
+        "command": "run start",
+        "seconds": 16.844,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.734,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.625,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.609,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.735,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 6.063,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 49.422,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.953,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.765,
+        "exitCode": 0
+      },
+      {
+        "command": "task questions",
+        "seconds": 1.782,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 6.562,
+        "exitCode": 0
+      },
+      {
+        "command": "task clarify",
+        "seconds": 4.516,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 79.844,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.375,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.656,
+        "exitCode": 0
+      },
+      {
+        "command": "architecture decide",
+        "seconds": 2.219,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 43.468,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.782,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.671,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance show",
+        "seconds": 1.719,
+        "exitCode": 0
+      },
+      {
+        "command": "task show",
+        "seconds": 1.969,
+        "exitCode": 0
+      },
+      {
+        "command": "acceptance decide",
+        "seconds": 4.015,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 5.485,
+        "exitCode": 6
+      },
+      {
+        "command": "status --run",
+        "seconds": 1.703,
+        "exitCode": 0
+      },
+      {
+        "command": "inbox --json",
+        "seconds": 1.593,
+        "exitCode": 0
+      },
+      {
+        "command": "plan show",
+        "seconds": 1.657,
+        "exitCode": 0
+      },
+      {
+        "command": "plan decide",
+        "seconds": 2.734,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 135.359,
+        "exitCode": 4
+      },
+      {
+        "command": "status --run",
+        "seconds": 2.125,
+        "exitCode": 0
+      },
+      {
+        "command": "review --run",
+        "seconds": 1.766,
+        "exitCode": 0
+      },
+      {
+        "command": "gate decide",
+        "seconds": 4.891,
+        "exitCode": 0
+      },
+      {
+        "command": "run continue",
+        "seconds": 10.922,
+        "exitCode": 0
+      }
+    ],
+    "validators": [
+      {
+        "phase": "VERIFICATION",
+        "validators": [
+          {
+            "validatorId": "python.pytest",
+            "status": "PASSED",
+            "seconds": 3.097
+          },
+          {
+            "validatorId": "python.ruff",
+            "status": "PASSED",
+            "seconds": 0.757
+          },
+          {
+            "validatorId": "python.mypy",
+            "status": "FAILED",
+            "seconds": 22.388
+          },
+          {
+            "validatorId": "traceability.requirements",
+            "status": "PASSED",
+            "seconds": 0.655
+          },
+          {
+            "validatorId": "harness.acceptance-tests",
+            "status": "PASSED",
+            "seconds": 1.646
+          },
+          {
+            "validatorId": "harness.principles",
+            "status": "PASSED",
+            "seconds": 0.659
+          },
+          {
+            "validatorId": "harness.layers",
+            "status": "PASSED",
+            "seconds": 0.367
+          },
+          {
+            "validatorId": "harness.architecture",
+            "status": "PASSED",
+            "seconds": 0.427
+          },
+          {
+            "validatorId": "harness.security-patterns",
+            "status": "PASSED",
+            "seconds": 0.28
+          },
+          {
+            "validatorId": "harness.constraints",
+            "status": "PASSED",
+            "seconds": 0.321
+          },
+          {
+            "validatorId": "harness.weakened-controls",
+            "status": "PASSED",
+            "seconds": 0.221
+          },
+          {
+            "validatorId": "harness.secrets",
+            "status": "PASSED",
+            "seconds": 0.309
+          },
+          {
+            "validatorId": "harness.test-quality",
+            "status": "PASSED",
+            "seconds": 7.442
+          },
+          {
+            "validatorId": "harness.risk-factors",
+            "status": "PASSED",
+            "seconds": 0.551
+          },
+          {
+            "validatorId": "baseline",
+            "status": null,
+            "seconds": 5.519
+          },
+          {
+            "validatorId": "harness.ratchet",
+            "status": "PASSED",
+            "seconds": 0.37
+          },
+          {
+            "validatorId": "harness.mutation",
+            "status": "PASSED",
+            "seconds": 11.408
+          },
+          {
+            "validatorId": "harness.certification",
+            "status": "PASSED",
+            "seconds": 0.919
+          }
+        ],
+        "seconds": 57.336
+      }
+    ]
+  }
+]

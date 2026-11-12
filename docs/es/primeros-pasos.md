@@ -1,6 +1,6 @@
 # Primeros pasos
 
-Esta página te lleva de cero a tu primera ejecución gobernada. No necesitas conocer cómo funciona el harness por dentro. Los comandos de ejecución y consulta de esta guía se probaron con el harness 1.0.0 y el proveedor `simulated`, que no llama a ningún modelo. Los de instalación desde PyPI y Docker no se pudieron ejecutar sin red y se marcan como tales en las guías de instalación.
+Esta página te lleva de cero a tu primera ejecución gobernada. No necesitas conocer cómo funciona el harness por dentro. Los comandos de ejecución y consulta de esta guía se probaron con el harness 1.0.0 (el código de la ola 11, cuyo paquete aún declaraba la versión 1.0.0 antes de la release 2.0.0) y el proveedor `simulated`, que no llama a ningún modelo. Los de instalación desde PyPI y Docker no se pudieron ejecutar sin red y se marcan como tales en las guías de instalación.
 
 ## Qué problema resuelve
 

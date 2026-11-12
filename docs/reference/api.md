@@ -4,11 +4,12 @@
 the same application layer as the CLI. It serves one project.
 
 > [!WARNING]
-> Since 1.1 (#18) the `api` section of `project.yaml`, which `harness init` writes, requires a
+> Since 2.0 (#18) the `api` section of `project.yaml`, which `harness init` writes, requires a
 > bearer token on every route and gives each person a role. **A project without that section has
-> no authentication, no roles and no multi-user model, as in 1.0.0**: anyone who reaches the port
-> can read every run and record a decision under any actor id outside the agent, validator and
-> harness namespaces. Either way, keep the server on the loopback default (`--host 127.0.0.1`):
+> no authentication, no roles and no multi-user model**: anyone who reaches the port can read every
+> run. After 2.0.1 (CHANGELOG, Unreleased) such an API records **no decision** (the `POST` answers 403 and names
+> `harness gate decide`); before, it recorded one under any actor id outside the agent, validator
+> and harness namespaces. Either way, keep the server on the loopback default (`--host 127.0.0.1`):
 > the token travels over plain HTTP and the harness is not a sandbox for the host it runs on. See
 > [SECURITY.md](https://github.com/SebasBarrera/harness-engineering/blob/develop/SECURITY.md).
 
@@ -68,7 +69,8 @@ user id in the agent, validator or harness namespace, an invalid `api` section a
 `.harness/audit/api-decisions.jsonl` (mode 0600, append-only): time, user id, role, route, run,
 decision, ChangeSet digest, requested actor id, client host, outcome, HTTP status and the reason or
 the decision id. If the attempt cannot be written, nothing is decided (**500**). The log never
-holds a token. Without authentication no audit log is written, as in 1.0.0.
+holds a token. Without authentication (no `api` section, or `api.auth: off`) the route answers
+**403** and records nothing: decide with `harness gate decide`, or turn authentication on.
 
 **Dashboard.** Without a token `GET /` answers 401 with a sign-in page that asks for the token,
 keeps it in the tab's `sessionStorage` and loads the dashboard with it. Every call of the dashboard
@@ -102,9 +104,10 @@ each is set, never a value).
 | `GET` | `/` | The embedded dashboard (HTML) | — |
 
 The thesis cut had nine routes: seven queries, one decision `POST` and the dashboard; the inbox,
-exceptions and review routes were added in 1.1 (#53), the session and configuration routes with
+exceptions and review routes were added in 2.0 (#53), the session and configuration routes with
 authentication (#18). Under authentication every route also answers 401 without a valid token,
-and the decision route 403 without the role `reviewer`. `{run}` also accepts `latest` and a unique
+and the decision route 403 without the role `reviewer`; without authentication the decision
+route always answers 403. `{run}` also accepts `latest` and a unique
 prefix of a run id. The OpenAPI document is available at `/openapi.json` and the interactive docs at
 `/docs` (FastAPI defaults).
 

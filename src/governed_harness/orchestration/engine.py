@@ -3428,7 +3428,7 @@ class RunEngine:
                 phase_execution_id=phase.phase_execution_id,
             )
             return PhaseOutcome(ResultStatus.BLOCKED, f"Closure commit not created: {error}")
-        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        record = self._closure_record(commit, change_set)
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )
@@ -3458,6 +3458,15 @@ class RunEngine:
                 self.ladder.bind_commit(execution, change_set.digest, commit.commit)
             return self.ladder.delivery.deliver(execution, phase, decision, commit, change_set)
         return None
+
+    def _closure_record(self, commit: ClosureCommit, change_set: ChangeSet) -> dict[str, Any]:
+        """The closure commit as recorded. The author and the subject come from the repository:
+        they pass the same redaction of secrets as any recorded text (a name or a subject can
+        carry a token)."""
+        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        if commit.author:
+            record, _ = self.s.artifacts.redactor.redact_json(record)
+        return record
 
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
