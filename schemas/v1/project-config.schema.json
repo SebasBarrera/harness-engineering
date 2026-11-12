@@ -452,6 +452,22 @@
       "additionalProperties": false,
       "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the single-round review, which neither converges nor stops.",
       "properties": {
+        "depth": {
+          "anyOf": [
+            {
+              "enum": [
+                "fixed",
+                "adaptive"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth"
+        },
         "maxQuestions": {
           "anyOf": [
             {
