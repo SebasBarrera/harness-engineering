@@ -74,7 +74,7 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
         },
     )
     assert refused.status_code == 403
-    assert "agent" in refused.json()["detail"]
+    assert "without authentication" in refused.json()["detail"]
 
     # F13: without the api section a person's id is no proof either; the decision is recorded
     # with harness gate decide or an authenticated API (tests/integration/test_api_auth.py).
