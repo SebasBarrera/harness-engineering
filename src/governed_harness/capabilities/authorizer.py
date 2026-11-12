@@ -64,16 +64,43 @@ class CapabilityAuthorizer:
 
     @staticmethod
     def _matches(resource: str, scope: str) -> bool:
-        normalized_resource = resource.replace(os.sep, "/").lstrip("./")
-        normalized_scope = scope.replace(os.sep, "/").lstrip("./")
-        if normalized_scope == "**":
+        """Whether the workspace path ``resource`` is in the glob ``scope``. A leading ``./``
+        is a prefix (``lstrip`` removed characters, so ``.env`` matched ``env`` and
+        ``../src/x.py`` matched ``src/**``, F11); a path with a ``..`` part, or an absolute
+        one, is in no scope; ``*``, ``?`` and ``[...]`` stay within one path part and ``**``
+        spans any number of parts (``src/*.py`` no longer matches ``src/a/b.py``)."""
+        normalized_resource = _workspace_parts(resource)
+        normalized_scope = _workspace_parts(scope)
+        if normalized_resource is None or normalized_scope is None:
+            return False
+        if normalized_scope == ["**"]:
             return True
-        if fnmatch.fnmatchcase(normalized_resource, normalized_scope):
-            return True
-        if normalized_scope.endswith("/**"):
-            base = normalized_scope[:-3].rstrip("/")
-            return normalized_resource == base or normalized_resource.startswith(f"{base}/")
-        return normalized_resource == normalized_scope
+        return _glob_parts(normalized_resource, normalized_scope)
+
+
+def _workspace_parts(path: str) -> list[str] | None:
+    """The parts of a workspace-relative path (``./`` prefixes and empty parts dropped),
+    ``None`` for an absolute path or one with a ``..`` part."""
+    text = path.replace(os.sep, "/").replace("\\", "/")
+    if text.startswith("/") or (len(text) > 1 and text[1] == ":"):
+        return None
+    while text.startswith("./"):
+        text = text.removeprefix("./")
+    parts = [part for part in text.split("/") if part not in {"", "."}]
+    if ".." in parts:
+        return None
+    return parts
+
+
+def _glob_parts(parts: list[str], pattern: list[str]) -> bool:
+    """Match path parts against glob parts: ``**`` is any number of parts (none included),
+    any other glob part matches exactly one path part (``fnmatchcase``)."""
+    if not pattern:
+        return not parts
+    head, rest = pattern[0], pattern[1:]
+    if head == "**":
+        return any(_glob_parts(parts[index:], rest) for index in range(len(parts) + 1))
+    return bool(parts) and fnmatch.fnmatchcase(parts[0], head) and _glob_parts(parts[1:], rest)
 
 
 def grants_from_rules(
