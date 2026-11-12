@@ -92,6 +92,29 @@ READ_ONLY_TOOLS = ["Read", "Grep", "Glob"]
 READ_ONLY_DENIED = ["Write", "Edit", "MultiEdit", "NotebookEdit", "Bash"]
 AGENT_TIMEOUT_SECONDS = 1500
 MAX_BUDGET_USD = "5"
+# The turn cap of every implement call of every condition (amendment A3): Claude Code's
+# ``--max-turns`` (print mode; the option is not listed by ``claude --help`` but is accepted, and a
+# call that reaches it ends with ``subtype: error_max_turns`` and ``terminal_reason: max_turns``).
+# ``EVAL_MAX_TURNS`` overrides the default; anything but a positive integer aborts the run.
+DEFAULT_MAX_TURNS = 40
+TURN_LIMIT_SUBTYPE = "error_max_turns"
+TURN_LIMIT_REASON = "max_turns"
+
+
+def max_turns_from_environment(value: str | None = None) -> int:
+    """The turn cap: ``EVAL_MAX_TURNS`` (or ``value``), else ``DEFAULT_MAX_TURNS``; fail closed."""
+    raw = os.environ.get("EVAL_MAX_TURNS", "") if value is None else value
+    if not raw.strip():
+        return DEFAULT_MAX_TURNS
+    if not raw.strip().isdigit() or int(raw) < 1:
+        raise ValueError(f"EVAL_MAX_TURNS must be a positive integer, not {raw!r}")
+    return int(raw)
+
+
+MAX_TURNS = max_turns_from_environment()
+# Claude Code's answer to ``--resume`` of a session it does not have (the previous call never
+# started one): the call starts a new session instead.
+NO_SESSION_TEXT = re.compile(r"no conversation found", re.IGNORECASE)
 # A resumable call that stops on the account usage limit (or an overloaded API) waits and resumes the
 # same session; the wait is recorded apart from the agent's working time.
 LIMIT_TEXT = re.compile(
@@ -361,6 +384,7 @@ def _command(
     session: list[str],
     effort: str | None = None,
     read_only: bool = False,
+    max_turns: int | None = None,
 ) -> list[str]:
     if read_only:
         tools = [
@@ -399,6 +423,7 @@ def _command(
         *tools,
         "--max-budget-usd",
         max_budget_usd,
+        *(["--max-turns", str(max_turns)] if max_turns else []),
     ]
 
 
@@ -413,6 +438,9 @@ def run_claude(
     resume_session: str | None = None,
     effort: str | None = None,
     read_only: bool = False,
+    max_turns: int | None = None,
+    persist_session: bool = False,
+    previous_session: str | None = None,
 ) -> dict[str, Any]:
     """Run Claude Code non-interactively and return the normalized usage record.
 
@@ -421,7 +449,14 @@ def run_claude(
     calls the anchored router sends with an effort. ``read_only`` (the read-only call kinds of the
     governed conditions) runs Claude Code with the read-only tools instead of the direct
     condition's.
+
+    ``max_turns``: the turn cap; None gives an edit call ``MAX_TURNS`` and a read-only call none,
+    0 gives no cap (the simulated product owner). ``persist_session`` keeps the session (a new
+    ``--session-id``) so that a later call can resume it; ``previous_session`` resumes that session
+    (a correction of the governed conditions) and falls back to a new one when Claude Code does
+    not have it. The record carries ``maxTurns``, ``hitTurnLimit``, ``resumed`` and ``sessionId``.
     """
+    cap = (0 if read_only else MAX_TURNS) if max_turns is None else max_turns
     if resumable:
         return _run_resumable(
             prompt,
@@ -433,16 +468,50 @@ def run_claude(
             resume_session,
             effort,
             read_only,
+            cap,
+            previous_session,
         )
-    command = _command(
-        prompt, model, max_budget_usd, ["--no-session-persistence"], effort, read_only
+    session_id: str | None = None
+    resumed = False
+    if previous_session:
+        session_id, resumed = previous_session, True
+        session = ["--resume", previous_session]
+    elif persist_session:
+        session_id = str(uuid.uuid4())
+        session = ["--session-id", session_id]
+    else:
+        session = ["--no-session-persistence"]
+    command = _command(prompt, model, max_budget_usd, session, effort, read_only, cap)
+    record, stderr, result = _invoke(command, cwd, model, timeout_seconds)
+    fallback = resumed and _no_session(record, result, stderr)
+    if fallback:
+        # Claude Code does not have the previous session: start a new one.
+        session_id, resumed = str(uuid.uuid4()), False
+        session = ["--session-id", session_id]
+        command = _command(prompt, model, max_budget_usd, session, effort, read_only, cap)
+        record, stderr, result = _invoke(command, cwd, model, timeout_seconds)
+    record.update(
+        {
+            "effort": effort,
+            "maxTurns": cap or None,
+            "resumed": resumed,
+            "sessionId": session_id,
+        }
     )
-    record, stderr, _ = _invoke(command, cwd, model, timeout_seconds)
-    record["effort"] = effort
+    if fallback:
+        record["resumeFallback"] = True
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     (log_path.with_suffix(".stderr.txt")).write_text(stderr[-20000:], encoding="utf-8")
     return record
+
+
+def _no_session(record: dict[str, Any], result: dict[str, Any], stderr: str) -> bool:
+    """True when ``--resume`` failed because Claude Code has no such session (nothing ran)."""
+    if not record["isError"] or record["numTurns"]:
+        return False
+    text = " ".join([str(result.get("result", "")), *map(str, result.get("errors") or []), stderr])
+    return bool(NO_SESSION_TEXT.search(text))
 
 
 def _transient(record: dict[str, Any], result: dict[str, Any], stderr: str) -> bool:
@@ -460,7 +529,7 @@ written to ``<out>.invalid.jsonl``; the matrix waits and runs the cell again."""
 
 def hit_limit(record: dict[str, Any]) -> bool:
     """A usage record of a call that ended on the account's usage limit (or an overloaded API)."""
-    if not record.get("isError") or record.get("timedOut"):
+    if not record.get("isError") or record.get("timedOut") or record.get("hitTurnLimit"):
         return False
     text = " ".join(str(record.get(k) or "") for k in ("summary", "resultText", "terminalReason"))
     return bool(LIMIT_TEXT.search(text))
@@ -488,13 +557,17 @@ def _run_resumable(
     resume_session: str | None,
     effort: str | None = None,
     read_only: bool = False,
+    max_turns: int = 0,
+    previous_session: str | None = None,
 ) -> dict[str, Any]:
     """One call that survives usage limits and restarts of the runner.
 
     The session id is chosen here and written to ``<log>.inflight`` before every segment, so a runner
     that is restarted can resume the same session. A segment stopped by the usage limit waits until the
     limit resets and resumes the session; the usage of every segment is summed, and the wait is kept
-    apart (``pausedSeconds``) from the working time (``wallSeconds``).
+    apart (``pausedSeconds``) from the working time (``wallSeconds``). With ``previous_session``
+    (a correction) the first segment resumes that session with the prompt instead of starting a
+    new one; every segment carries the turn cap ``max_turns`` (0: none).
     """
     inflight = log_path.with_name(log_path.name + ".inflight")
     state: dict[str, Any] = {
@@ -502,6 +575,7 @@ def _run_resumable(
         "started": resume_session is not None,
         "segments": [],
         "pausedSeconds": 0.0,
+        "previousSession": None if resume_session else previous_session,
     }
     if resume_session and inflight.exists():
         state = json.loads(inflight.read_text(encoding="utf-8"))
@@ -509,19 +583,31 @@ def _run_resumable(
     log_path.parent.mkdir(parents=True, exist_ok=True)
     stderr_tail = ""
     while True:
-        if not state["started"]:
+        previous = state.get("previousSession")
+        if not state["started"] and previous:
+            state["sessionId"] = previous
+            session = ["--resume", previous]
+            command = _command(prompt, model, max_budget_usd, session, effort, read_only, max_turns)
+        elif not state["started"]:
             state["sessionId"] = str(uuid.uuid4())
             session = ["--session-id", state["sessionId"]]
-            command = _command(prompt, model, max_budget_usd, session, effort, read_only)
+            command = _command(prompt, model, max_budget_usd, session, effort, read_only, max_turns)
         else:
             session = ["--resume", state["sessionId"]]
-            command = _command(CONTINUE_PROMPT, model, max_budget_usd, session, effort, read_only)
+            command = _command(
+                CONTINUE_PROMPT, model, max_budget_usd, session, effort, read_only, max_turns
+            )
         inflight.write_text(json.dumps(state, indent=1), encoding="utf-8")
         active = sum(seg["wallSeconds"] for seg in state["segments"])
         record, stderr, result = _invoke(
             command, cwd, model, max(int(timeout_seconds - active), 60)
         )
         stderr_tail = (stderr_tail + stderr)[-20000:]
+        if not state["started"] and previous and _no_session(record, result, stderr):
+            # Claude Code does not have the previous session: start a new one.
+            state["previousSession"] = None
+            state["resumeFallback"] = True
+            continue
         record["resumed"] = state["started"]
         state["segments"].append(record)
         state["started"] = state["started"] or bool(record["numTurns"]) or bool(record["costUsd"])
@@ -584,6 +670,7 @@ def _run_resumable(
                     "costUsd",
                     "outputTokens",
                     "wallSeconds",
+                    "hitTurnLimit",
                 )
             }
             | {"summary": seg["summary"][:200]}
@@ -593,7 +680,14 @@ def _run_resumable(
         "transientRetries": state.get("transientRetries", 0),
         "pausedSeconds": round(state["pausedSeconds"], 3),
         "effort": effort,
+        "maxTurns": max_turns or None,
+        "hitTurnLimit": bool(last.get("hitTurnLimit")),
+        # Whether the call resumed the session of a previous call (a correction); the segments'
+        # own resumes of an interrupted session are in ``segmentLog``.
+        "resumed": bool(state.get("previousSession")),
     }
+    if state.get("resumeFallback"):
+        record["resumeFallback"] = True
     log_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
     (log_path.with_suffix(".stderr.txt")).write_text(stderr_tail, encoding="utf-8")
     inflight.unlink(missing_ok=True)
@@ -661,6 +755,10 @@ def _invoke(
         "timedOut": timed_out,
         "isError": bool(result.get("is_error", True)) or exit_code != 0,
         "terminalReason": result.get("terminal_reason"),
+        "subtype": result.get("subtype"),
+        # The call ended on the turn cap (``--max-turns``), not on the agent's own finish.
+        "hitTurnLimit": result.get("subtype") == TURN_LIMIT_SUBTYPE
+        or result.get("terminal_reason") == TURN_LIMIT_REASON,
         "numTurns": result.get("num_turns"),
         "wallSeconds": round(wall, 3),
         "durationApiMs": result.get("duration_api_ms"),

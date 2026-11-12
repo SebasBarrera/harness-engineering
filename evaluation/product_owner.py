@@ -189,6 +189,7 @@ class ProductOwner:
             timeout_seconds=PO_TIMEOUT_SECONDS,
             max_budget_usd=PO_BUDGET_USD,
             resumable=True,
+            max_turns=0,
         )
         try:
             answers = parse_answers(record.get("resultText", ""), ids)
@@ -208,6 +209,7 @@ class ProductOwner:
                 timeout_seconds=PO_TIMEOUT_SECONDS,
                 max_budget_usd=PO_BUDGET_USD,
                 resumable=True,
+                max_turns=0,
             )
             answers = parse_answers(record.get("resultText", ""), ids)
         # A rewrite of a criterion the task does not have becomes a new criterion instead of an error.
@@ -254,6 +256,7 @@ class ProductOwner:
             timeout_seconds=PO_TIMEOUT_SECONDS,
             max_budget_usd=PO_BUDGET_USD,
             resumable=True,
+            max_turns=0,
         )
 
     def judge_dispute(self, task: dict[str, Any], dispute: dict[str, Any]) -> dict[str, str]:
