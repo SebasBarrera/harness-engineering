@@ -62,6 +62,7 @@ lanzador, fuera del repositorio, y los registros no llevan ninguna ruta local ni
 | `harness` | Lo que escribe `harness init` de la versión bajo prueba (todos los ajustes de la 2.0.0 activos), con `agentRouting.mode: fixed`: cada llamada usa el modelo de la celda. |
 | `harness-anchored` | Lo que escribe `harness init`, con el enrutamiento tal como lo escribe init desde la ola 9 (`anchored`, #85) y `agentRouting.anchorModel` fijado en el modelo de la celda: el enrutador elige el modelo y el esfuerzo de cada llamada a partir de las tablas por defecto, con el modelo que invoca como techo (`agent.routing.decided` con su `anchor`). El factor es el modelo que invoca: Haiku, Sonnet u Opus. Reemplaza a `harness-tiered` del primer piloto, en el que las tablas por defecto ignoraban el modelo que invoca. |
 | `embedded` | `run_embedded.py`: Claude Code, como sesión anfitriona, conduce el harness a través de `harness mcp serve` y la skill (`harness init --agent-skills`), con la configuración `harness`; el factor es el modelo anfitrión. |
+| `direct-po` | Prueba aparte y exploratoria (enmienda del 2026-11-12), fuera de los bloques por defecto: la condición directa con un turno previo de solo lectura en el que el agente puede hacer a lo sumo 8 preguntas (`kind: direct-questions`), que responde el mismo product owner simulado; la llamada de implementación recibe el prompt con las preguntas y las respuestas (`direct_po.py`, registro `directPo`). Solo corre si `run_matrix.py --conditions` la nombra. |
 
 La evaluación cambia solo el proveedor del agente (el adaptador descrito abajo, o el proveedor
 `simulated` del harness en una corrida en seco), el permiso de exactamente ese comando de proveedor,
@@ -75,6 +76,21 @@ clave `extend`, en `capabilities.grants` (la clave de la 1.0.0, agregada allí a
 registro gobernado guarda `grantCheck` (las reglas escritas y las advertencias de proveedor de
 `harness config validate`, vacío cuando el permiso se sostiene). El registro de cada corrida
 (`runtime.stateDir: auto`) se guarda en el directorio de la corrida (`HARNESS_STATE_DIR`).
+
+Desde la enmienda del 2026-11-11 al pre-registro (autoverificación del agente y caché de prompts),
+las llamadas implement de todas las condiciones permiten, además de pytest, `ls` y `cd`, los
+validadores del proyecto (`python -m ruff check`, `python -m ruff format --check`, `python -m mypy`,
+sus formas `python3` y sin `python -m`) y `harness check` (`agentlib.ALLOWED_TOOLS`); ningún otro
+comando de shell. El prompt base (`agentlib.build_prompt`) dice que el agente ya está en el
+repositorio (sin `cd`) y que verifique su cambio con
+`agentlib.VALIDATOR_COMMANDS`; en las condiciones con contrato del gate (`harness`,
+`harness-anchored`) la evaluación otorga `harness check` (`process.execute`, alcance `harness
+check`, en `capabilities.extend`) y el adaptador pide correr `gate.checkCommand` antes de terminar,
+con el directorio de estado de la corrida en el entorno del agente (`HARNESS_STATE_DIR`,
+`agentlib.EXTRA_AGENT_ENV`).
+Toda llamada de Claude Code corre con el TTL de caché de prompts de 5 minutos
+(`agentlib.PROMPT_CACHE_ENV`: `FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`,
+`CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), registrado en `environment.json` (`agentCalls`).
 
 ### El adaptador (`claude_provider.py`, protocolo de proveedor 1.1)
 
@@ -195,12 +211,47 @@ bash evaluation/launchers/block-b.sh          # casual y mínimo x {direct, harn
 bash evaluation/launchers/block-a.sh          # completo x {direct, harness} x 3 x 3 x 3, luego harness-anchored x 3 x 3 x 2
 bash evaluation/launchers/block-d.sh          # {casual direct, structured direct, harness} x 3 modelos x 3 sesiones
 bash evaluation/launchers/block-embedded.sh   # modelo anfitrión x 3, brownfield, 2 repeticiones
+bash evaluation/launchers/block-t1.sh         # T1: casual x {direct, harness, harness-nopo} y techo direct completo
+bash evaluation/launchers/block-ladder.sh     # T6: brownfield completo x {direct, harness-core, harness-nopanel, harness} x 3
+bash evaluation/launchers/block-temptations.sh  # T2: 6 tentaciones x {direct, harness} x 5, Sonnet
 ```
+
+`block-temptations.sh` todavía no corre el humo: `smoke.sh` no tiene un caso para T2 (pendiente).
+`run_temptations.py` no omite las corridas que ya están en su archivo de salida, así que un bloque
+detenido se lanza de nuevo con otro `EVAL_OUT`; no se reanuda.
 
 El piloto Sonnet (enmienda del 2026-11-11 en `campaign/PREREGISTRO.md`) necesita su propio
 `EVAL_OUT`: `pilot.sh` omite una corrida ya registrada con el mismo prompt y condición en
 `pilot.jsonl`, sea cual sea el modelo, y toma el mismo candado que el piloto Haiku, así que corre
 después de él.
+
+Desde la enmienda del 2026-11-12 al pre-registro:
+
+- Una corrida gobernada cuyo `harness run start` falla se registra en `<out>.invalid.jsonl` con
+  `invalid: apparatus-run-start-failed`, el código de salida y la salida de error recortada
+  (`harness.runStartError`), sin medir; el runner sale con 3 y `run_matrix.py` no la repite.
+- Una tarea que el harness rechaza al crearla (`task-refused-exit-N`) se registra como rechazada
+  (`refused`, `measures.hidden: null`, `run-outcome.json` en el directorio de la corrida) y los
+  resúmenes la muestran como «rechazada», fuera de los agregados del árbol.
+- `measures.hidden` lleva el denominador nominal del escenario (`nominal`: greenfield 33,
+  brownfield 24, security 14), `collectionError` y las pruebas discriminantes (`discriminating`:
+  las que la línea base no pasa; 6 de 24 en brownfield, todas en los escenarios nuevos).
+- Con `--prompt poor` o `--prompt casual` el espacio de trabajo de greenfield y security no trae
+  `SPEC.md` ni la línea del `README.md` que apunta a ella, en todas las condiciones; solo el
+  product owner simulado la conoce.
+
+### Humo por bloque
+
+Justo después de `record_environment`, cada `block-*.sh` llama a `run_smoke` (`launchers/smoke.sh`): con
+el mismo `EVAL_WORK` y el mismo montaje de slots del bloque corre en seco (`fake_claude.py`, sin cuenta y
+sin llamadas al modelo, aunque `EVAL_DRY` no esté activo) una celda por condición del bloque: A y B con
+`run_eval.py`, D con `longitudinal/run_session.py` y el embebido con `run_embedded.py`. Después
+comprueba que cada condición dejó un registro válido (uno solo, fuera de `*.invalid.jsonl`, sin campo
+`invalid` y, en las gobernadas, con una ejecución iniciada: `executionId`, que el registro anonimiza como
+`harness.runId`). Si algo falla, el bloque sale con código 6 antes de la primera llamada real. Los
+registros y las bitácoras quedan en `$EVAL_WORK/smoke/<bloque>`, no en los resultados. `EVAL_SKIP_SMOKE=1`
+lo omite. En el bloque rides, el humo corre `run_rides.py --dry-run` una vez por condición de sus celdas
+y además comprueba que ninguna llamada registró un tope de turnos (`maxTurns: null`; plan D5).
 
 Resúmenes: `report.py --v2 <results> <summary.json>` (bloques A y B: una celda por prompt,
 condición, modelo y escenario, con cada corrida listada junto a la dispersión n/min/mediana/max),

@@ -123,6 +123,22 @@
       "additionalProperties": false,
       "description": "The agent contract of a run (wave 11, #97).\n\n* ``maxIterations``: the cap of iterations of one agent in a run, at most 6 (default 5);\n  an iteration is one call to the agent with its own outcome;\n* ``budgets``: token budget and time limit of a call by task size (S, M, L);\n* ``limits``: caps of the response (summary characters, result bytes, characters of any\n  text field of the result).",
       "properties": {
+        "budgetProfile": {
+          "anyOf": [
+            {
+              "enum": [
+                "uniform",
+                "by-kind"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Budgetprofile"
+        },
         "budgets": {
           "anyOf": [
             {
@@ -350,6 +366,36 @@
           "default": null,
           "title": "Mode"
         },
+        "readOnlyEffort": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "type": "string"
+              },
+              "propertyNames": {
+                "enum": [
+                  "clarify",
+                  "locate",
+                  "architecture",
+                  "review",
+                  "plan",
+                  "acceptance"
+                ]
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Readonlyeffort"
+        },
         "riskPaths": {
           "anyOf": [
             {
@@ -406,6 +452,22 @@
       "additionalProperties": false,
       "description": "The converging agent review of a task in INTENT (#79), the object form of\n``intake.ambiguityReview``.\n\nThe review receives the questions already asked and their answers, asks only for blocking\nambiguity that the latest revision introduced or left open, never asks again a question\nalready asked (same rule and normalised text) and asks at most ``maxQuestions`` per round.\nAfter ``maxRounds`` rounds answered by a person, the points the agent still raises are\nrecorded as explicit assumptions and the run continues (``onExhausted: assume``), or they\nare asked again and INTENT stays blocked (``block``, the default). The bare value\n``agent`` keeps the single-round review, which neither converges nor stops.",
       "properties": {
+        "depth": {
+          "anyOf": [
+            {
+              "enum": [
+                "fixed",
+                "adaptive"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Depth"
+        },
         "maxQuestions": {
           "anyOf": [
             {
@@ -458,6 +520,18 @@
           ],
           "default": null,
           "title": "Onexhausted"
+        },
+        "skipSettled": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Skipsettled"
         }
       },
       "title": "AmbiguityReviewConfig",
@@ -1271,6 +1345,18 @@
           "default": null,
           "title": "Push"
         },
+        "recordCommitAuthor": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recordcommitauthor"
+        },
         "stage": {
           "anyOf": [
             {
@@ -1932,7 +2018,7 @@
     },
     "GovernanceConfig": {
       "additionalProperties": false,
-      "description": "Integrity settings of the human decisions, the workspace and the record (since 2.0).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``unanchoredEvents`` (#149): how ``harness verify`` treats the events after the anchored\n  head, which the anchor does not cover. ``warn`` lists them as a warning and ``fail`` also\n  fails the run; under either, a ``retention.artifacts.pruned`` event excuses a missing\n  artifact only when it is within the anchored part of the chain. Absent, the events after\n  the anchor are only counted (``eventsAfterAnchor``) and every prune event excuses, as in\n  1.x.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a\n  project narrows, never widens, a profile), every grant made while a phase runs keeps only\n  the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call\n  outside IMPLEMENTATION is read-only and may start only its own command, an agent's own\n  command is started only when a ``process.execute`` grant allows it (otherwise a ``HIGH``\n  ``capabilities.command-denied`` finding blocks the phase, #87), and the resolved grants of\n  each phase attempt are recorded as evidence.\n* ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes\n  repository content (instruction files included) quoted, untrusted context of every agent\n  request with a prompt-injection notice, and the review panel flags instructions in changed\n  files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive\n  deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or\n  permission changes outside the workspace) unless a ``process.destructive`` grant allows\n  them, with a finding for each attempt.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.",
+      "description": "Integrity settings of the human decisions, the workspace and the record (since 2.0).\n\nEvery key is optional: a key that is absent keeps the 1.0.0 behaviour and is left out of\nthe serialized configuration, so the snapshot digest of an existing project does not\nchange. ``harness init`` writes them all.\n\n* ``deciderIdentity``: ``git`` records the Git user (``user.email``, ``user.name``) as the\n  person who decides when no ``--actor`` is given; ``default`` (or absent) keeps the fixed\n  ``human.local`` and ``human.web`` identifiers.\n* ``confirmDecisionDigest``: on a terminal, ``harness gate decide`` shows the decision and\n  asks for the first characters of the ChangeSet digest before recording it.\n* ``trustedHosts``: the local API answers only requests whose ``Host`` is one of these\n  names (DNS-rebinding protection); absent, every host is accepted.\n* ``verifyRecords``: ``trace`` (every format) verifies the run first (event chain, records\n  against events, artifact digests, anchor) and refuses to export a run that fails, and\n  ``status`` adds the result of the record check.\n* ``chainAnchor``: ``file`` or ``git-note`` keeps a copy of the head of each run's event\n  chain outside ``.harness`` so that ``harness verify`` detects a truncated chain.\n* ``unanchoredEvents`` (#149): how ``harness verify`` treats the events after the anchored\n  head, which the anchor does not cover. ``warn`` lists them as a warning and ``fail`` also\n  fails the run; under either, a ``retention.artifacts.pruned`` event excuses a missing\n  artifact only when it is within the anchored part of the chain. Absent, the events after\n  the anchor are only counted (``eventsAfterAnchor``) and every prune event excuses, as in\n  1.x.\n* ``pinTaskRevision``: a run works on the task revision it was created with (or a revision\n  made through ``task clarify``), ``task create`` refuses a task id that has an open run, and\n  a decision is bound to the acceptance-contract digest frozen in SPECIFICATION.\n* ``protectExcludedPaths``: what the ChangeSet leaves out (``.git``, ``.harness``, virtual\n  environments, ``node_modules``, ``dist``, ``build``, symbolic links) is fingerprinted\n  around every agent invocation and a change is a ``CRITICAL`` finding that fails the gate;\n  the agent sandbox keeps ``.harness`` and ``.git`` read-only, and the profiles' write grants\n  on ``.harness/**`` and ``.git/**`` are dropped.\n* ``workspaceLease``: one harness process at a time executes phases in a workspace\n  (``.harness/lease.json`` with pid, host and heartbeat); an interrupted phase is recorded\n  as ``INTERRUPTED``, and ``run continue`` terminates the process groups a killed harness\n  left and restores the workspace an interrupted IMPLEMENTATION attempt found.\n* ``applyWorkflowSettings``: the workflow's per-phase ``maxAttempts``, ``timeoutSeconds`` and\n  ``exitGate`` take effect.\n* ``decisionExpiryHours``: a human decision expires (``expiresAt``) that many hours after it\n  is recorded; an expired decision does not let DECISION pass.\n* ``applyProfilePolicies``: the profile policies ``missingTestCommand`` and\n  ``missingTestScript`` set the status of an unavailable mandatory validator, and a\n  ``coverage`` policy with ``minimumPercent`` adds a mandatory coverage validator (Python).\n* ``applyNetworkPolicy``: ``runtime.allowNetwork: false`` denies outbound network access\n  to the agent under ``runtime.agentSandbox: enforce``.\n* ``stopTheLine`` (#52): when a run stops without an approval (rejected, failed, timed\n  out, cancelled), ``restore`` keeps its changes as a quarantined patch and restores the\n  workspace to the baseline, ``block`` refuses new runs in the workspace until a person\n  quarantines them (``harness run quarantine``).\n* ``phasePermissions`` (#52): every agent request carries the permissions of its call kind,\n  derived from the capability grants (read-only for clarify, review and plan), recorded as\n  evidence.\n* ``phaseCapabilities`` (#4): the grants are the profile's narrowed by the project's (a\n  project narrows, never widens, a profile), every grant made while a phase runs keeps only\n  the capabilities the phase allows (the workflow's ``allowedCapabilities``), an agent call\n  outside IMPLEMENTATION is read-only and may start only its own command, an agent's own\n  command is started only when a ``process.execute`` grant allows it (otherwise a ``HIGH``\n  ``capabilities.command-denied`` finding blocks the phase, #87), and the resolved grants of\n  each phase attempt are recorded as evidence.\n* ``applyRepositoryPolicies`` (#5): ``policies.repositoryContentTrusted: false`` makes\n  repository content (instruction files included) quoted, untrusted context of every agent\n  request with a prompt-injection notice, and the review panel flags instructions in changed\n  files; ``policies.destructiveActionsDefault: deny`` refuses destructive commands (recursive\n  deletes outside the workspace, force pushes, history rewrites, dropped data, ownership or\n  permission changes outside the workspace) unless a ``process.destructive`` grant allows\n  them, with a finding for each attempt.\n* ``enforceWorkflow`` (#3): the workflow's ``exitGate`` and transition conditions are\n  evaluated from the run's records after a phase attempt passes (an unmet condition leaves\n  the attempt ``BLOCKED`` with a ``phase.exit_gate.unmet`` event), ``dependsOn`` decides\n  which phase may start, and ``parallelizable`` lets the validators declared\n  ``parallelSafe`` of a parallelizable ``VERIFICATION`` run at once, up to\n  ``runtime.maxParallel``. An unknown gate or condition is a configuration error.\n* ``riskProfile``: the governance profile of each task by its risk. ``auto`` gives a task\n  the router sizes ``S`` with no risk flag (no security term, no ``riskPaths`` match, no\n  verification beyond ``L1``) the **light** profile and every other task the **full** one;\n  ``light`` gives the light profile to every task without a risk flag, whatever its size;\n  ``full`` gives every task the full profile (no fast lane). The light profile is the\n  fast lane of ``friction.fastLane`` (its ``skip`` and ``verification`` when configured,\n  else the defaults) plus no ``locate`` call and no ``planApproval: risk`` checkpoint; it\n  keeps the nine phases, the mandatory validators, the frozen acceptance tests, the\n  fail-closed gate, the digest-bound human decision and the event chain, and a ChangeSet\n  with a risk factor still takes the run out of it. Any value also reads the ``security``\n  risk flag with the contextual detector (``agents.risk_terms``) instead of the 1.x word\n  list. Absent, the fast lane is ``friction.fastLane`` alone, as in 1.x.",
       "properties": {
         "applyNetworkPolicy": {
           "anyOf": [
@@ -2100,6 +2186,23 @@
           ],
           "default": null,
           "title": "Protectexcludedpaths"
+        },
+        "riskProfile": {
+          "anyOf": [
+            {
+              "enum": [
+                "auto",
+                "light",
+                "full"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Riskprofile"
         },
         "stopTheLine": {
           "anyOf": [
@@ -2663,6 +2766,22 @@
           ],
           "default": null,
           "title": "Mode"
+        },
+        "reuse": {
+          "anyOf": [
+            {
+              "enum": [
+                "revision",
+                "scope"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reuse"
         }
       },
       "title": "LocateConfig",

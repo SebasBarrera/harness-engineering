@@ -44,6 +44,7 @@ from governed_harness.domain.models import (
 )
 from governed_harness.evidence import sha256_json
 
+from . import depth
 from . import language as lang
 
 QUESTION_TEMPLATES: dict[str, str] = {
@@ -519,7 +520,25 @@ def no_acceptance_criteria(task: Task) -> bool:
     return not task.acceptance_criteria
 
 
-def assess_intent(task: Task, *, language: str | None = None) -> tuple[ClarificationQuestion, ...]:
+def _basic_findings(
+    task: Task, topics: tuple[str, ...], language: str | None
+) -> list[tuple[ClarificationRule, str, str]]:
+    """One question per fundamental topic (``intake.ambiguityReview.depth: adaptive``), under
+    ``C0`` when the task has no criteria (where ``C0`` already asks for the results, so the
+    acceptance topic is left to it) and under ``T1`` otherwise."""
+    rule: ClarificationRule = "C0" if no_acceptance_criteria(task) else "T1"
+    texts = depth.TOPIC_QUESTIONS[depth.topic_language(language)]
+    title = _excerpt(task.title)
+    return [
+        (rule, depth.TOPIC_TARGET_PREFIX + topic, texts[topic].format(title=title))
+        for topic in topics
+        if not (rule == "C0" and topic == "acceptance")
+    ]
+
+
+def assess_intent(
+    task: Task, *, language: str | None = None, basic_topics: tuple[str, ...] = ()
+) -> tuple[ClarificationQuestion, ...]:
     """Return the clarification questions for a task, in a stable order.
 
     A task without acceptance criteria gets the seven ``C0`` questions and nothing else: no
@@ -530,10 +549,15 @@ def assess_intent(task: Task, *, language: str | None = None) -> tuple[Clarifica
 
     ``language`` is the value of ``intake.language`` (``auto``, ``en``, ``es``) or ``None``
     without the key; it changes vocabularies and question texts, never ids, rules or targets.
+
+    ``basic_topics`` (``intake.ambiguityReview.depth: adaptive``, see :mod:`.depth`) are
+    fundamental topics asked first, one question each, with category ``basics`` and target
+    ``task:<topic>``. Empty, the questions are the ones above.
     """
     resolved = resolve_language(task, language)
     templates = _lexicon(resolved).templates
     findings: list[tuple[ClarificationRule, str, str]] = []
+    basics = _basic_findings(task, basic_topics, resolved) if basic_topics else []
     if no_acceptance_criteria(task):
         title = _excerpt(task.title)
         findings = [
@@ -563,9 +587,19 @@ def assess_intent(task: Task, *, language: str | None = None) -> tuple[Clarifica
             seen[key] = criterion.criterion_id
     if scope_without_breakdown(task, language=resolved):
         findings.append(("T1", TASK_TARGET, templates["T1"].format(text=_excerpt(task.intent))))
-    return tuple(
+    asked = tuple(
+        ClarificationQuestion(
+            question_id=f"Q-{index}",
+            rule_id=rule,
+            target=target,
+            text=text,
+            category=depth.BASICS_CATEGORY,
+        )
+        for index, (rule, target, text) in enumerate(basics, start=1)
+    )
+    return asked + tuple(
         ClarificationQuestion(question_id=f"Q-{index}", rule_id=rule, target=target, text=text)
-        for index, (rule, target, text) in enumerate(findings, start=1)
+        for index, (rule, target, text) in enumerate(findings, start=len(asked) + 1)
     )
 
 
@@ -607,6 +641,8 @@ class _Draft:
     replaced: list[str] = field(default_factory=list)
     added_criteria: list[str] = field(default_factory=list)
     added_requirements: list[str] = field(default_factory=list)
+    topics: list[str] = field(default_factory=list)
+    """Fundamental topics answered in this revision (``depth: adaptive``)."""
 
     def add_criterion(self, criterion: AcceptanceCriterion) -> None:
         self.criteria.append(criterion)
@@ -714,6 +750,19 @@ def _apply_answer(
     draft: _Draft, question: ClarificationQuestion, answer: str, clarification: ClarificationInput
 ) -> None:
     """Land one answer in the task where it belongs (see :func:`revise_task`)."""
+    topic = depth.topic_of(question.target)
+    if question.category == depth.BASICS_CATEGORY and topic is not None:
+        # A fundamental topic (depth: adaptive) becomes a requirement under its label.
+        label = depth.TOPIC_LABELS[_question_language(question, topic)][topic]
+        draft.add_requirement(
+            Requirement(
+                requirement_id=new_id("req"),
+                text=f"{label}: {' '.join(answer.split())}",
+                source="clarification",
+            )
+        )
+        draft.topics.append(topic)
+        return
     if question.rule_id == "C0":
         _apply_c0_answer(draft, question, answer, clarification)
         return
@@ -735,6 +784,28 @@ def _apply_answer(
         )
         return
     _extend_hint(draft, question, answer)
+
+
+def _question_language(question: ClarificationQuestion, topic: str) -> str:
+    """The language a topic question was asked in: Spanish when its text is the Spanish
+    template's, otherwise English."""
+    spanish = depth.TOPIC_QUESTIONS["es"][topic]
+    return "es" if question.text.startswith(spanish.split("'", 1)[0]) else "en"
+
+
+def _revised_metadata(task: Task, draft: _Draft) -> dict[str, Any]:
+    """The metadata of a revision that answered fundamental topics: the topics it covers and,
+    on the first such revision, the measure of the task as the person wrote it. Without topic
+    answers the metadata stays as it was."""
+    metadata = dict(task.metadata)
+    if not draft.topics:
+        return metadata
+    covered = list(depth.covered_topics(task))
+    metadata[depth.TOPICS_KEY] = covered + [t for t in draft.topics if t not in covered]
+    if depth.frozen_level(task) is None:
+        measured = depth.poverty(task)
+        metadata[depth.DEPTH_KEY] = {"level": measured.level, "score": measured.score}
+    return metadata
 
 
 def _revised_contract(task: Task, clarification: ClarificationInput) -> dict[str, Any]:
@@ -786,6 +857,7 @@ def revise_task(
                 "requirements": [item.model_dump(by_alias=True) for item in draft.requirements],
                 "criteriaPending": not draft.criteria,
                 "acceptanceCriteria": [item.model_dump(by_alias=True) for item in draft.criteria],
+                "metadata": _revised_metadata(task, draft),
                 **({"contract": contract} if contract else {}),
             }
         )

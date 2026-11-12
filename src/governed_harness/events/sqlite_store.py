@@ -4,6 +4,7 @@ import builtins
 import json
 import sqlite3
 import threading
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -124,59 +125,97 @@ class SQLiteEventStore:
         correlation_id: str | None = None,
         redaction_version: str = "1",
     ) -> StoredEvent:
+        with self._lock, self.connection:
+            return self._insert(
+                execution_id,
+                event_type,
+                payload,
+                actor=actor,
+                event_id=event_id,
+                phase_execution_id=phase_execution_id,
+                causation_id=causation_id,
+                correlation_id=correlation_id,
+                redaction_version=redaction_version,
+            )
+
+    def append_many(
+        self, execution_id: str, events: Iterable[tuple[str, dict[str, Any], Actor]]
+    ) -> builtins.list[StoredEvent]:
+        """Append ``(event_type, payload, actor)`` events in order, each exactly as
+        :meth:`append` would (same envelope, sequence and digest chain), in one transaction:
+        one commit instead of one per event, and all or none of them stored (since 2.0.1)."""
+        with self._lock, self.connection:
+            return [
+                self._insert(execution_id, event_type, payload, actor=actor)
+                for event_type, payload, actor in events
+            ]
+
+    def _insert(
+        self,
+        execution_id: str,
+        event_type: str,
+        payload: dict[str, Any],
+        *,
+        actor: Actor = HARNESS_ACTOR,
+        event_id: str | None = None,
+        phase_execution_id: str | None = None,
+        causation_id: str | None = None,
+        correlation_id: str | None = None,
+        redaction_version: str = "1",
+    ) -> StoredEvent:
+        """One event of the chain; the caller holds the lock and the transaction."""
         from governed_harness.domain.ids import new_id
 
         event_id = event_id or new_id("evt")
         occurred_at = datetime.now(UTC).isoformat()
         actor_payload = actor.model_dump(mode="json", by_alias=True)
-        with self._lock, self.connection:
-            row = self.connection.execute(
-                "SELECT execution_sequence,event_digest FROM events WHERE execution_id=? "
-                "ORDER BY execution_sequence DESC LIMIT 1",
-                (execution_id,),
-            ).fetchone()
-            sequence = int(row["execution_sequence"]) + 1 if row else 1
-            previous = row["event_digest"] if row else None
-            envelope = {
-                "schemaVersion": "1.0",
-                "eventId": event_id,
-                "executionId": execution_id,
-                "phaseExecutionId": phase_execution_id,
-                "causationId": causation_id,
-                "correlationId": correlation_id,
-                "sequence": sequence,
-                "eventType": event_type,
-                "occurredAt": occurred_at,
-                "actor": actor_payload,
-                "payload": payload,
-                "previousEventDigest": previous,
-                "redactionVersion": redaction_version,
-            }
-            digest = sha256_json(envelope)
-            self.connection.execute(
-                """
-                INSERT INTO events(
-                    event_id,execution_id,execution_sequence,event_type,occurred_at,
-                    actor_json,payload_json,phase_execution_id,causation_id,correlation_id,
-                    previous_digest,event_digest,redaction_version
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """,
-                (
-                    event_id,
-                    execution_id,
-                    sequence,
-                    event_type,
-                    occurred_at,
-                    json.dumps(actor_payload, sort_keys=True),
-                    json.dumps(payload, sort_keys=True, default=str),
-                    phase_execution_id,
-                    causation_id,
-                    correlation_id,
-                    previous,
-                    digest,
-                    redaction_version,
-                ),
-            )
+        row = self.connection.execute(
+            "SELECT execution_sequence,event_digest FROM events WHERE execution_id=? "
+            "ORDER BY execution_sequence DESC LIMIT 1",
+            (execution_id,),
+        ).fetchone()
+        sequence = int(row["execution_sequence"]) + 1 if row else 1
+        previous = row["event_digest"] if row else None
+        envelope = {
+            "schemaVersion": "1.0",
+            "eventId": event_id,
+            "executionId": execution_id,
+            "phaseExecutionId": phase_execution_id,
+            "causationId": causation_id,
+            "correlationId": correlation_id,
+            "sequence": sequence,
+            "eventType": event_type,
+            "occurredAt": occurred_at,
+            "actor": actor_payload,
+            "payload": payload,
+            "previousEventDigest": previous,
+            "redactionVersion": redaction_version,
+        }
+        digest = sha256_json(envelope)
+        self.connection.execute(
+            """
+            INSERT INTO events(
+                event_id,execution_id,execution_sequence,event_type,occurred_at,
+                actor_json,payload_json,phase_execution_id,causation_id,correlation_id,
+                previous_digest,event_digest,redaction_version
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """,
+            (
+                event_id,
+                execution_id,
+                sequence,
+                event_type,
+                occurred_at,
+                json.dumps(actor_payload, sort_keys=True),
+                json.dumps(payload, sort_keys=True, default=str),
+                phase_execution_id,
+                causation_id,
+                correlation_id,
+                previous,
+                digest,
+                redaction_version,
+            ),
+        )
         return StoredEvent(
             event_id,
             sequence,

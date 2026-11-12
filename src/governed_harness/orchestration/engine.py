@@ -108,6 +108,7 @@ from governed_harness.intake import (
     revise_task,
     task_digest,
 )
+from governed_harness.intake.depth import covered_topics, depth_plan
 from governed_harness.intake.language import RECOMMENDATION_TEMPLATES
 from governed_harness.memory import MemoryStore, context_manifest
 from governed_harness.orchestration.agent_results import AgentResults
@@ -1224,7 +1225,11 @@ class RunEngine:
             policy = "enforce"
         intake_config = self.s.resolved.project.intake
         language = intake_config.language if intake_config else None
-        questions = assess_intent(task, language=language) if policy != "off" else ()
+        questions = (
+            assess_intent(task, language=language, basic_topics=self._basic_topics(task))
+            if policy != "off"
+            else ()
+        )
         review_refs: tuple[str, ...] = ()
         if self.friction.active and self.friction.fast_lane is not None:
             # friction.fastLane (#58): the lane of the run, recorded with its reasons.
@@ -1267,6 +1272,26 @@ class RunEngine:
             evidence=evidence,
         )
 
+    def _basic_topics(self, task: Task) -> tuple[str, ...]:
+        """The fundamental topics the deterministic intake asks first under
+        ``intake.ambiguityReview.depth: adaptive`` (see :mod:`governed_harness.intake.depth`):
+        the next ones nobody answered, while the task's rounds last. Empty without the key."""
+        intake_config = self.s.resolved.project.intake
+        settings = intake_config.ambiguity_settings if intake_config else None
+        if settings is None or not settings.adaptive:
+            return ()
+        plan = depth_plan(task, settings.rounds, settings.questions)
+        answered = sum(
+            1
+            for record in self.s.state.list(
+                "clarification", ClarificationRecord, project_id=task.project_id
+            )
+            if record.task_id == task.task_id
+        )
+        if answered >= plan.rounds:
+            return ()
+        return plan.next_topics(covered_topics(task))
+
     def _intent_review(
         self,
         execution: Execution,
@@ -1276,11 +1301,22 @@ class RunEngine:
     ) -> IntentReviewOutcome:
         """Agent review of ambiguity and completeness, and the check of earlier answers
         (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps the
-        deterministic intake only."""
-        skip = self.friction.active and self.friction.skips(
-            execution, "ambiguityReview", PhaseId.INTENT
+        deterministic intake only, except, under ``depth: adaptive``, for a poor request: a
+        one-line wish looks small but is the request that needs the review most."""
+        skip = (
+            self.friction.active
+            and not self._poor_request(task)
+            and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
         )
         return self.results.intent.questions(execution, phase, task, questions, agent=not skip)
+
+    def _poor_request(self, task: Task) -> bool:
+        """Whether ``depth: adaptive`` measures the task as ``very-poor`` or ``poor``."""
+        intake_config = self.s.resolved.project.intake
+        settings = intake_config.ambiguity_settings if intake_config else None
+        if settings is None or not settings.adaptive:
+            return False
+        return depth_plan(task, settings.rounds, settings.questions).deterministic_basics
 
     def _intent_identified(
         self, execution: Execution, phase: PhaseExecution, task: Task, refs: tuple[str, ...]
@@ -3392,7 +3428,7 @@ class RunEngine:
                 phase_execution_id=phase.phase_execution_id,
             )
             return PhaseOutcome(ResultStatus.BLOCKED, f"Closure commit not created: {error}")
-        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        record = self._closure_record(commit, change_set)
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )
@@ -3422,6 +3458,15 @@ class RunEngine:
                 self.ladder.bind_commit(execution, change_set.digest, commit.commit)
             return self.ladder.delivery.deliver(execution, phase, decision, commit, change_set)
         return None
+
+    def _closure_record(self, commit: ClosureCommit, change_set: ChangeSet) -> dict[str, Any]:
+        """The closure commit as recorded. The author and the subject come from the repository:
+        they pass the same redaction of secrets as any recorded text (a name or a subject can
+        carry a token)."""
+        record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        if commit.author:
+            record, _ = self.s.artifacts.redactor.redact_json(record)
+        return record
 
     # ----- correction loop --------------------------------------------------------
     def _external_provider(self, execution_id: str) -> bool:
@@ -4054,20 +4099,20 @@ class RunEngine:
             execution_id=execution.execution_id,
             project_id=execution.project_id,
         )
-        for finding in output.findings:
-            self.s.state.put(
-                "finding",
-                finding.finding_id,
-                finding,
-                execution_id=execution.execution_id,
-                project_id=execution.project_id,
-            )
-            self.s.events.append(
-                execution.execution_id,
-                _FINDING_RECORDED,
-                finding.model_dump(mode="json"),
-                actor=finding.provenance.actor,
-            )
+        # 2.0.1: the findings of one validation in one transaction of each store; the events
+        # are those one append per finding writes (same order, envelope and digest chain).
+        self.s.state.put_many(
+            [("finding", finding.finding_id, finding) for finding in output.findings],
+            execution_id=execution.execution_id,
+            project_id=execution.project_id,
+        )
+        self.s.events.append_many(
+            execution.execution_id,
+            [
+                (_FINDING_RECORDED, finding.model_dump(mode="json"), finding.provenance.actor)
+                for finding in output.findings
+            ],
+        )
         for tool in output.tool_invocations:
             self._save_tool(execution, tool)
         self.s.events.append(

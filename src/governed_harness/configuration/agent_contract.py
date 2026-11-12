@@ -15,6 +15,7 @@ from pydantic import Field, field_validator
 from governed_harness.configuration.agent_results import SizeClass, _Section, off_from_yaml
 
 AgentContractMode = Literal["enforce", "off"]
+BudgetProfile = Literal["uniform", "by-kind"]
 
 MAX_ITERATIONS_CEILING: Final = 6
 """The most iterations a configuration may allow an agent: a larger cap is rejected."""
@@ -41,6 +42,15 @@ DEFAULT_SIZE_BUDGETS: Final[dict[str, tuple[int, int]]] = {
 """Token budget and time limit (seconds) of one call by task size: starting values in a 1:4:16
 ratio, to be calibrated from the recorded usage (``harness routing calibrate``), not a measured
 optimum."""
+
+
+DEFAULT_KIND_BUDGETS: Final[dict[str, dict[str, int]]] = {
+    "implement": {"S": 120_000, "M": 300_000, "L": 800_000},
+    "read-only": {"S": 100_000, "M": 200_000, "L": 800_000},
+}
+"""Since 2.0.1 (``budgetProfile: by-kind``): the token budget of one call by kind and task size,
+from the counted tokens of the 2.0.0 pilot calls (about the 95th percentile times 1.5, never
+below the uniform budget); the time limits stay those of ``DEFAULT_SIZE_BUDGETS``."""
 
 
 class SizeBudget(_Section):
@@ -73,6 +83,10 @@ class AgentContractConfig(_Section):
     )
     budgets: dict[SizeClass, SizeBudget] | None = None
     limits: ResponseLimits | None = None
+    budget_profile: BudgetProfile | None = Field(default=None, alias="budgetProfile")
+    """Since 2.0.1: ``by-kind`` takes the token budget of a call from ``DEFAULT_KIND_BUDGETS``
+    (``implement`` apart from the read-only calls); ``uniform`` (the default) keeps one budget
+    per size, as in 2.0.0. A size of ``budgets`` with its own ``tokens`` wins over both."""
 
     @field_validator("mode", mode="before")
     @classmethod
@@ -87,9 +101,13 @@ class AgentContractConfig(_Section):
     def iterations(self) -> int:
         return self.max_iterations or DEFAULT_MAX_ITERATIONS
 
-    def budget_for(self, size: SizeClass) -> tuple[int, int]:
-        """The token budget and the time limit in seconds of a call for a task of ``size``."""
+    def budget_for(self, size: SizeClass, kind: str | None = None) -> tuple[int, int]:
+        """The token budget and the time limit in seconds of a call for a task of ``size``
+        (under ``budgetProfile: by-kind``, also by the call's ``kind``)."""
         tokens, seconds = DEFAULT_SIZE_BUDGETS[size]
+        if self.budget_profile == "by-kind" and kind is not None:
+            group = "implement" if kind == "implement" else "read-only"
+            tokens = DEFAULT_KIND_BUDGETS[group][size]
         own = (self.budgets or {}).get(size)
         if own is None:
             return tokens, seconds

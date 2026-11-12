@@ -67,4 +67,4 @@ flowchart TB
 - [Metrics](metrics.md) and [benchmarks](benchmarks.md).
 - Reports: [benchmark report](https://sebasbarrera.github.io/harness-engineering/benchmarks/report/), [trend](https://sebasbarrera.github.io/harness-engineering/benchmarks/trend/),
   [coverage](https://sebasbarrera.github.io/harness-engineering/coverage/), [process metrics](https://sebasbarrera.github.io/harness-engineering/metrics-report/).
-- [Thesis context](thesis.md) and [provenance of the evaluated cut](provenance.md).
+- [Thesis context](thesis.md) and [provenance of the earlier iteration v0.8.0](provenance.md).

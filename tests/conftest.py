@@ -65,6 +65,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "phaseCapabilities",
         "applyRepositoryPolicies",
         "enforceWorkflow",
+        "riskProfile",
     ),
 }
 AGENT_RESULTS_SECTIONS = (

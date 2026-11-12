@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import sys
 from pathlib import Path
 
 import yaml
@@ -13,6 +14,7 @@ from governed_harness.configuration.agent_results import (
     DEFAULT_CONTEXT_MAX_BYTES,
     DEFAULT_CONTEXT_MAX_FILES,
     DEFAULT_DECOMPOSITION_THRESHOLD,
+    DEFAULT_READ_ONLY_EFFORT,
     DEFAULT_RISK_ACTIONS,
     DEFAULT_SIZE_THRESHOLDS,
 )
@@ -62,6 +64,26 @@ def project_id_from_path(path: Path) -> str:
     return f"project_{slug[:80]}"
 
 
+# Default write-sandbox entries that only exist on POSIX systems. The sandbox paths must be absolute
+# POSIX paths or start with ``~/`` (the validator rejects drive letters and backslashes), so on
+# Windows these are left out instead of written as paths that mean nothing there; the entries
+# under the home directory (``~/.claude``, ``~/.cache``, ...) stay.
+POSIX_ONLY_SANDBOX_PATHS = frozenset(
+    {"/tmp", "/var/folders", "~/Library/Caches"}  # NOSONAR(S5443) # nosec B108
+)
+
+
+def default_sandbox_write_paths(platform: str | None = None) -> list[str]:
+    """``runtime.sandboxWritePaths`` that ``harness init`` writes: the defaults, without the
+    POSIX-only temporary and cache directories on Windows. POSIX is unchanged."""
+    windows = (platform or sys.platform) == "win32"
+    return [
+        path
+        for path, _ in DEFAULT_SANDBOX_WRITE_PATHS
+        if not (windows and path in POSIX_ONLY_SANDBOX_PATHS)
+    ]
+
+
 def initialize_project(path: Path, *, force: bool = False) -> Path:
     target = path.resolve(strict=True)
     if not target.is_dir():
@@ -100,7 +122,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             # Enforced under governance.applyNetworkPolicy: agent CLIs call their model API.
             "allowNetwork": True,
             "agentSandbox": "enforce",
-            "sandboxWritePaths": [path for path, _ in DEFAULT_SANDBOX_WRITE_PATHS],
+            "sandboxWritePaths": default_sandbox_write_paths(),
             "verificationCorrections": 2,
             "providerFeedback": True,
             "unsupportedClaimSeverity": "MEDIUM",
@@ -123,6 +145,10 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "maxRounds": DEFAULT_AMBIGUITY_ROUNDS,
                 "maxQuestions": DEFAULT_AMBIGUITY_QUESTIONS,
                 "onExhausted": "assume",
+                # 2.0.1: no new call once a round left no question or the stop was recorded.
+                "skipSettled": True,
+                # 2.0.1: a poorer request gets more rounds and questions, the basics first.
+                "depth": "adaptive",
             },
             "validateAnswers": True,
             "operationalContract": "batch",
@@ -220,7 +246,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "manifest": "auto",
             "maxFiles": DEFAULT_CONTEXT_MAX_FILES,
             "maxBytes": DEFAULT_CONTEXT_MAX_BYTES,
-            "locate": {"mode": "agent"},
+            # 2.0.1: one locate call while the task's scope stays the same.
+            "locate": {"mode": "agent", "reuse": "scope"},
         },
         # Wide on purpose: limits only at the extremes (#42).
         "budget": {
@@ -232,12 +259,19 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         "memory": {"learnFromFindings": "auto", "autoApproveRecurring": False},
         # Wave 11 (#97): the versioned request and response contract of agent calls, one cap of
         # iterations per agent and the token budget and time limit by task size.
-        "agentContract": {"mode": "enforce", "maxIterations": DEFAULT_MAX_ITERATIONS},
+        # 2.0.1: token budgets by call kind, calibrated on the 2.0.0 pilot calls.
+        "agentContract": {
+            "mode": "enforce",
+            "maxIterations": DEFAULT_MAX_ITERATIONS,
+            "budgetProfile": "by-kind",
+        },
         # #85: the model the person invoked is the ceiling; cheaper rungs below it.
         "agentRouting": {
             "mode": "anchored",
             "thresholds": {key: list(value) for key, value in DEFAULT_SIZE_THRESHOLDS.items()},
             "maxEscalations": 2,
+            # 2.0.1: low or medium effort for the first attempt of the read-only calls.
+            "readOnlyEffort": dict(DEFAULT_READ_ONLY_EFFORT),
         },
         "governance": {
             "deciderIdentity": "git",
@@ -261,6 +295,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             # Wave 7 (#5): repository content is untrusted, destructive commands are denied.
             "applyRepositoryPolicies": True,
             "enforceWorkflow": True,
+            # Governance by risk: small, risk-free tasks take the light profile, the others the
+            # full one; the security flag is read in context.
+            "riskProfile": "auto",
         },
         "toolchain": {"profileDetection": "all", "interpreter": "auto", "extendedProfiles": True},
         "provenance": {"agentSnapshots": True, "selfReport": True},
@@ -269,6 +306,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         # only to override it, #56).
         "delivery": {
             "closureCommit": "branch",
+            "recordCommitAuthor": True,
             "stage": True,
             "push": False,
             "pullRequest": {"create": False, "draft": True},

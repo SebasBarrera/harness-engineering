@@ -27,7 +27,7 @@ from __future__ import annotations
 
 import os
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,9 +59,12 @@ class ClosureCommit:
     parent: str | None = None
     branch: str | None = None
     trailers: dict[str, str] = field(default_factory=dict)
+    author: str | None = None
+    subject: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        extra = {"author": self.author, "subject": self.subject} if self.author else {}
+        return extra | {
             "mode": self.mode,
             "status": self.status,
             "reason": self.reason,
@@ -106,6 +109,13 @@ def commit_message(
     )
     footer = "\n".join(f"{key}: {value}" for key, value in trailers.items())
     return f"{_one_line(task.title, _SUBJECT_CHARS)}\n\n{body}\n\n{footer}\n"
+
+
+def commit_author(git: Git, commit: str) -> tuple[str, str]:
+    """Author (``Name <email>``) and subject of ``commit``, as Git shows them."""
+    shown = git.text("show", "-s", "--format=%an <%ae>%x1f%s", commit)
+    author, _, subject = shown.partition("\x1f")
+    return author, subject
 
 
 def branch_name(config: DeliveryConfig, execution_id: str, task_id: str) -> str:
@@ -197,6 +207,21 @@ def create_closure_commit(
     workspace: Path,
     config: DeliveryConfig,
     *,
+    execution_id: str,
+    task: Task,
+    change_set: ChangeSet,
+    decision: HumanDecision,
+) -> ClosureCommit:
+    result = _create_closure_commit(workspace, config, execution_id, task, change_set, decision)
+    if config.record_commit_author and result.commit:
+        author, subject = commit_author(Git(workspace), result.commit)
+        result = replace(result, author=author, subject=subject)
+    return result
+
+
+def _create_closure_commit(
+    workspace: Path,
+    config: DeliveryConfig,
     execution_id: str,
     task: Task,
     change_set: ChangeSet,

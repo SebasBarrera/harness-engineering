@@ -25,11 +25,28 @@ FLOWS = [
     ("full", "baseline"),
     ("full", "harness"),
 ]
-GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "clarify")
+GOVERNED = (
+    "harness",
+    "harness-core",
+    "harness-nopo",
+    "harness-nopanel",
+    "harness-anchored",
+    "harness-tiered",
+    "clarify",
+)
 FLOWS_V2 = [
     (prompt, condition)
     for prompt in ("casual", "poor", "full")
-    for condition in ("direct", "harness-core", "harness", "harness-anchored", "harness-tiered")
+    for condition in (
+        "direct",
+        "direct-po",  # the separate exploratory test (amendment of 2026-11-12)
+        "harness-core",
+        "harness",
+        "harness-nopo",  # test T1: harness without product owner
+        "harness-nopanel",  # test T6: harness without the review panel
+        "harness-anchored",
+        "harness-tiered",
+    )
 ]
 LABELS = {
     ("casual", "baseline"): "Casual\nsin harness",
@@ -54,6 +71,8 @@ def delivered(r: dict[str, Any]) -> bool:
 
 def correct(r: dict[str, Any]) -> bool:
     h = r["measures"]["hidden"]  # in 2.0.0 a stopped run is measured on its quarantined change
+    if h.get("nominal"):  # the fixed denominator (amendment of 2026-11-12)
+        return h["passed"] == h["nominal"]
     return h["tests"] > 1 and h["passed"] == h["tests"]
 
 
@@ -69,11 +88,20 @@ def has_tests(r: dict[str, Any]) -> bool:
     )
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def refused(r: dict[str, Any]) -> bool:
+    """A task refused at ``task create``: listed as refused, never scored (amendment of
+    2026-11-12; earlier records carry only the outcome)."""
+    outcome = str((r.get("harness") or {}).get("outcome") or "")
+    return bool(r.get("refused")) or outcome.startswith("task-refused")
+
+
+def summarize(all_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [r for r in all_rows if not refused(r)]
     d = [r for r in rows if delivered(r)]
     nd = [r for r in rows if not delivered(r)]
     return {
-        "runs": len(rows),
+        "runs": len(all_rows),
+        "refused": len(all_rows) - len(rows),
         "delivered": len(d),
         "deliveredDefective": sum(not correct(r) for r in d),
         "deliveredWithoutTests": sum(not has_tests(r) for r in d),
@@ -92,7 +120,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if any(r["agent"]["costUsd"] is not None for r in rows)
         else None,
-        "totalSecondsMedian": statistics.median([r["wallSeconds"] for r in rows]),
+        "totalSecondsMedian": statistics.median([r["wallSeconds"] for r in rows]) if rows else None,
     }
 
 

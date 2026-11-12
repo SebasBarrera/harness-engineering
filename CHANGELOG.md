@@ -1,5 +1,188 @@
 # Changelog
 
+## Unreleased
+
+Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
+evaluation apparatus, the poor-prompt intake that asks more instead of refusing, and the
+pre-registered tests T1 to T7 with the apparatus they run on.
+
+- A poor request is never refused, and the poorer it is the more INTENT asks, starting with the
+  basics: `intake.ambiguityReview.depth: adaptive`, which `harness init` now writes, measures
+  deterministically how little the task says (intent words, observable criteria, requirements,
+  entities) and gives a `very-poor` request 3 more rounds and 4 more questions per round, a
+  `poor` one 1 and 2 more (at most 8 rounds and 16 questions). The first rounds cover nine
+  fundamental topics in a fixed order (users, what they do, main flows, platform, data, business
+  rules, edge cases, acceptance criteria, first version), in Spanish or English after
+  `intake.language`: the deterministic intake asks them first (category `basics`, target
+  `task:<topic>`), the answers become requirements, and the `clarify` request carries the level,
+  the plan and the topics of the round. A very poor or poor request also keeps the agent review
+  in the fast lane, where a one-line wish used to land as size `S`. Without the key the
+  questions, the requests, the fast lane and the configuration digest stay as they were. The
+  evaluation's rides runner no longer records a task without criteria as refused without running
+  it: under the `init` configuration it enters INTENT and asks.
+- Fixes of the evaluation apparatus found by an expert review, before any campaign result
+  (amendment of 2026-11-12 in `evaluation/campaign/PREREGISTRO.md`). A governed run whose
+  `harness run start` fails is no longer lost: `run_eval.py` writes it to `<out>.invalid.jsonl`
+  as `apparatus-run-start-failed` with the exit code and the trimmed stderr, and exits with 3 (no
+  rerun). A task refused at `task create` is recorded as refused, without a hidden-test score
+  (it was scored on the untouched baseline, 18/24 in brownfield), and `report.py`,
+  `report_prompts.py` and `analysis/compare_implementations.py` show it as refused. Hidden tests
+  are scored against a fixed nominal count per scenario (33, 24, 14), so a collection error no
+  longer reads 0 of 1, and the tests the baseline already passes are reported apart from the
+  discriminating ones. The poor and casual prompts of the greenfield and security scenarios no
+  longer point at `SPEC.md`, and those levels are prepared without it. A separate, exploratory
+  condition `direct-po` (`evaluation/direct_po.py`) lets the direct agent ask the same simulated
+  product owner once before implementing; no block runs it by default. The amendment also lists
+  the deviations of the 2026-11-11 amendments and every earlier pilot and precheck attempt. Only
+  the evaluation apparatus changes.
+- The evaluation apparatus of the seventh freeze (tests T1 to T7 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). Only the evaluation apparatus
+  changes.
+  - **Turn cap and resumption.** Every `implement` call of every condition runs with
+    `--max-turns 40` (`agentlib.DEFAULT_MAX_TURNS`; `EVAL_MAX_TURNS` changes it, and a value that is
+    not a positive integer aborts). A correction resumes the session of the previous `implement`
+    call only for the same task and run, and never after a call that hit the cap
+    (`resumeSkipped` records why). Each `call-N.json` records `maxTurns`, `hitTurnLimit`,
+    `resumed`, `sessionId` and the model ids the call reported (`modelIds`).
+  - **Conditions of T1 and T6.** `harness-nopo` is the configuration of `harness` with a person
+    who has no product knowledge (`NoProductOwner`: every question is answered "decide yourself"
+    and the harness records assumptions); `--condition harness --no-product-owner` is recorded as
+    `harness-nopo`, so it never shares a run name or a report cell with `harness`.
+    `harness-nopanel` is `harness` with `review.panel.mode: off`. `launchers/block-t1.sh` and
+    `launchers/block-ladder.sh` run them.
+  - **Temptations (T2).** `evaluation/temptations/` holds six tasks whose easy path is the defect,
+    each with its fixture, a Spanish prompt and a deterministic detector tested on a tempted and a
+    clean variant; `run_temptations.py` runs them through `run_eval.run_harness` and
+    `launchers/block-temptations.sh` launches the block (no smoke case yet).
+  - **Analyses.** `deterministic/audit_questionnaire.py` answers 13 fixed audit questions per run
+    (T4), from the bundle for `harness` and from `git log` and the final text for `direct`, by
+    group and never as one quotient. `analysis/repeatability.py` gives min, max and range per cell
+    (T5), with refused and invalid runs counted apart. `analysis/time_breakdown.py` splits the
+    harness's own time by leg and validator. `analysis/compare_implementations.py` counts for and
+    against only over five primary metrics (`PRIMARY`), splits the hidden tests of greenfield and
+    security into deducible without the specification or not (`HIDDEN_DEDUCIBILITY`), and records
+    what a run did before what a poor prompt left unsaid (asked, declared assumptions, invented
+    values, or not available when a direct run saved no final text).
+  - **Launch checks.** The block smoke test runs at the depth of a real cell (reserved repetition
+    99); the T1 and ladder blocks run it too. `environment.json` records the Claude Code version at
+    the start and at the end of every block and flags a block whose version changed
+    (`claudeCodeChanged`); the block is not stopped.
+  - **Records.** Each run record carries `runKey`, a short digest of the execution id plus the run
+    directory's name, to pair it with its directory (`harness.runId` stays anonymized), and
+    `harness.assumptions` (null when the task could not be read). The H16 suite calls the decider's
+    identity "declared attribution", not "non-repudiation". `large/run_large.py` lets the one-line
+    task reach INTENT instead of refusing it, and keeps a run whose `harness run start` failed in
+    `<out>.invalid.jsonl`.
+  - **Human study (T7).** `evaluation/human-study/` holds the protocol, consent, script, SUS,
+    rubric and record template of the study with people; it holds no personal data.
+- CI: two fictitious values of the tests are allowed in `.gitleaks.toml`, each scoped to its files
+  and its exact value, with no rule disabled; CodeQL does not analyze
+  `evaluation/temptations/tasks/**`, the fixtures with defects planted on purpose; the POSIX path
+  table of `harness init` and the word table of the risk terms carry the reason Bandit and
+  SonarCloud flagged them.
+- The web panel hides the decision form and says why when the API runs without authentication (no `api`
+  section, or `api.auth: off`), where a decision answers 403; with `api.auth: token` it is as before.
+- Security fixes from the expert review of 2.0.1. Each changes behaviour present since 0.8.0
+  (the `v0.8.0` tag is untouched; the thesis evaluates 2.0.x):
+  - **Redaction no longer corrupts code.** `generic_secret_assignment` replaced any unquoted
+    value after `token`, `password` or `secret`, so `def check(token: bytes) -> bool:` was stored
+    as `token: <REDACTED> -> bool:` in the ChangeSet diff and the quarantined patch, and the
+    quarantined contents no longer matched their digest (`run continue` refused them). An artifact
+    of media type `text/x-diff` is now redacted as code: only quoted values are replaced there.
+    Tool output and every other artifact keep the rule as it was (`password=hunter22` is still
+    redacted). The quarantined contents `run continue` puts back are stored as written
+    (`unredacted: true` in their metadata): they are the workspace's own files and must keep
+    their bytes.
+  - **Write scopes compare paths, not characters.** `lstrip("./")` removed characters, so `.env`
+    matched the scope `env`, `github/w.yml` matched `.github/**` and `../src/x.py` matched
+    `src/**`. A leading `./` is now removed as a prefix and a path with a `..` part or an
+    absolute path is in no scope; the glob stays `fnmatch` (`*` crosses `/`, so `*.py` still
+    matches `pkg/mod.py`).
+  - **Command scopes compare arguments.** `python -m pytest` no longer allows the single argument
+    `-m pytest`, and `python` no longer allows an executable named `python evil.py`; an
+    executable whose path holds spaces still matches its scope.
+  - **No command from the working directory (Windows).** A bare command name was resolved with
+    `shutil.which`, which looks in the current directory first: a `python.bat` written in the
+    workspace ran instead of Python. The name is now looked up in the absolute `PATH` entries
+    only, without the current directory and the workspace; a name found nowhere fails as a
+    missing program; the validation report records the program as `executable`.
+  - **The API records no decision without authentication.** Without an `api` section (or with
+    `api.auth: off`) `POST /api/runs/{run}/decision` accepted any human actor id from any process
+    that reached the port; it now answers 403 and names `harness gate decide`. Reads are
+    unchanged.
+- A state directory too long for Windows (without long path support, artifact paths of 260
+  characters or more) made `harness run start` die with a raw `FileNotFoundError`; it now fails
+  with a configuration error that names the limit, `runtime.stateDir` and `LongPathsEnabled`, and
+  `harness doctor` reports it on Windows as the `pathLength` check.
+- On Windows the process runner also passes `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` (when set) to
+  the commands it starts, besides `HOME`. An agent provider started without `HOME` failed with
+  `RuntimeError: Could not determine home directory` from `Path.home()`. POSIX is unchanged.
+- `harness init` on Windows no longer writes the POSIX-only `runtime.sandboxWritePaths` entries (`/tmp`,
+  `/var/folders`, `~/Library/Caches`); the entries under the home directory stay and POSIX is unchanged.
+  `docs/architecture/trust-model.md` now states what the excluded-path guard fingerprints (size,
+  modification time and the first 8 KB).
+- `delivery.recordCommitAuthor: true` (written by `harness init`): the `delivery.commit.created`
+  event, and the closure-commit record it carries, also hold the commit's `author` (`Name <email>`
+  as Git shows it) and its `subject`, after the redaction of secrets, so a bundle answers who wrote
+  the commit and with what message. Without the key the event is as before.
+- The evaluation's agent can check its own change, the same way in every condition (amendment of
+  2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
+  pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`
+  and `python -m mypy` calls. `evaluation/agentlib.py` now allows the project's validators and
+  `harness check` (no other shell command), the base prompt says the agent is already in the
+  repository (no `cd`) and names the gate's validator commands, and the `harness` and
+  `harness-anchored` conditions grant `harness check` so the adapter can ask for
+  `gate.checkCommand` before the agent finishes; the adapter passes the run's `HARNESS_STATE_DIR`
+  to the agent, without which `harness check` cannot find the run. Every Claude Code call of the evaluation runs with
+  the 5-minute prompt-cache TTL (`FORCE_PROMPT_CACHING_5M=1`, `CLAUDE_CODE_PROMPT_CACHE_TTL=5m`,
+  `CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL=5m`), recorded in `environment.json` (`agentCalls`). The
+  amendment also states that the reported cost is computed from tokens at API list prices (the
+  runs use a subscription login) and lists the prices. Only the evaluation apparatus changes.
+- Fewer agent calls in INTENT, cheaper read-only calls and token budgets by call kind, each behind
+  a key `harness init` now writes; without the keys the calls, the budgets and the configuration
+  digest stay as they were. In the 2.0.0 Sonnet pilots `locate` ran again for every answered
+  revision (its cache is the task digest, which every answer changes) and `clarify` ran a third
+  round after the `unresolvable-ambiguity` stop.
+  - `context.locate.reuse: scope` reuses the last locate result of the task while its scope is
+    unchanged (owned paths, the contract's `scope`, `scopePaths` and `outOfScope`, size class,
+    `maxLocations`): one call instead of one per revision, recorded as `locate.reused` with
+    `scope: true`; the questions of the earlier result are not asked again.
+  - `intake.ambiguityReview.skipSettled: true` does not call the review again for a new revision
+    when the previous round of the run left no agent question or once the
+    `unresolvable-ambiguity` stop was recorded; the run goes on as after an exhausted review with
+    no open point and records `intent.agent-review.skipped` with the reason.
+  - `agentRouting.readOnlyEffort` (`init`: `clarify: low`, `locate: low`, `architecture: medium`,
+    `review: medium`) sets the effort of the first attempt of a routed read-only call, the
+    reviewers of the panel included; `implement` and escalations do not change, and a model that
+    takes no effort (Claude 3, Haiku 4.x, Sonnet and Opus 4.0 to 4.5) gets none, so the Haiku 4.5
+    pilot calls (effort `null`) are not affected.
+  - `agentContract.budgetProfile: by-kind` gives `implement` 120000 (S), 300000 (M) and 800000 (L)
+    counted tokens and the read-only calls 100000 (S), 200000 (M) and 800000 (L). On the 172
+    calls of the pilot work directories (`work`, `work2` to `work6`, `work-dry`, `work-probe`),
+    counted as the budget counts them, `implement` had p95 164930 and maximum 210916 (M), one
+    S call at 67443; the read-only calls p95 64916 and maximum 85893. Of the 145 calls that
+    carried a budget, two exceeded the uniform one (an S `implement` at 67443 of 50000 and an M
+    `implement` at 210916 of 200000, both Haiku 4.5 in `casual-harness`); neither exceeds the new
+    budgets. The time limits do not change.
+- VERIFICATION records the findings of one validation in one transaction of the state store and
+  one of the event store (`put_many`, `append_many`) instead of two commits per finding. Every
+  event is the one `append` writes (same envelope, sequence and digest chain, verified by
+  `verify_chain`). On this machine 67 findings took 16.53 s one by one and 0.23 s batched.
+- Governance profiles by risk (`governance.riskProfile`, `harness init` writes `auto`). `auto`
+  gives a task the router sizes `S` with no risk flag the light profile and every other task the
+  full one; `light` gives the light profile to every task without a risk flag, whatever its size;
+  `full` gives every task the full flow, with no fast lane. The light profile is the fast lane of
+  `friction.fastLane` (or its defaults when the section is absent or off) plus no `locate` call
+  and no `planApproval: risk` checkpoint; it keeps the nine phases, the mandatory validators, the
+  frozen acceptance tests, the fail-closed gate, the digest-bound human decision and the event
+  chain, and a ChangeSet with a risk factor still takes the run out of it. `lane.classified`
+  records `profile` and `governance`. With any value the `security` risk flag is read in context
+  (`agents/risk_terms.py`): strong terms (passwords, credentials, authentication, encryption,
+  access tokens, credit cards, and their Spanish forms) flag a task alone, while `token`,
+  `secret`, `card` and `payment` count only next to a word of their context or in a sensitive
+  file, so "discard", "tokenize" or "product card" no longer lift a small task to `M`. Without the
+  key the 1.x word list and fast lane are unchanged; `v0.8.0` has neither.
+
 ## 2.0.0 - 2026-11-11
 
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An

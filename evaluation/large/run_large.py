@@ -11,14 +11,24 @@ Conditions:
   direct    the agent receives the whole instruction in one invocation, without the harness;
   stepwise  (super only) the eight steps are sent one by one to the agent, without the harness;
   harness   the instruction becomes governed tasks: one task for paragraph (whose only acceptance
-            criterion is "It works.") and requirements, one task per step for super. one_line is
-            refused by the harness when the task is created, because it has no acceptance criteria.
+            criterion is "It works.") and requirements, one task per step for super. one_line has
+            no acceptance criteria: the task is stored as pending and INTENT asks for them, so it goes
+            through run_harness; a real refusal at task creation is still recorded as task-refused.
 
 The harness condition applies the decision rule of run_eval.run_harness (approve a passing gate,
 request changes up to twice, then reject). A step that is not delivered leaves its changes in the
 working tree, as a developer who keeps going would; the next step continues from there.
 After the run, the 68 hidden checks (parts a to j) and the final quality measures are recorded as
 one JSON line.
+
+Not aligned with the campaign (pending, 2026-11-12): the harness condition keeps the configuration
+of the 0.9.0 and 1.0.0 evaluations (run_eval.configure_provider and configure_limits below), not
+conditions.write_config as rides/run_rides.py does: on Windows it does not turn runtime.agentSandbox
+off, it does not grant harness check, it has no product owner (a one_line task stops in INTENT), and
+the provider takes the turn cap of agentlib (EVAL_MAX_TURNS). Moving it to write_config is not a
+one-line change: write_config's non-resumable time limit (1800 s) is below this runner's agent limit
+(3600 s), so run_harness would need its own time limit. The block is not part of the campaign and has
+no launcher; align it before it is run.
 
 Usage: python run_large.py --level LEVEL --condition CONDITION --model MODEL --rep N --work DIR --out FILE
 """
@@ -171,10 +181,6 @@ def configure_limits(workspace: Path, model: str) -> None:
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str) -> dict[str, Any]:
     task_file = run_dir / f"{name}.yaml"
     task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
-    if "acceptanceCriteria" not in task:  # the one-line wish: the harness refuses it at task creation
-        harness(workspace, "init", "--path", ".")
-        created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
-        return {"outcome": f"task-refused-exit-{created.returncode}", "delivered": False, "corrections": 0}
     original = run_eval.configure_provider
 
     def with_limits(ws: Path, m: str, agent: str = "claude", effort: str = "") -> None:
@@ -188,6 +194,11 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
         run_eval.configure_provider = original
     keep = ("outcome", "delivered", "corrections", "gateHistory", "finalStatus", "finalPhase", "eventCount",
             "eventChainValid", "validationSummary")
+    if outcome["outcome"].startswith("task-refused"):
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "taskCreateError")}
+    if outcome.get("invalid"):
+        # harness run start failed (run_eval.RUN_START_FAILED): no run to measure, kept with its cause.
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "invalid", "runStartError")}
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]
@@ -241,7 +252,7 @@ def main() -> int:
             steps.append({"step": label, "seconds": round(time.monotonic() - t0, 3), "harness": result,
                           "usage": usage(calls_since(calls_dir, before)),
                           "oracle": oracle(workspace, scratch, label)})
-            if result["outcome"].startswith("task-refused"):
+            if result["outcome"].startswith("task-refused") or result.get("invalid"):
                 break
 
     final = oracle(workspace, scratch, "final")
@@ -257,8 +268,14 @@ def main() -> int:
         "usage": usage(calls_since(calls_dir, 0)),
         "final": {"hidden": final, **final_measures(workspace, scratch)},
     }
+    invalid = next((s["harness"]["invalid"] for s in steps if (s.get("harness") or {}).get("invalid")), None)
+    out = args.out
+    if invalid:
+        # An apparatus failure, as in run_eval.py: kept in <out>.invalid.jsonl, never a result.
+        record["invalid"] = invalid
+        out = args.out.with_name(args.out.stem + ".invalid.jsonl")
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("a", encoding="utf-8") as handle:
+    with out.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(record, sort_keys=True) + "\n")
     print(json.dumps({k: record[k] for k in ("level", "condition", "model", "rep", "wallSeconds")}
                      | {"hidden": f"{final['passed']}/{final['total']}", "usd": record["usage"]["costUsd"]}))

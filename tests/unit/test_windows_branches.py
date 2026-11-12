@@ -4,6 +4,7 @@ Windows (absolute state directories, ``file:///C:/`` URIs, traceback frames, PAT
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -66,12 +67,28 @@ def test_traceback_frames_match_only_the_node_id_elsewhere(
     assert not re.match(rf"^{pattern}:(\d+): ", "tests\\test_x.py:12: AssertionError")
 
 
-def test_bare_names_resolve_through_path_on_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_bare_names_resolve_through_path_on_windows(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Since F12 the name is looked up one absolute PATH directory at a time (never the current
+    # directory), so the stand-in for ``shutil.which`` answers per full path: it finds ``npm.cmd``
+    # only in the PATH directory, and records every place it was asked.
+    bin_dir = tmp_path / "nodejs"
+    bin_dir.mkdir()
+    asked: list[str] = []
+
+    def which(candidate: str) -> str | None:
+        asked.append(candidate)
+        return str(bin_dir / "npm.cmd") if candidate == str(bin_dir / "npm") else None
+
     monkeypatch.setattr(process_runner.sys, "platform", "win32")
-    found = {"npm": "C:\\nodejs\\npm.cmd"}
-    monkeypatch.setattr(process_runner.shutil, "which", found.get)
-    assert process_runner.resolve_executable("npm") == "C:\\nodejs\\npm.cmd"
-    assert process_runner.resolve_executable("missing") == "missing"
+    monkeypatch.setattr(process_runner.shutil, "which", which)
+    monkeypatch.setenv("PATH", os.pathsep.join(["relative-dir", str(bin_dir)]))
+    assert process_runner.resolve_executable("npm") == str(bin_dir / "npm.cmd")
+    # A bare name found nowhere is an error, never a lookup in the working directory.
+    with pytest.raises(FileNotFoundError):
+        process_runner.resolve_executable("missing")
+    assert all(os.path.isabs(item) and os.path.dirname(item) == str(bin_dir) for item in asked)
 
 
 def test_bare_names_are_unchanged_elsewhere(monkeypatch: pytest.MonkeyPatch) -> None:

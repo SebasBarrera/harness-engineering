@@ -20,6 +20,7 @@ from governed_harness.agents import (
     render_instructions,
 )
 from governed_harness.agents.requests import READ_ONLY_KINDS, REQUEST_SCHEMA_VERSION, CallKind
+from governed_harness.agents.risk_terms import legacy_security_words, security_terms
 from governed_harness.agents.routing import (
     RoutingHistory,
     TaskSignals,
@@ -80,18 +81,6 @@ from governed_harness.runtime.workspace import WorkspaceDiff
 if TYPE_CHECKING:
     from governed_harness.orchestration.engine_types import EngineServices
     from governed_harness.orchestration.hosts import EngineHost
-
-_SECURITY_WORDS = (
-    "password",
-    "secret",
-    "token",
-    "authentic",
-    "authoriz",
-    "credential",
-    "card",
-    "payment",
-    "encrypt",
-)
 
 BUDGET_EXCEEDED_RULE = "budget.exceeded"
 BUDGET_WARNING_RULE = "budget.warning"
@@ -786,7 +775,7 @@ class AgentResults:
         sent: SentInfo | None = None
         if self.agent_contract.enabled:
             # #97: the minimal request of this kind, with the request contract.
-            limits = self.agent_contract.limits(execution, task)
+            limits = self.agent_contract.limits(execution, task, kind)
             try:
                 sent = self.agent_contract.apply_read_only(execution, kind, request, limits)
             except ValueError as error:
@@ -965,8 +954,13 @@ class AgentResults:
         risk_paths = policy.risk_paths if policy and policy.risk_paths else ()
         text = " ".join(
             [task.intent, *task.constraints, *(item.text for item in task.requirements)]
-        ).lower()
-        if any(word in text for word in _SECURITY_WORDS) or any(
+        )
+        # governance.riskProfile: the contextual detector; absent, the 1.x word list.
+        if self.project.governance_settings.risk_profile is not None:
+            worded = bool(security_terms(text, files))
+        else:
+            worded = legacy_security_words(text)
+        if worded or any(
             fnmatch.fnmatchcase(path, pattern) for path in files for pattern in risk_paths
         ):
             flags.append("security")
@@ -1134,7 +1128,7 @@ class AgentResults:
             }
         )
         if contract:
-            limits = self.agent_contract.limits(execution, task)
+            limits = self.agent_contract.limits(execution, task, "implement")
             self.agent_contract.apply_implement(execution, task, extra, limits)
         return extra
 

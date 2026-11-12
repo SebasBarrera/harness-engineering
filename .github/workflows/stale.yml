@@ -1,5 +1,5 @@
 # Marks inactive issues and pull requests. Items labeled thesis-impact or needs-decision are
-# exempt: they track decisions that depend on the thesis evaluation, not on activity.
+# exempt: they track decisions and known defects, not activity.
 name: stale
 
 on:

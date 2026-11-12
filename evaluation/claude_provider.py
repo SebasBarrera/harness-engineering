@@ -27,6 +27,13 @@ leaves a usage record ``call-N.json`` (with ``kind``, model, effort and what rou
 request and the prompt next to the workspace (``../agent-calls``, or ``--calls-dir``). Without a
 ``feedback`` key in the request, the reviewer's feedback of the 0.9.0 decision rule is read from
 ``../feedback.md``.
+
+Every implement call carries the turn cap (``--max-turns``, default ``agentlib.MAX_TURNS``) and keeps
+its Claude Code session; a correction (a later implement call of the same run) resumes the session
+of the previous implement call instead of starting over, and starts a new one when there is none
+(amendment A3). The record says ``maxTurns``, ``hitTurnLimit`` and ``resumed``.
+``--no-max-turns`` (the rides block, amendment of 2026-11-12) removes the cap: no call carries
+``--max-turns`` and every record says ``maxTurns: null``.
 """
 
 from __future__ import annotations
@@ -54,6 +61,9 @@ def harness_sections(request: dict[str, Any]) -> list[str]:
     extras = native.implement_extras_lines(request)
     if extras:
         lines += ["", *extras]
+    check = check_instruction(request.get("gate"))
+    if check:
+        lines += ["", check]
     for key, title in (("locations", "Dónde intervenir"), ("attachments", "Adjuntos")):
         if request.get(key):
             lines += [
@@ -75,6 +85,33 @@ def harness_sections(request: dict[str, Any]) -> list[str]:
     return lines
 
 
+def check_instruction(gate: Any) -> str:
+    """What the implement prompt asks the agent to run before it finishes, from the gate contract
+    (amendment of 2026-11-11): ``gate.checkCommand`` (``harness check``) when the agent may run it,
+    else the validator commands of ``gate.checkCommands``; empty without a gate contract (the
+    ``harness-core`` condition: there the base prompt's validators are the check)."""
+    if not isinstance(gate, dict):
+        return ""
+    command = gate.get("checkCommand")
+    if isinstance(command, list) and command:
+        return (
+            "Antes de terminar, ejecuta desde el directorio actual (sin `cd`) el comando de "
+            f"`gate.checkCommand`: `{' '.join(str(part) for part in command)}`, y corrige lo que "
+            "reporte hasta que termine con código 0."
+        )
+    commands = [
+        " ".join(str(part) for part in item["command"])
+        for item in gate.get("checkCommands") or []
+        if isinstance(item, dict) and item.get("command")
+    ]
+    if commands:
+        return (
+            "Antes de terminar, ejecuta desde el directorio actual (sin `cd`) los validadores de "
+            "`gate.checkCommands`: " + ", ".join(f"`{c}`" for c in commands) + "."
+        )
+    return ""
+
+
 def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
     feedback = None
     if not request.get("feedback"):
@@ -83,6 +120,47 @@ def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
     prompt = agentlib.build_prompt(request["task"], feedback)
     extra = harness_sections(request)
     return prompt + ("\n".join(extra).strip("\n") + "\n" if extra else "")
+
+
+def run_key(request: dict[str, Any], workspace: Path) -> dict[str, str | None]:
+    """The task and the run of a request: a correction resumes only a session of the same task
+    in the same run. One calls directory can serve several tasks (the rides super block runs 16
+    in one workspace); the run is a digest of the workspace and the task's creation time, so a
+    task created again is another run, and no machine path is recorded."""
+    import hashlib
+
+    task = request.get("task") if isinstance(request.get("task"), dict) else {}
+    task_id = task.get("task_id") or task.get("taskId")
+    created = task.get("created_at") or task.get("createdAt") or ""
+    digest = hashlib.sha256(f"{workspace.resolve()}|{task_id}|{created}".encode()).hexdigest()
+    return {"taskId": str(task_id) if task_id else None, "run": digest[:16]}
+
+
+def previous_session(
+    calls: Path, key: dict[str, str | None] | None = None
+) -> tuple[str | None, str | None]:
+    """The session a correction resumes and, when there is none to resume, why (``None`` when no
+    implement call of this task and run came before: a first call starts normally).
+
+    Only the latest implement call of the same task and run counts; it is not resumed when it
+    stopped on the turn cap (the correction starts over) or kept no session."""
+    for record in reversed(agentlib.load_calls(calls)):
+        if record.get("kind") != "implement":
+            continue
+        if key is not None and (
+            record.get("taskId") != key["taskId"] or record.get("run") != key["run"]
+        ):
+            continue
+        if record.get("hitTurnLimit"):
+            return None, "the previous implement call stopped on the turn cap"
+        if not record.get("sessionId"):
+            return None, "the previous implement call kept no session"
+        return str(record["sessionId"]), None
+    return None, None
+
+
+def positive_int(text: str) -> int:
+    return agentlib.max_turns_from_environment(text)
 
 
 def call_prompt(request: dict[str, Any]) -> str:
@@ -117,6 +195,18 @@ def main() -> int:
     parser.add_argument("--budget", default=None)
     parser.add_argument("--resumable", action="store_true")
     parser.add_argument(
+        "--max-turns",
+        type=positive_int,
+        default=agentlib.MAX_TURNS,
+        help="the turn cap of every implement call (Claude Code --max-turns)",
+    )
+    parser.add_argument(
+        "--no-max-turns",
+        action="store_true",
+        help="no turn cap on any call (the rides block, amendment of 2026-11-12); "
+        "overrides --max-turns",
+    )
+    parser.add_argument(
         "--honor-routing",
         action="store_true",
         help="use the model and effort of the request's routing (anchored condition)",
@@ -126,12 +216,20 @@ def main() -> int:
         "--claude-bin", default=None, help="the CLI to run (the dry runs use fake_claude.py)"
     )
     args = parser.parse_args()
+    if args.no_max_turns:
+        # 0: agentlib.run_claude passes no --max-turns and records maxTurns null.
+        args.max_turns = 0
     if args.claude_bin:
         agentlib.CLAUDE_BIN = args.claude_bin
     request = json.load(sys.stdin)
     workspace = Path.cwd()
     run_dir = workspace.parent
     calls = args.calls_dir or run_dir / "agent-calls"
+    state = run_dir / "state"
+    if state.is_dir():
+        # The run's state directory (run_eval sets HARNESS_STATE_DIR for the harness, which does
+        # not pass it to the provider): ``harness check`` in the agent's shell needs it.
+        agentlib.EXTRA_AGENT_ENV["HARNESS_STATE_DIR"] = str(state.resolve())
     log = agentlib.allocate_call(calls)
     stem = log.stem
     kind = str(request.get("kind") or "implement")
@@ -141,6 +239,8 @@ def main() -> int:
         model = str(routing["model"])
         effort = str(routing["effort"]) if routing.get("effort") else None
     read_only = kind in READ_ONLY_KINDS
+    key = run_key(request, workspace)
+    previous, skipped = (None, None) if read_only else previous_session(calls, key)
     prompt = call_prompt(request) if read_only else implement_prompt(request, run_dir)
     (calls / f"{stem}.request.json").write_text(json.dumps(request, indent=1), encoding="utf-8")
     (calls / f"{stem}.prompt.txt").write_text(prompt, encoding="utf-8")
@@ -154,6 +254,15 @@ def main() -> int:
         **({"resumable": True} if args.resumable else {}),
         effort=effort,
         read_only=read_only,
+        **(
+            {}
+            if read_only
+            else {
+                "max_turns": args.max_turns,
+                "persist_session": True,
+                "previous_session": previous,
+            }
+        ),
     )
     answer: dict[str, Any] = {}
     result = None
@@ -195,6 +304,8 @@ def main() -> int:
             "configuredModel": args.model,
             "answerStatus": status,
             "promptChars": len(prompt),
+            **key,
+            **({"resumeSkipped": skipped} if skipped else {}),
         }
     )
     log.write_text(json.dumps(record, indent=2), encoding="utf-8")

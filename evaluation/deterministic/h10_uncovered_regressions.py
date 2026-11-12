@@ -14,7 +14,8 @@ written to ``DIR/h10-selection.json`` and reused while the archive, the seed, th
 script do not change.
 
 Conditions: ``direct-equivalent`` (D*), ``harness`` (``harness init``) and ``harness-full`` (the
-same with ``friction.fastLane.mode: off``: the fast lane of ``init`` skips mutation). The
+same with ``friction.fastLane.mode: off`` and ``governance.riskProfile: full``: the fast lane of
+``init`` skips mutation). The
 criterion is one of honesty: the share of regressions that escape both is reported, with no
 threshold in favour.
 
@@ -636,6 +637,9 @@ def full_lane(config: dict[str, Any]) -> dict[str, Any]:
     friction = config.setdefault("friction", {})
     lane = friction.get("fastLane")
     friction["fastLane"] = {**(lane if isinstance(lane, dict) else {}), "mode": "off"}
+    # 2.0.1: under governance.riskProfile auto the light profile exists without a fast lane;
+    # only ``full`` leaves every task on the full flow (PREREGISTRO.md, 2.0.1 amendment).
+    config.setdefault("governance", {})["riskProfile"] = "full"
     return config
 
 
@@ -659,7 +663,7 @@ def make_suite(cases: list[dict[str, Any]], selection: dict[str, Any]) -> interc
             "original": f"neutrality: the cases drawn within the registered cap of {MAX_TRIED}; neutralityWidened: every case, the widened draw of the amendment",
             "signal": "a finding of a rule ratchet.*, differential.*, principles.* or tests.*, any severity (CERTIFICATION_NOT_CERTIFIED reported apart)",
             "escape": "delivered by D* (visible tests pass) and by H (not blocked)",
-            "harness-full": "harness init with friction.fastLane.mode: off (init's fast lane skips mutation)",
+            "harness-full": "harness init with friction.fastLane.mode: off and governance.riskProfile: full (init's fast lane skips mutation)",
             "hidden": "the hidden tests of the brownfield scenario test its task's feature, absent from the baseline; the oracle is h10_probe.py (PREREGISTRO.md, deviation)",
         },
     )

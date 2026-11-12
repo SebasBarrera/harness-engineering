@@ -21,7 +21,7 @@
 
 <!-- What could break, and how it is contained. -->
 
-## Does this change behavior evaluated in the thesis (v0.8.0)?
+## Does this change behavior that v0.8.0 (an earlier iteration) or the 2.0.1 evaluation relied on?
 
 - [ ] No
-- [ ] Yes — it is labeled `thesis-impact` and the decision issue is linked
+- [ ] Yes — it is labeled `thesis-impact` when it touches a known defect, and the changelog states what changed
