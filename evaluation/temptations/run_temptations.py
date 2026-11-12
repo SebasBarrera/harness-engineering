@@ -23,6 +23,10 @@ The record of a run (one JSON line in ``--out``) holds:
 ``--dry-run`` uses ``dry/fake_claude.py`` (``evaluation/fake_claude.py`` plus the task's dry-run
 variant, ``--fake-mode tempted`` by default or ``clean``) for every call: no model is called.
 
+``--no-product-owner`` has the meaning it has in ``run_eval.py``: the person has no product
+knowledge and answers every question "decide yourself" (``NoProductOwner``), and the harness
+condition is recorded as ``harness-nopo`` (run directory and record), never as ``harness``.
+
 Usage: python run_temptations.py --model M --work DIR --out FILE [--tasks ID ...]
        [--conditions direct harness] [--reps N] [--dry-run [--fake-mode tempted|clean]]
 """
@@ -50,7 +54,7 @@ sys.path.insert(0, str(HERE))
 import agentlib  # noqa: E402
 import catalog  # noqa: E402
 import run_eval  # noqa: E402
-from product_owner import DEFAULT_PO_MODEL, ProductOwner  # noqa: E402
+from product_owner import DEFAULT_PO_MODEL, NoProductOwner, ProductOwner  # noqa: E402
 
 FAKE_CLAUDE = HERE / "dry" / "fake_claude.py"
 CONDITIONS = ("direct", "harness")
@@ -98,8 +102,10 @@ def run_governed(
     args: argparse.Namespace,
     claude_bin: str | None,
 ) -> tuple[dict[str, Any], dict[str, Any], Path, str]:
-    owner = None
-    if not args.no_product_owner:
+    owner: ProductOwner | NoProductOwner
+    if args.no_product_owner:
+        owner = NoProductOwner()
+    else:
         knowledge = (
             "Descripción completa de la tarea:\n"
             + task.task_file.read_text(encoding="utf-8")
@@ -113,7 +119,7 @@ def run_governed(
         task.task_file,
         args.model,
         clarifier=owner,
-        condition="harness",
+        condition=run_eval.effective_condition("harness", args.no_product_owner),
         provider="claude",
         claude_bin=claude_bin,
     )
@@ -136,7 +142,7 @@ def run_governed(
         "flaggedBy": task.flagged(rule_ids),
         "taskCreateError": result.get("taskCreateError"),
     }
-    owner_rounds = {"rounds": len(owner.rounds) if owner else 0}
+    owner_rounds = {"rounds": len(owner.rounds)}
     return harness, owner_rounds, tree, source
 
 
@@ -148,6 +154,7 @@ def run_one(
     site_packages: Path,
     claude_bin: str | None,
 ) -> dict[str, Any]:
+    condition = run_eval.effective_condition(condition, args.no_product_owner)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     run_dir = args.work / f"{task.task_id[:2]}-{condition}-r{rep}-{stamp}"
     workspace = run_dir / "ws"
@@ -166,6 +173,7 @@ def run_one(
         "dryRun": args.dry_run,
         "fakeMode": args.fake_mode if args.dry_run else None,
         "predictedCoverage": task.coverage,
+        **({"productOwnerMode": "none"} if condition != "direct" and args.no_product_owner else {}),
         "productOwnerModel": None
         if condition == "direct" or args.no_product_owner
         else args.po_model,
@@ -229,7 +237,12 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--dry-run", action="store_true", help="dry/fake_claude.py, no model call")
     parser.add_argument("--fake-mode", choices=["tempted", "clean"], default="tempted")
-    parser.add_argument("--no-product-owner", action="store_true")
+    parser.add_argument(
+        "--no-product-owner",
+        action="store_true",
+        help="harness: the person has no product knowledge and answers every question 'decide "
+        "yourself' (NoProductOwner); recorded as harness-nopo",
+    )
     parser.add_argument("--po-model", default=DEFAULT_PO_MODEL)
     args = parser.parse_args()
     # The harness passes the provider only PATH, HOME, SYSTEMROOT, TEMP and the locale; on Windows
