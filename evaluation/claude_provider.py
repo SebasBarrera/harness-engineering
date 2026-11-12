@@ -27,6 +27,11 @@ leaves a usage record ``call-N.json`` (with ``kind``, model, effort and what rou
 request and the prompt next to the workspace (``../agent-calls``, or ``--calls-dir``). Without a
 ``feedback`` key in the request, the reviewer's feedback of the 0.9.0 decision rule is read from
 ``../feedback.md``.
+
+Every implement call carries the turn cap (``--max-turns``, default ``agentlib.MAX_TURNS``) and keeps
+its Claude Code session; a correction (a later implement call of the same run) resumes the session
+of the previous implement call instead of starting over, and starts a new one when there is none
+(amendment A3). The record says ``maxTurns``, ``hitTurnLimit`` and ``resumed``.
 """
 
 from __future__ import annotations
@@ -115,6 +120,18 @@ def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
     return prompt + ("\n".join(extra).strip("\n") + "\n" if extra else "")
 
 
+def previous_session(calls: Path) -> str | None:
+    """The session of the run's latest implement call (the one a correction resumes), if any."""
+    for record in reversed(agentlib.load_calls(calls)):
+        if record.get("kind") == "implement" and record.get("sessionId"):
+            return str(record["sessionId"])
+    return None
+
+
+def positive_int(text: str) -> int:
+    return agentlib.max_turns_from_environment(text)
+
+
 def call_prompt(request: dict[str, Any]) -> str:
     from governed_harness.agents.native import render_call_prompt
 
@@ -147,6 +164,12 @@ def main() -> int:
     parser.add_argument("--budget", default=None)
     parser.add_argument("--resumable", action="store_true")
     parser.add_argument(
+        "--max-turns",
+        type=positive_int,
+        default=agentlib.MAX_TURNS,
+        help="the turn cap of every implement call (Claude Code --max-turns)",
+    )
+    parser.add_argument(
         "--honor-routing",
         action="store_true",
         help="use the model and effort of the request's routing (anchored condition)",
@@ -176,6 +199,7 @@ def main() -> int:
         model = str(routing["model"])
         effort = str(routing["effort"]) if routing.get("effort") else None
     read_only = kind in READ_ONLY_KINDS
+    previous = None if read_only else previous_session(calls)
     prompt = call_prompt(request) if read_only else implement_prompt(request, run_dir)
     (calls / f"{stem}.request.json").write_text(json.dumps(request, indent=1), encoding="utf-8")
     (calls / f"{stem}.prompt.txt").write_text(prompt, encoding="utf-8")
@@ -189,6 +213,15 @@ def main() -> int:
         **({"resumable": True} if args.resumable else {}),
         effort=effort,
         read_only=read_only,
+        **(
+            {}
+            if read_only
+            else {
+                "max_turns": args.max_turns,
+                "persist_session": True,
+                "previous_session": previous,
+            }
+        ),
     )
     answer: dict[str, Any] = {}
     result = None

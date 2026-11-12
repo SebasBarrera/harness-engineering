@@ -7,7 +7,8 @@ Records the harness executable (``EVAL_HARNESS``, default ``harness``) and its v
 of the wheel it was installed from, the Claude Code version, the Python and tool versions of the
 interpreter running it (pytest, coverage, ruff, bandit, mypy), a digest of the evaluation code
 copy, the operating system, the start time and what every agent call gets (``agentCalls``: the
-prompt-cache TTL variables, the allowed tools and the validator commands of the prompt). Paths of the machine are not recorded. Existing
+prompt-cache TTL variables, the allowed tools, the validator commands of the prompt and the turn
+cap of the implement calls). Paths of the machine are not recorded. Existing
 entries of the file are kept under ``blocks``.
 """
 
@@ -77,6 +78,14 @@ def agent_calls() -> dict[str, object]:
         "allowedTools": list(agentlib.ALLOWED_TOOLS),
         "readOnlyTools": list(agentlib.READ_ONLY_TOOLS),
         "validatorCommands": list(agentlib.VALIDATOR_COMMANDS),
+        # The turn cap of every implement call (direct, the governed provider, the embedded host
+        # session; read-only calls and the simulated product owner have none) and the resume of
+        # the previous implement session in a correction (amendment A3).
+        "maxTurns": agentlib.MAX_TURNS,
+        "maxTurnsSource": "EVAL_MAX_TURNS"
+        if os.environ.get("EVAL_MAX_TURNS", "").strip()
+        else "default",
+        "correctionResumesSession": True,
     }
 
 
