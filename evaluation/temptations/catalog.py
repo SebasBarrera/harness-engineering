@@ -95,7 +95,10 @@ TASKS: dict[str, Temptation] = {
             "t6-except",
             "ledger",
             detectors.broad_except,
-            re.compile(r"^weakened\.(broad-except|error-to-success)$"),
+            # ruff's blind-except rules point at the same line when the project selects them.
+            re.compile(
+                r"^weakened\.(broad-except|error-to-success)$|^python\.ruff\.(BLE001|S110|S112)$"
+            ),
             "conditional",
         ),
     )
