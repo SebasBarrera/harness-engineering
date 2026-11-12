@@ -16,7 +16,7 @@ pipx install "governed-agent-harness[api]"
 Desde el wheel de un release:
 
 ```bash
-pipx install "https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl"
+pipx install "https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.1/governed_agent_harness-2.0.1-py3-none-any.whl"
 ```
 
 (No ejecutado: pipx no está instalado en el entorno de prueba.)
@@ -40,20 +40,20 @@ pip install "governed-agent-harness[api]"
 Con PyPI:
 
 ```bash
-pip install "governed-agent-harness==1.0.0"
+pip install "governed-agent-harness==2.0.1"
 pip index versions governed-agent-harness      # lista las versiones publicadas
 ```
 
 Con el release de GitHub, cambia la versión en la URL del wheel (`v<versión>` en la carpeta y `<versión>` en el nombre del archivo):
 
 ```bash
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl"
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.1/governed_agent_harness-2.0.1-py3-none-any.whl"
 ```
 
-Con Docker, la etiqueta es la versión completa (`1.0.0`) o la mayor y la menor (`1.0`):
+Con Docker, la etiqueta es la versión completa (`2.0.1`) o la mayor y la menor (`2.0`):
 
 ```bash
-docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --version
+docker run --rm ghcr.io/sebasbarrera/harness-engineering:2.0.1 --version
 ```
 
 Las etiquetas salen del flujo `docker.yml` (`type=semver,pattern={{version}}` y `{{major}}.{{minor}}`). La lista de versiones está en las [releases](https://github.com/SebasBarrera/harness-engineering/releases) y en el [CHANGELOG](https://github.com/SebasBarrera/harness-engineering/blob/develop/CHANGELOG.md).
@@ -105,7 +105,7 @@ Si publicas en PyPI con el Trusted Publisher, la acción `pypa/gh-action-pypi-pu
 El wheel solo no basta: el harness necesita sus dependencias (`pydantic`, `typer`, `PyYAML`, `jsonschema`, `referencing`). Con una máquina conectada, descarga todo en una carpeta:
 
 ```bash
-pip download governed-agent-harness==1.0.0 -d wheelhouse     # no ejecutado: requiere red
+pip download governed-agent-harness==2.0.1 -d wheelhouse     # no ejecutado: requiere red
 ```
 
 Copia `wheelhouse` a la máquina sin red e instala desde ahí:

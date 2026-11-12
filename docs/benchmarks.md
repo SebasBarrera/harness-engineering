@@ -48,7 +48,7 @@ documentation site.
 ## Thesis reference point
 
 The report draws a reference point from `docs/benchmarks/thesis-reference.json`, the microbenchmark
-of the `v0.8.0` cut. The evaluation reports only version 2.0.0 (campaign in progress,
+of the `v0.8.0` cut. The evaluation reports only version 2.0.1 (campaign in progress,
 `evaluation/campaign/`); results of earlier versions are in the git history and the `v0.8.0` tag
 and are not part of this analysis, so this page lists none of those figures. Environments differ
 (the thesis machine versus GitHub-hosted runners): never compare exact values.

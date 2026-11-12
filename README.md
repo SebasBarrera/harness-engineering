@@ -67,8 +67,10 @@ longer applies.
 | A missing tool looks like success, or is ignored | Non-success never becomes success: `BLOCKED`, `ERROR`, `INCONCLUSIVE`, `TIMED_OUT` all keep the gate closed |
 | "Approve" refers to a task or a conversation | An approval is bound to the digest of the exact ChangeSet, configuration and policy |
 
-It is **not** a sandbox, not a CI service, not a replacement for Git or pull requests, and it has no
-native integration with a particular agent or model provider.
+It is **not** a sandbox, not a CI service and not a replacement for Git or pull requests. It is not
+tied to one agent or model provider: built-in adapters run the Claude Code, Codex, Gemini CLI and
+aider command-line tools, and any other agent connects through the command provider
+([External agents](#external-agents)).
 
 Stack: Python ≥ 3.12, Pydantic 2, Typer, FastAPI and Uvicorn (optional `api` extra), PyYAML,
 JSON Schema 2020-12, SQLite. License: Apache-2.0.
@@ -128,7 +130,7 @@ harness installed from source (`scripts/demo_flows.py quickstart`), and checks e
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl" pytest
+pip install "governed-agent-harness==2.0.1" pytest   # from PyPI; or the release wheel, see Installation
 
 # a tiny Python project with a baseline commit
 mkdir pricing-demo && cd pricing-demo && mkdir -p src/pricing tests
@@ -155,18 +157,20 @@ The task used here is [`docs/guides/task.yaml`](docs/guides/task.yaml); the
 
 | From | Command |
 |---|---|
-| A release wheel (recommended) | `pip install <wheel URL from the release page>`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
+| PyPI | `pip install governed-agent-harness` (or `pip install "governed-agent-harness[api]==2.0.1"` for the dashboard) |
+| A release wheel | `pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.1/governed_agent_harness-2.0.1-py3-none-any.whl"`; verify it with `sha256sum -c SHA256SUMS` and `gh attestation verify <wheel> --repo SebasBarrera/harness-engineering` |
 | A release wheel with pipx (isolated CLI) | `pipx install <wheel URL from the release page>`, or `pipx install "governed-agent-harness[api] @ <wheel URL>"` for the dashboard. The harness then lives in its own environment and the validators keep running the project's `python`/`npm` from `PATH`, so install `pytest` in the project's environment, not in the pipx one. Not exercised in CI; `harness --version` confirms the install |
 | Source | `git clone https://github.com/SebasBarrera/harness-engineering && cd harness-engineering && pip install -e ".[dev,api]"` |
-| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:1.0.0 --help` (published from `v1.0.0`; runs as a non-root user) |
+| Docker | `docker run --rm ghcr.io/sebasbarrera/harness-engineering:2.0.1 --help` (published from the `v2.0.1` tag; runs as a non-root user) |
 
 Requirements: **Python ≥ 3.12** and **Git** (baselines and ChangeSets come from the repository). For
 Node.js projects, **Node.js LTS and npm**. The optional `api` extra installs FastAPI and Uvicorn for
 the dashboard. The harness is a Python package: **it is not installed with npm or npx**. Releases
-are on GitHub Releases and GHCR. Publication on PyPI (`pip install governed-agent-harness`)
-through a Trusted Publisher is wired into `release.yml` and stays off until the maintainer
-configures it ([maintainer setup](docs/maintainer-setup.md#pypi)); until then use the release
-wheel. Spanish installation guides: [`docs/es/instalacion.md`](docs/es/instalacion.md) and
+are on GitHub Releases and GHCR, and from 2.0.1 on PyPI: `release.yml` uploads the same attested
+distributions through a Trusted Publisher when the maintainer enables it
+([maintainer setup](docs/maintainer-setup.md#pypi)). Not verified yet: on 2026-11-11, before the
+2.0.1 release, PyPI had no `governed-agent-harness` project and the `v2.0.1` wheel and image did
+not exist; if `pip` answers `No matching distribution`, use the wheel of the release page. Spanish installation guides: [`docs/es/instalacion.md`](docs/es/instalacion.md) and
 [`docs/es/instalacion-avanzada.md`](docs/es/instalacion-avanzada.md).
 
 ## Greenfield guide
@@ -218,25 +222,26 @@ project:
 A task is YAML or JSON: `taskId`, `title`, `intent`, `requirements`, `acceptanceCriteria`,
 `constraints`, `implementation` (`mode: none | patch | command`, `patches`) and `metadata`
 (for example `ownedPaths`). The [task-file reference](docs/reference/task-file.md) is generated from
-[`schemas/v1/task.schema.json`](schemas/v1/task.schema.json). Always provide `title` and `intent`:
-a missing one is currently stored as the text `None` (issue #29).
+[`schemas/v1/task.schema.json`](schemas/v1/task.schema.json). A task without a non-empty `title` or
+`intent`, or with unknown fields, is rejected with exit code 2 (fixed in 0.9.0, #29).
 
 ## CLI
 
-30 commands (full reference with every option, generated from the code:
-[docs/reference/cli.md](docs/reference/cli.md)):
+80 commands in 2.0.1, counted by the generated [CLI reference](docs/reference/cli.md), which lists
+every option:
 
 | Group | Commands |
 |---|---|
-| Project | `init`, `inspect`, `doctor`, `config validate` |
-| Tasks | `task create`, `task list`, `task show`, `task questions`, `task clarify` |
-| Runs | `run start`, `run continue`, `run cancel`, `run list`, `status` |
-| Evidence | `evidence list`, `findings list`, `trace`, `retrospect` |
-| Memory | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate` |
-| Recommendations | `recommendation list`, `recommendation decide` |
-| Decision | `gate decide` |
-| Extensions and benchmarks | `plugins list`, `benchmark run`, `benchmark scenarios` |
-| Dashboard | `api serve` |
+| Project and configuration (10) | `init`, `inspect`, `doctor`, `project show`, `config validate`, `config lint`, `standards show`, `architecture show`, `architecture decide`, `architecture refresh` |
+| Tasks (6) | `task create`, `task list`, `task show`, `task questions`, `task clarify`, `task confirm` |
+| Runs (9) | `do`, `run start`, `run continue`, `run cancel`, `run cleanup`, `run quarantine`, `run list`, `status`, `inbox` |
+| Checkpoints and decisions (11) | `plan show`, `plan decide`, `acceptance show`, `acceptance decide`, `acceptance dispute`, `verification show`, `verification decide`, `budget show`, `budget raise`, `review`, `gate decide` |
+| Evidence and record (10) | `check`, `evidence list`, `evidence attach`, `findings list`, `artifact show`, `trace`, `verify`, `export`, `verify-approval`, `gc` |
+| Review panel (6) | `review-code`, `review verify`, `review variance`, `review rules show`, `review rules sync`, `review hook install` |
+| Memory, retrospective and outcomes (13) | `memory add`, `memory list`, `memory manifest`, `memory approve`, `memory invalidate`, `retrospect`, `recommendation list`, `recommendation decide`, `outcome record`, `outcome list`, `exceptions list`, `rules health`, `metrics` |
+| Agents and routing (6) | `agent-contract schema`, `agent-contract validate`, `agent-contract scripts`, `agent-contract calls`, `routing calibrate`, `mcp serve` |
+| Forges (4) | `pr publish`, `pr create`, `pr status`, `pr forge` |
+| Extensions, benchmarks and dashboard (5) | `plugins list`, `benchmark run`, `benchmark scenarios`, `registry`, `api serve` |
 
 Every command accepts `--help`; the project commands take `--path` (default: the current directory).
 
@@ -277,9 +282,10 @@ This sequence is tested on every push (`scripts/demo_flows.py later-change`).
 validators, policies, agent providers and runtime limits. Four policies are **locked** and cannot be
 weakened: `requireHumanDecision`, `approvalDigestBinding`, `mandatoryNonSuccessBlocks` (always
 `true`) and `retrospectiveAutoApply` (always `false`). `findingBlockSeverities` (default `HIGH`,
-`CRITICAL`) and `allowEmptyChangeSet` are configurable. `runtime.allowNetwork`,
-`retention` and `workspace.units` are **declarative: nothing enforces them**; so is
-`runtime.maxParallel` unless `governance.enforceWorkflow` is on.
+`CRITICAL`) and `allowEmptyChangeSet` are configurable. `workspace.units` is **declarative:
+nothing enforces it**; `retention` applies when `harness gc` runs, `runtime.allowNetwork` only to
+agent providers under `governance.applyNetworkPolicy`, and `runtime.maxParallel` only when
+`governance.enforceWorkflow` is on.
 `intake.criteriaPolicy` decides what `INTENT` does with acceptance criteria that cannot be observed
 ("It works."): `enforce` (written by `init`) blocks until a person answers the questions with
 `harness task clarify`, `warn` (a file without the key) records them as evidence and `LOW`
@@ -315,17 +321,23 @@ An absent optional validator is `NOT_APPLICABLE`; an absent mandatory executable
 
 ## External agents
 
-An agent is connected through the **command provider**: a program registered in
+An agent is connected in one of three ways. **Built-in adapters** (`agentProviders.<id>.kind`:
+`claude-code`, `codex`, `gemini-cli`, `aider`) run the agent's CLI in its documented
+non-interactive mode, render the request as a prompt and read the CLI's own output, with tokens
+and cost when the CLI reports them; their command lines are tested against fake CLIs that print
+the documented formats, not against the live agents
+([`agents/native.py`](src/governed_harness/agents/native.py)). The **command provider** is a
+program registered in
 `agentProviders` that receives the task and plan as JSON on stdin and prints one JSON object
 (`{"status": "PASSED" | "FAILED" | "BLOCKED", "summary": "…"}`, optionally with the `usage` the
 agent reports) on stdout. When the project has governed memory in force, the request also carries
 it under `context` ([memory guide](docs/guides/memory.md)).
-`examples/structured-command-agent.py` is a working example. There is **no native integration with
-Claude Code, Codex or any model API**: they are connected through such a wrapper; a template is in
-the [external agents guide](docs/guides/external-agents.md). The provider only proposes a change;
-verification, review, the gate and the decision stay with the harness.
+`examples/structured-command-agent.py` is a working example, and a template is in the
+[external agents guide](docs/guides/external-agents.md). The harness calls no model API itself. The
+provider only proposes a change; verification, review, the gate and the decision stay with the
+harness.
 
-Since 1.1 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
+Since 2.0.0 an agent session can also drive the flow itself (**embedded mode**: `harness mcp serve`
 and `harness init --agent-skills`, see the [embedded mode guide](docs/guides/embedded-mode.md)),
 the run can carry the team's language standards, engineering principles, testing strategy and
 architecture ([guide](docs/guides/engineering.md)), and the result can be published on GitHub,
@@ -338,7 +350,7 @@ outside a run as `harness review-code` and a pre-push hook ([review panel](docs/
 `harness api serve --path . --host 127.0.0.1 --port 8765` (requires the `api` extra) serves the
 dashboard at `/` and nine routes: `GET /api/health`, `/api/runs`, `/api/runs/{id}`,
 `/api/runs/{id}/trace`, `/evidence`, `/findings`, `/retrospective`, and
-`POST /api/runs/{id}/decision` (1.1 adds more routes, listed in the reference). Since 1.1 (#18) the `api` section that `harness init` writes requires a
+`POST /api/runs/{id}/decision` (2.0.0 adds more routes, listed in the reference). Since 2.0.0 (#18) the `api` section that `harness init` writes requires a
 bearer token on every route, with the roles `viewer`, `reviewer` and `admin` and users declared by
 the name of their token's variable; the token of the person who starts the server is printed once
 on standard error unless `HARNESS_API_TOKEN` provides it. **A `project.yaml` without the section
@@ -351,8 +363,10 @@ The harness enforces application-level controls: deny-by-default capabilities, p
 (traversal and symlink escapes are rejected), shell-free processes with timeouts, cancellation and
 output bounds, secret redaction before persistence, digest-bound decisions and a hash-chained event
 log. It does **not** isolate the processes it launches: an authorized command keeps the file-system,
-network, CPU and memory permissions of your OS user. `allowNetwork` is not enforced. The event chain
-makes tampering detectable, not impossible. Run untrusted repositories, agents or plugins only inside
+network, CPU and memory permissions of your OS user. `allowNetwork: false` denies network only to
+agent providers, under `governance.applyNetworkPolicy` and the agent sandbox; validators are never
+confined. The event chain makes tampering detectable, not impossible, and the actor id of a human
+decision is declared, not authenticated ([trust model](docs/architecture/trust-model.md)). Run untrusted repositories, agents or plugins only inside
 a container or VM. See [SECURITY.md](SECURITY.md). The one exception is write confinement of agent
 providers: with `runtime.agentSandbox: enforce`, written by `harness init`, an agent CLI cannot
 write outside the workspace and its declared paths (macOS `sandbox-exec`, Linux `bwrap`), and a host
@@ -387,29 +401,35 @@ overhead on shared runners, not productivity or quality. See [docs/benchmarks.md
 
 ## Limitations and known defects
 
-Open behavioral defects (milestone
-[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3)); the
-`v0.8.0` tag keeps the evaluated behavior, 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, and
-1.0.0 made memory operable (#6) ([changelog](CHANGELOG.md)):
+The `v0.8.0` tag keeps the behavior the thesis documents. The defects of the
+[backlog — thesis-impact](https://github.com/SebasBarrera/harness-engineering/milestone/3) are closed
+([changelog](CHANGELOG.md)): 0.9.0 fixed #1, #2, #9, #19, #29, #30 and #31, 1.0.0 made memory
+operable (#6), and 2.0.0 enforces the workflow phase settings (#3), resolves capabilities per phase
+(#4), applies the repository policies (#5), separates pre-existing from introduced errors (#7) and
+adds the plan-approval checkpoint (#8). Most of these fixes are behind keys that `harness init`
+writes; a `project.yaml` without them keeps the earlier behavior and configuration digest.
 
-- [#3](https://github.com/SebasBarrera/harness-engineering/issues/3) workflow phase settings (capabilities, attempts, timeouts, exit gates) are recorded but not enforced;
-- [#4](https://github.com/SebasBarrera/harness-engineering/issues/4) capabilities are resolved per run, not per phase, and project grants add to profile grants;
-- [#5](https://github.com/SebasBarrera/harness-engineering/issues/5) `allowNetwork` and other declared settings are not enforced;
-- [#7](https://github.com/SebasBarrera/harness-engineering/issues/7) pre-existing and introduced errors are not distinguished;
-- [#8](https://github.com/SebasBarrera/harness-engineering/issues/8) there is no plan-approval checkpoint.
+Declared limitations (see the [trust model](docs/architecture/trust-model.md)):
 
-Declared limitations: no OS-level isolation ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)), only
-local token authentication in the dashboard (none without the `api` section), no distributed execution, no external
-signature of evidence, no native provider integrations, token and cost metrics only when a provider
-reports them.
+- the identity of the person who decides is declared, not authenticated, on the CLI; the local API
+  authenticates with bearer tokens only when `project.yaml` has the `api` section, and has none
+  without it;
+- in embedded mode the rule that only a person decides is an instruction to the agent session,
+  backed by the MCP server exposing no decision tool; an agent with a shell can still run
+  `harness gate decide`;
+- the event chain and its anchor use unkeyed SHA-256 digests: they detect accidental or partial
+  edits, not a rewrite by a process with your OS user's permissions; evidence carries no external
+  signature;
+- write confinement exists only on macOS (`sandbox-exec`) and Linux (`bwrap`); on Windows an
+  enforced sandbox blocks `IMPLEMENTATION`, and `agentSandbox: off` runs the agent unconfined;
+- no OS-level isolation of validators and plugins ([#18](https://github.com/SebasBarrera/harness-engineering/issues/18)),
+  no distributed execution, and token and cost metrics only when a provider reports them.
 
 ## Roadmap
 
-- Decide and resolve the rest of the `thesis-impact` backlog once the thesis evaluation is closed (#3–#8).
-- Enforce phase-scoped capabilities and the workflow settings that are recorded today (#3, #4).
-- An OS-level sandbox adapter (container) and enforced network policy (#5, #18).
-- Distinguish pre-existing from introduced failures in brownfield repositories (#7).
-- Provider adapters that report token and cost usage.
+- An OS-level sandbox adapter (container) for validators and plugins, and confinement on Windows.
+- Authenticated decider identity (signed decisions) and an anchor outside the user's control.
+- Provider adapters verified against the live agent CLIs.
 
 ## Academic context
 
@@ -418,8 +438,9 @@ harness engineering para el desarrollo de software asistido por inteligencia art
 supervisión humana y retrospectiva basada en evidencia* (Juan Sebastián Barrera Pulido, Maestría en
 Informática, Escuela Colombiana de Ingeniería Julio Garavito). The thesis documents the cut
 [**v0.8.0**](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0), which reproduces
-it byte for byte ([provenance](docs/provenance.md)), and its evaluation reports only version 2.0.0
-(campaign in progress, [`evaluation/campaign/`](evaluation/campaign/)); results of earlier versions are
+it byte for byte ([provenance](docs/provenance.md)), and its evaluation reports only version 2.0.1
+(campaign in progress, [`evaluation/campaign/`](evaluation/campaign/); the pilots ran on 2.0.0 as
+checks of the apparatus); results of earlier versions are
 in the git history and the `v0.8.0` tag and are not part of that analysis.
 
 Snapshot reported by the thesis for v0.8.0 (the CI badges show the current state):
