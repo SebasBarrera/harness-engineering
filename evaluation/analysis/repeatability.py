@@ -54,6 +54,16 @@ def read_records(paths: list[Path]) -> list[dict[str, Any]]:
     return records
 
 
+def cell_value(record: dict[str, Any], key: str) -> str:
+    """El valor de ``key`` en la celda. Un registro ``harness`` sin product owner
+    (``productOwnerMode: none``, escrito antes de que la condición tuviera nombre propio) va a la
+    celda ``harness-nopo``: con y sin product owner nunca comparten celda (T1)."""
+    value = str(record.get(key))
+    if key == "condition" and value == "harness" and record.get("productOwnerMode") == "none":
+        return "harness-nopo"
+    return value
+
+
 def exclusion(record: dict[str, Any]) -> str | None:
     """``invalida``, ``rechazada`` o ``None`` si la corrida entra al rango."""
     if record.get("invalid"):
@@ -88,7 +98,7 @@ def spread(values: list[int]) -> dict[str, int] | None:
 def analyze(records: list[dict[str, Any]]) -> dict[str, Any]:
     groups: dict[tuple[str, ...], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
-        groups[tuple(str(record.get(k)) for k in CELL_KEYS)].append(record)
+        groups[tuple(cell_value(record, k) for k in CELL_KEYS)].append(record)
     cells = []
     for key in sorted(groups):
         runs = groups[key]

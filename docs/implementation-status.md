@@ -1,7 +1,7 @@
 # Implementation status
 
-Snapshot of the 0.8.0 research beta, the cut the thesis documents (tag `v0.8.0`). It is kept as
-that cut's record and is not updated with later releases.
+Snapshot of the 0.8.0 research beta (tag `v0.8.0`), an earlier, obsolete iteration of the thesis;
+the thesis evaluates 2.0.1. It is kept as that cut's record and is not updated with later releases.
 
 > [!NOTE]
 > The current version is 2.0.1. Several rows below have changed since 0.8.0: built-in adapters

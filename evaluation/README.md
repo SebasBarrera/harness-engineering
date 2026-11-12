@@ -211,7 +211,14 @@ bash evaluation/launchers/block-b.sh          # casual y mínimo x {direct, harn
 bash evaluation/launchers/block-a.sh          # completo x {direct, harness} x 3 x 3 x 3, luego harness-anchored x 3 x 3 x 2
 bash evaluation/launchers/block-d.sh          # {casual direct, structured direct, harness} x 3 modelos x 3 sesiones
 bash evaluation/launchers/block-embedded.sh   # modelo anfitrión x 3, brownfield, 2 repeticiones
+bash evaluation/launchers/block-t1.sh         # T1: casual x {direct, harness, harness-nopo} y techo direct completo
+bash evaluation/launchers/block-ladder.sh     # T6: brownfield completo x {direct, harness-core, harness-nopanel, harness} x 3
+bash evaluation/launchers/block-temptations.sh  # T2: 6 tentaciones x {direct, harness} x 5, Sonnet
 ```
+
+`block-temptations.sh` todavía no corre el humo: `smoke.sh` no tiene un caso para T2 (pendiente).
+`run_temptations.py` no omite las corridas que ya están en su archivo de salida, así que un bloque
+detenido se lanza de nuevo con otro `EVAL_OUT`; no se reanuda.
 
 El piloto Sonnet (enmienda del 2026-11-11 en `campaign/PREREGISTRO.md`) necesita su propio
 `EVAL_OUT`: `pilot.sh` omite una corrida ya registrada con el mismo prompt y condición en

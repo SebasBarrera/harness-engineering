@@ -21,4 +21,5 @@ CMD=("$SLOT/$VENV_BIN/python" "$CODE/run_matrix.py" --model "$MODEL" --reps "$RE
   --cache "$EVAL_CACHE" --out "$EVAL_OUT/LADDER-$MODEL.jsonl" ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} ${DRY_FLAG[@]+"${DRY_FLAG[@]}"})
 PATH="$(slot_path "$SLOT")" "${CMD[@]}" >> "$EVAL_OUT/log-$MODEL.txt" 2>&1
 "$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+finish_environment LADDER
 log "BLOCK-LADDER-DONE"

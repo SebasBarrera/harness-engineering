@@ -35,8 +35,12 @@ confirm a value), or the harness recorded assumptions (self-report, ``metadata.a
 task). (c) invented: the new source code carries concrete values (numbers; word-like strings such as
 zone or coupon names) that appear neither in ``SPEC.md`` of the scenario (numbers compared as
 decimals, also as a percentage; strings case-insensitively) nor in an assumption the run declared.
-Without any of the three the run is ``sin valores nuevos``. Literals 0, 1 and 2, docstrings, f-string
-parts and strings with spaces (messages) are not values. It is a heuristic over literals, not a proof.
+Without any of the three the run is ``sin valores nuevos``. A direct run whose final text was not
+saved (no ``resultText`` in ``agent-calls``) is ``no disponible``, as the preregistration says: it
+cannot be told whether it asked. The category is the first rule that holds, so the invented values
+are always reported next to it (``inventedValues``): a run that asked and still fixed values of its
+own shows both. Literals 0, 1 and 2, docstrings, f-string parts and strings with spaces (messages)
+are not values. It is a heuristic over literals, not a proof.
 
     python evaluation/analysis/compare_implementations.py --runs <work>/runs/pilot --out <dir>
 """
@@ -72,9 +76,14 @@ sys.path.insert(0, str(HERE))
 import practices  # noqa: E402
 
 SCHEMA = "compare-implementations/1"
+# Every ``harness-*`` name before ``harness``: the alternation of RUN_NAME takes the first that
+# matches, so a shorter prefix first would read ``harness-nopanel`` as ``harness`` with
+# the model ``nopanel-...``).
 CONDITIONS = (
     "harness-anchored",
+    "harness-nopanel",
     "harness-core",
+    "harness-nopo",
     "harness",
     "direct-po",
     "direct",
@@ -1057,11 +1066,12 @@ def direct_text_metrics(run_dir: Path) -> dict[str, Any]:
 
 UNKNOWN_SCENARIOS = ("greenfield", "security")
 UNKNOWN_PROMPTS = ("poor", "one_line", "casual")
-ASKED, ASSUMED, INVENTED, NOTHING_NEW = (
+ASKED, ASSUMED, INVENTED, NOTHING_NEW, NOT_AVAILABLE = (
     "preguntó",
     "declaró supuestos",
     "inventó",
     "sin valores nuevos",
+    "no disponible",
 )
 EXPLICIT_ASSUMPTION = re.compile(
     r"(?i)\b(asumo|asumi\w*|supuest\w*|assum(?:e|es|ed|ing|ption|ptions))\b"
@@ -1147,13 +1157,15 @@ def unknown_behavior(
     files: list[dict[str, Any]],
     asked: int,
     declared: int,
-    final_text: str = "",
+    final_text: str | None = "",
 ) -> dict[str, Any]:
     """What the run did before what the prompt left unsaid (see the module docstring). ``asked`` and
     ``declared`` count what the condition recorded (question lines or clarification questions;
     assumptions recorded); the explicit statements in the final text and in the lines the run added
-    are counted here."""
-    declared_lines = [x for x in final_text.splitlines() if EXPLICIT_ASSUMPTION.search(x)]
+    are counted here. ``final_text`` None: the direct run's final text was not saved, so the
+    category is ``no disponible``; the invented values are still counted and reported."""
+    text = final_text or ""
+    declared_lines = [x for x in text.splitlines() if EXPLICIT_ASSUMPTION.search(x)]
     new_literals: Counter[tuple[str, str]] = Counter()
     for item in files:
         path = item["path"]
@@ -1181,7 +1193,9 @@ def unknown_behavior(
                 continue
             invented.append(value)
     declared_total = declared + len(declared_lines)
-    if asked > 0:
+    if final_text is None:
+        behavior = NOT_AVAILABLE
+    elif asked > 0:
         behavior = ASKED
     elif declared_total > 0:
         behavior = ASSUMED
@@ -1193,6 +1207,7 @@ def unknown_behavior(
         "behavior": behavior,
         "questions": asked,
         "assumptionsDeclared": declared_total,
+        "assumptionsBySource": {"recorded": declared, "statedInTextOrCode": len(declared_lines)},
         "inventedValues": len(invented),
         "inventedTexts": invented[:MAX_TEXTS],
         "specAvailable": known is not None,
@@ -1424,12 +1439,19 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
         if direct_side is not None:
             asked = int(direct_side.get("questionLines") or 0)
             declared = 0
-            text = "\n".join(
-                str(c.get("resultText") or "") for c in agentlib.load_calls(run_dir / "agent-calls")
-            )
+            saved = [
+                str(c["resultText"])
+                for c in agentlib.load_calls(run_dir / "agent-calls")
+                if c.get("resultText")
+            ]
+            # No final text saved: "no disponible" (preregistration, T1), never "inventó".
+            text: str | None = "\n".join(saved) if saved else None
         else:
             asked = int((harness_side.get("clarification") or {}).get("questions") or 0)
             recorded = harness_side.get("assumptions") or {}
+            # Two different records, not the same assumptions twice: ``count`` is what the
+            # implement agent's self-report states, ``taskMetadata`` what the intake ambiguity
+            # review recorded on the task (onExhausted: assume).
             declared = int(recorded.get("count") or 0) + int(recorded.get("taskMetadata") or 0)
             text = ""
         requirements["unknowns"] = unknown_behavior(
@@ -1712,18 +1734,21 @@ PRIMARY_LABELS = (
 )
 _ALL_ROWS = {row[0]: row for row in ROWS + PRACTICE_ROWS}
 PRIMARY: list[Row] = [_ALL_ROWS[label] for label in PRIMARY_LABELS]
+
+
+def _unknowns_cell(record: dict[str, Any]) -> str | None:
+    """The category and, whatever the category, the invented values: a run that asked and still
+    fixed values of its own shows both (the category alone would hide them)."""
+    behavior = _get(record, "requirements.unknowns.behavior")
+    if behavior is None:
+        return None
+    invented = _get(record, "requirements.unknowns.inventedValues")
+    return str(behavior) if invented is None else f"{behavior} ({invented} valores inventados)"
+
+
 UNKNOWNS_ROW: Row = (
-    "Qué hizo ante lo que no sabía (preguntó > declaró supuestos > inventó)",
-    lambda r: (
-        None
-        if _get(r, "requirements.unknowns.behavior") is None
-        else (
-            f"{_get(r, 'requirements.unknowns.behavior')} "
-            f"({_get(r, 'requirements.unknowns.inventedValues')} valores inventados)"
-            if _get(r, "requirements.unknowns.behavior") == INVENTED
-            else _get(r, "requirements.unknowns.behavior")
-        )
-    ),
+    "Qué hizo ante lo que no sabía (preguntó > declaró supuestos > inventó; valores inventados)",
+    _unknowns_cell,
     0,
 )
 EXPLORATORY_ROWS: list[Row] = [r for r in ROWS if r[0] not in PRIMARY_LABELS]
@@ -1848,6 +1873,8 @@ CONDITION_ORDER = [
     "direct-po",
     "harness-core",
     "harness",
+    "harness-nopo",
+    "harness-nopanel",
     "harness-anchored",
     "clarify",
 ]

@@ -2848,7 +2848,15 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
   `git log` y su texto final. Q11 y Q12 salen del evento `delivery.commit.created` (`author` y
   `message` o `subject`), que el harness guarda con `delivery.recordCommitAuthor: true`, la clave
   que escribe `harness init` (rama `feat/evidence-commit-author`, `4953ce2`); un bundle sin esos
-  campos deja las dos preguntas sin respuesta.
+  campos deja las dos preguntas sin respuesta. Se declara qué responden en la condición `harness`:
+  - **Q11** da el autor del commit de cierre que crea el harness, no el de una persona. En un
+    repositorio sin identidad de Git, como los espacios de trabajo de la evaluación (Git corre con
+    `GIT_CONFIG_GLOBAL` vacío y la línea base se confirma con una identidad pasada con `-c`), ese
+    autor es la identidad de respaldo del harness, `Governed Agent Harness
+    <harness@localhost.invalid>` (`delivery/vcs.py:FALLBACK_IDENTITY`); que sea esa en cada
+    corrida está **sin verificar** en una corrida real.
+  - **Q13** da la hora del evento `delivery.commit.created` (`occurredAt`), registrada al crear el
+    commit, no la fecha que guarda el propio commit; se reporta como tal.
 - **Reporte (plan D10).** Por grupo, **nunca** un total único ni un cociente global. En `direct`,
   Q01 a Q05 se marcan «no aplicable por diseño» (no hay decisión que auditar) y no entran en
   ningún denominador. Si la corrida `direct` no deja commit, Q11 a Q13 se marcan «no medible con
@@ -2955,16 +2963,18 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    INTENT, donde se pregunta (el rechazo fijo del runner ya se quitó en `feat/intake-ask-more`,
    `df5566b`).
 5. **Versiones registradas** (plan D9). Cada llamada registra el modelo que devolvió
-   (`modelUsage`), y `environment.json` registra la versión de Claude Code
-   (`evaluation/environment.py`, hoy solo al inicio). `environment.json` guarda la versión de Claude Code al
-   inicio (`claudeCodeAtStart`) y al final de cada bloque (`claudeCodeAtEnd`), y cada `call-N.json`
-   guarda `modelUsage` y `modelIds` (`d471bf2`, `evaluation/environment.py`,
-   `launchers/common.sh:finish_environment`). Si la versión cambia dentro de un bloque, el bloque
-   queda marcado con `claudeCodeChanged: true` y el log avisa, **sin detenerse y sin borrar
-   resultados**; el investigador decide si usa o repite ese bloque (esto corrige el texto anterior,
-   que decía que el bloque se detenía y marcaba las corridas como inválidas). Cómo se desactiva la
-   actualización automática de Claude Code (`DISABLE_AUTOUPDATER=1`) está **sin verificar**: no se
-   probó con una corrida real.
+   (`modelUsage`) y `environment.json` registra la versión de Claude Code. `environment.json`
+   guarda esa versión al inicio (`claudeCodeAtStart`) y al final de cada bloque
+   (`claudeCodeAtEnd`), y cada `call-N.json` guarda `modelUsage` y `modelIds` (`d471bf2`,
+   `evaluation/environment.py`, `launchers/common.sh:finish_environment`; los bloques T1, de la
+   escalera y de tentaciones también lo llaman, rama `fix/eval-review-findings`). Lo que hace hoy
+   el aparato: si la versión cambia dentro de un bloque, el bloque queda marcado con
+   `claudeCodeChanged: true` y el log avisa, **sin detenerse y sin borrar resultados** (esto corrige
+   el texto anterior, que decía que el bloque se detenía y marcaba las corridas como inválidas). La
+   regla que decide qué se hace con un bloque marcado **no está fijada** todavía (decisión
+   pendiente, antes de la primera corrida de la campaña). La versión de
+   Claude Code tampoco se fija: desactivar la actualización automática (`DISABLE_AUTOUPDATER=1`)
+   está **sin verificar** (no se probó con una corrida real) y ningún lanzador exporta esa variable.
 6. **El harness pregunta más cuanto más pobre es el pedido.** Decisión del dueño: el harness nunca
    rechaza un pedido pobre. `harness init` de 2.0.1 escribe `intake.ambiguityReview.depth:
    adaptive`: el número de rondas y de preguntas por ronda crece cuanto menos dice la tarea, y
@@ -2972,9 +2982,10 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    reglas de negocio, casos borde, criterios de aceptación, primera versión). Sin la clave, o con
    `fixed`, se conservan `maxRounds` y `maxQuestions` como en 2.0.0. La llevan las condiciones que
    parten de `harness init` (`harness`, `harness-anchored` y las de T1, T2 y T6 salvo
-   `harness-core`); `harness-core` no. Rama `feat/intake-ask-more` (plan A11): al escribir esta
-   sección el cambio está en curso y sin commit (**sin verificar**); la campaña prueba lo que trae
-   el tag `v2.0.1` y, si la clave no está en él, se declara como desviación.
+   `harness-core`); `harness-core` no. **Depende de A11 (sin integrar):** el cambio está en la rama
+   `feat/intake-ask-more` (plan A11), que no está integrada en la rama de 2.0.1; hasta que lo esté,
+   nada de este punto vale para el aparato (**sin verificar**). La campaña prueba lo que trae el tag
+   `v2.0.1` y, si la clave no está en él, se declara como desviación.
 
 ### Amenazas a la validez declaradas
 

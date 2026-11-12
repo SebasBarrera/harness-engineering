@@ -9,6 +9,10 @@ Condition             ``.harness/project.yaml``
                       absence keeps the 1.0.0 behaviour and configuration digest).
 ``harness``           what ``harness init`` of the version under test writes (every 2.0.0 setting
                       on), with ``agentRouting.mode: fixed``: every call uses the cell's model.
+``harness-nopo``      the configuration of ``harness`` (same file, same routing); only the person
+                      differs: no product owner, every clarification question is answered "decide
+                      yourself" (``product_owner.NoProductOwner``; test T1, condition 3). A
+                      condition of its own so its runs never share a cell with ``harness``.
 ``harness-nopanel``   what ``harness init`` writes (as ``harness``, routing ``fixed``) with
                       ``review.panel.mode: off``: the review panel is not run, nothing else changes
                       (the rung of the cost ladder between ``harness-core`` and ``harness``).
@@ -43,7 +47,9 @@ from typing import Any
 
 import yaml
 
-GOVERNED = ("harness-core", "harness", "harness-nopanel", "harness-anchored")
+GOVERNED = ("harness-core", "harness", "harness-nopo", "harness-nopanel", "harness-anchored")
+# Governed conditions whose simulated person has no product knowledge (NoProductOwner).
+NO_PRODUCT_OWNER = ("harness-nopo",)
 # Read in records of the first 2.0.0 pilot (routing left ``tiered``, before #85).
 LEGACY_GOVERNED = ("harness-tiered",)
 CONDITIONS = ("direct", *GOVERNED)
@@ -165,7 +171,7 @@ def apply_provider(
         if calls not in paths:
             paths.append(calls)
         runtime["sandboxWritePaths"] = paths
-    if condition in ("harness", "harness-nopanel"):
+    if condition in ("harness", "harness-nopo", "harness-nopanel"):
         config.setdefault("agentRouting", {})["mode"] = "fixed"
     if condition == "harness-anchored":
         config.setdefault("agentRouting", {})["anchorModel"] = model
@@ -237,7 +243,7 @@ def write_config(
         # the core file is then written over its project.yaml.
         harness(workspace, "init", "--path", ".")
         config = core_config(yaml.safe_load(path.read_text(encoding="utf-8"))["projectId"])
-    elif condition in ("harness", "harness-nopanel", "harness-anchored"):
+    elif condition in ("harness", "harness-nopo", "harness-nopanel", "harness-anchored"):
         harness(workspace, "init", "--path", ".")
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         if condition == "harness-nopanel":

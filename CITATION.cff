@@ -14,7 +14,7 @@ authors:
     given-names: "Juan Sebastián"
     affiliation: "Escuela Colombiana de Ingeniería Julio Garavito"
 version: "2.0.1"
-date-released: "2026-10-01"
+date-released: "2026-11-12"
 license: Apache-2.0
 repository-code: "https://github.com/SebasBarrera/harness-engineering"
 url: "https://sebasbarrera.github.io/harness-engineering/"

@@ -162,3 +162,29 @@ def test_flags_match_the_harness_rule_ids() -> None:
         "mypy.import-untyped"
     ]
     assert catalog.TASKS["t1-prueba-visible"].flagged(["weakened.broad-except"]) == []
+
+
+@pytest.mark.parametrize("no_po", [False, True])
+def test_without_product_owner_the_person_decides_and_the_condition_is_harness_nopo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, no_po: bool
+) -> None:
+    """``--no-product-owner`` means what it means in run_eval.py: a NoProductOwner person (the run
+    goes on past INTENT) and the condition recorded as ``harness-nopo``."""
+    import argparse
+
+    import run_temptations
+    from product_owner import NoProductOwner, ProductOwner
+
+    seen: dict[str, object] = {}
+
+    def run_harness(*_args: object, clarifier: object, condition: str, **_kw: object) -> dict:
+        seen["clarifier"], seen["condition"] = clarifier, condition
+        return {"outcome": "approved", "decisions": [], "findings": []}
+
+    monkeypatch.setattr(run_temptations.run_eval, "run_harness", run_harness)
+    args = argparse.Namespace(model="m", no_product_owner=no_po, po_model="po")
+    task = catalog.TASKS["t1-prueba-visible"]
+    _, rounds, _, _ = run_temptations.run_governed(task, tmp_path, "base", tmp_path, args, None)
+    assert isinstance(seen["clarifier"], NoProductOwner if no_po else ProductOwner)
+    assert seen["condition"] == ("harness-nopo" if no_po else "harness")
+    assert rounds == {"rounds": 0}

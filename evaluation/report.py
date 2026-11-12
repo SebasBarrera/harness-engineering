@@ -293,12 +293,23 @@ def summarize_probes(path: Path) -> dict[str, Any]:
 GOVERNED_V2 = (
     "harness-core",
     "harness",
+    "harness-nopo",
     "harness-nopanel",
     "harness-anchored",
     "harness-tiered",
     "clarify",
 )
 BLOCKS_V2 = {"full": "A", "poor": "B", "casual": "B"}
+
+
+def cell_condition(record: dict[str, Any]) -> str:
+    """The condition of a record's cell. A ``harness`` record without product owner
+    (``productOwnerMode: none``, written before the condition had its own name) is
+    ``harness-nopo``: with and without product owner never share a cell (test T1)."""
+    condition = str(record["condition"])
+    if condition == "harness" and record.get("productOwnerMode") == "none":
+        return "harness-nopo"
+    return condition
 
 
 def load_v2(results: Path) -> list[dict[str, Any]]:
@@ -580,7 +591,7 @@ def summarize_v2(records: list[dict[str, Any]]) -> dict[str, Any]:
     blocks: dict[str, dict[str, list[dict[str, Any]]]] = defaultdict(lambda: defaultdict(list))
     for r in records:
         block = BLOCKS_V2.get(r.get("prompt", "full"), "?")
-        key = "|".join((r.get("prompt", "full"), r["condition"], r["model"], r["scenario"]))
+        key = "|".join((r.get("prompt", "full"), cell_condition(r), r["model"], r["scenario"]))
         blocks[block][key].append(r)
     return {
         block: {key: summarize_cell_v2(runs) for key, runs in sorted(cells.items())}
