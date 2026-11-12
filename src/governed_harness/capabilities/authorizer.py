@@ -67,15 +67,22 @@ class CapabilityAuthorizer:
         """Whether the workspace path ``resource`` is in the glob ``scope``. A leading ``./``
         is a prefix (``lstrip`` removed characters, so ``.env`` matched ``env`` and
         ``../src/x.py`` matched ``src/**``, F11); a path with a ``..`` part, or an absolute
-        one, is in no scope; ``*``, ``?`` and ``[...]`` stay within one path part and ``**``
-        spans any number of parts (``src/*.py`` no longer matches ``src/a/b.py``)."""
-        normalized_resource = _workspace_parts(resource)
-        normalized_scope = _workspace_parts(scope)
-        if normalized_resource is None or normalized_scope is None:
+        one, is in no scope. The glob is ``fnmatch`` as in 0.8.0, where ``*`` also crosses
+        ``/`` (``*.py`` matches ``pkg/mod.py``, which the profiles' grants rely on)."""
+        resource_parts = _workspace_parts(resource)
+        scope_parts = _workspace_parts(scope)
+        if resource_parts is None or scope_parts is None:
             return False
-        if normalized_scope == ["**"]:
+        normalized_resource = "/".join(resource_parts)
+        normalized_scope = "/".join(scope_parts)
+        if normalized_scope == "**":
             return True
-        return _glob_parts(normalized_resource, normalized_scope)
+        if fnmatch.fnmatchcase(normalized_resource, normalized_scope):
+            return True
+        if normalized_scope.endswith("/**"):
+            base = normalized_scope[:-3].rstrip("/")
+            return normalized_resource == base or normalized_resource.startswith(f"{base}/")
+        return normalized_resource == normalized_scope
 
 
 def _workspace_parts(path: str) -> list[str] | None:
@@ -90,17 +97,6 @@ def _workspace_parts(path: str) -> list[str] | None:
     if ".." in parts:
         return None
     return parts
-
-
-def _glob_parts(parts: list[str], pattern: list[str]) -> bool:
-    """Match path parts against glob parts: ``**`` is any number of parts (none included),
-    any other glob part matches exactly one path part (``fnmatchcase``)."""
-    if not pattern:
-        return not parts
-    head, rest = pattern[0], pattern[1:]
-    if head == "**":
-        return any(_glob_parts(parts[index:], rest) for index in range(len(parts) + 1))
-    return bool(parts) and fnmatch.fnmatchcase(parts[0], head) and _glob_parts(parts[1:], rest)
 
 
 def grants_from_rules(

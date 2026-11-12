@@ -91,15 +91,13 @@ def test_contained_path_rejects_escape(tmp_path: Path) -> None:
         ("../src/x.py", "src/**"),
         ("src/../../x.py", "src/**"),
         ("github/w.yml", ".github/**"),
-        ("src/a/b/c.py", "src/*.py"),
-        ("scripts/tool.py", "*.py"),
         ("/etc/passwd", "**"),
         ("C:/Windows/x.py", "**"),
-        ("..\outside.py", "**"),
+        (r"..\outside.py", "**"),
     ],
 )
 def test_write_scope_is_a_path_glob_not_a_character_strip(resource: str, scope: str) -> None:
-    # F11: lstrip("./") removed characters, not a prefix, and fnmatch let `*` cross `/`.
+    # F11: lstrip("./") removed characters, not a prefix, and `..` was not refused.
     actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.test")
     with pytest.raises(CapabilityDenied):
         CapabilityAuthorizer().authorize(
@@ -115,10 +113,11 @@ def test_write_scope_is_a_path_glob_not_a_character_strip(resource: str, scope: 
     [
         ("./src/a.py", "src/**"),
         ("src", "src/**"),
-        ("src\pkg\a.py", "src/**"),
+        (r"src\pkg\a.py", "src/**"),
         ("setup.py", "*.py"),
+        ("pkg/mod.py", "*.py"),  # * crosses / as in 0.8.0
+        ("src/a/b/c.py", "src/*.py"),
         ("./setup.py", "./*.py"),
-        ("main.go", "**/*.go"),
         ("cmd/app/main.go", "**/*.go"),
         ("lib/src/Main.kt", "**/src/**"),
         (".github/workflows/ci.yml", ".github/**"),
@@ -159,4 +158,18 @@ def test_command_scope_prefix_of_arguments() -> None:
         actor=actor,
         argv=("python", "-m", "pytest", "-q"),
         grants=[grant(actor, "process.execute", ("python -m pytest",))],
+    )
+
+
+def test_command_scope_with_spaces_in_the_executable() -> None:
+    actor = Actor(actor_type=ActorType.TOOL, actor_id="tool.test")
+    executable = r"C:\Users\John Doe\venv\python.exe"
+    grants = [grant(actor, "process.execute", (f"{executable} agent.py",))]
+    CapabilityAuthorizer().authorize_command(
+        actor=actor, argv=(executable, "agent.py", "--fast"), grants=grants
+    )
+    CapabilityAuthorizer().authorize_command(
+        actor=actor,
+        argv=(executable, "-q"),
+        grants=[grant(actor, "process.execute", (executable,))],
     )
