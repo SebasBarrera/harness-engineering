@@ -4,6 +4,7 @@
 # the three conditions of a model and repetition run at the same time, one slot venv each.
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-d.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-d}"
 mkdir -p "$EVAL_OUT"
@@ -11,6 +12,7 @@ check_account
 take_lock block-d
 copy_code
 record_environment D
+run_smoke D d1
 done_session() {  # condition model rep -> 0 when the output already has that session
   [ -f "$EVAL_OUT/longitudinal-$2.jsonl" ] && "$EVAL_PYTHON" - "$EVAL_OUT/longitudinal-$2.jsonl" "$1" "$3" << 'PY'
 import json, sys
@@ -48,4 +50,5 @@ for MODEL in $EVAL_MODELS; do
 done
 SLOT=$(make_slot d1)
 "$SLOT/$VENV_BIN/python" "$CODE/longitudinal/report.py" "$EVAL_OUT" "$EVAL_OUT/summary-longitudinal.json" > /dev/null
+finish_environment D
 log "BLOCK-D-DONE"

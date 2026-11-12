@@ -233,6 +233,18 @@ Desde la enmienda del 2026-11-12 al pre-registro:
   `SPEC.md` ni la línea del `README.md` que apunta a ella, en todas las condiciones; solo el
   product owner simulado la conoce.
 
+### Humo por bloque
+
+Justo después de `record_environment`, cada `block-*.sh` llama a `run_smoke` (`launchers/smoke.sh`): con
+el mismo `EVAL_WORK` y el mismo montaje de slots del bloque corre en seco (`fake_claude.py`, sin cuenta y
+sin llamadas al modelo, aunque `EVAL_DRY` no esté activo) una celda por condición del bloque: A y B con
+`run_eval.py`, D con `longitudinal/run_session.py` y el embebido con `run_embedded.py`. Después
+comprueba que cada condición dejó un registro válido (uno solo, fuera de `*.invalid.jsonl`, sin campo
+`invalid` y, en las gobernadas, con una ejecución iniciada: `executionId`, que el registro anonimiza como
+`harness.runId`). Si algo falla, el bloque sale con código 6 antes de la primera llamada real. Los
+registros y las bitácoras quedan en `$EVAL_WORK/smoke/<bloque>`, no en los resultados. `EVAL_SKIP_SMOKE=1`
+lo omite. El bloque rides no tiene corrida en seco (`run_rides.py`): su humo es una omisión declarada.
+
 Resúmenes: `report.py --v2 <results> <summary.json>` (bloques A y B: una celda por prompt,
 condición, modelo y escenario, con cada corrida listada junto a la dispersión n/min/mediana/max),
 `report_prompts.py --v2`, `report_phases.py <runs-dir> ...` (P15 por condición) y
