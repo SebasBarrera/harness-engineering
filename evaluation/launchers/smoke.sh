@@ -8,8 +8,8 @@
 # executionId; the record keeps it anonymized as harness.runId "run"). Any failure leaves the block
 # with exit code 6 before its first real call. EVAL_SKIP_SMOKE=1 skips it.
 #
-# Blocks: A, B (run_eval.py via run_matrix.py cells), D (longitudinal/run_session.py), embedded
-# (run_embedded.py). The rides block has no dry run (run_rides.py), so its smoke test is a declared skip.
+# Blocks: A, B, T1 and LADDER (run_eval.py cells), D (longitudinal/run_session.py), embedded
+# (run_embedded.py). EVAL_SMOKE_MODEL overrides the model of the smoke cells (T1 and LADDER set it). The rides block has no dry run (run_rides.py), so its smoke test is a declared skip.
 # The records go to $EVAL_WORK/smoke/<block>, never to the block's results directory.
 #
 # Depth: the dry cells run in the SAME work directory a real cell of the block uses
@@ -26,6 +26,8 @@ smoke_work() {
     A) dir=block-a ;;
     B) dir=block-b ;;
     D) dir=block-d ;;
+    T1) dir=block-t1 ;;
+    LADDER) dir=block-ladder ;;
     *) dir="block-$1" ;;
   esac
   echo "$EVAL_WORK/runs/$dir/$2"
@@ -110,8 +112,9 @@ run_smoke() {
   fi
   local slot model scenario dir work failed=0 condition governed
   slot=$(make_slot "$slot_name")
-  model="${EVAL_MODELS%% *}"
+  model="${EVAL_SMOKE_MODEL:-${EVAL_MODELS%% *}}"
   scenario="${EVAL_SCENARIOS%% *}"
+  [ "$block" = "LADDER" ] && scenario=brownfield
   dir="$EVAL_WORK/smoke/$block"
   rm -rf "$dir"
   mkdir -p "$dir"
@@ -135,6 +138,30 @@ run_smoke() {
         smoke_cell "$slot" "$block" matrix "$condition" "$governed" \
           "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$condition" --model "$model" \
           --rep "$SMOKE_REP" --prompt "$prompt" --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
+          --dry-run ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} || failed=1
+      done
+      ;;
+    T1)
+      # label:prompt:condition:extra flag; the four conditions of the block (casual prompt, except the ceiling)
+      local cell label cprompt ccond cextra
+      for cell in direct:casual:direct: harness:casual:harness: nopo:casual:harness:--no-product-owner \
+        ceiling:full:direct:; do
+        IFS=: read -r label cprompt ccond cextra <<< "$cell"
+        governed=1
+        [ "$ccond" = "direct" ] && governed=0
+        smoke_cell "$slot" "$block" matrix "$label" "$governed" \
+          "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$ccond" --model "$model" \
+          --rep "$SMOKE_REP" --prompt "$cprompt" --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$label.jsonl" \
+          --dry-run ${cextra:+$cextra} || failed=1
+      done
+      ;;
+    LADDER)
+      for condition in direct harness-core harness-nopanel harness; do
+        governed=1
+        [ "$condition" = "direct" ] && governed=0
+        smoke_cell "$slot" "$block" matrix "$condition" "$governed" \
+          "$slot/$VENV_BIN/python" "$CODE/run_eval.py" --scenario "$scenario" --condition "$condition" --model "$model" \
+          --rep "$SMOKE_REP" --prompt full --work "$work" --cache "$EVAL_CACHE" --out "$dir/records-$condition.jsonl" \
           --dry-run ${CORE_FLAG[@]+"${CORE_FLAG[@]}"} || failed=1
       done
       ;;

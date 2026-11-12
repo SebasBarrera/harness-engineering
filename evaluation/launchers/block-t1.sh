@@ -8,6 +8,7 @@
 # Models: Haiku and Sonnet; repetitions per model: EVAL_T1_REPS_SONNET (default 5), EVAL_T1_REPS_HAIKU
 # (default 3). See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-t1.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-t1}"
 mkdir -p "$EVAL_OUT"
@@ -16,6 +17,7 @@ take_lock block-t1
 copy_code
 record_environment T1
 T1_MODELS="${EVAL_T1_MODELS:-claude-haiku-4-5-20251001 claude-sonnet-5-5}"
+EVAL_SMOKE_MODEL="${T1_MODELS%% *}" run_smoke T1 t0
 reps_of() {  # model -> repetitions
   case "$1" in
     *haiku*) echo "${EVAL_T1_REPS_HAIKU:-3}" ;;
