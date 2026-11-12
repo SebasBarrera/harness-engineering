@@ -12,8 +12,11 @@ de las que la condición directa responde mejor: autor, mensaje y fecha del comm
   en el registro (``agent-calls/*.json``, campo ``resultText``); nada más.
 
 Una pregunta es «respondible con evidencia» si el script encontró el dato en su fuente; la fuente
-de cada respuesta se anota. La salida por corrida es ``respondibles / 13``, con el desglose por
-grupo.
+de cada respuesta se anota. La salida se da por grupo (tipo harness Q01-Q10 y commit Q11-Q13) y
+nunca como un cociente global: los dos grupos miden cosas distintas. En la directa, Q01-Q05 son
+«no aplicable por diseño» (no hay decisión humana registrada) y Q11-Q13 son «no medible con este
+aparato» cuando las herramientas permitidas al agente no incluyen ``git`` (``agentlib.ALLOWED_TOOLS``):
+el workspace solo tiene el commit de línea base de la evaluación, no un commit del agente.
 
 Uso:
   python evaluation/deterministic/audit_questionnaire.py --out DIR --bundle BUNDLE.tar.gz
@@ -33,6 +36,14 @@ import subprocess
 import tarfile
 from pathlib import Path
 from typing import Any
+
+ANSWERED = "respondida"
+UNANSWERED = "sin dato en la fuente"
+NOT_APPLICABLE = "no aplicable por diseño"
+NOT_MEASURABLE = "no medible con este aparato"
+AGENTLIB = Path(__file__).resolve().parents[1] / "agentlib.py"
+DIRECT_NOT_APPLICABLE = ("Q01", "Q02", "Q03", "Q04", "Q05")
+COMMIT_IDS = ("Q11", "Q12", "Q13")
 
 GROUP_TYPE = "tipo"
 GROUP_COMMIT = "commit"
@@ -56,11 +67,23 @@ QUESTIONS: tuple[tuple[str, str, str], ...] = (
 
 def answer(value: Any, source: str) -> dict[str, Any]:
     """Respuesta con evidencia."""
-    return {"answerable": True, "answer": value, "source": source}
+    return {"answerable": True, "status": ANSWERED, "answer": value, "source": source}
 
 
-def missing(reason: str) -> dict[str, Any]:
-    return {"answerable": False, "answer": None, "source": reason}
+def missing(reason: str, status: str = UNANSWERED) -> dict[str, Any]:
+    return {"answerable": False, "status": status, "answer": None, "source": reason}
+
+
+def direct_can_commit(agentlib: Path = AGENTLIB) -> bool | None:
+    """¿Las herramientas permitidas al agente incluyen ``git``? ``None`` si no se pudo leer."""
+    try:
+        text = agentlib.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    block = re.search(r"ALLOWED_TOOLS\s*=\s*\[(.*?)^\]", text, re.DOTALL | re.MULTILINE)
+    if block is None:
+        return None
+    return re.search(r"Bash\((?:\w+ )*git\b", block.group(1)) is not None
 
 
 # ----- harness: el bundle solo --------------------------------------------------------------
@@ -265,14 +288,28 @@ def final_text_of(calls_dir: Path) -> str | None:
     return texts[-1] if texts else None
 
 
-def from_git(workspace: Path, final_text: str | None) -> dict[str, dict[str, Any]]:
+def from_git(
+    workspace: Path, final_text: str | None, can_commit: bool | None = True
+) -> dict[str, dict[str, Any]]:
+    """``can_commit``: si el agente directo puede crear commits (``direct_can_commit()``)."""
     results: dict[str, dict[str, Any]] = {}
     text = final_text or ""
     no_text = "sin texto final guardado"
     for qid, _, _ in QUESTIONS:
         results[qid] = missing("la fuente de la condición directa no lo registra")
+    for qid in DIRECT_NOT_APPLICABLE:
+        results[qid] = missing(
+            "la condición directa no registra una decisión humana", NOT_APPLICABLE
+        )
     log = git(workspace, "log", "-1", "--format=%an <%ae>%x1f%B%x1f%cI")
-    if log and log.strip():
+    if can_commit is False:
+        for qid in COMMIT_IDS:
+            results[qid] = missing(
+                "ALLOWED_TOOLS del agente no incluye git: el único commit del workspace es "
+                "la línea base de la evaluación",
+                NOT_MEASURABLE,
+            )
+    elif log and log.strip():
         author, message, date = (log.strip("\n").split("\x1f") + ["", "", ""])[:3]
         src = "git log -1"
         results["Q11"] = answer(author, src)
@@ -300,24 +337,31 @@ def from_git(workspace: Path, final_text: str | None) -> dict[str, dict[str, Any
 def build(
     condition: str, answers: dict[str, dict[str, Any]], label: str | None = None
 ) -> dict[str, Any]:
-    items = []
-    for qid, group, text in QUESTIONS:
-        items.append({"id": qid, "group": group, "question": text, **answers[qid]})
+    """Resultado por grupo; no hay total global."""
+    items = [
+        {"id": qid, "group": group, "question": text, **answers[qid]}
+        for qid, group, text in QUESTIONS
+    ]
     by_group = {}
     for group in (GROUP_TYPE, GROUP_COMMIT):
         of_group = [i for i in items if i["group"] == group]
         by_group[group] = {
-            "answerable": sum(1 for i in of_group if i["answerable"]),
+            "answered": sum(1 for i in of_group if i["answerable"]),
+            "notApplicable": sum(1 for i in of_group if i["status"] == NOT_APPLICABLE),
+            "notMeasurable": sum(1 for i in of_group if i["status"] == NOT_MEASURABLE),
             "total": len(of_group),
         }
-    return {
-        "condition": condition,
-        "label": label,
-        "answerable": sum(1 for i in items if i["answerable"]),
-        "total": len(items),
-        "byGroup": by_group,
-        "questions": items,
-    }
+    return {"condition": condition, "label": label, "byGroup": by_group, "questions": items}
+
+
+def group_line(name: str, ids: str, g: dict[str, int]) -> str:
+    extra = []
+    if g["notApplicable"]:
+        extra.append(f"{g['notApplicable']} no aplicable por diseño")
+    if g["notMeasurable"]:
+        extra.append(f"{g['notMeasurable']} no medible con este aparato")
+    tail = f" ({'; '.join(extra)})" if extra else ""
+    return f"- {name} ({ids}): {g['answered']} de {g['total']} respondidas con evidencia{tail}."
 
 
 def render_markdown(result: dict[str, Any]) -> str:
@@ -325,11 +369,12 @@ def render_markdown(result: dict[str, Any]) -> str:
     lines = [
         f"# Cuestionario de auditoría ({result['condition']})",
         "",
-        f"Respondibles con evidencia: {result['answerable']} / {result['total']} "
-        f"(preguntas de tipo harness: {g[GROUP_TYPE]['answerable']} / {g[GROUP_TYPE]['total']}; "
-        f"de commit: {g[GROUP_COMMIT]['answerable']} / {g[GROUP_COMMIT]['total']}).",
+        "Resultado por grupo; los grupos miden cosas distintas y no se suman.",
         "",
-        "| Id | Grupo | Pregunta | Respondible | Respuesta | Fuente |",
+        group_line("Tipo harness", "Q01-Q10", g[GROUP_TYPE]),
+        group_line("Commit", "Q11-Q13", g[GROUP_COMMIT]),
+        "",
+        "| Id | Grupo | Pregunta | Estado | Respuesta | Fuente |",
         "|---|---|---|---|---|---|",
     ]
     for item in result["questions"]:
@@ -339,7 +384,7 @@ def render_markdown(result: dict[str, Any]) -> str:
             shown = shown[:157] + "..."
         lines.append(
             f"| {item['id']} | {item['group']} | {item['question']} | "
-            f"{'sí' if item['answerable'] else 'no'} | {shown} | {item['source']} |"
+            f"{item['status']} | {shown} | {item['source']} |"
         )
     return "\n".join(lines) + "\n"
 
@@ -363,13 +408,14 @@ def main(argv: list[str] | None = None) -> int:
             text = args.final_text.read_text(encoding="utf-8")
         elif args.agent_calls:
             text = final_text_of(args.agent_calls)
-        result = build("direct", from_git(args.workspace, text), args.label)
+        result = build("direct", from_git(args.workspace, text, direct_can_commit()), args.label)
     args.out.mkdir(parents=True, exist_ok=True)
     (args.out / "auditoria.json").write_text(
         json.dumps(result, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     (args.out / "auditoria.md").write_text(render_markdown(result), encoding="utf-8")
-    print(f"{result['condition']}: {result['answerable']}/{result['total']}")
+    for group, g in result["byGroup"].items():
+        print(f"{result['condition']} {group}: {g['answered']} de {g['total']}")
     return 0
 
 

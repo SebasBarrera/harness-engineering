@@ -96,8 +96,9 @@ def test_harness_answers_the_ten_questions_from_the_bundle(tmp_path: Path) -> No
     bundle = tmp_path / "bundle.tar.gz"
     make_bundle(bundle)
     result = aq.build("harness", aq.from_bundle(bundle))
-    assert result["total"] == 13
-    assert result["byGroup"]["tipo"] == {"answerable": 10, "total": 10}
+    assert "total" not in result and "answerable" not in result
+    assert result["byGroup"]["tipo"]["answered"] == 10
+    assert result["byGroup"]["commit"]["answered"] == 1
     by_id = {q["id"]: q for q in result["questions"]}
     assert by_id["Q01"]["answer"]["actor"] == "human.ana"
     assert by_id["Q08"]["answer"][0]["output"] == "1 passed in 0.1s"
@@ -105,25 +106,26 @@ def test_harness_answers_the_ten_questions_from_the_bundle(tmp_path: Path) -> No
     # El bundle no guarda autor ni mensaje del commit; la fecha sale de la hora del evento.
     assert not by_id["Q11"]["answerable"] and not by_id["Q12"]["answerable"]
     assert by_id["Q13"]["answerable"]
-    assert result["answerable"] == 11
 
 
 def test_empty_bundle_answers_nothing(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle.tar.gz"
     with tarfile.open(bundle, "w:gz"):
         pass
-    assert aq.build("harness", aq.from_bundle(bundle))["answerable"] == 0
+    groups = aq.build("harness", aq.from_bundle(bundle))["byGroup"]
+    assert groups["tipo"]["answered"] == 0 and groups["commit"]["answered"] == 0
 
 
 def test_direct_without_harness_answers_the_commit_questions(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
     init_repo(repo)
-    result = aq.build("direct", aq.from_git(repo, None))
+    result = aq.build("direct", aq.from_git(repo, None, can_commit=True))
     assert result["byGroup"] == {
-        "tipo": {"answerable": 0, "total": 10},
-        "commit": {"answerable": 3, "total": 3},
+        "tipo": {"answered": 0, "notApplicable": 5, "notMeasurable": 0, "total": 10},
+        "commit": {"answered": 3, "notApplicable": 0, "notMeasurable": 0, "total": 3},
     }
+    assert {q["status"] for q in result["questions"] if q["id"] <= "Q05"} == {aq.NOT_APPLICABLE}
     by_id = {q["id"]: q for q in result["questions"]}
     assert by_id["Q11"]["answer"].startswith("Ana <ana@example.invalid>")
     assert by_id["Q12"]["answer"] == "feat: a"
@@ -135,7 +137,44 @@ def test_direct_uses_the_final_text_and_a_non_repository_answers_nothing(tmp_pat
     by_id = {q["id"]: q for q in result["questions"]}
     assert by_id["Q10"]["answerable"] and by_id["Q08"]["answerable"]
     assert not by_id["Q11"]["answerable"]
-    assert result["answerable"] == 2
+    assert result["byGroup"]["tipo"]["answered"] == 2
+
+
+def test_direct_without_git_tool_marks_the_commit_questions_not_measurable(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    init_repo(repo)
+    result = aq.build("direct", aq.from_git(repo, None, can_commit=False))
+    assert result["byGroup"]["commit"] == {
+        "answered": 0,
+        "notApplicable": 0,
+        "notMeasurable": 3,
+        "total": 3,
+    }
+    assert "no medible con este aparato" in aq.render_markdown(result)
+
+
+def test_direct_can_commit_reads_allowed_tools(tmp_path: Path) -> None:
+    lib = tmp_path / "agentlib.py"
+    nl = chr(10)
+    lib.write_text(
+        nl.join(["ALLOWED_TOOLS = [", '"Read",', '"Bash(ls:*)",', "]", ""]), encoding="utf-8"
+    )
+    assert aq.direct_can_commit(lib) is False
+    lib.write_text(
+        nl.join(["ALLOWED_TOOLS = [", '"Bash(git commit:*)",', "]", ""]), encoding="utf-8"
+    )
+    assert aq.direct_can_commit(lib) is True
+    assert aq.direct_can_commit(tmp_path / "absent.py") is None
+    assert aq.direct_can_commit() is False  # the real agentlib: no git in the allowed tools
+
+
+def test_markdown_has_no_global_quotient(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle.tar.gz"
+    make_bundle(bundle)
+    text = aq.render_markdown(aq.build("harness", aq.from_bundle(bundle)))
+    assert "10 de 10" in text and "1 de 3" in text
+    assert "/ 13" not in text and "de 13" not in text
 
 
 def test_final_text_of_agent_calls_and_cli_outputs(tmp_path: Path) -> None:
@@ -150,7 +189,6 @@ def test_final_text_of_agent_calls_and_cli_outputs(tmp_path: Path) -> None:
     out = tmp_path / "out"
     assert aq.main(["--out", str(out), "--workspace", str(repo), "--agent-calls", str(calls)]) == 0
     data = json.loads((out / "auditoria.json").read_text(encoding="utf-8"))
-    assert data["answerable"] == 4
-    assert "Respondibles con evidencia: 4 / 13" in (out / "auditoria.md").read_text(
-        encoding="utf-8"
-    )
+    assert "answerable" not in data and "total" not in data
+    assert data["byGroup"]["tipo"]["answered"] == 1
+    assert "no medible con este aparato" in (out / "auditoria.md").read_text(encoding="utf-8")
