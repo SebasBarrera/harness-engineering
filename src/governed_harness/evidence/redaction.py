@@ -12,6 +12,21 @@ PRIVATE_KEY = re.compile(
 )
 PRIVATE_KEY_MARK = b"<REDACTED_PRIVATE_KEY>"
 
+_NAME = rb"[A-Za-z_][A-Za-z0-9_]*"
+_TYPE_WORDS = (
+    rb"bytes|bytearray|bool|boolean|float|double|string|number|object|none|null|true|false|"
+    rb"undefined|optional|dict|list|tuple|char|buffer|uint8array"
+)
+_CODE_VALUE = (
+    rb"(?:" + _NAME + rb"(?:\." + _NAME + rb")*[(\[]"
+    rb"|(?:" + _TYPE_WORDS + rb")(?=[\s,;)\]\}=|]|\Z))"
+)
+"""An unquoted value of ``generic_secret_assignment`` that is code, not a secret: a call or a
+subscript written right after the name (``serializer.dumps(payload)``, ``os.environ["X"]``), or
+a type or constant word (the annotation ``token: bytes)``). Redacting them corrupted stored code
+(F4). A quoted value is always redacted; other unquoted values (``password=hunter22`` in a log
+or a ``.env``) still are."""
+
 
 @dataclass(frozen=True)
 class RedactionResult:
@@ -39,7 +54,7 @@ class SecretRedactor:
             re.compile(
                 rb"(?i)\b(api[_-]?key|token|secret|password|passwd|access[_-]?token)\b"
                 rb"(\s*[:=]\s*)"
-                rb"([^\s,;\}\]\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
+                rb"((?!" + _CODE_VALUE + rb")[^\s,;\}\]\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
             ),
             rb"\1\2<REDACTED>",
         ),
