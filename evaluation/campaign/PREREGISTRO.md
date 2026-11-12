@@ -2710,8 +2710,11 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
   1. `direct` con el prompt casual;
   2. `harness` con el prompt casual y el product owner simulado (lo que escribe `harness init` de
      2.0.1, `evaluation/conditions.py:write_config`);
-  3. `harness` con el prompt casual **sin** product owner (`run_matrix.py --no-product-owner`, que
-     la pasa a `run_eval.py`; rama `test/eval-t1-conditions`). La persona simulada
+  3. `harness-nopo`: la configuración de `harness` con el prompt casual **sin** product owner
+     (`run_eval.py --condition harness-nopo`, o `--condition harness --no-product-owner`, que se
+     registra como `harness-nopo`; `run_matrix.py --no-product-owner` la pasa a `run_eval.py`;
+     `evaluation/conditions.py`, rama `fix/eval-review-findings`). Es una condición propia, para
+     que sus corridas nunca compartan celda con `harness`. La persona simulada
      (`NoProductOwner`, en `evaluation/product_owner.py`, sin llamadas al modelo) responde a cada
      pregunta de aclaración «No tengo esa información; decide tú lo razonable y regístralo como
      supuesto.», de modo que la corrida sigue en vez de detenerse en INTENT; el harness convierte
@@ -2954,10 +2957,11 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    grande heredan el mismo tope en todas sus condiciones. Antes de relanzar, una llamada real de
    prueba confirma que `hitTurnLimit` se registra (`--max-turns` no aparece en `claude --help`;
    **sin verificar**).
-4. **Rides comparable** (plan D5, **sin verificar** al escribir esta sección; rides no se lanza sin
-   él). Rides **no lleva tope de turnos en ninguna condición**: la directa construye la aplicación
+4. **Rides comparable** (plan D5, integrado en la rama de 2.0.1; el detalle y lo verificado están
+   en la enmienda «rides sin tope de turnos y comparable» del 2026-11-12, al final de este
+   archivo). Rides **no lleva tope de turnos en ninguna condición**: la directa construye la aplicación
    en una sola llamada y el harness la reparte en tareas, así que un tope por llamada truncaría
-   solo a la directa. Hoy rides hereda el tope de 40 por defecto; D5 lo quita. La condición
+   solo a la directa. Antes de D5 rides heredaba el tope de 40 por defecto; D5 lo quita. La condición
    `harness` de rides se configura con `conditions.write_config` (no con
    `run_eval.configure_provider`) y tiene product owner simulado, y el prompt `one_line` entra a
    INTENT, donde se pregunta (el rechazo fijo del runner ya se quitó en `feat/intake-ask-more`,
@@ -2982,10 +2986,11 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    reglas de negocio, casos borde, criterios de aceptación, primera versión). Sin la clave, o con
    `fixed`, se conservan `maxRounds` y `maxQuestions` como en 2.0.0. La llevan las condiciones que
    parten de `harness init` (`harness`, `harness-anchored` y las de T1, T2 y T6 salvo
-   `harness-core`); `harness-core` no. **Depende de A11 (sin integrar):** el cambio está en la rama
-   `feat/intake-ask-more` (plan A11), que no está integrada en la rama de 2.0.1; hasta que lo esté,
-   nada de este punto vale para el aparato (**sin verificar**). La campaña prueba lo que trae el tag
-   `v2.0.1` y, si la clave no está en él, se declara como desviación.
+   `harness-core`); `harness-core` no. El cambio viene de la rama `feat/intake-ask-more` (plan
+   A11, `e0443c5`), integrada en la rama de 2.0.1. La campaña prueba lo que trae el tag `v2.0.1` y,
+   si la clave no está en él, se declara como desviación. Como el plan adaptativo puede pasar de
+   las 6 rondas que antes aguantaba la persona simulada, su tope sale ahora de la configuración del
+   proyecto (punto 6 de la enmienda «rides sin tope de turnos y comparable»).
 
 ### Amenazas a la validez declaradas
 
@@ -3045,10 +3050,23 @@ hipótesis, métricas ni criterios de éxito.
    corrida. Con esto deja de regir la frase «hasta que la tenga (plan D5), el bloque rides no se
    lanza» del punto 2 de la séptima congelación.
 5. **Lo que se verificó y lo que no.** En seco (sin modelo), `harness × one_line` llega a INTENT,
-   el product owner simulado responde las preguntas de varias rondas y todas las llamadas registran
-   `maxTurns: null`; la directa tampoco lleva `--max-turns`. En seco la corrida gobernada termina
-   detenida en INTENT cuando se agotan las rondas de aclaración de la persona simulada
-   (`person.py:MAX_CLARIFY_ROUNDS`), porque las respuestas de `fake_claude.py` son genéricas; lo
-   mismo ocurre en seco con el prompt casual de greenfield. Con un modelo real está **sin
-   verificar** si la corrida sale de INTENT. Una corrida que termine detenida en INTENT se reporta
-   como tal, con su causa; no se excluye.
+   el product owner simulado responde las preguntas y todas las llamadas registran
+   `maxTurns: null`; la directa tampoco lleva `--max-turns`. Con los arreglos del punto 6, la
+   corrida en seco sale de INTENT y llega a CLOSURE. Con un modelo real está **sin verificar** si
+   la corrida sale de INTENT. Una corrida que termine detenida en INTENT se reporta como tal, con su
+   causa; no se excluye.
+6. **Tope de rondas de la persona simulada** (se aplica a todos los bloques, no solo a rides). Con
+   `intake.ambiguityReview.depth: adaptive` (punto 6 de «Cambios del aparato») el harness puede
+   pedir hasta `max(maxRounds, 8)` rondas al agente (`governed_harness.intake.depth.MAX_ROUNDS`),
+   y las rondas deterministas (C0 a C3, T1, temas básicos) y la de configuración del proyecto (P1)
+   van aparte. La persona simulada se detenía en 6 rondas fijas (`person.py:MAX_CLARIFY_ROUNDS`):
+   podía cortar al product owner antes de que el harness terminara de preguntar. Ahora su tope sale
+   de la configuración del proyecto: las rondas máximas del agente (con `adaptive`, el techo
+   adaptativo) más 3 (`EXTRA_CLARIFY_ROUNDS`), y nunca menos de 6 (`person.clarify_round_cap`).
+   Una configuración sin `intake.ambiguityReview` (`harness-core`) conserva las 6 de antes. El
+   tope sigue siendo solo una guarda: quien acota las rondas es el harness. Además, en seco el
+   product owner falso (`fake_claude.py`) añadía el mismo criterio en cada ronda; el duplicado
+   disparaba la regla C3 en la ronda siguiente, y las preguntas crecían sin fin. Ahora lo añade una
+   sola vez. Esa era la causa de que las corridas en seco se detuvieran en INTENT (greenfield
+   casual y rides `one_line`). No afecta a las corridas con modelo. Prueba unitaria:
+   `tests/unit/test_evaluation_clarify_rounds.py`.

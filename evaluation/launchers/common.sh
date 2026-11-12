@@ -55,10 +55,15 @@ esac
 # so the state directory may have at most 260 - 120 = 140 characters (146 + 120 = 266 > 260 fails,
 # 126 + 120 = 246 works, as observed). The state directory is
 #   EVAL_WORK + "/runs/" + <block> + "/" + <model> + "/" + <run name> + "/state"
-# with the longest of each: block "block-embedded" (14), model "claude-haiku-4-5-20251001" (25),
-# and the run name <scenario>[-<prompt>]-<condition>-<model>-r<rep>-<timestamp> of
-#   "brownfield" (10) + "-casual" (7) + "-" + "harness-core" (12) + "-" + model (25) + "-r10" (4)
+# with the longest of each: block "block-embedded" (14; "block-temptations", 17, has run names of
+# about 31 characters, far shorter), model "claude-haiku-4-5-20251001" (25), and the run name
+# <scenario>[-<prompt>]-<condition>-<model>-r<rep>-<timestamp>. The longest condition names are
+# "harness-anchored" (16) and "harness-nopanel" (15), but they run only with the full prompt (no
+# prompt tag: blocks A and LADDER), so "brownfield-harness-anchored" is 27 characters; the longest
+# prefix is a casual cell of "harness-core" or "harness-nopo" (12, blocks B and T1), 30 characters:
+#   "brownfield" (10) + "-casual" (7) + "-" + "harness-nopo" (12) + "-" + model (25) + "-r10" (4)
 #   + "-" + "20261111T235959Z" (16) = 77.
+# (A casual cell of harness-anchored would be 81 characters and need EVAL_WORK of 6 or less.)
 # Fixed part: 6 ("/runs/") + 14 + 1 + 25 + 1 + 77 + 6 ("/state") = 130, so EVAL_WORK may have at most
 # 140 - 130 = 10 characters in its Windows form (cygpath -w; backslashes count as one, like slashes).
 EVAL_WORK_MAX_WINDOWS=10
