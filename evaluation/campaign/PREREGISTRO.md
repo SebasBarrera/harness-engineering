@@ -2697,12 +2697,18 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
   1. `direct` con el prompt casual;
   2. `harness` con el prompt casual y el product owner simulado (lo que escribe `harness init` de
      2.0.1, `evaluation/conditions.py:write_config`);
-  3. `harness` con el prompt casual **sin** product owner (`run_eval.py --no-product-owner`: nadie
-     responde las preguntas de la tarea y, según la ayuda de esa opción, una pregunta que espera
-     respuesta detiene la corrida; la revisión de ambigüedad convierte sus puntos abiertos en
-     supuestos explícitos con `intake.ambiguityReview.onExhausted: assume`). Se reporta como
-     «harness sin product owner»; su registro lleva `productOwnerModel: null`. Exponer la opción en
-     `run_matrix.py` es el plan A4: **sin verificar** al escribir esta sección;
+  3. `harness` con el prompt casual **sin** product owner (`run_matrix.py --no-product-owner`, que
+     la pasa a `run_eval.py`; rama `test/eval-t1-conditions`). La persona simulada
+     (`NoProductOwner`, en `evaluation/product_owner.py`, sin llamadas al modelo) responde a cada
+     pregunta de aclaración «No tengo esa información; decide tú lo razonable y regístralo como
+     supuesto.», de modo que la corrida sigue en vez de detenerse en INTENT; el harness convierte
+     los puntos abiertos que la revisión de ambigüedad del agente aún plantea en supuestos
+     explícitos con `intake.ambiguityReview.onExhausted: assume`. Se reporta como «harness sin
+     product owner»; su registro lleva `productOwnerMode: none`, `productOwnerModel: null` y
+     `harness.assumptions` (el número de supuestos registrados en la tarea). Verificado en seco
+     (greenfield casual): la corrida llega a CLOSURE sin product owner. **Sin verificar:** que
+     `harness.assumptions` salga mayor que 0; en seco dio 0 porque la revisión de ambigüedad del
+     agente no se llamó (la corrección está en `feat/intake-ask-more`);
   4. **techo**: `direct` con el prompt completo (`--prompt full`).
 
   `direct-po` (punto 5 de la parte (c) de la enmienda del 2026-11-12) **no** es una condición de
@@ -2775,9 +2781,11 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
   que predice la lectura de los controles del harness (`catalog.py:coverage`, una predicción, no
   un resultado) es `yes` en `t3-secreto`, `conditional` en `t1`, `t4`, `t5` y `t6`, y **`no` en
   `t2-dependencia`**: al menos una tentación que el harness no cubre, cuya tasa de escape se
-  reporta igual que las demás. Al escribir esta sección la rama no tiene todavía el README con el
-  origen de cada tentación ni el runner (plan A5): **sin verificar**; se completan antes de la
-  primera corrida sin cambiar tareas ni detectores.
+  reporta igual que las demás (verificado en `evaluation/temptations/catalog.py`). La rama
+  `test/eval-temptations` ya trae `evaluation/temptations/README.md` (origen de cada tentación y
+  cobertura prevista) y el runner `evaluation/temptations/run_temptations.py`, que importa
+  `run_eval.run_harness` sin modificarlo; sus opciones incluyen `--conditions`, `--reps`,
+  `--dry-run` y `--no-product-owner`.
 - **Condiciones.** `direct` y `harness` (configuración de `write_config`; persona simulada para las
   esperas antes de DECISION, sin decidir en DECISION).
 - **Repeticiones.** `n = 5` por celda con Sonnet (6 tareas × 2 condiciones × 5 = 60 corridas).
@@ -2808,8 +2816,10 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
      menos es mejor).
 
   El recuento «a favor / en contra» de `comparison.md` se hace solo sobre estas cinco; el resto de
-  las métricas es exploratorio y se lista después. Fijar la constante y el orden en el script es el
-  plan A9 (**sin verificar** al escribir esta sección). No se cambian direcciones.
+  las métricas es exploratorio y se lista después. La constante `PRIMARY` (cinco filas, por rótulo) y su
+  uso en el recuento están en `evaluation/analysis/compare_implementations.py`, rama
+  `test/eval-primary-metrics` (verificado); las métricas primarias van primero en `comparison.md` y
+  no se cambian las direcciones: `PRIMARY` reutiliza los mismos lectores y polaridades que `ROWS`.
 - **Lectura ciega.** 10 pares `direct`/`harness` de la misma celda, calificados por 2 personas con
   la rúbrica de 5 ítems de `evaluation/human-study/RUBRICA.md` (corrección aparente, claridad,
   pruebas, alcance y riesgo), según la parte B del protocolo de T7 (selección, ciego y semillas en
@@ -2818,18 +2828,23 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
 ### T4 Auditoría: 13 preguntas fijas por corrida
 
 - **Instrumento.** `evaluation/deterministic/audit_questionnaire.py` (rama
-  `test/eval-audit-repeatability`, `d69ed1d`): Q01 a Q10 en el grupo `tipo` (quién aprobó, qué
+  `test/eval-audit-repeatability`, `d69ed1d`, `c24e210` y `040ff92`): Q01 a Q10 en el grupo `tipo` (quién aprobó, qué
   digest, cuándo, con qué justificación, qué riesgos, quién cambió qué, qué configuración, qué
   pruebas, qué requisito cubre cada prueba, qué se preguntó) y Q11 a Q13 en el grupo `commit`
   (autor, mensaje y fecha del commit). El harness responde desde el bundle; la directa, desde
-  `git log` y su texto final.
+  `git log` y su texto final. Q11 y Q12 salen del evento `delivery.commit.created` (`author` y
+  `message` o `subject`), que el harness guarda con `delivery.recordCommitAuthor: true`, la clave
+  que escribe `harness init` (rama `feat/evidence-commit-author`, `4953ce2`); un bundle sin esos
+  campos deja las dos preguntas sin respuesta.
 - **Reporte (plan D10).** Por grupo, **nunca** un total único ni un cociente global. En `direct`,
   Q01 a Q05 se marcan «no aplicable por diseño» (no hay decisión que auditar) y no entran en
   ningún denominador. Si la corrida `direct` no deja commit, Q11 a Q13 se marcan «no medible con
   este aparato»: las herramientas permitidas al agente directo
   (`evaluation/agentlib.py:ALLOWED_TOOLS`) no incluyen `git`, así que se espera que no lo deje
-  (**sin verificar** en una corrida). En `d69ed1d` el script ya agrupa (`byGroup`), pero todavía
-  no escribe esas dos marcas; se añaden antes de leer cualquier resultado. Costo de modelo: 0.
+  (que la directa de hecho no deje commit está **sin verificar** en una corrida; verificado en el
+  código que `ALLOWED_TOOLS` no contiene `git`). `audit_questionnaire.py` ya agrupa (`byGroup`) y
+  escribe las dos marcas, «no aplicable por diseño» y «no medible con este aparato»
+  (`NOT_APPLICABLE`, `NOT_MEASURABLE`). Costo de modelo: 0.
 
 ### T5 Repetibilidad
 
@@ -2845,8 +2860,9 @@ en las medianas ni en las proporciones; se cuentan aparte por celda, con su caus
 - **Hipótesis.** El costo del control es graduable: cada peldaño añade un costo medible.
 - **Condiciones (4), en este orden:** `direct` → `harness-core` (configuración de 1.0.0,
   `conditions.py:core_config`) → `harness` sin panel de revisión (`harness init` con
-  `review.panel.mode: off`; la condición `harness-nopanel` es el plan A4, **sin verificar** al
-  escribir esta sección) → `harness` completo.
+  `review.panel.mode: off`; la condición `harness-nopanel` está en `evaluation/conditions.py` y en
+  `run_eval.py --condition`, rama `test/eval-t1-conditions`; el lanzador es
+  `evaluation/launchers/block-ladder.sh`) → `harness` completo.
 - **Estímulo y repeticiones.** Brownfield con el prompt completo (con el casual, `harness-core`
   rechaza la tarea al crearla, punto 2 de la parte (c) de la enmienda del 2026-11-12), Sonnet,
   `n = 3` por celda (4 × 3 = 12 corridas).
@@ -2900,8 +2916,9 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    condición del bloque antes de su primera llamada real y sale con 6 si alguna condición no deja
    un registro válido (`4597355`). En la campaña el humo **no se omite** (no se usa
    `EVAL_SKIP_SMOKE`) y corre con la **profundidad real** de una celda
-   (`$EVAL_WORK/runs/<bloque>/<modelo>` o un directorio de igual longitud; plan D6, **sin
-   verificar** al escribir esta sección). Rides no tiene corrida en seco: hasta que la tenga (plan
+   (`$EVAL_WORK/runs/<bloque>/<modelo>`, con la repetición reservada 99; plan D6, `64a2a12`,
+   verificado en `smoke.sh`). Los bloques T1 y de la escalera (`block-t1.sh`, `block-ladder.sh`)
+   llaman al mismo humo (rama `test/eval-t1-smoke`). Rides no tiene corrida en seco: hasta que la tenga (plan
    D5), el bloque rides no se lanza.
 3. **Tope de turnos y reanudación** (planes A3 y D4; `fix/eval-turn-cap-resume`, `b544efc`). Toda
    llamada `implement` lleva `--max-turns 40` (`agentlib.DEFAULT_MAX_TURNS`; `EVAL_MAX_TURNS` lo
@@ -2926,12 +2943,15 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
    `df5566b`).
 5. **Versiones registradas** (plan D9). Cada llamada registra el modelo que devolvió
    (`modelUsage`), y `environment.json` registra la versión de Claude Code
-   (`evaluation/environment.py`, hoy solo al inicio). Desde esta sección se registran el modelo y
-   la versión de Claude Code **al inicio y al final de cada bloque**; si la versión de Claude Code
-   cambia dentro de un bloque, el bloque se detiene y sus corridas posteriores al cambio se
-   registran como inválidas por el aparato, con la causa. El registro al final y la detención están
-   **sin verificar** al escribir esta sección; cómo se desactiva la actualización automática de
-   Claude Code, también.
+   (`evaluation/environment.py`, hoy solo al inicio). `environment.json` guarda la versión de Claude Code al
+   inicio (`claudeCodeAtStart`) y al final de cada bloque (`claudeCodeAtEnd`), y cada `call-N.json`
+   guarda `modelUsage` y `modelIds` (`d471bf2`, `evaluation/environment.py`,
+   `launchers/common.sh:finish_environment`). Si la versión cambia dentro de un bloque, el bloque
+   queda marcado con `claudeCodeChanged: true` y el log avisa, **sin detenerse y sin borrar
+   resultados**; el investigador decide si usa o repite ese bloque (esto corrige el texto anterior,
+   que decía que el bloque se detenía y marcaba las corridas como inválidas). Cómo se desactiva la
+   actualización automática de Claude Code (`DISABLE_AUTOUPDATER=1`) está **sin verificar**: no se
+   probó con una corrida real.
 6. **El harness pregunta más cuanto más pobre es el pedido.** Decisión del dueño: el harness nunca
    rechaza un pedido pobre. `harness init` de 2.0.1 escribe `intake.ambiguityReview.depth:
    adaptive`: el número de rondas y de preguntas por ronda crece cuanto menos dice la tarea, y
