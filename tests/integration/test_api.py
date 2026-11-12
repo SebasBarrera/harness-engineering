@@ -122,3 +122,18 @@ def test_api_without_trusted_hosts_keeps_answering_every_host(python_workspace) 
     config.write_text(text.split("governance:")[0], encoding="utf-8")
     client = TestClient(create_app(python_workspace), base_url="http://any.example")
     assert client.get("/api/runs").status_code == 200
+
+
+def test_panel_hides_the_decision_form_without_authentication(python_workspace) -> None:
+    """The dashboard is static: its script decides from /api/session. Without authentication the
+    script renders a notice and returns before the form; with ``token`` it renders the form."""
+    client = TestClient(create_app(python_workspace), base_url=LOCAL)
+    assert client.get("/api/session").json() == {"authentication": "off"}
+    page = client.get("/").text
+    guard = page.index("if(session.authentication!=='token'){")
+    notice = page.index('id="decision-disabled"')
+    form = page.index('data-decision="APPROVE"')
+    assert guard < notice < page.index("return;", notice) < form
+    assert "records none" in page
+    # With authentication the form keeps its read-only actor of the signed-in user.
+    assert 'value="${esc(session.userId)}" readonly' in page

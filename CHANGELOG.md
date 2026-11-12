@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The web panel hides the decision form and says why when the API runs without authentication (no `api`
+  section, or `api.auth: off`), where a decision answers 403; with `api.auth: token` it is as before.
 - Security fixes from the expert review of 2.0.1. Each changes behaviour present since 0.8.0
   (the `v0.8.0` tag is untouched; the thesis evaluates 2.0.x):
   - **Redaction no longer corrupts code.** `generic_secret_assignment` replaced any unquoted

@@ -585,6 +585,11 @@ function renderBrief(b){
 function renderDecision(id, b){
  const target=document.getElementById('decision'); target.innerHTML='';
  if(!b.run.awaitingDecision || !b.run.changeSetDigest){ return; }
+ if(session.authentication!=='token'){
+  // Without api.auth: token the API answers 403 to a decision: no form to fill in for nothing.
+  target.innerHTML='<h3>Human gate</h3><div class="notice" id="decision-disabled">Decisions are off: the API runs without authentication and records none. Add an api section (auth: token) or decide with <code>harness gate decide</code>.</div>';
+  return;
+ }
  target.innerHTML=`<h3>Human gate</h3>
  <div class="notice">The decision will be bound to <code>${esc(b.run.changeSetDigest)}</code> (${b.changed.files.length} file(s)). Any later change invalidates it.</div>
  ${session.authentication==='token'?`<label>Actor<input id="actor" value="${esc(session.userId)}" readonly></label>`:'<label>Actor<input id="actor" value="" placeholder="Git user or human.web"></label>'}
