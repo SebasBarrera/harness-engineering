@@ -116,12 +116,30 @@ def git(cwd: Path, *args: str) -> str:
     ).stdout
 
 
-def prepare(scenario: str, workspace: Path, cache: Path, site_packages: Path) -> str:
+SPEC_FILE = "SPEC.md"
+
+
+def prepare(
+    scenario: str, workspace: Path, cache: Path, site_packages: Path, with_spec: bool = True
+) -> str:
+    """Copy the scenario into ``workspace`` and commit it as the baseline. ``with_spec`` False (the
+    poor and casual prompt levels, amendment of 2026-11-12) leaves SPEC.md out and drops the README
+    lines that point at it: a poor prompt must not find the specification in the repository. Only
+    the simulated product owner holds it."""
     spec = SCENARIOS[scenario]
     workspace.mkdir(parents=True)
     if "fixture" in spec:
         for item in spec["fixture"].iterdir():
+            if not with_spec and item.name == SPEC_FILE:
+                continue
             target = ".gitignore" if item.name == "gitignore.template" else item.name
+            if not with_spec and item.name == "README.md":
+                lines = item.read_text(encoding="utf-8").splitlines()
+                kept = [line for line in lines if SPEC_FILE not in line]
+                (workspace / target).write_text(
+                    "\n".join(kept).rstrip() + "\n", encoding="utf-8", newline="\n"
+                )
+                continue
             shutil.copy2(item, workspace / target)
     else:
         with tarfile.open(cache / spec["archive"]) as archive:
@@ -571,7 +589,9 @@ def main() -> int:
     tag = "" if args.prompt == "full" else f"-{args.prompt}"
     run_dir = args.work / f"{args.scenario}{tag}-{condition}-{args.model}-r{args.rep}-{stamp}"
     workspace = run_dir / "ws"
-    baseline = prepare(args.scenario, workspace, args.cache, site_packages)
+    baseline = prepare(
+        args.scenario, workspace, args.cache, site_packages, with_spec=args.prompt == "full"
+    )
     HARNESS_ENV["HARNESS_STATE_DIR"] = str((run_dir / "state").resolve())
     if args.fake_mode:
         (run_dir / "fake-mode").write_text(args.fake_mode, encoding="utf-8")

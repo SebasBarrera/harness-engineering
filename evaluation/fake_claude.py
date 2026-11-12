@@ -53,6 +53,13 @@ def _scenario(cwd: Path) -> str | None:
         return "security"
     if "shipping" in spec:
         return "greenfield"
+    # The poor and casual levels have no SPEC.md (amendment of 2026-11-12): the project's name.
+    project = cwd / "pyproject.toml"
+    text = project.read_text(encoding="utf-8") if project.is_file() else ""
+    if 'name = "alerts"' in text:
+        return "security"
+    if 'name = "shipping"' in text:
+        return "greenfield"
     return None
 
 

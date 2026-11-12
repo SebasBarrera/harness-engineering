@@ -116,3 +116,25 @@ def test_reports_show_a_refused_cell_as_refused() -> None:
     assert summary["refused"] == 2
     assert summary["deliveredDefective"] == 0
     assert summary["blockedDefective"] == 0
+
+
+@pytest.mark.parametrize("scenario", ["greenfield", "security"])
+def test_a_poor_prompt_level_finds_no_specification(tmp_path: Path, scenario: str) -> None:
+    site = tmp_path / "site"
+    site.mkdir()
+    poor = tmp_path / "poor"
+    run_eval.prepare(scenario, poor, tmp_path, site, with_spec=False)
+    assert not (poor / "SPEC.md").exists()
+    assert "SPEC.md" not in (poor / "README.md").read_text(encoding="utf-8")
+    assert run_eval.git(poor, "ls-files").split() == sorted(
+        [".gitignore", "README.md", "pyproject.toml"]
+    )
+    full = tmp_path / "full"
+    run_eval.prepare(scenario, full, tmp_path, site)
+    assert (full / "SPEC.md").is_file()
+
+
+def test_the_poor_and_casual_prompts_do_not_point_at_the_specification() -> None:
+    tasks = EVALUATION / "tasks"
+    for path in [*tasks.glob("*-casual.txt"), *tasks.glob("*-poor.yaml")]:
+        assert "SPEC.md" not in path.read_text(encoding="utf-8"), path.name
