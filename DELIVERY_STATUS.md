@@ -1,7 +1,11 @@
-# Current delivery status
+# Delivery status of the 0.8.0 cut
 
-Version: 0.8.0 research beta
+Version: 0.8.0 research beta (the cut the thesis documents, tag `v0.8.0`)
 Delivery date: 2026-08-30
+
+This file records the 0.8.0 delivery and is not updated with later releases. The current version
+is 2.0.1: see [README.md](README.md), [CHANGELOG.md](CHANGELOG.md) and the
+[trust model](docs/architecture/trust-model.md) for what it implements and does not guarantee.
 
 ## Verified in this environment
 

@@ -18,7 +18,7 @@ and its evaluation is formative and descriptive (no statistical generalization).
 
 The thesis documents the cut released as [`v0.8.0`](https://github.com/SebasBarrera/harness-engineering/releases/tag/v0.8.0),
 which reproduces it byte for byte (see [provenance](provenance.md)), and runs its
-[controlled evaluation](evaluation/results.md) only on `v2.0.0` (campaign in progress,
+[controlled evaluation](evaluation/results.md) only on `v2.0.1` (campaign in progress,
 `evaluation/campaign/`); results of earlier versions are in the git history and the `v0.8.0` tag
 and are not part of that analysis. `v0.8.1` adds
 infrastructure, documentation and quality fixes without behavior change. `v0.9.0` fixes seven
@@ -57,4 +57,4 @@ The re-verification of these figures during publication is recorded in the
 
 Use the citation metadata in [`CITATION.cff`](https://github.com/SebasBarrera/harness-engineering/blob/develop/CITATION.cff)
 (GitHub shows a "Cite this repository" button), and cite the version you used, for example
-`v0.8.0` for the documented cut or `v2.0.0` for the controlled evaluation.
+`v0.8.0` for the documented cut or `v2.0.1` for the controlled evaluation.

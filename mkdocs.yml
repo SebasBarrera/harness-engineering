@@ -97,6 +97,7 @@ nav:
       - Ingeniería inversa de proyectos existentes: es/ingenieria-inversa.md
       - Reporte de métricas: es/reporte-de-metricas.md
       - Trabajo simultáneo: es/trabajo-simultaneo.md
+      - Modelo de confianza: es/modelo-de-confianza.md
       - Instalación: es/instalacion.md
       - Instalación avanzada: es/instalacion-avanzada.md
       - Publicación de versiones: es/publicacion.md
@@ -125,7 +126,7 @@ nav:
   - Thesis:
       - Context: thesis.md
       - Provenance: provenance.md
-      - Controlled evaluation of v2.0.0: evaluation/results.md
+      - Controlled evaluation of v2.0.1: evaluation/results.md
       - Documents of the v0.8.0 cut:
           - Implementation status: implementation-status.md
           - Validation report: validation-report.md
