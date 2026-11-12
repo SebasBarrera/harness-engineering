@@ -120,11 +120,15 @@ Se sigue en el issue #113.
 
 ## Bloque rides (`evaluation/launchers/block-rides.sh`)
 
-El escenario de transporte y domicilios (`evaluation/rides/`, 95 requisitos en `SPEC.md`): las diez
-celdas válidas de `run_rides.py` (`direct` × `one_line`, `paragraph`, `requirements`, `super`;
-`stepwise` × `super`; `harness` × `one_line`, `paragraph`, `requirements`, `super`; `clarify` ×
-`paragraph`) × `EVAL_MODELS` × `EVAL_REPS`, una corrida a la vez. Con los valores por defecto
-(3 modelos, 3 repeticiones) son 30 corridas por modelo y 90 en total.
+El escenario de transporte y domicilios (`evaluation/rides/`, 95 requisitos en `SPEC.md`). Por
+defecto corre las celdas de la campaña (enmienda del 2026-11-12, plan D5): `direct` y `harness` ×
+`one_line` y `super`, con Sonnet (`EVAL_MODELS`) y 2 repeticiones (`EVAL_REPS`), una corrida a la
+vez: 8 corridas. `EVAL_RIDES_CELLS` puede nombrar cualquiera de las once celdas válidas de
+`run_rides.py` (`direct` × `one_line`, `paragraph`, `requirements`, `super`; `stepwise` × `super`;
+`harness` × `one_line`, `paragraph`, `requirements`, `super`; `clarify` × `one_line`, `paragraph`).
+Ninguna condición de rides tiene tope de turnos (`EVAL_MAX_TURNS` no se aplica; cada `call-N.json`
+dice `maxTurns: null`), y la condición `harness` usa `conditions.write_config` con el product owner
+simulado.
 
 ```bash
 EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... evaluation/launchers/block-rides.sh
@@ -137,7 +141,8 @@ EVAL_RIDES_PLAN=1 ...                                              # lista las c
   código de salida 75 (límite de uso) espera `EVAL_LIMIT_WAIT` segundos y repite, como `pilot.sh`.
 - Las corridas no ven la suite oculta (`copy_code` la quita): al final `rides/rescore.py` puntúa los
   espacios de trabajo guardados y escribe `rides.scored.jsonl` y `summary-rescore.txt`.
-- `run_rides.py` no tiene corrida en seco: con `EVAL_DRY=1` el bloque se niega a correr.
+- Corrida en seco: con `EVAL_DRY=1` las celdas corren con `fake_claude.py` (`run_rides.py --dry-run`),
+  y el humo del bloque (`smoke.sh`, bloque `rides`) corre una celda en seco por condición.
 - **Tiempo y costo: son límites, no mediciones.** Cada llamada al agente tiene un tope de 4 h
   (`AGENT_TIMEOUT`) y de USD 200 (`AGENT_BUDGET`); cada llamada del product owner simulado de
   `clarify`, 30 min y USD 20 (`product_owner.py`). Una corrida `direct` hace una llamada (≤ 4 h,

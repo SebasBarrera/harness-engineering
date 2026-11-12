@@ -70,8 +70,12 @@ def package(name: str) -> str | None:
         return None
 
 
-def agent_calls() -> dict[str, object]:
-    """What ``agentlib`` gives every agent call, the same in every condition."""
+# The block without a turn cap in any condition (amendment of 2026-11-12, rides/run_rides.py).
+UNCAPPED_BLOCKS = ("rides",)
+
+
+def agent_calls(block: str = "") -> dict[str, object]:
+    """What ``agentlib`` gives every agent call, the same in every condition of a block."""
     sys.path.insert(0, str(Path(__file__).resolve().parent))
     import agentlib
 
@@ -83,8 +87,10 @@ def agent_calls() -> dict[str, object]:
         # The turn cap of every implement call (direct, the governed provider, the embedded host
         # session; read-only calls and the simulated product owner have none) and the resume of
         # the previous implement session in a correction (amendment A3).
-        "maxTurns": agentlib.MAX_TURNS,
-        "maxTurnsSource": "EVAL_MAX_TURNS"
+        "maxTurns": None if block in UNCAPPED_BLOCKS else agentlib.MAX_TURNS,
+        "maxTurnsSource": "none: rides (amendment of 2026-11-12)"
+        if block in UNCAPPED_BLOCKS
+        else "EVAL_MAX_TURNS"
         if os.environ.get("EVAL_MAX_TURNS", "").strip()
         else "default",
         "correctionResumesSession": True,
@@ -161,7 +167,7 @@ def main() -> int:
     }
     # The agent's command line and environment of every condition (amendment of 2026-11-11): the
     # prompt-cache TTL variables and the Bash commands the agent may run.
-    entry["agentCalls"] = agent_calls()
+    entry["agentCalls"] = agent_calls(args.block)
     if sys.platform == "win32":
         # Declared deviation: conditions.apply_provider sets runtime.agentSandbox off on Windows.
         entry["agentSandbox"] = "off (no OS sandbox on Windows)"

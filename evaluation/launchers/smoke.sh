@@ -9,7 +9,9 @@
 # with exit code 6 before its first real call. EVAL_SKIP_SMOKE=1 skips it.
 #
 # Blocks: A, B, T1 and LADDER (run_eval.py cells), D (longitudinal/run_session.py), embedded
-# (run_embedded.py). EVAL_SMOKE_MODEL overrides the model of the smoke cells (T1 and LADDER set it). The rides block has no dry run (run_rides.py), so its smoke test is a declared skip.
+# (run_embedded.py) and rides (rides/run_rides.py --dry-run: one cell per condition of the block's
+# CELLS, at the first level the block runs it, plan D5). EVAL_SMOKE_MODEL overrides the model of the
+# smoke cells (T1 and LADDER set it).
 # The records go to $EVAL_WORK/smoke/<block>, never to the block's results directory.
 #
 # Depth: the dry cells run in the SAME work directory a real cell of the block uses
@@ -28,6 +30,7 @@ smoke_work() {
     D) dir=block-d ;;
     T1) dir=block-t1 ;;
     LADDER) dir=block-ladder ;;
+    rides) dir=rides ;;
     *) dir="block-$1" ;;
   esac
   echo "$EVAL_WORK/runs/$dir/$2"
@@ -75,6 +78,16 @@ if kind == "longitudinal":
         sys.exit("the session recorded no step")
 elif governed and kind == "embedded" and harness.get("outcome") == "no-run":
     sys.exit("no executionId: the host session started no run")
+elif kind == "rides":
+    # No turn cap in any condition of rides (amendment of 2026-11-12): every call recorded maxTurns null.
+    if row.get("maxTurns") is not None or row.get("callMaxTurns") != [None]:
+        sys.exit(f"turn cap in rides: maxTurns {row.get('maxTurns')}, calls {row.get('callMaxTurns')}")
+    if not row.get("steps"):
+        sys.exit("the rides run recorded no step")
+    for step in row["steps"] if governed else []:
+        outcome = (step.get("harness") or {}).get("outcome", "")
+        if outcome.startswith("task-refused") or not (step.get("harness") or {}).get("runKey"):
+            sys.exit(f"no started run in step {step.get('step')}: outcome {outcome}")
 elif mode == "2" and harness.get("outcome") == "task-refused-exit-2":
     pass  # harness-core refuses a task without criteria (the casual prompt): dry_run.py "casual-core"
 elif governed and kind == "matrix" and not harness.get("runId"):
@@ -106,10 +119,6 @@ run_smoke() {
     log "smoke $block skipped (EVAL_SKIP_SMOKE=1)"
     return 0
   fi
-  if [ "$block" = "rides" ]; then
-    log "smoke rides skipped: run_rides.py has no dry run"
-    return 0
-  fi
   local slot model scenario dir work failed=0 condition governed
   slot=$(make_slot "$slot_name")
   model="${EVAL_SMOKE_MODEL:-${EVAL_MODELS%% *}}"
@@ -120,6 +129,7 @@ run_smoke() {
   mkdir -p "$dir"
   work=$(smoke_work "$block" "$model")
   smoke_clean "$work"
+  [ "$block" = "rides" ] && scenario=rides
   log "smoke $block: one dry cell per condition ($model, $scenario)"
   case "$block" in
     A | B)
@@ -172,6 +182,19 @@ run_smoke() {
         smoke_cell "$slot" "$block" longitudinal "$condition" "$governed" \
           "$slot/$VENV_BIN/python" "$CODE/longitudinal/run_session.py" --condition "$condition" --model "$model" \
           --rep "$SMOKE_REP" --work "$work" --out "$dir/records-$condition.jsonl" --dry-run || failed=1
+      done
+      ;;
+    rides)
+      # One dry cell per condition of the block (CELLS of block-rides.sh), at its first level there.
+      local cell seen=" " ccond clevel
+      for cell in "${CELLS[@]}"; do
+        ccond="${cell%%:*}"
+        clevel="${cell##*:}"
+        case "$seen" in *" $ccond "*) continue ;; esac
+        seen="$seen$ccond "
+        governed=1
+        case "$ccond" in direct | stepwise) governed=0 ;; esac
+        smoke_cell "$slot" "$block" rides "$ccond" "$governed"           "$slot/$VENV_BIN/python" "$CODE/rides/run_rides.py" --level "$clevel" --condition "$ccond" --model "$model"           --rep "$SMOKE_REP" --work "$work" --out "$dir/records-$ccond.jsonl" --dry-run || failed=1
       done
       ;;
     embedded)

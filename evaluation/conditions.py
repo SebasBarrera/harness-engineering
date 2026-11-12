@@ -37,6 +37,7 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -94,15 +95,22 @@ def provider_command(
     honor_routing: bool,
     claude_bin: str | None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> list[str]:
-    command = ["python", str(code / "claude_provider.py"), "--model", model]
+    """The adapter's command line. ``extra_args`` (rides: ``--timeout`` and ``--budget``) go after
+    the model; ``turn_cap`` False (rides, amendment of 2026-11-12) gives ``--no-max-turns`` and
+    ignores ``EVAL_MAX_TURNS``: no call of the run carries a turn cap."""
+    command = ["python", str(code / "claude_provider.py"), "--model", model, *extra_args]
     if honor_routing:
         command.append("--honor-routing")
     if claude_bin:
         command += ["--claude-bin", claude_bin]
     if resumable:
         command.append("--resumable")
-    if os.environ.get("EVAL_MAX_TURNS", "").strip():
+    if not turn_cap:
+        command.append("--no-max-turns")
+    elif os.environ.get("EVAL_MAX_TURNS", "").strip():
         # The harness does not pass the runner's environment to the provider: a turn cap other
         # than the provider's default (agentlib.MAX_TURNS) goes on its command line (amendment A3).
         command += ["--max-turns", os.environ["EVAL_MAX_TURNS"].strip()]
@@ -119,6 +127,8 @@ def apply_provider(
     provider: str,
     claude_bin: str | None = None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Point the configuration at the agent of the run and set the evaluation's time limit."""
     runtime = config.setdefault("runtime", {})
@@ -133,6 +143,8 @@ def apply_provider(
             honor_routing=condition in ("harness-anchored", "harness-tiered"),
             claude_bin=claude_bin,
             resumable=resumable,
+            turn_cap=turn_cap,
+            extra_args=extra_args,
         )
         config["agentProvider"] = "claude"
         config["agentProviders"] = {
@@ -212,10 +224,13 @@ def write_config(
     provider: str = "claude",
     claude_bin: str | None = None,
     resumable: bool = False,
+    turn_cap: bool = True,
+    extra_args: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Write ``.harness/project.yaml`` of a governed condition and return it.
 
-    ``harness`` runs a harness command in the workspace (``run_eval.harness``)."""
+    ``harness`` runs a harness command in the workspace (``run_eval.harness``). ``turn_cap`` and
+    ``extra_args`` go to the provider's command line (``provider_command``)."""
     path = workspace / ".harness" / "project.yaml"
     if condition == "harness-core":
         # ``harness init`` (since #86 it writes .harness/ to .git/info/exclude, not .gitignore);
@@ -243,6 +258,8 @@ def write_config(
         provider=provider,
         claude_bin=claude_bin,
         resumable=resumable,
+        turn_cap=turn_cap,
+        extra_args=extra_args,
     )
     path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8", newline="\n")
     return config
