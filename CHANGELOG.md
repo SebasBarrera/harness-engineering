@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- A poor request is never refused, and the poorer it is the more INTENT asks, starting with the
+  basics: `intake.ambiguityReview.depth: adaptive`, which `harness init` now writes, measures
+  deterministically how little the task says (intent words, observable criteria, requirements,
+  entities) and gives a `very-poor` request 3 more rounds and 4 more questions per round, a
+  `poor` one 1 and 2 more (at most 8 rounds and 16 questions). The first rounds cover nine
+  fundamental topics in a fixed order (users, what they do, main flows, platform, data, business
+  rules, edge cases, acceptance criteria, first version), in Spanish or English after
+  `intake.language`: the deterministic intake asks them first (category `basics`, target
+  `task:<topic>`), the answers become requirements, and the `clarify` request carries the level,
+  the plan and the topics of the round. A very poor or poor request also keeps the agent review
+  in the fast lane, where a one-line wish used to land as size `S`. Without the key the
+  questions, the requests, the fast lane and the configuration digest stay as they were. The
+  evaluation's rides runner no longer records a task without criteria as refused without running
+  it: under the `init` configuration it enters INTENT and asks.
 - Fixes of the evaluation apparatus found by an expert review, before any campaign result
   (amendment of 2026-11-12 in `evaluation/campaign/PREREGISTRO.md`). A governed run whose
   `harness run start` fails is no longer lost: `run_eval.py` writes it to `<out>.invalid.jsonl`

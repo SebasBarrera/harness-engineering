@@ -138,6 +138,63 @@ intake:
 
 The bare `agent` keeps the single-round review and its configuration digest.
 
+### More questions for a poorer request (`depth: adaptive`, 2.0.1)
+
+A poor request is never refused: under the configuration of `harness init` a one-line wish such
+as "haz una app como Uber con Uber Eats, viajes y domicilios de comida" is stored with
+`criteriaPending` and INTENT asks for what it is missing. `depth: adaptive`, which `harness init`
+writes, makes INTENT ask more the less the request says, and start with the basics:
+
+```yaml
+intake:
+  ambiguityReview:
+    mode: agent
+    maxRounds: 3
+    maxQuestions: 8
+    onExhausted: assume
+    depth: adaptive     # fixed (or absent): maxRounds and maxQuestions as written
+```
+
+- **The measure** (`governed_harness.intake.depth.poverty`, deterministic, no model) adds, out of
+  100: the words of the intent (under 25: 35, under 80: 20, under 200: 10), the observable
+  acceptance criteria (those rule `C1` does not question; none: 25, one or two: 15, three to
+  five: 5), the requirements (none: 25, one to four: 15, five to fourteen: 5) and the entities,
+  distinct anchors in the intent, requirements and criteria such as numbers, quoted text, code
+  identifiers and file names (under three: 15, under eight: 8). 90 or more is `very-poor`, 75 or
+  more `poor`, 30 or more `partial`, the rest `detailed`. A task with a precise criterion (one with
+  an anchor, as rule `T1` reads it) is at most `partial`.
+- **The plan**, from the configured `maxRounds` and `maxQuestions`:
+
+  | Level | Rounds | Questions per round | Fundamental topics per round |
+  | --- | --- | --- | --- |
+  | `very-poor` | `maxRounds` + 3 | `maxQuestions` + 4 | 3 (deterministic and agent) |
+  | `poor` | `maxRounds` + 1 | `maxQuestions` + 2 | 5 (deterministic and agent) |
+  | `partial` | `maxRounds` | `maxQuestions` | all 9 in the first round (agent only) |
+  | `detailed` | `maxRounds` | `maxQuestions` | none |
+
+  The plan never exceeds 8 rounds and 16 questions per round, or the configured value when it is
+  larger. With the `init` defaults a one-line wish gets 6 rounds of up to 12 questions, a
+  paragraph without measurable criteria 4 rounds of up to 10.
+- **The fundamental topics**, in this order: users and roles, what each user does, main flows,
+  platform and stack, data, business rules, limits and edge cases, observable acceptance
+  criteria, priorities and scope of the first version. Their questions follow `intake.language`
+  (Spanish or English).
+- **Deterministic questions.** For `very-poor` and `poor` requests INTENT asks first one
+  question per topic not answered yet (category `basics`, target `task:<topic>`, rule `C0` when the
+  task has no criteria, where `C0` already asks for the results, and `T1` otherwise), then the
+  other rules. An answer becomes a requirement prefixed with the topic's label, the topic is
+  recorded in `metadata.intakeTopics`, and the first answered revision freezes the level in
+  `metadata.intakeDepth` so that the answers do not shrink the plan halfway.
+- **The agent review** receives the plan's `maxRounds` and `maxQuestions` and a `depth` object
+  (`level`, `score`, `rounds`, `questions`, `topicsPerRound`, `round`, `topics` of the round
+  with their labels), and its instructions ask it to cover those topics before any detail; once
+  the topics are covered, it asks about the remaining details.
+- **Fast lane.** A one-line wish looks like size `S`; under `depth: adaptive` a `very-poor` or
+  `poor` request keeps the agent review even in the fast lane.
+
+Without the key nothing changes: no topic questions, the configured rounds and questions, the
+same `clarify` request, the fast lane as before and the same configuration digest.
+
 ## SPECIFICATION: independent, frozen acceptance tests (#52)
 
 `verification.acceptanceTests.mode: agent` asks a separate call for pytest files written from the
@@ -481,6 +538,7 @@ same model once.
 | Setting | Tests |
 |---|---|
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
+| `intake.ambiguityReview.depth` | `tests/unit/test_intake_depth.py`, `tests/integration/test_intake_depth.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
 | `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_run_outcome.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
