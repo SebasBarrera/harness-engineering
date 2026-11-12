@@ -23,6 +23,7 @@ sys.path.insert(0, str(EVALUATION / "rides"))
 import agentlib  # noqa: E402
 import claude_provider  # noqa: E402
 import conditions  # noqa: E402
+import environment  # noqa: E402
 import fake_claude  # noqa: E402
 import run_rides  # noqa: E402
 
@@ -136,3 +137,11 @@ def test_the_stand_in_recognizes_the_rides_fixture(tmp_path: Path) -> None:
     assert "rides" in fake_claude._implement(tmp_path, "Implementa.")
     assert (tmp_path / "src" / "rides" / "__init__.py").is_file()
     assert "import rides" in (tmp_path / "tests" / "test_fake_dry_run.py").read_text("utf-8")
+
+
+def test_the_environment_record_of_rides_declares_no_cap() -> None:
+    rides = environment.agent_calls("rides")
+    assert rides["maxTurns"] is None
+    assert str(rides["maxTurnsSource"]).startswith("none: rides")
+    for block in ("", "A", "B", "T1"):
+        assert environment.agent_calls(block)["maxTurns"] == agentlib.MAX_TURNS
