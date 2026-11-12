@@ -627,3 +627,36 @@ def test_analyze_run_reports_the_behavior_of_a_poor_greenfield_run(tmp_path: Pat
     assert by_condition["direct"]["requirements"]["unknowns"]["behavior"] == cmp.ASKED
     unknowns = by_condition["harness"]["requirements"]["unknowns"]
     assert unknowns["behavior"] == cmp.ASSUMED and unknowns["assumptionsDeclared"] == 1
+
+
+def test_without_a_saved_final_text_the_direct_run_is_not_available(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, INVENTING, asked=0, declared=0, final_text=None)
+    assert result["behavior"] == cmp.NOT_AVAILABLE
+    # the invented values are still counted and reported, never hidden
+    assert result["inventedValues"] == 2 and result["inventedTexts"] == ["7.35", "zonex"]
+
+
+def test_a_run_that_asked_still_reports_the_values_it_invented(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, INVENTING, asked=3, declared=0)
+    assert result["behavior"] == cmp.ASKED and result["inventedValues"] == 2
+    record = {"requirements": {"unknowns": result}}
+    assert cmp.UNKNOWNS_ROW[1](record) == "preguntó (2 valores inventados)"
+
+
+def test_the_assumptions_are_counted_by_source(tmp_path: Path) -> None:
+    result = _unknowns(
+        tmp_path, INVENTING, asked=0, declared=2, final_text="Asumo la tarifa zonex 7.35."
+    )
+    assert result["assumptionsBySource"] == {"recorded": 2, "statedInTextOrCode": 1}
+    assert result["assumptionsDeclared"] == 3
+
+
+def test_analyze_run_marks_a_direct_run_without_final_text_not_available(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    direct = root / "greenfield-casual-direct-model-x-r1-20261111T000000Z"
+    workspace(direct, INVENTING, {})
+    call(direct, None)
+    found, _ = cmp.discover([root])
+    record = cmp.analyze_run(found[0], static=False)
+    unknowns = record["requirements"]["unknowns"]
+    assert unknowns["behavior"] == cmp.NOT_AVAILABLE and unknowns["inventedValues"] == 2
