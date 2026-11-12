@@ -366,6 +366,101 @@ comportamiento y el digest de configuración de 2.0.0:
   `h10_uncovered_regressions.py:full_lane`, `h12_frozen_acceptance.py:full_lane`,
   `h35_light_mutation.py:_full_lane`); su condición `init` tal cual no cambia.
 
+### Enmienda 2026-11-12: desviaciones declaradas, intentos previos y arreglos del aparato
+
+Se añade el 2026-11-12, **antes de cualquier resultado de la campaña** (ningún bloque con modelo
+tiene corridas sobre la versión bajo prueba instalada desde su wheel; los intentos de la parte (b)
+no son resultados). Responde a una revisión de expertos del aparato. No cambia hipótesis, métricas
+ni criterios de éxito; declara las desviaciones del registro, lista los intentos guardados fuera
+del árbol y fija cinco cambios del aparato.
+
+**(a) Tabla de desviaciones.** Cada enmienda del 2026-11-11 se escribió después de alguna corrida
+con modelo: de comprobaciones del aparato (pilotos, pre-chequeos y humos locales), nunca de la
+campaña. Esta tabla dice qué se había visto al escribir cada una.
+
+| Enmienda (2026-11-11) | Motivo | Datos vistos al escribirla |
+|---|---|---|
+| La persona simulada ante una disputa de pruebas de aceptación | La persona no tenía regla para la espera `acceptance-dispute` y las corridas gobernadas terminaban `stopped`. | El primer pre-chequeo del piloto Haiku (`precheck-out` en la parte (b)): resultados de aparato, sin resultados de campaña. |
+| Modelos y repeticiones de la campaña (y su revisión del mismo día) | Decisión del mantenedor: comparación principal con pedido pobre, Haiku y Sonnet, 2 repeticiones. | El piloto Haiku de 2.0.0 en curso (primera versión) y terminado (revisión): pilotos de aparato, sin resultados de campaña. |
+| Comparación de implementaciones | Dos condiciones con el mismo puntaje oculto no dicen cómo difieren. | El piloto Haiku de 2.0.0 completo (las métricas se fijaron sobre él, declarado exploratorio): piloto de aparato. |
+| Medición de corridas detenidas | El parche en cuarentena no se aplicaba y se medía la línea base. | La reconstrucción de las dos corridas detenidas del piloto Haiku: piloto de aparato. |
+| Autoverificación del agente, caché de prompts y costo calculado | Denegaciones de permisos al agente, TTL de caché de 1 h, costo no facturado. | Los pilotos Haiku y Sonnet de 2.0.0 (denegaciones y costos por llamada): pilotos de aparato. |
+| La campaña corre sobre la versión 2.0.1 | Los arreglos posteriores a los pilotos cambian lo que escribe `harness init`. | Los pilotos Haiku y Sonnet de 2.0.0: pilotos de aparato. |
+| A H44 y H45, y su segunda enmienda (2) a H44 | Puntos 3 y 4 de #157; estados de H44 que no cumplían la rúbrica por defectos del aparato o del harness. | Humos locales de H44 y H45 en Windows (regla 6: no son resultados). |
+| Idioma de los estímulos | Decisión del mantenedor: todo en español. | Los pilotos Haiku y Sonnet de 2.0.0, con estímulos en inglés: pilotos de aparato. |
+| La persona simulada responde como ingeniero | Decisión del mantenedor: el product owner responde como un ingeniero, con modelo fijo. | Las aclaraciones de los pilotos Haiku y Sonnet: pilotos de aparato. |
+
+**(b) Intentos previos guardados fuera del árbol.** Ninguno es un resultado; se listan para que
+toda corrida quede declarada (regla 2). Todos corrieron en el PC con Windows del autor con
+`claude-haiku-4-5-20251001`, el escenario brownfield (salvo el bloque B) y el harness importado de
+un árbol de fuentes (`EVAL_EXTRA_PATH`), no del wheel: por eso su `environment.json` registra
+`harness 1.0.0`, el número de versión que tenía el árbol de fuentes antes de que la rama de
+publicación lo fijara, y no la versión que se probaba (la versión no es identificable desde esos
+registros; la campaña la toma del wheel, ver (d)).
+
+| Intento | Cuándo (UTC) | Corridas | Causa por la que no sirve |
+|---|---|---|---|
+| `probe-out` | 2026-11-10 22:09 | 1 (`harness`, prompt completo) | Sonda del lanzador sobre un árbol de fuentes anterior a los arreglos del piloto. |
+| `pilot2-apparatus-error` | 2026-11-11 03:32 | 1 registrada (`direct`); 4 gobernadas sin registro | Error del aparato: el `harness` del venv de la celda no encontraba el paquete (`ModuleNotFoundError`), `harness init` no corrió y `run_eval.py` terminó al leer `.harness/project.yaml`. |
+| `pilot3-provider-no-cache-split` | 2026-11-11 03:39–05:26 | 5 registradas y 6 en `pilot.invalid.jsonl` | Las 6 inválidas son intentos de `harness-core` cortados por el límite de uso. Las tres gobernadas de 2.0.0 se bloquearon en INTENT por `agent.limit.reached`: el adaptador no reportaba aparte los tokens leídos de caché y el harness los contaba en el presupuesto. |
+| `precheck-out-incomplete-branch` | 2026-11-11 07:11–07:28 | 5 | Rama local de pre-chequeo incompleta (árbol con cambios sin commit, `dirty: true`): las gobernadas se bloquearon en INTENT por el mismo presupuesto. |
+| `precheck-out` | 2026-11-11 07:29–08:41 | 5 | La persona simulada no tenía regla para `acceptance-dispute` (origen de la primera enmienda de la tabla (a)). |
+| `precheck2-out` | 2026-11-11 09:38–10:49 | 5 | Pre-chequeo de esa regla sobre una rama local; el prompt casual se bloqueó en IMPLEMENTATION por el tope por llamada de entonces (50 000 tokens en S). |
+| `campaign/block-b-rutas-largas` | 2026-11-11 23:37–23:56 | 18 registradas (`direct`, `harness-core`); 9 de `harness` sin registro | Las 9 corridas `harness` fallaron en `harness run start` y `run_eval.py` las perdió sin registro (punto F2 de (c)); la revisión de expertos atribuyó la falla a la longitud de las rutas de Windows del directorio de trabajo (no verificado en esta enmienda). Las celdas `harness-core` × casual quedaron rechazadas al crear la tarea y se midieron sobre la línea base (punto F6.3 de (c)). |
+| `campaign/block-b` | 2026-11-11 23:58 – 2026-11-12 00:02 | 3 | Relanzamiento del bloque B con un directorio de trabajo corto, detenido por decisión del mantenedor para correr la campaña desde el wheel de 2.0.1 y con los arreglos de (c). |
+
+**(c) Cambios del aparato de este encargo.** Se aplican por igual a todas las condiciones.
+
+1. **F2, `harness run start` fallido.** Una corrida gobernada cuyo `harness run start` no imprime
+   una ejecución ya no se pierde: se registra en `<out>.invalid.jsonl` con `invalid:
+   apparatus-run-start-failed`, el código de salida y la salida de error recortada
+   (`harness.runStartError`), sin medir; el runner termina con código 3 y `run_matrix.py` no repite
+   la celda (solo repite el código 75 del límite de uso).
+2. **F6.3, tarea rechazada.** Una tarea que el harness rechaza al crearla (por ejemplo
+   `harness-core` × casual: `task-refused-exit-2`, 0 llamadas) es un resultado y se reporta como
+   **rechazada**, sin puntaje de pruebas ocultas: el registro lleva `refused` y `measures.hidden:
+   null`, el directorio de la corrida guarda `run-outcome.json`, y `report.py`, `report_prompts.py`
+   y `analysis/compare_implementations.py` la listan como «rechazada» y la dejan fuera de todo
+   agregado del árbol (pruebas ocultas, cambio, cobertura, hallazgos). Los registros anteriores se
+   reconocen por su `outcome`.
+3. **F7, denominador fijo y pruebas discriminantes.** El puntaje de pruebas ocultas usa un
+   denominador nominal fijo por escenario (`measure.HIDDEN_NOMINAL`: greenfield 33, brownfield 24,
+   security 14, contados con `pytest --collect-only` sobre las soluciones de referencia), así que un
+   error de colección da 0 del nominal y no 0 de 1 (`hidden.collectionError`). Se reportan además
+   las **pruebas discriminantes**, las que la línea base intacta no pasa: las 33 y las 14 de los
+   escenarios nuevos y 6 de las 24 de brownfield (itsdangerous 2.2.0 sin cambios pasa las otras
+   18; `measure.HIDDEN_DISCRIMINATING`, `hidden.discriminating`).
+4. **F6.4, los niveles pobre y casual no traen la especificación.** El prompt casual de greenfield
+   y security decía «… de SPEC.md» / «… que se describe en SPEC.md», la tarea pobre también la
+   nombraba y el espacio de trabajo traía `SPEC.md`: el agente directo leía la especificación
+   completa y el nivel no era pobre. Desde esta enmienda los prompts casual y pobre no nombran
+   `SPEC.md` (conservan el nombre del paquete y de la función que importan las pruebas ocultas,
+   como ya hacía brownfield) y, en esos dos niveles y en todas las condiciones, el espacio de
+   trabajo se prepara sin `SPEC.md` y sin la línea del `README.md` que apunta a ella; solo el
+   product owner simulado la conoce. Los nombres de los niveles no cambian: con este arreglo
+   cumplen lo que la enmienda «modelos y repeticiones» llama pedido pobre. El nivel completo no
+   cambia. Brownfield no tenía especificación en el espacio de trabajo y no cambia. Las suites
+   deterministas que leen los prompts casuales (`intent-equivalence`) darán cifras distintas a las
+   de los textos anteriores.
+5. **Prueba aparte `direct-po`, exploratoria (decisión del mantenedor).** El valor del harness ante
+   un pedido pobre es que pregunta; la comparación principal sigue siendo `direct` frente a las
+   condiciones gobernadas. `direct-po` (`evaluation/direct_po.py`) mide cuánto de ese valor es
+   solo «alguien responde preguntas»: el agente directo tiene un turno de solo lectura para hacer a
+   lo sumo 8 preguntas (`kind: direct-questions`), el mismo product owner simulado (mismo modelo,
+   mismo conocimiento) las responde en una ronda y la llamada de implementación recibe el prompt
+   con las preguntas y las respuestas. No entra por defecto en ningún bloque (ningún lanzador la
+   nombra; `run_matrix.py` solo la corre si `--conditions` la nombra), se reporta aparte y sus
+   cifras no se mezclan con la comparación principal.
+
+**(d) Entornos y regla 6.** La regla 6 (cifras tomadas de GitHub Actions, `ubuntu-24.04` con
+`bwrap`, sobre el wheel bajo prueba) aplica a las **suites deterministas**. La parte con modelo
+(piloto, bloques A, B, D, embebido y rides) corre en el PC con Windows 10 del autor, con la sesión
+local de Claude Code y `runtime.agentSandbox: off` en las condiciones gobernadas (no hay sandbox de
+escritura en Windows), declarado en cada `environment.json`; sus cifras no se comparan con las de
+otro equipo o sistema operativo. Ambas partes corren sobre el harness **2.0.1** instalado desde el
+wheel construido a partir del tag anotado `v2.0.1` (`environment.json`: versión, SHA-256 del wheel,
+commit), no desde un árbol de fuentes.
+
 ## Operacionalización común de H01, H03 y H05
 
 - **Aplicación del cambio («modo parche»).** El cambio sembrado se escribe tal cual (archivos
