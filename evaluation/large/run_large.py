@@ -21,6 +21,15 @@ working tree, as a developer who keeps going would; the next step continues from
 After the run, the 68 hidden checks (parts a to j) and the final quality measures are recorded as
 one JSON line.
 
+Not aligned with the campaign (pending, 2026-11-12): the harness condition keeps the configuration
+of the 0.9.0 and 1.0.0 evaluations (run_eval.configure_provider and configure_limits below), not
+conditions.write_config as rides/run_rides.py does: on Windows it does not turn runtime.agentSandbox
+off, it does not grant harness check, it has no product owner (a one_line task stops in INTENT), and
+the provider takes the turn cap of agentlib (EVAL_MAX_TURNS). Moving it to write_config is not a
+one-line change: write_config's non-resumable time limit (1800 s) is below this runner's agent limit
+(3600 s), so run_harness would need its own time limit. The block is not part of the campaign and has
+no launcher; align it before it is run.
+
 Usage: python run_large.py --level LEVEL --condition CONDITION --model MODEL --rep N --work DIR --out FILE
 """
 
