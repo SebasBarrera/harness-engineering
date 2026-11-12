@@ -68,7 +68,9 @@ def project_id_from_path(path: Path) -> str:
 # POSIX paths or start with ``~/`` (the validator rejects drive letters and backslashes), so on
 # Windows these are left out instead of written as paths that mean nothing there; the entries
 # under the home directory (``~/.claude``, ``~/.cache``, ...) stay.
-POSIX_ONLY_SANDBOX_PATHS = frozenset({"/tmp", "/var/folders", "~/Library/Caches"})  # nosec B108
+POSIX_ONLY_SANDBOX_PATHS = frozenset(
+    {"/tmp", "/var/folders", "~/Library/Caches"}  # NOSONAR(S5443) # nosec B108
+)
 
 
 def default_sandbox_write_paths(platform: str | None = None) -> list[str]:
