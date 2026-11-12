@@ -243,7 +243,8 @@ comprueba que cada condición dejó un registro válido (uno solo, fuera de `*.i
 `invalid` y, en las gobernadas, con una ejecución iniciada: `executionId`, que el registro anonimiza como
 `harness.runId`). Si algo falla, el bloque sale con código 6 antes de la primera llamada real. Los
 registros y las bitácoras quedan en `$EVAL_WORK/smoke/<bloque>`, no en los resultados. `EVAL_SKIP_SMOKE=1`
-lo omite. El bloque rides no tiene corrida en seco (`run_rides.py`): su humo es una omisión declarada.
+lo omite. En el bloque rides, el humo corre `run_rides.py --dry-run` una vez por condición de sus celdas
+y además comprueba que ninguna llamada registró un tope de turnos (`maxTurns: null`; plan D5).
 
 Resúmenes: `report.py --v2 <results> <summary.json>` (bloques A y B: una celda por prompt,
 condición, modelo y escenario, con cada corrida listada junto a la dispersión n/min/mediana/max),
