@@ -1301,11 +1301,22 @@ class RunEngine:
     ) -> IntentReviewOutcome:
         """Agent review of ambiguity and completeness, and the check of earlier answers
         (intake.ambiguityReview, intake.validateAnswers; #37); the fast lane of #58 keeps the
-        deterministic intake only."""
-        skip = self.friction.active and self.friction.skips(
-            execution, "ambiguityReview", PhaseId.INTENT
+        deterministic intake only, except, under ``depth: adaptive``, for a poor request: a
+        one-line wish looks small but is the request that needs the review most."""
+        skip = (
+            self.friction.active
+            and not self._poor_request(task)
+            and self.friction.skips(execution, "ambiguityReview", PhaseId.INTENT)
         )
         return self.results.intent.questions(execution, phase, task, questions, agent=not skip)
+
+    def _poor_request(self, task: Task) -> bool:
+        """Whether ``depth: adaptive`` measures the task as ``very-poor`` or ``poor``."""
+        intake_config = self.s.resolved.project.intake
+        settings = intake_config.ambiguity_settings if intake_config else None
+        if settings is None or not settings.adaptive:
+            return False
+        return depth_plan(task, settings.rounds, settings.questions).deterministic_basics
 
     def _intent_identified(
         self, execution: Execution, phase: PhaseExecution, task: Task, refs: tuple[str, ...]

@@ -11,11 +11,12 @@ The measure (``poverty``) adds four parts, 0 to 100 in total:
 * the observable acceptance criteria (those rule ``C1`` does not question): none 25, one or
   two 15, three to five 5;
 * the requirements: none 25, one to four 15, five to fourteen 5;
-* the entities, distinct concrete anchors in the intent and the requirements (numbers, quoted
-  text, code identifiers, paths and file names): under three 15, under eight 8.
+* the entities, distinct concrete anchors in the intent, the requirements and the criteria
+  (numbers, quoted text, code identifiers, paths and file names): under three 15, under eight 8.
 
-A score of 90 or more is ``very-poor``, 60 or more ``poor``, 30 or more ``partial``, anything
-else ``detailed``. The plan starts from the configured ``maxRounds`` and ``maxQuestions``
+A score of 90 or more is ``very-poor``, 75 or more ``poor``, 30 or more ``partial``, anything
+else ``detailed``. A task with a precise criterion (one with an anchor, as rule ``T1`` reads
+it) is at most ``partial``: its criterion already bounds it. The plan starts from the configured ``maxRounds`` and ``maxQuestions``
 (defaults 3 and 8): ``very-poor`` adds three rounds and four questions per round, ``poor`` one
 round and two questions, ``partial`` and ``detailed`` keep the configured values. The plan never
 goes over ``MAX_ROUNDS`` rounds and ``MAX_QUESTIONS`` questions per round (or the configured
@@ -255,7 +256,13 @@ class DepthPlan:
 
 
 def _entities(task: Task) -> int:
-    text = "\n".join([task.intent, *(item.text for item in task.requirements)])
+    text = "\n".join(
+        [
+            task.intent,
+            *(item.text for item in task.requirements),
+            *(item.text for item in task.acceptance_criteria),
+        ]
+    )
     found: set[str] = set()
     for pattern in _ANCHORS:
         found.update(match.group().lower() for match in pattern.finditer(text))
@@ -272,7 +279,7 @@ def _points(value: int, steps: tuple[tuple[int, int], ...]) -> int:
 def _level(score: int) -> DepthLevel:
     if score >= 90:
         return "very-poor"
-    if score >= 60:
+    if score >= 75:
         return "poor"
     if score >= 30:
         return "partial"
@@ -283,7 +290,7 @@ def poverty(task: Task) -> Poverty:
     """The measure of a task as it stands (see the module). Criteria are read with the Spanish
     vocabularies, which include the English ones, so the measure does not depend on
     ``intake.language``."""
-    from .clarification import no_observable_result
+    from .clarification import _has_anchor, _lexicon, _statement, no_observable_result
 
     words = len(task.intent.split())
     criteria = sum(
@@ -299,7 +306,15 @@ def poverty(task: Task) -> Poverty:
         + _points(requirements, ((1, 25), (5, 15), (15, 5)))
         + _points(entities, ((3, 15), (8, 8)))
     )
-    return Poverty(words, criteria, requirements, entities, score, _level(score))
+    level = _level(score)
+    lexicon = _lexicon("es")
+    if level in ("very-poor", "poor") and any(
+        _has_anchor(_statement(criterion), lexicon) for criterion in task.acceptance_criteria
+    ):
+        # A precise criterion (a number, a quoted value, a code identifier or a result verb)
+        # already bounds the task, as rule T1 holds: it is never asked the basics.
+        level = "partial"
+    return Poverty(words, criteria, requirements, entities, score, level)
 
 
 def frozen_level(task: Task) -> tuple[DepthLevel, int] | None:
