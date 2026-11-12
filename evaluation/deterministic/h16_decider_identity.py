@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""H16: identity and non-repudiation of whoever decides, by the CLI and by the local API,
+"""H16: identity and declared attribution of whoever decides, by the CLI and by the local API,
 ``CATALOGO.md`` §2.2 and ``PREREGISTRO.md`` (third freeze). No model is called.
 
 Twenty-five decision attempts (19 undue, 6 legitimate) on runs of the sample project waiting at
@@ -636,7 +636,7 @@ def summarize(records: list[dict[str, Any]]) -> dict[str, Any]:
     legit = [a for a in attempts if a["legitimate"]]
     summary: dict[str, Any] = {
         "suite": "H16",
-        "title": "identity and non-repudiation of whoever decides (CLI and API)",
+        "title": "identity and declared attribution of whoever decides (CLI and API)",
         "simulatedPerson": "the deciding people are simulated by the script (declared)",
         "attempts": {
             a["attempt"]: {
@@ -702,7 +702,7 @@ if __name__ == "__main__":
         main(
             doc=__doc__ or "",
             suite_id="H16",
-            title="identity and non-repudiation of whoever decides",
+            title="identity and declared attribution of whoever decides",
             stem="h16-decider-identity",
             cases=SCENARIOS,
             conditions_of=conditions_of,
