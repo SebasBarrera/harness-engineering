@@ -62,6 +62,11 @@ __all__ = [
     "run_harness",
 ]
 
+RUN_START_FAILED = "apparatus-run-start-failed"
+"""``invalid`` of a governed run whose ``harness run start`` printed no execution (amendment of
+2026-11-12): the record keeps the exit code and the trimmed stderr, goes to ``<out>.invalid.jsonl``
+and the runner exits with ``MEASUREMENT_FAILED_EXIT_CODE`` (no rerun)."""
+STDERR_CHARS = 2000
 # Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
 MAX_CLARIFY_ROUNDS = 3
 # Set by the clarify condition only: agent calls resume after a usage limit or a failure of the machine,
@@ -262,7 +267,25 @@ def run_harness(
         "--provider",
         "simulated" if provider == "simulated" else agent,
     )
-    run_id = json.loads(started.stdout)["executionId"]
+    try:
+        run_id = json.loads(started.stdout)["executionId"]
+    except (ValueError, KeyError, TypeError):
+        # The run never started: no run to drive or measure. The record keeps the exit code and the
+        # trimmed stderr and goes to <out>.invalid.jsonl (an apparatus failure, never dropped).
+        return {
+            "runId": None,
+            "outcome": f"run-start-failed-exit-{started.returncode}",
+            "delivered": False,
+            "corrections": 0,
+            "gateHistory": [],
+            "invalid": RUN_START_FAILED,
+            "runStartError": {
+                "exitCode": started.returncode,
+                "stderr": started.stderr[-STDERR_CHARS:],
+                "stdout": started.stdout[-STDERR_CHARS:],
+            },
+            "commands": events,
+        }
     person = SimulatedPerson(
         tracked,
         workspace,
@@ -621,9 +644,11 @@ def main() -> int:
                 claude_bin=claude_bin,
             )
         run_id = result.pop("_runId", None)
-        if condition == "harness-core":
+        if result.get("invalid"):
+            record["invalid"] = result["invalid"]
+        if condition == "harness-core" and not result.get("invalid"):
             result["coreCheck"] = conditions.check_core(workspace, harness, args.core_reference_src)
-        if condition != "clarify":
+        if condition != "clarify" and not result.get("invalid"):
             result["grantCheck"] = conditions.check_grant(workspace, harness)
         record["harness"] = result
         record["productOwner"] = owner.rounds if owner else []
@@ -671,7 +696,10 @@ def main() -> int:
         "productOwnerSeconds": record["productOwnerCalls"]["wallSeconds"],
     }
     record.pop("_run", None)
-    if record.get("quarantine") and record["quarantine"].get("patchRef"):
+    if record.get("invalid") == RUN_START_FAILED:
+        # No run: nothing the agent did can be measured (and the agent was never called).
+        record["measures"] = {"measuredOn": None, "skipped": RUN_START_FAILED, "hidden": None}
+    elif record.get("quarantine") and record["quarantine"].get("patchRef"):
         record["measures"] = measure_quarantine(
             args.scenario,
             workspace,
