@@ -234,5 +234,5 @@ def test_api_review_and_dashboard_request_changes(python_workspace: Path, tmp_pa
             "rationale": "Cover the value below the threshold",
         },
     )
-    assert decided.status_code == 200
-    assert decided.json()["decision"]["decision"] == "REQUEST_CHANGES"
+    # F13: the API records no decision without authentication.
+    assert decided.status_code == 403

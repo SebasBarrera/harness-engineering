@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from governed_harness.api import create_app
+from governed_harness.domain.enums import DecisionKind
 
 # harness init writes governance.trustedHosts: the API answers loopback host names only.
 LOCAL = "http://127.0.0.1"
@@ -75,7 +76,9 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
     assert refused.status_code == 403
     assert "agent" in refused.json()["detail"]
 
-    decision = client.post(
+    # F13: without the api section a person's id is no proof either; the decision is recorded
+    # with harness gate decide or an authenticated API (tests/integration/test_api_auth.py).
+    unauthenticated = client.post(
         f"/api/runs/{pending.execution_id}/decision",
         json={
             "decision": "APPROVE",
@@ -85,8 +88,17 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
             "continue_after": True,
         },
     )
-    assert decision.status_code == 200
-    assert decision.json()["execution"]["status"] == "PASSED"
+    assert unauthenticated.status_code == 403
+    assert "without authentication" in unauthenticated.json()["detail"]
+    _decision, execution = application.decide_gate(
+        python_workspace,
+        execution_id=pending.execution_id,
+        decision=DecisionKind.APPROVE,
+        change_set_digest=pending.change_set_digest,
+        actor_id="human.api-test",
+        rationale="API evidence reviewed",
+    )
+    assert execution.status.value == "PASSED"
     retrospective = client.get(f"/api/runs/{pending.execution_id}/retrospective")
     assert retrospective.status_code == 200
     assert retrospective.json()["executionId"] == pending.execution_id
