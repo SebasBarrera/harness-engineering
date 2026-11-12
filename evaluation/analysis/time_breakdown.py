@@ -189,12 +189,17 @@ def analyze(jsonl: Path, runs_dir: Path | None = None) -> list[dict[str, Any]]:
     return out
 
 
+INTRO = (
+    "Tiempo propio = duración del comando menos el tiempo de las llamadas al agente de su tramo. "
+    "Las cifras salen de `harness.commands` y `agentCalls` del registro de cada corrida."
+)
+
+
 def render_markdown(results: list[dict[str, Any]]) -> str:
     lines = [
         "# Desglose del tiempo propio del harness",
         "",
-        "Tiempo propio = duración del comando menos el tiempo de las llamadas al agente de su tramo. "
-        "Las cifras salen de `harness.commands` y `agentCalls` del registro de cada corrida.",
+        INTRO,
         "",
         "| Corrida | "
         + " | ".join(f"{TRAMO_LABELS[t]} (s)" for t in TRAMOS)

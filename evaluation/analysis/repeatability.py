@@ -27,6 +27,11 @@ METRICS = (
     ("outOfScopeFiles", "Archivos fuera de alcance"),
     ("changedLines", "Líneas cambiadas"),
 )
+INTRO = (
+    "Mínimo / máximo (rango) entre las repeticiones de cada celda "
+    "(escenario x prompt x condición x modelo). Las corridas rechazadas o inválidas no "
+    "entran al rango y se cuentan aparte."
+)
 CELL_KEYS = ("scenario", "prompt", "condition", "model")
 
 
@@ -122,9 +127,7 @@ def render_markdown(result: dict[str, Any]) -> str:
     lines = [
         "# Repetibilidad por celda",
         "",
-        "Mínimo / máximo (rango) entre las repeticiones de cada celda "
-        "(escenario x prompt x condición x modelo). Las corridas rechazadas o inválidas no "
-        "entran al rango y se cuentan aparte.",
+        INTRO,
         "",
         f"Registros leídos: {result['records']}. Excluidas: {result['excluded']['rejected']} "
         f"rechazadas, {result['excluded']['invalid']} inválidas.",
