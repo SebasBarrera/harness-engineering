@@ -25,7 +25,15 @@ FLOWS = [
     ("full", "baseline"),
     ("full", "harness"),
 ]
-GOVERNED = ("harness", "harness-core", "harness-anchored", "harness-tiered", "clarify")
+GOVERNED = (
+    "harness",
+    "harness-core",
+    "harness-nopo",
+    "harness-nopanel",
+    "harness-anchored",
+    "harness-tiered",
+    "clarify",
+)
 FLOWS_V2 = [
     (prompt, condition)
     for prompt in ("casual", "poor", "full")
@@ -34,6 +42,8 @@ FLOWS_V2 = [
         "direct-po",  # the separate exploratory test (amendment of 2026-11-12)
         "harness-core",
         "harness",
+        "harness-nopo",  # test T1: harness without product owner
+        "harness-nopanel",  # test T6: harness without the review panel
         "harness-anchored",
         "harness-tiered",
     )

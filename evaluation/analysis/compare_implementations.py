@@ -72,9 +72,14 @@ sys.path.insert(0, str(HERE))
 import practices  # noqa: E402
 
 SCHEMA = "compare-implementations/1"
+# Every ``harness-*`` name before ``harness``: the alternation of RUN_NAME takes the first that
+# matches, so a shorter prefix first would read ``harness-nopanel`` as ``harness`` with
+# the model ``nopanel-...``).
 CONDITIONS = (
     "harness-anchored",
+    "harness-nopanel",
     "harness-core",
+    "harness-nopo",
     "harness",
     "direct-po",
     "direct",
@@ -1848,6 +1853,8 @@ CONDITION_ORDER = [
     "direct-po",
     "harness-core",
     "harness",
+    "harness-nopo",
+    "harness-nopanel",
     "harness-anchored",
     "clarify",
 ]

@@ -7,6 +7,10 @@ see ``conditions.py`` for the exact configuration of each):
 * ``direct`` (``baseline`` in the 0.9.0 records): Claude Code alone on the prepared repository;
 * ``harness-core``: the harness with the 1.0.0 configuration (no key added after 1.0.0);
 * ``harness``: the harness as ``harness init`` configures it, routing fixed to the cell's model;
+* ``harness-nopo``: the configuration of ``harness`` with a person who has no product knowledge
+  (``NoProductOwner``: every question is answered "decide yourself"; test T1, condition 3);
+  ``--condition harness --no-product-owner`` is recorded as this condition;
+* ``harness-nopanel``: the configuration of ``harness`` with ``review.panel.mode: off`` (test T6);
 * ``harness-anchored``: the same with the routing ``harness init`` writes (``anchored``, wave 9
   #85), anchored at the cell's model: the router picks the model and effort of every call, never
   above the invoking model;
@@ -57,6 +61,7 @@ __all__ = [
     "MAX_CLARIFY_ROUNDS",
     "MAX_CORRECTIONS",
     "configure_provider",
+    "effective_condition",
     "git",
     "harness",
     "harness_json",
@@ -105,6 +110,7 @@ CONDITION_CHOICES = [
     "direct-po",
     "harness-core",
     "harness",
+    "harness-nopo",
     "harness-nopanel",
     "harness-anchored",
     "clarify",
@@ -185,6 +191,17 @@ def harness(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def harness_json(workspace: Path, *args: str) -> Any:
     proc = harness(workspace, *args)
     return json.loads(proc.stdout)
+
+
+def effective_condition(condition: str, no_product_owner: bool = False) -> str:
+    """The condition a run is recorded under: ``baseline`` is the 0.9.0 name of ``direct``, and
+    ``harness`` without product owner is ``harness-nopo``, so its runs (directory name, record and
+    every cell key of the reports) never share a cell with ``harness`` with the product owner."""
+    if condition == "baseline":
+        return "direct"
+    if condition == "harness" and no_product_owner:
+        return "harness-nopo"
+    return condition
 
 
 def run_key(execution_id: str | None, run_dir: Path) -> str | None:
@@ -607,7 +624,9 @@ def main() -> int:
     parser.add_argument(
         "--no-product-owner",
         action="store_true",
-        help="governed conditions: no simulated product owner (task questions stop the run)",
+        help="governed conditions: the simulated person has no product knowledge and answers every "
+        "clarification question 'decide yourself' (NoProductOwner); the harness records assumptions. "
+        "With --condition harness the run is recorded as harness-nopo",
     )
     parser.add_argument(
         "--po-model",
@@ -616,7 +635,8 @@ def main() -> int:
         f"(default {DEFAULT_PO_MODEL}; amendment of 2026-11-11)",
     )
     args = parser.parse_args()
-    condition = "direct" if args.condition == "baseline" else args.condition
+    condition = effective_condition(args.condition, args.no_product_owner)
+    no_product_owner = condition in conditions.NO_PRODUCT_OWNER or args.no_product_owner
     if args.provider == "simulated" and not args.dry_run:
         parser.error("--provider simulated is a dry run: add --dry-run")
     claude_bin = None
@@ -662,9 +682,7 @@ def main() -> int:
         "prompt": args.prompt,
         "effort": args.effort or None,
         "rep": args.rep,
-        "productOwnerModel": None
-        if condition == "direct" or args.no_product_owner
-        else args.po_model,
+        "productOwnerModel": None if condition == "direct" or no_product_owner else args.po_model,
         "dryRun": args.dry_run,
         "provider": args.provider if condition not in DIRECT_CONDITIONS else None,
         "startedAt": datetime.now(UTC).isoformat(timespec="seconds"),
@@ -699,7 +717,7 @@ def main() -> int:
             if casual_prompt is not None
             else task_file
         )
-        if args.no_product_owner:
+        if no_product_owner:
             # Tests T1 and T6: no product knowledge; every question is answered "decide yourself"
             # and the harness records assumptions (the run does not stop in INTENT).
             owner = NoProductOwner()
