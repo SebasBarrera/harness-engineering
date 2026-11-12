@@ -192,10 +192,16 @@ class LocalArtifactStore:
 
     @staticmethod
     def _atomic_write(path: Path, data: bytes) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        if path.exists():
-            return
-        descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if path.exists():
+                return
+            descriptor, temporary_name = tempfile.mkstemp(
+                prefix=f".{path.name}.", dir=path.parent
+            )
+        except OSError as error:
+            _raise_if_path_too_long(path, error)
+            raise
         temporary = Path(temporary_name)
         try:
             # Wrap the descriptor first so that it is always closed. mkstemp already creates the
@@ -215,6 +221,65 @@ class LocalArtifactStore:
                     temporary.unlink(missing_ok=True)
         finally:
             temporary.unlink(missing_ok=True)
+
+
+WINDOWS_MAX_PATH = 260
+"""The Windows path limit (``MAX_PATH``, the final NUL included) without long path support."""
+
+ARTIFACT_PATH_HEADROOM = 90
+"""Characters an artifact file adds to the store directory: ``\\blobs\\sha256\\ab\\.`` plus
+62 hex digits and the temporary suffix, or ``\\metadata\\.`` plus 64 hex digits,
+``.json.`` and the suffix (89 at most)."""
+
+
+def windows_long_paths_enabled() -> bool:
+    """Whether Windows accepts paths over ``MAX_PATH`` (``LongPathsEnabled``); ``True``
+    elsewhere."""
+    if sys.platform != "win32":
+        return True
+    import winreg
+
+    try:
+        with winreg.OpenKey(
+            winreg.HKEY_LOCAL_MACHINE, r"SYSTEM\CurrentControlSet\Control\FileSystem"
+        ) as key:
+            value, _kind = winreg.QueryValueEx(key, "LongPathsEnabled")
+    except OSError:
+        return False
+    return bool(value)
+
+
+def artifact_path_too_long(root: Path) -> bool:
+    """Whether artifact files under ``root`` would exceed the Windows path limit."""
+    return (
+        sys.platform == "win32"
+        and len(str(root)) + ARTIFACT_PATH_HEADROOM >= WINDOWS_MAX_PATH
+        and not windows_long_paths_enabled()
+    )
+
+
+def path_too_long_message(root: Path) -> str:
+    return (
+        f"the state directory {root} is {len(str(root))} characters long: its artifact files "
+        f"need about {ARTIFACT_PATH_HEADROOM} more and Windows refuses paths of "
+        f"{WINDOWS_MAX_PATH} characters or more without long path support. Set "
+        "runtime.stateDir (or move the workspace) to a shorter path, or enable long paths "
+        "(LongPathsEnabled=1 under HKLM\\SYSTEM\\CurrentControlSet\\Control\\FileSystem)"
+    )
+
+
+def _raise_if_path_too_long(path: Path, error: OSError) -> None:
+    """A clear error instead of a raw ``FileNotFoundError`` when an artifact path exceeds
+    the Windows limit."""
+    if (
+        sys.platform == "win32"
+        and len(str(path)) + 10 >= WINDOWS_MAX_PATH
+        and not windows_long_paths_enabled()
+    ):
+        from governed_harness.domain.errors import ConfigurationError
+
+        store = next((item for item in path.parents if item.name in {"blobs", "metadata"}), path)
+        raise ConfigurationError(path_too_long_message(store.parent)) from error
 
 
 def _json_bytes(value: Any) -> bytes:
