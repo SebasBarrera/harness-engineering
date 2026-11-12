@@ -120,12 +120,41 @@ def implement_prompt(request: dict[str, Any], run_dir: Path) -> str:
     return prompt + ("\n".join(extra).strip("\n") + "\n" if extra else "")
 
 
-def previous_session(calls: Path) -> str | None:
-    """The session of the run's latest implement call (the one a correction resumes), if any."""
+def run_key(request: dict[str, Any], workspace: Path) -> dict[str, str | None]:
+    """The task and the run of a request: a correction resumes only a session of the same task
+    in the same run. One calls directory can serve several tasks (the rides super block runs 16
+    in one workspace); the run is a digest of the workspace and the task's creation time, so a
+    task created again is another run, and no machine path is recorded."""
+    import hashlib
+
+    task = request.get("task") if isinstance(request.get("task"), dict) else {}
+    task_id = task.get("task_id") or task.get("taskId")
+    created = task.get("created_at") or task.get("createdAt") or ""
+    digest = hashlib.sha256(f"{workspace.resolve()}|{task_id}|{created}".encode()).hexdigest()
+    return {"taskId": str(task_id) if task_id else None, "run": digest[:16]}
+
+
+def previous_session(
+    calls: Path, key: dict[str, str | None] | None = None
+) -> tuple[str | None, str | None]:
+    """The session a correction resumes and, when there is none to resume, why (``None`` when no
+    implement call of this task and run came before: a first call starts normally).
+
+    Only the latest implement call of the same task and run counts; it is not resumed when it
+    stopped on the turn cap (the correction starts over) or kept no session."""
     for record in reversed(agentlib.load_calls(calls)):
-        if record.get("kind") == "implement" and record.get("sessionId"):
-            return str(record["sessionId"])
-    return None
+        if record.get("kind") != "implement":
+            continue
+        if key is not None and (
+            record.get("taskId") != key["taskId"] or record.get("run") != key["run"]
+        ):
+            continue
+        if record.get("hitTurnLimit"):
+            return None, "the previous implement call stopped on the turn cap"
+        if not record.get("sessionId"):
+            return None, "the previous implement call kept no session"
+        return str(record["sessionId"]), None
+    return None, None
 
 
 def positive_int(text: str) -> int:
@@ -199,7 +228,8 @@ def main() -> int:
         model = str(routing["model"])
         effort = str(routing["effort"]) if routing.get("effort") else None
     read_only = kind in READ_ONLY_KINDS
-    previous = None if read_only else previous_session(calls)
+    key = run_key(request, workspace)
+    previous, skipped = (None, None) if read_only else previous_session(calls, key)
     prompt = call_prompt(request) if read_only else implement_prompt(request, run_dir)
     (calls / f"{stem}.request.json").write_text(json.dumps(request, indent=1), encoding="utf-8")
     (calls / f"{stem}.prompt.txt").write_text(prompt, encoding="utf-8")
@@ -263,6 +293,8 @@ def main() -> int:
             "configuredModel": args.model,
             "answerStatus": status,
             "promptChars": len(prompt),
+            **key,
+            **({"resumeSkipped": skipped} if skipped else {}),
         }
     )
     log.write_text(json.dumps(record, indent=2), encoding="utf-8")
