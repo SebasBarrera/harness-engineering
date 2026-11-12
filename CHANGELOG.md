@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.1 - 2026-11-12
 
 Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
 evaluation apparatus, the poor-prompt intake that asks more instead of refusing, and the
