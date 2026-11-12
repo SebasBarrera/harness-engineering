@@ -67,6 +67,7 @@ RUN_START_FAILED = "apparatus-run-start-failed"
 2026-11-12): the record keeps the exit code and the trimmed stderr, goes to ``<out>.invalid.jsonl``
 and the runner exits with ``MEASUREMENT_FAILED_EXIT_CODE`` (no rerun)."""
 STDERR_CHARS = 2000
+OUTCOME_FILE = "run-outcome.json"
 # Rounds of clarification answered by a clarifier (harness 1.1.0 and later, see product_owner.py).
 MAX_CLARIFY_ROUNDS = 3
 # Set by the clarify condition only: agent calls resume after a usage limit or a failure of the machine,
@@ -250,6 +251,7 @@ def run_harness(
         return {
             "runId": None,
             "outcome": f"task-refused-exit-{created.returncode}",
+            "refused": True,
             "delivered": False,
             "corrections": 0,
             "gateHistory": [],
@@ -363,6 +365,13 @@ def casual_task(task_file: Path, text: str, run_dir: Path) -> Path:
         newline="\n",
     )
     return path
+
+
+def refused_measures(outcome: str) -> dict[str, Any]:
+    """The measures of a task the harness refused at ``task create`` (amendment of 2026-11-12):
+    no agent call was made and the tree is the baseline, so there is no hidden-test score (the
+    baseline's would be reported as the run's). The run is a result, reported as refused."""
+    return {"measuredOn": None, "refused": True, "skipped": outcome, "hidden": None}
 
 
 QUARANTINE_NOT_APPLIED = "quarantine-patch-not-applied"
@@ -646,6 +655,8 @@ def main() -> int:
         run_id = result.pop("_runId", None)
         if result.get("invalid"):
             record["invalid"] = result["invalid"]
+        if result.get("refused"):
+            record["refused"] = result["outcome"]
         if condition == "harness-core" and not result.get("invalid"):
             result["coreCheck"] = conditions.check_core(workspace, harness, args.core_reference_src)
         if condition != "clarify" and not result.get("invalid"):
@@ -696,7 +707,9 @@ def main() -> int:
         "productOwnerSeconds": record["productOwnerCalls"]["wallSeconds"],
     }
     record.pop("_run", None)
-    if record.get("invalid") == RUN_START_FAILED:
+    if record.get("refused"):
+        record["measures"] = refused_measures(record["refused"])
+    elif record.get("invalid") == RUN_START_FAILED:
         # No run: nothing the agent did can be measured (and the agent was never called).
         record["measures"] = {"measuredOn": None, "skipped": RUN_START_FAILED, "hidden": None}
     elif record.get("quarantine") and record["quarantine"].get("patchRef"):
@@ -725,6 +738,18 @@ def main() -> int:
     else:
         record["measures"] = measure(args.scenario, workspace, baseline, run_dir, args.cache, HERE)
         record["measures"]["measuredOn"] = "workspace"
+    # Read by analysis/compare_implementations.py: a refused or never started run has nothing to
+    # compare (its tree is the baseline).
+    (run_dir / OUTCOME_FILE).write_text(
+        json.dumps(
+            {
+                "outcome": (record.get("harness") or {}).get("outcome", "direct"),
+                "refused": record.get("refused"),
+                "invalid": record.get("invalid"),
+            }
+        ),
+        encoding="utf-8",
+    )
     args.out.parent.mkdir(parents=True, exist_ok=True)
     out = (
         args.out.with_name(args.out.stem + ".invalid.jsonl") if record.get("invalid") else args.out

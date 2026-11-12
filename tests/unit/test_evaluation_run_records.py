@@ -10,6 +10,8 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
+
 import pytest
 
 EVALUATION = Path(__file__).resolve().parents[2] / "evaluation"
@@ -48,3 +50,69 @@ def test_a_failed_run_start_is_an_invalid_record(
     assert result["runStartError"]["exitCode"] == 4
     assert "path too long" in result["runStartError"]["stderr"]
     assert [c["command"] for c in result["commands"]] == [["task", "create"], ["run", "start"]]
+
+
+def test_a_refused_task_is_marked_refused(workspace: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(run_eval, "harness", lambda ws, *args: _proc(2, "", "no criteria"))
+    result = run_eval.run_harness(
+        workspace, workspace.parent, Path("task.yaml"), "m", condition="harness-core"
+    )
+    assert result["outcome"] == "task-refused-exit-2"
+    assert result["refused"] is True
+    assert "invalid" not in result
+
+
+def test_refused_measures_have_no_hidden_score() -> None:
+    measures: dict[str, Any] = run_eval.refused_measures("task-refused-exit-2")
+    assert measures["hidden"] is None
+    assert measures["refused"] is True
+    assert measures["measuredOn"] is None
+
+
+def _record(condition: str, outcome: str, passed: int, **extra: Any) -> dict[str, Any]:
+    change = {"addedLines": 0, "testFiles": 0, "outOfScopeFiles": 0, "paths": []}
+    hidden = {"passed": passed, "tests": 24, "failures": 0, "errors": 0}
+    return {
+        "scenario": "brownfield",
+        "condition": condition,
+        "model": "m",
+        "prompt": "casual",
+        "rep": 1,
+        "wallSeconds": 1.0,
+        "harness": {"outcome": outcome, "delivered": outcome == "approved"},
+        "measures": {"hidden": hidden, "change": change},
+        "agent": {
+            k: 0
+            for k in (
+                "calls",
+                "costUsd",
+                "outputTokens",
+                "inputTokens",
+                "cacheReadTokens",
+                "cacheCreationTokens",
+                "errors",
+                "permissionDenials",
+                "wallSeconds",
+            )
+        },
+        **extra,
+    }
+
+
+def test_reports_show_a_refused_cell_as_refused() -> None:
+    import report
+    import report_prompts
+
+    old = _record("harness-core", "task-refused-exit-2", 18)  # written before 2026-11-12
+    new = _record("harness-core", "task-refused-exit-2", 0, refused="task-refused-exit-2")
+    new["measures"] = run_eval.refused_measures("task-refused-exit-2")
+    cell = report.summarize_cell_v2([old, new])
+    assert cell["refused"] == 2
+    assert cell["measured"] == 0
+    assert [row["hidden"] for row in cell["perRun"]] == ["rechazada", "rechazada"]
+    assert cell["hiddenRatio"]["n"] == 0
+    assert cell["harness"]["outcomes"] == {"task-refused-exit-2": 2}
+    summary = report_prompts.summarize([old, new])
+    assert summary["refused"] == 2
+    assert summary["deliveredDefective"] == 0
+    assert summary["blockedDefective"] == 0

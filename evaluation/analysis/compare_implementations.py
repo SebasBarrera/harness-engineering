@@ -1083,6 +1083,21 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
     meta = run_metadata(run_dir)
     if meta is None:
         raise ValueError(f"not a run directory: {run_dir.name}")
+    outcome = run_outcome(run_dir)
+    if outcome.get("refused") or outcome.get("invalid") == "apparatus-run-start-failed":
+        # Nothing ran: the tree is the baseline, so no metric of it is the run's (2026-11-12).
+        status = "rechazada" if outcome.get("refused") else "no iniciada (aparato)"
+        return {
+            "schema": SCHEMA,
+            "run": {
+                **meta,
+                "id": run_id(meta),
+                "measuredOn": None,
+                "status": status,
+                "outcome": outcome.get("outcome"),
+            },
+            "notMeasured": True,
+        }
     baseline = baseline_commit(run_dir / "ws")
     if baseline is None:
         raise ValueError(f"no baseline commit in {run_dir.name}")
@@ -1149,6 +1164,19 @@ def _analyze_run(run_dir: Path, static: bool, tmp: Path) -> dict[str, Any]:
     return out
 
 
+def run_outcome(run_dir: Path) -> dict[str, Any]:
+    """``run-outcome.json`` written by ``run_eval.py`` (outcome, refused, invalid); empty for a
+    run directory written before 2026-11-12."""
+    path = run_dir / "run-outcome.json"
+    if not path.is_file():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except ValueError:
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def run_id(meta: dict[str, Any]) -> str:
     return f"{meta['scenario']}-{meta['prompt']}-{meta['condition']}-{meta['model']}-r{meta['rep']}"
 
@@ -1166,6 +1194,7 @@ def _secrets_outside_tests(record: dict[str, Any]) -> Any:
 # (label, getter, polarity): +1 more is better, -1 less is better, 0 no direction is claimed.
 Row = tuple[str, Callable[[dict[str, Any]], Any], int]
 ROWS: list[Row] = [
+    ("Estado de la corrida", lambda r: _get(r, "run.status") or "medida", 0),
     ("Pruebas ocultas pasadas", lambda r: _get(r, "requirements.hidden.passed"), 1),
     ("Pruebas ocultas (total)", lambda r: _get(r, "requirements.hidden.tests"), 0),
     (
@@ -1471,6 +1500,8 @@ def _table(runs: list[dict[str, Any]], rows: list[Row]) -> list[str]:
 
 
 def _excerpt(record: dict[str, Any]) -> list[str]:
+    if record.get("notMeasured"):
+        return [f"`{record['run']['condition']}`: {record['run']['status']}, sin cambios.", ""]
     code = record.get("code") or {}
     if not code.get("text"):
         return [f"`{record['run']['condition']}`: sin cambios en archivos fuente.", ""]
@@ -1535,8 +1566,16 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
         for other in runs:
             if direct is None or other is direct:
                 continue
-            lines, tally = differences(direct, other, ROWS + PRACTICE_ROWS)
             name = other["run"]["condition"]
+            if other.get("notMeasured"):
+                out += [
+                    f"**`{name}` frente a `direct`**: {other['run']['status']} "
+                    f"(`{other['run'].get('outcome')}`), sin llamadas al agente; no se mide ni se "
+                    "compara (su árbol es la línea base).",
+                    "",
+                ]
+                continue
+            lines, tally = differences(direct, other, ROWS + PRACTICE_ROWS)
             out += [
                 f"**`{name}` frente a `direct`**: {tally[name]} métricas a favor de `{name}`, "
                 f"{tally['direct']} a favor de `direct`, {tally['neutral']} distintas sin dirección "
@@ -1599,7 +1638,8 @@ def main(argv: list[str] | None = None) -> int:
             text + "\n", encoding="utf-8", newline="\n"
         )
         records.append(json.loads(text))
-        print(json.dumps({"run": record["run"]["id"], "files": record["change"]["files"]}))
+        files = (record.get("change") or {}).get("files")
+        print(json.dumps({"run": record["run"]["id"], "files": files}))
     markdown = comparison_markdown(records, skipped)
     (args.out / "comparison.md").write_text(markdown, encoding="utf-8", newline="\n")
     return 0

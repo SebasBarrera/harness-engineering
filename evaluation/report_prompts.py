@@ -69,11 +69,20 @@ def has_tests(r: dict[str, Any]) -> bool:
     )
 
 
-def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def refused(r: dict[str, Any]) -> bool:
+    """A task refused at ``task create``: listed as refused, never scored (amendment of
+    2026-11-12; earlier records carry only the outcome)."""
+    outcome = str((r.get("harness") or {}).get("outcome") or "")
+    return bool(r.get("refused")) or outcome.startswith("task-refused")
+
+
+def summarize(all_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    rows = [r for r in all_rows if not refused(r)]
     d = [r for r in rows if delivered(r)]
     nd = [r for r in rows if not delivered(r)]
     return {
-        "runs": len(rows),
+        "runs": len(all_rows),
+        "refused": len(all_rows) - len(rows),
         "delivered": len(d),
         "deliveredDefective": sum(not correct(r) for r in d),
         "deliveredWithoutTests": sum(not has_tests(r) for r in d),
@@ -92,7 +101,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         )
         if any(r["agent"]["costUsd"] is not None for r in rows)
         else None,
-        "totalSecondsMedian": statistics.median([r["wallSeconds"] for r in rows]),
+        "totalSecondsMedian": statistics.median([r["wallSeconds"] for r in rows]) if rows else None,
     }
 
 

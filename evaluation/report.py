@@ -332,6 +332,13 @@ def delivered_v2(r: dict[str, Any]) -> bool:
     )
 
 
+def refused(r: dict[str, Any]) -> bool:
+    """A task the harness refused at ``task create`` (no agent call; amendment of 2026-11-12).
+    Records written before that amendment carry only the outcome and the baseline's score."""
+    outcome = str((r.get("harness") or {}).get("outcome") or "")
+    return bool(r.get("refused")) or outcome.startswith("task-refused")
+
+
 def hidden_ok(r: dict[str, Any]) -> bool:
     h = r["measures"]["hidden"]
     return bool(h["tests"]) and h["passed"] == h["tests"]
@@ -349,7 +356,7 @@ def run_row(r: dict[str, Any]) -> dict[str, Any]:
         "rep": r["rep"],
         "outcome": h.get("outcome", "direct"),
         "delivered": delivered_v2(r),
-        "hidden": f"{hidden['passed']}/{hidden['tests']}",
+        "hidden": "rechazada" if refused(r) else f"{hidden['passed']}/{hidden['tests']}",
         "measuredOn": r["measures"].get("measuredOn", "workspace"),
         "calls": r["agent"]["calls"],
         "costUsd": r["agent"]["costUsd"],
@@ -360,11 +367,17 @@ def run_row(r: dict[str, Any]) -> dict[str, Any]:
 
 
 def summarize_cell_v2(runs: list[dict[str, Any]]) -> dict[str, Any]:
+    """One cell. A refused run is listed and counted (``refused``) but has no measures: every
+    aggregate of the tree (hidden tests, change, coverage, static findings) leaves it out."""
+    all_runs = runs
+    runs = [r for r in all_runs if not refused(r)]
     m = [r["measures"] for r in runs]
-    governed = [r for r in runs if r["condition"] in GOVERNED_V2]
+    governed = [r for r in all_runs if r["condition"] in GOVERNED_V2]
     cell: dict[str, Any] = {
-        "runs": len(runs),
-        "perRun": [run_row(r) for r in sorted(runs, key=lambda x: x["rep"])],
+        "runs": len(all_runs),
+        "refused": len(all_runs) - len(runs),
+        "measured": len(runs),
+        "perRun": [run_row(r) for r in sorted(all_runs, key=lambda x: x["rep"])],
         "delivered": sum(1 for r in runs if delivered_v2(r)),
         "deliveredDefective": sum(1 for r in runs if delivered_v2(r) and not hidden_ok(r)),
         "notDeliveredCorrect": sum(1 for r in runs if not delivered_v2(r) and hidden_ok(r)),

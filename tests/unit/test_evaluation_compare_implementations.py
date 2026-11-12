@@ -413,3 +413,21 @@ def test_static_quality_counts_only_what_the_change_added(runs: Path) -> None:
     assert static["ruff"]["newByRule"].get("F401") == 1  # the unused ``import os``
     assert static["ruff"]["newByKind"].get("source", 0) >= 1
     assert static["ruff"]["new"] == sum(static["ruff"]["newByRule"].values())
+
+
+def test_a_refused_run_is_listed_as_refused_and_not_measured(runs: Path) -> None:
+    refused = runs / "toy-harness-core-model-x-r1-20261111T000200Z"
+    workspace(refused, None)
+    (refused / "run-outcome.json").write_text(
+        json.dumps({"outcome": "task-refused-exit-2", "refused": True, "invalid": None}),
+        encoding="utf-8",
+    )
+    found, _ = cmp.discover([runs])
+    records = [cmp.analyze_run(path, static=False) for path in found]
+    record = next(r for r in records if r["run"]["condition"] == "harness-core")
+    assert record["notMeasured"] is True
+    assert record["run"]["status"] == "rechazada"
+    assert "requirements" not in record
+    markdown = cmp.comparison_markdown(records, [])
+    assert "**`harness-core` frente a `direct`**: rechazada (`task-refused-exit-2`)" in markdown
+    assert "| Estado de la corrida | medida | rechazada | medida |" in markdown
