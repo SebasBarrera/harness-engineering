@@ -7,7 +7,11 @@ digest, cuándo, por qué, qué riesgos, quién cambió qué, con qué configura
 y con qué salida, qué requisito cubre cada prueba, qué se preguntó y qué se respondió). Tres son
 de las que la condición directa responde mejor: autor, mensaje y fecha del commit.
 
-* ``harness``: responde solo desde el bundle de evidencia (``harness export --bundle``).
+* ``harness``: responde solo desde el bundle de evidencia (``harness export --bundle``). Q11 y Q12
+  salen del evento ``delivery.commit.created``: ``author`` y ``message`` o, si no hay, ``subject``;
+  el harness los guarda cuando el proyecto tiene ``delivery.recordCommitAuthor: true`` (lo escribe
+  ``harness init``). Un bundle anterior no los trae y esas dos preguntas quedan sin respuesta; Q13
+  sale de ``occurredAt`` del evento.
 * ``direct``: responde desde ``git log`` del workspace y desde el texto final del agente guardado
   en el registro (``agent-calls/*.json``, campo ``resultText``); nada más.
 
@@ -245,11 +249,13 @@ def from_bundle(path: Path) -> dict[str, dict[str, Any]]:
     results["Q11"] = (
         answer(commit["author"], "evento delivery.commit.created")
         if commit.get("author")
-        else missing("el bundle no guarda el autor del commit")
+        else missing(
+            "el bundle no guarda el autor del commit (bundle anterior a recordCommitAuthor)"
+        )
     )
     results["Q12"] = (
-        answer(commit["message"], "evento delivery.commit.created")
-        if commit.get("message")
+        answer(message, "evento delivery.commit.created")
+        if (message := commit.get("message") or commit.get("subject"))
         else missing("el bundle no guarda el mensaje del commit")
     )
     results["Q13"] = (

@@ -23,7 +23,7 @@ OUT_HASH = "b" * 64
 META_HASH = "c" * 64
 
 
-def make_bundle(path: Path) -> None:
+def make_bundle(path: Path, commit: dict[str, str] | None = None) -> None:
     events = [
         {"eventType": "phase.completed", "payload": {"phaseId": "INTENT"}},
         {
@@ -40,7 +40,7 @@ def make_bundle(path: Path) -> None:
         {
             "eventType": "delivery.commit.created",
             "occurredAt": "2026-01-02T03:05:00+00:00",
-            "payload": {"commit": "d" * 40},
+            "payload": {"commit": "d" * 40, **(commit or {})},
         },
     ]
     records = {
@@ -103,7 +103,30 @@ def test_harness_answers_the_ten_questions_from_the_bundle(tmp_path: Path) -> No
     assert by_id["Q01"]["answer"]["actor"] == "human.ana"
     assert by_id["Q08"]["answer"][0]["output"] == "1 passed in 0.1s"
     assert by_id["Q06"]["answer"]["producers"] == ["fixture"]
-    # El bundle no guarda autor ni mensaje del commit; la fecha sale de la hora del evento.
+    # Un bundle sin author ni subject no los responde; la fecha sale de la hora del evento.
+    assert not by_id["Q11"]["answerable"] and not by_id["Q12"]["answerable"]
+    assert by_id["Q13"]["answerable"]
+
+
+def test_a_bundle_with_author_and_subject_answers_q11_to_q13(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle.tar.gz"
+    make_bundle(bundle, {"author": "Ana <ana@example.invalid>", "subject": "feat: a"})
+    result = aq.build("harness", aq.from_bundle(bundle))
+    by_id = {q["id"]: q for q in result["questions"]}
+    assert by_id["Q11"]["answer"] == "Ana <ana@example.invalid>"
+    assert by_id["Q12"]["answer"] == "feat: a"
+    assert by_id["Q13"]["answer"] == "2026-01-02T03:05:00+00:00"
+    assert result["byGroup"]["commit"]["answered"] == 3
+    # ``message`` wins over ``subject`` when a bundle carries both.
+    make_bundle(bundle, {"author": "A <a@x.y>", "subject": "s", "message": "full message"})
+    again = aq.from_bundle(bundle)
+    assert again["Q12"]["answer"] == "full message"
+
+
+def test_an_old_bundle_without_those_fields_leaves_q11_and_q12_unanswered(tmp_path: Path) -> None:
+    bundle = tmp_path / "bundle.tar.gz"
+    make_bundle(bundle)
+    by_id = aq.from_bundle(bundle)
     assert not by_id["Q11"]["answerable"] and not by_id["Q12"]["answerable"]
     assert by_id["Q13"]["answerable"]
 
