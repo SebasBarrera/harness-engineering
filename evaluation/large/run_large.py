@@ -11,8 +11,9 @@ Conditions:
   direct    the agent receives the whole instruction in one invocation, without the harness;
   stepwise  (super only) the eight steps are sent one by one to the agent, without the harness;
   harness   the instruction becomes governed tasks: one task for paragraph (whose only acceptance
-            criterion is "It works.") and requirements, one task per step for super. one_line is
-            refused by the harness when the task is created, because it has no acceptance criteria.
+            criterion is "It works.") and requirements, one task per step for super. one_line has
+            no acceptance criteria: the task is stored as pending and INTENT asks for them, so it goes
+            through run_harness; a real refusal at task creation is still recorded as task-refused.
 
 The harness condition applies the decision rule of run_eval.run_harness (approve a passing gate,
 request changes up to twice, then reject). A step that is not delivered leaves its changes in the
@@ -171,10 +172,6 @@ def configure_limits(workspace: Path, model: str) -> None:
 def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, name: str) -> dict[str, Any]:
     task_file = run_dir / f"{name}.yaml"
     task_file.write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
-    if "acceptanceCriteria" not in task:  # the one-line wish: the harness refuses it at task creation
-        harness(workspace, "init", "--path", ".")
-        created = harness(workspace, "task", "create", "--path", ".", "--file", str(task_file))
-        return {"outcome": f"task-refused-exit-{created.returncode}", "delivered": False, "corrections": 0}
     original = run_eval.configure_provider
 
     def with_limits(ws: Path, m: str, agent: str = "claude", effort: str = "") -> None:
@@ -188,6 +185,8 @@ def governed(workspace: Path, run_dir: Path, task: dict[str, Any], model: str, n
         run_eval.configure_provider = original
     keep = ("outcome", "delivered", "corrections", "gateHistory", "finalStatus", "finalPhase", "eventCount",
             "eventChainValid", "validationSummary")
+    if outcome["outcome"].startswith("task-refused"):
+        return {k: outcome[k] for k in ("outcome", "delivered", "corrections", "taskCreateError")}
     result = {k: outcome[k] for k in keep}
     result["trace"] = {k: outcome["trace"][k] for k in ("present", "requiredCount")}
     result["findings"] = outcome["findings"]
