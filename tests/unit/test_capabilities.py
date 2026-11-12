@@ -82,3 +82,81 @@ def test_contained_path_rejects_escape(tmp_path: Path) -> None:
     root.mkdir()
     with pytest.raises(CapabilityDenied):
         contained_path(root, Path("../outside"))
+
+
+@pytest.mark.parametrize(
+    ("resource", "scope"),
+    [
+        (".env", "env"),
+        ("../src/x.py", "src/**"),
+        ("src/../../x.py", "src/**"),
+        ("github/w.yml", ".github/**"),
+        ("src/a/b/c.py", "src/*.py"),
+        ("scripts/tool.py", "*.py"),
+        ("/etc/passwd", "**"),
+        ("C:/Windows/x.py", "**"),
+        ("..\outside.py", "**"),
+    ],
+)
+def test_write_scope_is_a_path_glob_not_a_character_strip(resource: str, scope: str) -> None:
+    # F11: lstrip("./") removed characters, not a prefix, and fnmatch let `*` cross `/`.
+    actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.test")
+    with pytest.raises(CapabilityDenied):
+        CapabilityAuthorizer().authorize(
+            actor=actor,
+            capability="filesystem.write",
+            resource=resource,
+            grants=[grant(actor, "filesystem.write", (scope,))],
+        )
+
+
+@pytest.mark.parametrize(
+    ("resource", "scope"),
+    [
+        ("./src/a.py", "src/**"),
+        ("src", "src/**"),
+        ("src\pkg\a.py", "src/**"),
+        ("setup.py", "*.py"),
+        ("./setup.py", "./*.py"),
+        ("main.go", "**/*.go"),
+        ("cmd/app/main.go", "**/*.go"),
+        ("lib/src/Main.kt", "**/src/**"),
+        (".github/workflows/ci.yml", ".github/**"),
+        ("src/a.py", "src/*.py"),
+        ("pyproject.toml", "pyproject.toml"),
+        ("anything/at/all", "**"),
+    ],
+)
+def test_write_scope_globs_keep_their_meaning(resource: str, scope: str) -> None:
+    actor = Actor(actor_type=ActorType.AGENT, actor_id="agent.test")
+    CapabilityAuthorizer().authorize(
+        actor=actor,
+        capability="filesystem.write",
+        resource=resource,
+        grants=[grant(actor, "filesystem.write", (scope,))],
+    )
+
+
+@pytest.mark.parametrize(
+    ("argv", "scope"),
+    [
+        (("python", "-m pytest", "x"), "python -m pytest"),
+        (("python evil.py",), "python"),
+    ],
+)
+def test_command_scope_compares_whole_arguments(argv: tuple[str, ...], scope: str) -> None:
+    # A scope prefix is a sequence of arguments, not a prefix of the joined text.
+    actor = Actor(actor_type=ActorType.TOOL, actor_id="tool.test")
+    with pytest.raises(CapabilityDenied):
+        CapabilityAuthorizer().authorize_command(
+            actor=actor, argv=argv, grants=[grant(actor, "process.execute", (scope,))]
+        )
+
+
+def test_command_scope_prefix_of_arguments() -> None:
+    actor = Actor(actor_type=ActorType.TOOL, actor_id="tool.test")
+    CapabilityAuthorizer().authorize_command(
+        actor=actor,
+        argv=("python", "-m", "pytest", "-q"),
+        grants=[grant(actor, "process.execute", ("python -m pytest",))],
+    )
