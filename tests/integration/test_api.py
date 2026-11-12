@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from governed_harness.api import create_app
+from governed_harness.domain.enums import DecisionKind
 
 # harness init writes governance.trustedHosts: the API answers loopback host names only.
 LOCAL = "http://127.0.0.1"
@@ -73,9 +74,11 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
         },
     )
     assert refused.status_code == 403
-    assert "agent" in refused.json()["detail"]
+    assert "without authentication" in refused.json()["detail"]
 
-    decision = client.post(
+    # F13: without the api section a person's id is no proof either; the decision is recorded
+    # with harness gate decide or an authenticated API (tests/integration/test_api_auth.py).
+    unauthenticated = client.post(
         f"/api/runs/{pending.execution_id}/decision",
         json={
             "decision": "APPROVE",
@@ -85,8 +88,17 @@ def test_api_exposes_trace_evidence_retrospective_and_digest_bound_decision(
             "continue_after": True,
         },
     )
-    assert decision.status_code == 200
-    assert decision.json()["execution"]["status"] == "PASSED"
+    assert unauthenticated.status_code == 403
+    assert "without authentication" in unauthenticated.json()["detail"]
+    _decision, execution = application.decide_gate(
+        python_workspace,
+        execution_id=pending.execution_id,
+        decision=DecisionKind.APPROVE,
+        change_set_digest=pending.change_set_digest,
+        actor_id="human.api-test",
+        rationale="API evidence reviewed",
+    )
+    assert execution.status.value == "PASSED"
     retrospective = client.get(f"/api/runs/{pending.execution_id}/retrospective")
     assert retrospective.status_code == 200
     assert retrospective.json()["executionId"] == pending.execution_id
@@ -110,3 +122,18 @@ def test_api_without_trusted_hosts_keeps_answering_every_host(python_workspace) 
     config.write_text(text.split("governance:")[0], encoding="utf-8")
     client = TestClient(create_app(python_workspace), base_url="http://any.example")
     assert client.get("/api/runs").status_code == 200
+
+
+def test_panel_hides_the_decision_form_without_authentication(python_workspace) -> None:
+    """The dashboard is static: its script decides from /api/session. Without authentication the
+    script renders a notice and returns before the form; with ``token`` it renders the form."""
+    client = TestClient(create_app(python_workspace), base_url=LOCAL)
+    assert client.get("/api/session").json() == {"authentication": "off"}
+    page = client.get("/").text
+    guard = page.index("if(session.authentication!=='token'){")
+    notice = page.index('id="decision-disabled"')
+    form = page.index('data-decision="APPROVE"')
+    assert guard < notice < page.index("return;", notice) < form
+    assert "records none" in page
+    # With authentication the form keeps its read-only actor of the signed-in user.
+    assert 'value="${esc(session.userId)}" readonly' in page

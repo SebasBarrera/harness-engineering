@@ -17,6 +17,43 @@
   product owner once before implementing; no block runs it by default. The amendment also lists
   the deviations of the 2026-11-11 amendments and every earlier pilot and precheck attempt. Only
   the evaluation apparatus changes.
+- The web panel hides the decision form and says why when the API runs without authentication (no `api`
+  section, or `api.auth: off`), where a decision answers 403; with `api.auth: token` it is as before.
+- Security fixes from the expert review of 2.0.1. Each changes behaviour present since 0.8.0
+  (the `v0.8.0` tag is untouched; the thesis evaluates 2.0.x):
+  - **Redaction no longer corrupts code.** `generic_secret_assignment` replaced any unquoted
+    value after `token`, `password` or `secret`, so `def check(token: bytes) -> bool:` was stored
+    as `token: <REDACTED> -> bool:` in the ChangeSet diff and the quarantined patch, and the
+    quarantined contents no longer matched their digest (`run continue` refused them). An artifact
+    of media type `text/x-diff` is now redacted as code: only quoted values are replaced there.
+    Tool output and every other artifact keep the rule as it was (`password=hunter22` is still
+    redacted). The quarantined contents `run continue` puts back are stored as written
+    (`unredacted: true` in their metadata): they are the workspace's own files and must keep
+    their bytes.
+  - **Write scopes compare paths, not characters.** `lstrip("./")` removed characters, so `.env`
+    matched the scope `env`, `github/w.yml` matched `.github/**` and `../src/x.py` matched
+    `src/**`. A leading `./` is now removed as a prefix and a path with a `..` part or an
+    absolute path is in no scope; the glob stays `fnmatch` (`*` crosses `/`, so `*.py` still
+    matches `pkg/mod.py`).
+  - **Command scopes compare arguments.** `python -m pytest` no longer allows the single argument
+    `-m pytest`, and `python` no longer allows an executable named `python evil.py`; an
+    executable whose path holds spaces still matches its scope.
+  - **No command from the working directory (Windows).** A bare command name was resolved with
+    `shutil.which`, which looks in the current directory first: a `python.bat` written in the
+    workspace ran instead of Python. The name is now looked up in the absolute `PATH` entries
+    only, without the current directory and the workspace; a name found nowhere fails as a
+    missing program; the validation report records the program as `executable`.
+  - **The API records no decision without authentication.** Without an `api` section (or with
+    `api.auth: off`) `POST /api/runs/{run}/decision` accepted any human actor id from any process
+    that reached the port; it now answers 403 and names `harness gate decide`. Reads are
+    unchanged.
+- A state directory too long for Windows (without long path support, artifact paths of 260
+  characters or more) made `harness run start` die with a raw `FileNotFoundError`; it now fails
+  with a configuration error that names the limit, `runtime.stateDir` and `LongPathsEnabled`, and
+  `harness doctor` reports it on Windows as the `pathLength` check.
+- A budget crossed by the last agent call already stops the run before DECISION (#157 item 1,
+  fixed by #164; `tests/integration/test_budget.py`).
+
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`

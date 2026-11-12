@@ -88,3 +88,24 @@ def test_a_path_without_recorded_content_is_refused(tmp_path: Path) -> None:
     old["quarantinedContents"] = old["quarantinedContents"][1:]
     _planned, problems = line._plan_reapply(NO_RUN, old)
     assert problems == ["f.py: no recorded content"]
+
+
+def test_quarantined_code_is_captured_as_written_and_put_back(tmp_path: Path) -> None:
+    # F4: redacting the captured content turned `password: str` into `password: <REDACTED>`,
+    # so run continue could not put it back.
+    line, workspace, artifacts = stop_line(tmp_path)
+    code = b"def login(user: str, password: str) -> bool:\n    token = self._token\n"
+    (workspace / "f.py").write_bytes(code)
+    diff: Any = SimpleNamespace(
+        changes=(SimpleNamespace(path="f.py", after_digest=sha256_bytes(code)),)
+    )
+    entry = line._capture(SimpleNamespace(execution_id="run_1"), diff, set())["f.py"]  # type: ignore[arg-type]
+    assert artifacts.get(entry["contentRef"]) == code
+    assert artifacts.describe(entry["contentRef"]).metadata["unredacted"] is True
+    (workspace / "f.py").write_bytes(BASELINE)
+    planned, problems = line._plan_reapply(
+        NO_RUN, {"restoredPaths": ["f.py"], "quarantinedContents": [entry]}
+    )
+    assert problems == []
+    assert line._write(planned) == []
+    assert (workspace / "f.py").read_bytes() == code

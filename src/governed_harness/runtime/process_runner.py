@@ -8,8 +8,8 @@ import subprocess  # nosec B404 - the governed runner: resolved executable, no s
 import sys
 import threading
 import time
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import IO, Protocol
 
@@ -47,15 +47,65 @@ class ProcessResult:
     duration_ms: int
     stdout_truncated: bool = False
     stderr_truncated: bool = False
+    executable: str | None = None
+    """The program that was started: the absolute path a bare command name resolved to on
+    Windows, the name as written elsewhere."""
 
 
-def resolve_executable(argv0: str) -> str:
+def resolve_executable(argv0: str, *, exclude: Iterable[Path] = ()) -> str:
     """On Windows, resolve a bare command name through PATH and PATHEXT (``npm`` is
     ``npm.cmd``), which CreateProcess does not do; elsewhere return it unchanged. Authorization
-    always applies to the name as written in the command."""
+    always applies to the name as written in the command.
+
+    The search never looks in the current directory, in a relative PATH entry or in an
+    ``exclude`` directory (the workspace): ``shutil.which`` on Windows looks in the current
+    directory first, so a ``python.bat`` written by the agent in the workspace ran instead of
+    Python (F12). A name with a directory part (``./gradlew``) is taken as written. A bare name
+    found nowhere raises ``FileNotFoundError`` (what starting a missing program raises) instead
+    of letting CreateProcess search the current directory."""
     if sys.platform != "win32":
         return argv0
-    return shutil.which(argv0) or argv0
+    if os.path.dirname(argv0):
+        return shutil.which(argv0) or argv0
+    for directory in _search_path(exclude):
+        found = shutil.which(os.path.join(directory, argv0))
+        if found:
+            return found
+    raise FileNotFoundError(
+        f"{argv0} was not found on PATH (the working directory is not searched)"
+    )
+
+
+def find_executable(argv0: str) -> str | None:
+    """The program ``argv0`` starts, as :func:`resolve_executable` finds it on Windows (never
+    in the current directory) and ``shutil.which`` elsewhere; ``None`` when there is none."""
+    if sys.platform != "win32":
+        return shutil.which(argv0)
+    try:
+        found = resolve_executable(argv0)
+    except FileNotFoundError:
+        return None
+    return found if os.path.dirname(argv0) == "" or os.path.exists(found) else None
+
+
+def _search_path(exclude: Iterable[Path]) -> list[str]:
+    """The absolute PATH entries, without the current directory and the excluded ones."""
+    skipped = {_normalized(Path.cwd()), *(_normalized(item) for item in exclude)}
+    entries: list[str] = []
+    for entry in os.environ.get("PATH", "").split(os.pathsep):
+        entry = entry.strip().strip('"')
+        if not entry or not os.path.isabs(entry) or _normalized(Path(entry)) in skipped:
+            continue
+        entries.append(entry)
+    return entries
+
+
+def _normalized(path: Path) -> str:
+    try:
+        resolved = path.resolve(strict=False)
+    except OSError:
+        resolved = path
+    return os.path.normcase(str(resolved))
 
 
 _READ_CHUNK_BYTES = 65536
@@ -165,9 +215,10 @@ class SafeProcessRunner:
     ) -> ProcessResult:
         cwd = self._authorize(spec, actor, grants)
         environment = self._environment(spec, extra_env)
+        executable = resolve_executable(spec.argv[0], exclude=(self.workspace_root, cwd))
         start = time.perf_counter()
         process = subprocess.Popen(  # nosec B603 - executable resolved and checked by policy, shell=False
-            [*spec.sandbox_prefix, resolve_executable(spec.argv[0]), *spec.argv[1:]],
+            [*spec.sandbox_prefix, executable, *spec.argv[1:]],
             cwd=cwd,
             env=environment,
             stdin=subprocess.PIPE if spec.stdin is not None else subprocess.DEVNULL,
@@ -179,7 +230,7 @@ class SafeProcessRunner:
         if self.observer is not None:
             self.observer.started(process.pid, spec.argv)
         try:
-            return self._wait(process, spec, start, cancellation)
+            return replace(self._wait(process, spec, start, cancellation), executable=executable)
         except BaseException:
             if self.terminate_on_exit:
                 self._terminate(process)
