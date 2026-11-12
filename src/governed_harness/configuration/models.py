@@ -1464,6 +1464,10 @@ class DeliveryConfig(ConfigModel):
     """Push the closure commit's branch, honouring the repository's hooks (never
     ``--no-verify``); the task's contract may say otherwise."""
     pull_request: PullRequestConfig | None = Field(default=None, alias="pullRequest")
+    record_commit_author: bool | None = Field(default=None, alias="recordCommitAuthor")
+    """``delivery.commit.created`` also records the commit's ``author`` (name and email as Git
+    shows them) and ``subject``, after the redaction of secrets, so that a bundle answers who
+    wrote the commit and with what message. Absent or false: the event is as before."""
     comment: CommentPolicy | None = None
     """Comment the decision brief on the pull request: ``notClean`` (exceptions, findings,
     partial certification), ``always`` or ``never``."""

@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `delivery.recordCommitAuthor: true` (written by `harness init`): the `delivery.commit.created`
+  event, and the closure-commit record it carries, also hold the commit's `author` (`Name <email>`
+  as Git shows it) and its `subject`, after the redaction of secrets, so a bundle answers who wrote
+  the commit and with what message. Without the key the event is as before.
+
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`

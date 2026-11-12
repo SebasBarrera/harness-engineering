@@ -283,6 +283,7 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
         # only to override it, #56).
         "delivery": {
             "closureCommit": "branch",
+            "recordCommitAuthor": True,
             "stage": True,
             "push": False,
             "pullRequest": {"create": False, "draft": True},
