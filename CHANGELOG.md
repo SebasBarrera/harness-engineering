@@ -17,6 +17,51 @@
   product owner once before implementing; no block runs it by default. The amendment also lists
   the deviations of the 2026-11-11 amendments and every earlier pilot and precheck attempt. Only
   the evaluation apparatus changes.
+- The evaluation apparatus of the seventh freeze (tests T1 to T7 in
+  `evaluation/campaign/PREREGISTRO.md`, before any campaign result). Only the evaluation apparatus
+  changes.
+  - **Turn cap and resumption.** Every `implement` call of every condition runs with
+    `--max-turns 40` (`agentlib.DEFAULT_MAX_TURNS`; `EVAL_MAX_TURNS` changes it, and a value that is
+    not a positive integer aborts). A correction resumes the session of the previous `implement`
+    call only for the same task and run, and never after a call that hit the cap
+    (`resumeSkipped` records why). Each `call-N.json` records `maxTurns`, `hitTurnLimit`,
+    `resumed`, `sessionId` and the model ids the call reported (`modelIds`).
+  - **Conditions of T1 and T6.** `harness-nopo` is the configuration of `harness` with a person
+    who has no product knowledge (`NoProductOwner`: every question is answered "decide yourself"
+    and the harness records assumptions); `--condition harness --no-product-owner` is recorded as
+    `harness-nopo`, so it never shares a run name or a report cell with `harness`.
+    `harness-nopanel` is `harness` with `review.panel.mode: off`. `launchers/block-t1.sh` and
+    `launchers/block-ladder.sh` run them.
+  - **Temptations (T2).** `evaluation/temptations/` holds six tasks whose easy path is the defect,
+    each with its fixture, a Spanish prompt and a deterministic detector tested on a tempted and a
+    clean variant; `run_temptations.py` runs them through `run_eval.run_harness` and
+    `launchers/block-temptations.sh` launches the block (no smoke case yet).
+  - **Analyses.** `deterministic/audit_questionnaire.py` answers 13 fixed audit questions per run
+    (T4), from the bundle for `harness` and from `git log` and the final text for `direct`, by
+    group and never as one quotient. `analysis/repeatability.py` gives min, max and range per cell
+    (T5), with refused and invalid runs counted apart. `analysis/time_breakdown.py` splits the
+    harness's own time by leg and validator. `analysis/compare_implementations.py` counts for and
+    against only over five primary metrics (`PRIMARY`), splits the hidden tests of greenfield and
+    security into deducible without the specification or not (`HIDDEN_DEDUCIBILITY`), and records
+    what a run did before what a poor prompt left unsaid (asked, declared assumptions, invented
+    values, or not available when a direct run saved no final text).
+  - **Launch checks.** The block smoke test runs at the depth of a real cell (reserved repetition
+    99); the T1 and ladder blocks run it too. `environment.json` records the Claude Code version at
+    the start and at the end of every block and flags a block whose version changed
+    (`claudeCodeChanged`); the block is not stopped.
+  - **Records.** Each run record carries `runKey`, a short digest of the execution id plus the run
+    directory's name, to pair it with its directory (`harness.runId` stays anonymized), and
+    `harness.assumptions` (null when the task could not be read). The H16 suite calls the decider's
+    identity "declared attribution", not "non-repudiation". `large/run_large.py` lets the one-line
+    task reach INTENT instead of refusing it, and keeps a run whose `harness run start` failed in
+    `<out>.invalid.jsonl`.
+  - **Human study (T7).** `evaluation/human-study/` holds the protocol, consent, script, SUS,
+    rubric and record template of the study with people; it holds no personal data.
+- CI: two fictitious values of the tests are allowed in `.gitleaks.toml`, each scoped to its files
+  and its exact value, with no rule disabled; CodeQL does not analyze
+  `evaluation/temptations/tasks/**`, the fixtures with defects planted on purpose; the POSIX path
+  table of `harness init` and the word table of the risk terms carry the reason Bandit and
+  SonarCloud flagged them.
 - The web panel hides the decision form and says why when the API runs without authentication (no `api`
   section, or `api.auth: off`), where a decision answers 403; with `api.auth: token` it is as before.
 - Security fixes from the expert review of 2.0.1. Each changes behaviour present since 0.8.0
@@ -51,8 +96,6 @@
   characters or more) made `harness run start` die with a raw `FileNotFoundError`; it now fails
   with a configuration error that names the limit, `runtime.stateDir` and `LongPathsEnabled`, and
   `harness doctor` reports it on Windows as the `pathLength` check.
-- A budget crossed by the last agent call already stops the run before DECISION (#157 item 1,
-  fixed by #164; `tests/integration/test_budget.py`).
 - On Windows the process runner also passes `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` (when set) to
   the commands it starts, besides `HOME`. An agent provider started without `HOME` failed with
   `RuntimeError: Could not determine home directory` from `Path.home()`. POSIX is unchanged.
