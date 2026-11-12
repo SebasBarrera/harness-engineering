@@ -27,6 +27,7 @@ executable; the run records its version.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -61,6 +62,7 @@ __all__ = [
     "harness_json",
     "prepare",
     "run_harness",
+    "run_key",
 ]
 
 RUN_START_FAILED = "apparatus-run-start-failed"
@@ -183,6 +185,16 @@ def harness(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def harness_json(workspace: Path, *args: str) -> Any:
     proc = harness(workspace, *args)
     return json.loads(proc.stdout)
+
+
+def run_key(execution_id: str | None, run_dir: Path) -> str | None:
+    """A stable, non-personal key of one run: a short digest of its execution id plus the name of
+    its run directory. ``harness.runId`` is anonymized as ``"run"``; this pairs a record with its
+    directory (and with the harness state of that run) without publishing the local identifier."""
+    if not execution_id:
+        return None
+    digest = hashlib.sha256(execution_id.encode("utf-8")).hexdigest()[:10]
+    return f"{digest}-{run_dir.name}"
 
 
 def harness_version() -> str:
@@ -337,6 +349,7 @@ def run_harness(
     trace = state.get("trace") or {"present": 0, "requiredCount": 0}
     return {
         "runId": "run",  # anonymized: the local identifier is not published
+        "runKey": run_key(run_id, run_dir),
         "outcome": driven["outcome"],
         "delivered": driven["outcome"] == "approved",
         "corrections": driven["corrections"],
