@@ -3,6 +3,7 @@
 # -> harness, EVAL_LADDER_REPS repetitions (default 3), model EVAL_LADDER_MODEL (default Sonnet).
 # See common.sh for the environment. Usage: EVAL_PYTHON=... EVAL_WORK=... EVAL_CACHE=... EVAL_WHEEL=... block-ladder.sh
 source "$(dirname "$0")/common.sh"
+source "$(dirname "$0")/smoke.sh"
 keep_awake "$0" "$@"
 EVAL_OUT="${EVAL_OUT:-$EVAL_DIR/results-2.0.0/block-ladder}"
 mkdir -p "$EVAL_OUT"
@@ -11,6 +12,7 @@ take_lock block-ladder
 copy_code
 record_environment LADDER
 MODEL="${EVAL_LADDER_MODEL:-claude-sonnet-5-5}"
+EVAL_SMOKE_MODEL="$MODEL" run_smoke LADDER l0
 REPS="${EVAL_LADDER_REPS:-3}"
 log "model $MODEL ladder (direct,harness-core,harness-nopanel,harness x $REPS)"
 SLOT=$(make_slot l1)
