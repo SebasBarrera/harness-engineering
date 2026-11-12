@@ -431,3 +431,199 @@ def test_a_refused_run_is_listed_as_refused_and_not_measured(runs: Path) -> None
     markdown = cmp.comparison_markdown(records, [])
     assert "**`harness-core` frente a `direct`**: rechazada (`task-refused-exit-2`)" in markdown
     assert "| Estado de la corrida | medida | rechazada | medida |" in markdown
+
+
+# ----- A9: the five primary metrics --------------------------------------------------------
+def _pair() -> tuple[dict[str, Any], dict[str, Any]]:
+    """The harness is better on one primary metric (scope), worse on another (Ruff), and better on
+    two exploratory ones (cost, test functions)."""
+    direct = {
+        "run": {"condition": "direct"},
+        "change": {"outOfScopeFiles": 2},
+        "static": {"ruff": {"new": 0, "newByKind": {"source": 0}}},
+        "agent": {"costUsd": 0.2},
+        "tests": {"testFunctionsAdded": 1},
+    }
+    other = {
+        "run": {"condition": "harness"},
+        "change": {"outOfScopeFiles": 0},
+        "static": {"ruff": {"new": 3, "newByKind": {"source": 3}}},
+        "agent": {"costUsd": 0.1},
+        "tests": {"testFunctionsAdded": 5},
+    }
+    return direct, other
+
+
+def test_primary_is_the_five_declared_metrics_with_unchanged_directions() -> None:
+    assert [row[0] for row in cmp.PRIMARY] == list(cmp.PRIMARY_LABELS)
+    assert len(cmp.PRIMARY) == 5
+    polarity = {row[0]: row[2] for row in cmp.PRIMARY}
+    assert polarity["Archivos fuera del alcance"] == -1
+    assert polarity["Ruff: hallazgos nuevos en fuente"] == -1
+    assert polarity["Pruebas: pruebas negativas con `raises` (nuevas)"] == 1
+    assert polarity["Cobertura de líneas fuente cambiadas"] == 1
+    assert polarity["Fuente: complejidad máxima (final)"] == -1
+    exploratory = {r[0] for r in cmp.EXPLORATORY_ROWS + cmp.EXPLORATORY_PRACTICE_ROWS}
+    assert not exploratory & set(cmp.PRIMARY_LABELS)
+
+
+def test_the_tally_counts_only_primary_metrics() -> None:
+    direct, other = _pair()
+    _, tally = cmp.differences(direct, other, cmp.PRIMARY)
+    assert (tally["harness"], tally["direct"]) == (1, 1)
+    # the exploratory rows differ too (cost, test functions) but are not in the tally
+    _, extra = cmp.differences(direct, other, cmp.EXPLORATORY_ROWS)
+    assert extra["harness"] >= 2
+
+
+def test_markdown_lists_primary_first_and_counts_only_them(runs: Path) -> None:
+    found, _ = cmp.discover([runs])
+    governed = cmp.analyze_run(found[1], static=False)
+    direct = json.loads(json.dumps(governed))
+    direct["run"]["condition"] = "direct"
+    direct["agent"] = {**governed.get("agent", {}), "costUsd": 99.0}
+    markdown = cmp.comparison_markdown([direct, governed], [])
+    assert markdown.index("#### Métricas primarias") < markdown.index("(exploratorias)")
+    assert "de las 5 métricas primarias" in markdown
+    assert "no entran en el recuento" in markdown
+
+
+# ----- D8: hidden tests deducible without the specification ----------------------------------
+def _function_names(path: Path) -> set[str]:
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {
+        n.name
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+    }
+
+
+def test_every_greenfield_hidden_test_is_classified() -> None:
+    hidden = Path(cmp.__file__).resolve().parents[1] / "hidden"
+    for scenario, folder, module in (
+        ("greenfield", "greenfield-shipping", "test_hidden_shipping.py"),
+        ("security", "greenfield-alerts", "test_hidden_alerts.py"),
+    ):
+        names = _function_names(hidden / folder / module)
+        assert names == set(cmp.HIDDEN_DEDUCIBILITY[scenario]), scenario
+        assert set(cmp.HIDDEN_DEDUCIBILITY[scenario].values()) <= {cmp.DEDUCIBLE, cmp.SPEC_ONLY}
+
+
+def test_hidden_metrics_give_the_two_counts(tmp_path: Path) -> None:
+    path = tmp_path / "hidden.xml"
+    junit(
+        path,
+        [
+            ("t", "test_negative_subtotal_is_rejected", "passed"),
+            ("t", "test_result_is_decimal_with_two_places[a0-kwargs0]", "failure"),
+            ("t", "test_base_cost_by_weight[1-local-5.00]", "passed"),
+            ("t", "test_base_cost_by_weight[0.5-local-5.00]", "passed"),
+            ("t", "test_invented", "passed"),
+        ],
+    )
+    result = cmp.hidden_metrics("greenfield", path)["deducibility"]
+    assert result["deducible"] == {"passed": 1, "total": 2}
+    assert result["especificacion"] == {"passed": 2, "total": 2}
+    assert result["unclassified"] == 1
+    assert cmp.hidden_metrics("brownfield", path)["deducibility"] is None
+    row = dict((r[0], r[1]) for r in cmp.ROWS)
+    record = {"requirements": {"hidden": {"deducibility": result}}}
+    assert row["Pruebas ocultas deducibles sin especificación pasadas"](record) == 1
+    assert row["Pruebas ocultas solo con especificación (total)"](record) == 2
+
+
+# ----- D8: what the run did before what the prompt left unsaid ------------------------------
+INVENTING = (
+    '"""Costs."""\n'
+    "from decimal import Decimal\n\n"
+    'RATES = {"local": Decimal("5.00"), "zonex": Decimal("7.35")}\n\n\n'
+    "def cost(zone):\n"
+    '    if zone not in RATES:\n        raise ValueError(f"unknown zone {zone} 42")\n'
+    "    return RATES[zone] + 1 + 0\n"
+)
+KNOWN = (
+    "from decimal import Decimal\n\n"
+    'RATES = {"local": Decimal("5.00"), "national": Decimal("9.00")}\n'
+    'FREE_FROM = Decimal("100")\nHALF = 0.5\n'
+)
+
+
+def _unknowns(tmp_path: Path, source: str, files=None, **kwargs: Any) -> dict[str, Any]:
+    ws = workspace(tmp_path, source)
+    baseline = git(ws, "rev-parse", "HEAD").strip()
+    changed = files or [{"path": "src/toy.py"}]
+    return cmp.unknown_behavior("greenfield", ws, baseline, changed, **kwargs)
+
+
+def test_literals_skip_docstrings_trivial_numbers_messages_and_fstrings() -> None:
+    found = cmp.code_literals(INVENTING)
+    assert dict(found) == ({("s", "local"): 1, ("n", "5"): 1, ("s", "zonex"): 1, ("n", "7.35"): 1})
+
+
+def test_invented_values_are_those_neither_in_the_spec_nor_declared(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, INVENTING, asked=0, declared=0)
+    assert result["behavior"] == cmp.INVENTED
+    assert result["inventedTexts"] == ["7.35", "zonex"]
+    assert result["specAvailable"] is True
+
+
+def test_values_of_the_spec_are_not_invented(tmp_path: Path) -> None:
+    result = _unknowns(tmp_path, KNOWN, asked=0, declared=0)
+    assert result["behavior"] == cmp.NOTHING_NEW and result["inventedValues"] == 0
+
+
+def test_priority_is_asked_then_declared_then_invented(tmp_path: Path) -> None:
+    asked = _unknowns(tmp_path / "a", INVENTING, asked=1, declared=1)
+    assert asked["behavior"] == cmp.ASKED
+    recorded = _unknowns(tmp_path / "b", INVENTING, asked=0, declared=1)
+    assert recorded["behavior"] == cmp.ASSUMED
+    said = _unknowns(
+        tmp_path / "c", INVENTING, asked=0, declared=0, final_text="Asumo 7.35 y zonex."
+    )
+    assert said["behavior"] == cmp.ASSUMED and said["inventedValues"] == 0
+
+
+def test_a_comment_or_a_todo_in_the_added_code_declares_the_assumption(tmp_path: Path) -> None:
+    commented = INVENTING + "# TODO confirmar la tarifa zonex 7.35\n"
+    result = _unknowns(tmp_path, commented, asked=0, declared=0)
+    assert result["behavior"] == cmp.ASSUMED
+    assert result["inventedValues"] == 0
+
+
+def test_the_row_is_in_the_primary_table_only_when_the_run_has_the_metric(runs: Path) -> None:
+    found, _ = cmp.discover([runs])
+    record = cmp.analyze_run(found[1], static=False)
+    assert "unknowns" not in record["requirements"]  # scenario ``toy`` is not greenfield
+    record["requirements"]["unknowns"] = {"behavior": cmp.INVENTED, "inventedValues": 3}
+    other = json.loads(json.dumps(record))
+    other["run"]["condition"] = "direct"
+    other["requirements"]["unknowns"] = {"behavior": cmp.ASKED}
+    markdown = cmp.comparison_markdown([other, record], [])
+    primary = markdown.split("#### Métricas primarias")[1].split("(exploratorias)")[0]
+    assert "inventó (3 valores inventados)" in primary and "preguntó" in primary
+    # the row has no direction: it never enters the tally
+    assert cmp.UNKNOWNS_ROW[2] == 0 and cmp.UNKNOWNS_ROW not in cmp.PRIMARY
+
+
+def test_analyze_run_reports_the_behavior_of_a_poor_greenfield_run(tmp_path: Path) -> None:
+    root = tmp_path / "runs"
+    direct = root / "greenfield-casual-direct-model-x-r1-20261111T000000Z"
+    workspace(direct, INVENTING, {})
+    call(direct, "Hecho. ¿Qué zonas necesitas?")
+    harness = root / "greenfield-casual-harness-model-x-r1-20261111T000100Z"
+    workspace(harness, KNOWN, {})
+    call(harness, None, cost=0.5)
+    state(
+        harness,
+        {"task": [{"metadata": {"assumptions": ["zones are local and national"]}}]},
+        [],
+    )
+    found, _ = cmp.discover([root])
+    by_condition = {
+        r["run"]["condition"]: r for r in (cmp.analyze_run(f, static=False) for f in found)
+    }
+    assert by_condition["direct"]["requirements"]["unknowns"]["behavior"] == cmp.ASKED
+    unknowns = by_condition["harness"]["requirements"]["unknowns"]
+    assert unknowns["behavior"] == cmp.ASSUMED and unknowns["assumptionsDeclared"] == 1
