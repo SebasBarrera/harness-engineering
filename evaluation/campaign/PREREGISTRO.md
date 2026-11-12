@@ -2989,3 +2989,55 @@ Se aplican por igual a todas las condiciones de cada bloque, salvo donde se dice
   implementa: hay independencia de rol, no de modelo.
 - **Adaptadores no evaluados.** Los adaptadores para otros agentes (`agents/native.py`) solo están
   probados contra CLIs falsos; la campaña no evalúa ningún agente real distinto de Claude Code.
+
+## Enmienda 2026-11-12: rides sin tope de turnos y comparable (plan D5)
+
+Se añade el 2026-11-12, **antes de cualquier corrida de rides con modelo**: el bloque rides no se
+ha lanzado sobre 2.0.0 ni sobre 2.0.1, y no se cita aquí ningún resultado suyo. Completa el punto 4
+de «Cambios del aparato» de la séptima congelación (que lo daba como **sin verificar**) y no cambia
+hipótesis, métricas ni criterios de éxito.
+
+1. **Celdas.** Uber/Uber Eats (`evaluation/rides/`) corre los niveles `one_line` (el pedido pobre)
+   y `super` (el techo), `direct` contra `harness`, con Sonnet (`claude-sonnet-5-5`) y **2
+   repeticiones** por celda (la regla de la enmienda «modelos y repeticiones de la campaña»). Es el
+   valor por defecto de `evaluation/launchers/block-rides.sh` (`EVAL_RIDES_CELLS`, `EVAL_MODELS`,
+   `EVAL_REPS`). Rides **no** corre con Haiku: es una excepción declarada al punto 1 de esa
+   enmienda, por costo (hasta 4 h por llamada). Los niveles `paragraph` y `requirements` y las
+   condiciones `stepwise` y `clarify` solo corren si sobra tiempo y se reportan aparte.
+2. **Sin tope de turnos en ninguna condición de rides.** La directa construye la aplicación entera
+   (95 requisitos) en **una** llamada; el harness la reparte en tareas (16 en `super`) y cada una
+   tendría su propio tope. Un tope de 40 turnos por llamada truncaría solo a la directa, y la
+   ventaja del harness sería un artefacto del aparato. Se descartó la otra opción (el mismo
+   presupuesto total de turnos para las dos condiciones) porque el número de llamadas del harness
+   no se conoce antes de correr. Por eso rides no pasa `--max-turns` en ninguna llamada: la
+   directa llama a `agentlib.run_claude` con `max_turns=0`, el proveedor del harness recibe
+   `--no-max-turns`, y `EVAL_MAX_TURNS` no se aplica en rides (el lanzador lo anota en el log si
+   está puesto). Cada `call-N.json` registra `maxTurns: null`; el registro de la corrida lleva
+   `maxTurns: null` y `callMaxTurns` (los valores que registraron sus llamadas), y
+   `environment.json` del bloque rides registra `maxTurns: null` con su origen. El punto 3 de la
+   séptima congelación (tope de 40 en las demás condiciones y bloques) no cambia. Los demás límites
+   de rides son iguales en las dos condiciones: 4 h y 200 USD por llamada (`AGENT_TIMEOUT`,
+   `AGENT_BUDGET` de `run_rides.py`), con reanudación tras el límite de uso.
+3. **Comparación justa.** Las dos condiciones reciben el mismo texto del nivel
+   (`rides/prompts.yaml`), el mismo modelo y el mismo directorio de trabajo
+   (`<corrida>/ws`, con un nombre de corrida del mismo patrón). En `one_line` no hay `SPEC.md`
+   en el espacio de trabajo. La condición `harness` se configura con `conditions.write_config`
+   (la configuración de la condición `harness` de las demás pruebas: lo que escribe `harness init`,
+   enrutado fijo al modelo de la celda, `runtime.agentSandbox` apagado en Windows y la concesión de
+   `harness check`), guarda el estado de la corrida en `<corrida>/state` y tiene el product owner
+   simulado con `SPEC.md` (`product_owner.py`, `--po-model claude-sonnet-5-5`) en todos los niveles,
+   no solo en `clarify`. El pedido `one_line` no se rechaza: entra a INTENT y pregunta.
+4. **Humo.** `run_rides.py` tiene corrida en seco (`--dry-run`, con `evaluation/fake_claude.py`), y
+   `evaluation/launchers/smoke.sh` corre una celda en seco por condición del bloque rides (bloque
+   `rides`, a la profundidad real `$EVAL_WORK/runs/rides/<modelo>` con la repetición 99). El humo
+   falla si una llamada registró un tope de turnos o si una condición gobernada no inició su
+   corrida. Con esto deja de regir la frase «hasta que la tenga (plan D5), el bloque rides no se
+   lanza» del punto 2 de la séptima congelación.
+5. **Lo que se verificó y lo que no.** En seco (sin modelo), `harness × one_line` llega a INTENT,
+   el product owner simulado responde las preguntas de varias rondas y todas las llamadas registran
+   `maxTurns: null`; la directa tampoco lleva `--max-turns`. En seco la corrida gobernada termina
+   detenida en INTENT cuando se agotan las rondas de aclaración de la persona simulada
+   (`person.py:MAX_CLARIFY_ROUNDS`), porque las respuestas de `fake_claude.py` son genéricas; lo
+   mismo ocurre en seco con el prompt casual de greenfield. Con un modelo real está **sin
+   verificar** si la corrida sale de INTENT. Una corrida que termine detenida en INTENT se reporta
+   como tal, con su causa; no se excluye.
