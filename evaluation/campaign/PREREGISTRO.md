@@ -2550,3 +2550,16 @@ dueño del producto y piensa un poco, no con consultas escuetas. Se fijan dos ca
 
 Los pilotos Haiku y Sonnet usaron el modelo de la corrida como product owner y el prompt anterior
 (en inglés, de respuestas breves): sus aclaraciones no se comparan con las de la campaña.
+
+## Nota 2026-11-11: «no repudio» se lee como «atribución declarada»
+
+Se añade el 2026-11-11, **antes de cualquier resultado de la campaña**. No cambia hipótesis,
+condiciones, intentos, métricas ni criterios de éxito de ninguna prueba; corrige un término.
+
+El harness no autentica la identidad de quien decide en la CLI (el id del actor es declarado:
+`--actor`, la identidad de Git o el valor por defecto) y su cadena de eventos usa digests sin
+clave, así que no ofrece no repudio. Donde este registro dice «no repudio» (el título de H16,
+«Identidad y no repudio de quien decide (CLI y API)»), se lee **atribución declarada**: H16 mide
+qué intentos de decisión se rechazan y con qué actor e `identitySource` queda registrada una
+decisión legítima, no si una decisión se puede repudiar. Los límites están en
+`docs/es/modelo-de-confianza.md` (en inglés, `docs/architecture/trust-model.md`).

@@ -275,7 +275,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: cualquier modificación posterior a la aprobación (un byte, renombrar, cambio de modo, archivo nuevo,
   rebase que altera el diff, squash) invalida la aprobación en la puerta y en la verificación del PR.
-- Beneficio: no repudio e intercepción de «aprobado A, mergeado B».
+- Beneficio: atribución declarada e intercepción de «aprobado A, mergeado B».
 - Condiciones: D\* (commit mergeado sin vínculo); H con `reverifyOnChange`; CI con `harness verify-approval`.
 - Método: 12 mutaciones post-aprobación sobre un run cerrado, 3 flujos de integración (merge, rebase, squash);
   se ejecuta `harness verify-approval --base --head --bundle`.
@@ -335,13 +335,13 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   `verification.acceptanceTests.protect|disputes`.
 - Sesgos: depende de cómo reescribe un agente real. Mitigación: ver H25 y pilotos.
 
-### 2.2 Auditabilidad y no repudio
+### 2.2 Auditabilidad y atribución declarada
 
 **H13 Reconstrucción de «quién aprobó qué digest» sin el espacio de trabajo** — Esfuerzo M · Modelo: 0
 
 - Hipótesis: desde solo el bundle exportado un tercero responde 8 preguntas de auditoría; desde `git log` + salida
   de CI (directo) responde menos.
-- Beneficio: auditabilidad y no repudio.
+- Beneficio: auditabilidad y atribución declarada.
 - Condiciones: D\* (git log + logs de pruebas); H (`harness export` + `harness verify --bundle`).
 - Método: 30 corridas cerradas (aprobadas, rechazadas, con excepción, vencidas); cuestionario fijo: actor, digest,
   hora, razón, riesgos reconocidos, quién cambió qué, qué versión de la configuración, qué validadores pasaron;
@@ -357,7 +357,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: toda manipulación de la cadena de eventos, de los registros o de los artefactos se detecta con
   `harness verify`/`trace`; con `chainAnchor: off` la reescritura completa no se detecta.
-- Beneficio: no repudio; mide qué añade el ancla externa y su límite (atacante con acceso al ancla).
+- Beneficio: integridad del registro; mide qué añade el ancla externa y su límite (atacante con acceso al ancla).
 - Condiciones: H; H-core; H con `governance.chainAnchor` ausente.
 - Método: ampliar `chain-truncated`, `chain-rewritten`, `tamper-events` a editar payload, borrar un evento del
   medio, reordenar, duplicar, cambiar un blob de artefacto, editar un registro de decisión en SQLite, borrar el
@@ -384,11 +384,11 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
   `verification.requirementTraceability`.
 - Sesgos: el prompt del directo también muestra los ids (esto reduce la ventaja del harness). Mitigación: declararlo.
 
-**H16 Identidad y no repudio de quien decide (CLI y API)** — Esfuerzo M · Modelo: 0
+**H16 Identidad y atribución declarada de quien decide (CLI y API)** — Esfuerzo M · Modelo: 0
 
 - Hipótesis: un agente, un validador, un usuario con rol `viewer` o un token inválido no puede aprobar; una
   excepción exige razón y vence.
-- Beneficio: no repudio.
+- Beneficio: atribución declarada (no no repudio: la identidad de quien decide no está autenticada; ver `docs/es/modelo-de-confianza.md`).
 - Condiciones: H por CLI y por `harness api serve`; H con `governance.deciderIdentity` ∈ {git, configuración}.
 - Método: 20 intentos de decisión: actores `agent.*`, `validator.*`, `harness.*`, `viewer`, `reviewer`, sin token,
   digest viejo, `APPROVE_EXCEPTION` sin razón y vencida (extiende `agent-actor` y `exception-expired`).
@@ -893,7 +893,7 @@ mitigación y con la prueba nueva que la mide con la mitigación activa. Las cif
 
 - Hipótesis: la misma tarea y el mismo cambio dan el mismo digest de ChangeSet, de configuración y de gate en 10
   corridas y en las 3 plataformas.
-- Beneficio: base de todas las pruebas de no repudio.
+- Beneficio: base de todas las pruebas de atribución declarada e integridad del registro.
 - Condiciones: baseline `manifest` vs `text`; con y sin caché.
 - Método: 10 repeticiones, comparar digests (el resolvedor se usa en `conditions.configuration_digest`).
 - Métricas: número de digests distintos (esperado 1 por configuración), igualdad `manifest`/`text` sin texto redactado.
@@ -987,7 +987,7 @@ Impacto 1–5 (aporte al capítulo de la tesis) sobre esfuerzo (S=1, M=2, L=3); 
 | 5 | H38 Falso carril rápido con todos los factores | 4 | S | Valida la seguridad del modo de baja fricción que mitiga el costo de S |
 | 6 | H23 Respuestas que violan el contrato | 4 | S | Verifica la falla cerrada del contrato nuevo |
 | 7 | H05 Dependencia nueva no declarada | 3 | S | Defecto frecuente, corpus pequeño |
-| 8 | H14 Manipulación de eventos (25 tipos) | 4 | M | Extiende N13 y delimita el alcance del no repudio, incluidos los límites |
+| 8 | H14 Manipulación de eventos (25 tipos) | 4 | M | Extiende N13 y delimita el alcance de la atribución declarada, incluidos los límites |
 | 9 | H46 Portabilidad en tres plataformas | 5 | M | Las suites ya existen; hoy solo hay evidencia en macOS |
 | 10 | H11 Corpus integrado de escape de defectos | 5 | L (incremental sobre 1, 2, 7) | Entrega la cifra única de la tesis, con el denominador completo |
 
