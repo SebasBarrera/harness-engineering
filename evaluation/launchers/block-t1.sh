@@ -55,4 +55,5 @@ run_part nopo casual harness-nopo ""
 run_part ceiling full direct ""
 SLOT=$(make_slot t1)
 "$SLOT/$VENV_BIN/python" "$CODE/report.py" --v2 "$EVAL_OUT" "$EVAL_OUT/summary-blocks.json"
+finish_environment T1
 log "BLOCK-T1-DONE"
