@@ -431,3 +431,104 @@ def test_a_refused_run_is_listed_as_refused_and_not_measured(runs: Path) -> None
     markdown = cmp.comparison_markdown(records, [])
     assert "**`harness-core` frente a `direct`**: rechazada (`task-refused-exit-2`)" in markdown
     assert "| Estado de la corrida | medida | rechazada | medida |" in markdown
+
+
+# ----- A9: the five primary metrics --------------------------------------------------------
+def _pair() -> tuple[dict[str, Any], dict[str, Any]]:
+    """The harness is better on one primary metric (scope), worse on another (Ruff), and better on
+    two exploratory ones (cost, test functions)."""
+    direct = {
+        "run": {"condition": "direct"},
+        "change": {"outOfScopeFiles": 2},
+        "static": {"ruff": {"new": 0, "newByKind": {"source": 0}}},
+        "agent": {"costUsd": 0.2},
+        "tests": {"testFunctionsAdded": 1},
+    }
+    other = {
+        "run": {"condition": "harness"},
+        "change": {"outOfScopeFiles": 0},
+        "static": {"ruff": {"new": 3, "newByKind": {"source": 3}}},
+        "agent": {"costUsd": 0.1},
+        "tests": {"testFunctionsAdded": 5},
+    }
+    return direct, other
+
+
+def test_primary_is_the_five_declared_metrics_with_unchanged_directions() -> None:
+    assert [row[0] for row in cmp.PRIMARY] == list(cmp.PRIMARY_LABELS)
+    assert len(cmp.PRIMARY) == 5
+    polarity = {row[0]: row[2] for row in cmp.PRIMARY}
+    assert polarity["Archivos fuera del alcance"] == -1
+    assert polarity["Ruff: hallazgos nuevos en fuente"] == -1
+    assert polarity["Pruebas: pruebas negativas con `raises` (nuevas)"] == 1
+    assert polarity["Cobertura de líneas fuente cambiadas"] == 1
+    assert polarity["Fuente: complejidad máxima (final)"] == -1
+    exploratory = {r[0] for r in cmp.EXPLORATORY_ROWS + cmp.EXPLORATORY_PRACTICE_ROWS}
+    assert not exploratory & set(cmp.PRIMARY_LABELS)
+
+
+def test_the_tally_counts_only_primary_metrics() -> None:
+    direct, other = _pair()
+    _, tally = cmp.differences(direct, other, cmp.PRIMARY)
+    assert (tally["harness"], tally["direct"]) == (1, 1)
+    # the exploratory rows differ too (cost, test functions) but are not in the tally
+    _, extra = cmp.differences(direct, other, cmp.EXPLORATORY_ROWS)
+    assert extra["harness"] >= 2
+
+
+def test_markdown_lists_primary_first_and_counts_only_them(runs: Path) -> None:
+    found, _ = cmp.discover([runs])
+    governed = cmp.analyze_run(found[1], static=False)
+    direct = json.loads(json.dumps(governed))
+    direct["run"]["condition"] = "direct"
+    direct["agent"] = {**governed.get("agent", {}), "costUsd": 99.0}
+    markdown = cmp.comparison_markdown([direct, governed], [])
+    assert markdown.index("#### Métricas primarias") < markdown.index("(exploratorias)")
+    assert "de las 5 métricas primarias" in markdown
+    assert "no entran en el recuento" in markdown
+
+
+# ----- D8: hidden tests deducible without the specification ----------------------------------
+def _function_names(path: Path) -> set[str]:
+    import ast
+
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    return {
+        n.name
+        for n in ast.walk(tree)
+        if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")
+    }
+
+
+def test_every_greenfield_hidden_test_is_classified() -> None:
+    hidden = Path(cmp.__file__).resolve().parents[1] / "hidden"
+    for scenario, folder, module in (
+        ("greenfield", "greenfield-shipping", "test_hidden_shipping.py"),
+        ("security", "greenfield-alerts", "test_hidden_alerts.py"),
+    ):
+        names = _function_names(hidden / folder / module)
+        assert names == set(cmp.HIDDEN_DEDUCIBILITY[scenario]), scenario
+        assert set(cmp.HIDDEN_DEDUCIBILITY[scenario].values()) <= {cmp.DEDUCIBLE, cmp.SPEC_ONLY}
+
+
+def test_hidden_metrics_give_the_two_counts(tmp_path: Path) -> None:
+    path = tmp_path / "hidden.xml"
+    junit(
+        path,
+        [
+            ("t", "test_negative_subtotal_is_rejected", "passed"),
+            ("t", "test_result_is_decimal_with_two_places[a0-kwargs0]", "failure"),
+            ("t", "test_base_cost_by_weight[1-local-5.00]", "passed"),
+            ("t", "test_base_cost_by_weight[0.5-local-5.00]", "passed"),
+            ("t", "test_invented", "passed"),
+        ],
+    )
+    result = cmp.hidden_metrics("greenfield", path)["deducibility"]
+    assert result["deducible"] == {"passed": 1, "total": 2}
+    assert result["especificacion"] == {"passed": 2, "total": 2}
+    assert result["unclassified"] == 1
+    assert cmp.hidden_metrics("brownfield", path)["deducibility"] is None
+    row = dict((r[0], r[1]) for r in cmp.ROWS)
+    record = {"requirements": {"hidden": {"deducibility": result}}}
+    assert row["Pruebas ocultas deducibles sin especificación pasadas"](record) == 1
+    assert row["Pruebas ocultas solo con especificación (total)"](record) == 2

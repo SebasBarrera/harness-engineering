@@ -92,6 +92,67 @@ HIDDEN_CRITERIA: dict[str, dict[str, str | None]] = {
         "test_untampered_tokens_still_load": "ac_existing",
     },
 }
+DEDUCIBLE = "deducible"
+SPEC_ONLY = "especificacion"
+# D8: every hidden test function of the greenfield scenarios, marked as deducible without the
+# specification (``SPEC.md`` / the criteria of the task file) or only with it. Rule, fixed before the
+# campaign results: a function is ``deducible`` only when EVERY case it asserts follows from the
+# signature, the types or general input validation (a negative amount is rejected, an unknown code is
+# rejected, money comes back as ``Decimal`` with two places); one case that needs an exact value, a
+# name, a limit, a default or a rule that only the specification states makes it ``especificacion``.
+# The inputs of a ``deducible`` test still use names that only the specification gives (zones,
+# coupon codes), so the count is an upper bound of what a casual prompt can reach.
+HIDDEN_DEDUCIBILITY: dict[str, dict[str, str]] = {
+    "greenfield": {
+        # exact tariffs by weight band and zone: only in the specification
+        "test_base_cost_by_weight": SPEC_ONLY,
+        # the 30 kg limit and the exclusive lower bound are stated values, not general validation
+        "test_weight_out_of_range_is_rejected": SPEC_ONLY,
+        # a negative amount is invalid in any money API: general validation
+        "test_negative_subtotal_is_rejected": DEDUCIBLE,
+        # asserts the exact price 5.00 of the base tariff
+        "test_zero_subtotal_is_accepted": SPEC_ONLY,
+        # "Local" and "LOCAL" are rejected: case sensitivity is a stated rule
+        "test_unknown_zone_is_rejected": SPEC_ONLY,
+        # the 50 % surcharge is a stated value
+        "test_express_adds_half_of_base": SPEC_ONLY,
+        # which zone cannot be express is a stated rule
+        "test_express_international_is_rejected": SPEC_ONLY,
+        # the 100 threshold and its inclusiveness are stated values
+        "test_free_shipping_threshold_is_inclusive": SPEC_ONLY,
+        "test_free_shipping_excludes_express_and_international": SPEC_ONLY,
+        # coupon values, rounding rule and normalisation are stated
+        "test_percentage_coupon_rounds_half_up_once": SPEC_ONLY,
+        "test_coupon_codes_ignore_case_and_whitespace": SPEC_ONLY,
+        "test_flat_coupon_never_goes_below_zero": SPEC_ONLY,
+        "test_coupon_on_free_shipping_stays_zero": SPEC_ONLY,
+        # an unknown code is invalid input whatever the catalogue: general validation
+        "test_unknown_coupon_is_rejected": DEDUCIBLE,
+        # asserts the price 5.00 with no coupon
+        "test_absent_coupon_means_no_discount": SPEC_ONLY,
+        # exact results for float, string and Decimal inputs
+        "test_numeric_inputs_of_every_type": SPEC_ONLY,
+        # asserts only the type and the number of decimals: money as Decimal with two places
+        "test_result_is_decimal_with_two_places": DEDUCIBLE,
+    },
+    "security": {
+        # method, exact URL and header values are stated
+        "test_request_method_url_and_headers": SPEC_ONLY,
+        # the ``base_url`` parameter and its normalisation are stated
+        "test_trailing_slash_in_base_url_is_ignored": SPEC_ONLY,
+        # key order, separators, encoding and trimming of the body are stated
+        "test_body_is_sorted_compact_utf8_json": SPEC_ONLY,
+        # the default ``app`` is a stated value
+        "test_source_defaults_to_app": SPEC_ONLY,
+        # the user name, the variable name and the Basic scheme are stated
+        "test_basic_auth_uses_the_environment_password": SPEC_ONLY,
+        "test_password_is_read_at_call_time": SPEC_ONLY,
+        # the variable name and ``RuntimeError`` are stated
+        "test_missing_password_raises_runtime_error": SPEC_ONLY,
+        # the allowed severities (``debug`` and ``INFO`` rejected) are stated values
+        "test_invalid_events_are_rejected": SPEC_ONLY,
+    },
+}
 RIDES_CASES = EVALUATION / "rides" / "hidden_cases.json"
 SECRET_PATTERNS = {
     "declaredLiteral": re.compile(re.escape(measure.SECRET_LITERAL)),
@@ -736,6 +797,28 @@ def criteria_map(scenario: str) -> Callable[[dict[str, Any]], str | None] | None
     return None
 
 
+def deducibility(scenario: str, cases: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Hidden tests passed and total of the greenfield scenarios by ``HIDDEN_DEDUCIBILITY``: the two
+    counts that tell what a prompt without the specification could reach. ``None`` for scenarios
+    without the table; a test missing from it counts under ``unclassified``."""
+    table = HIDDEN_DEDUCIBILITY.get(scenario)
+    if table is None:
+        return None
+    out: dict[str, Any] = {
+        DEDUCIBLE: {"passed": 0, "total": 0},
+        SPEC_ONLY: {"passed": 0, "total": 0},
+        "unclassified": 0,
+    }
+    for case in cases:
+        kind = table.get(case["name"].split("[", 1)[0])
+        if kind is None:
+            out["unclassified"] += 1
+            continue
+        out[kind]["total"] += 1
+        out[kind]["passed"] += case["outcome"] == "passed"
+    return out
+
+
 def hidden_metrics(scenario: str, junit: Path) -> dict[str, Any]:
     cases = _junit_cases(junit)
     if not cases:
@@ -755,6 +838,7 @@ def hidden_metrics(scenario: str, junit: Path) -> dict[str, Any]:
         # The fixed denominator and the discriminating tests (amendment of 2026-11-12).
         **measure.hidden_score(scenario, tally, junit),
         "mapping": mapper is not None,
+        "deducibility": deducibility(scenario, cases),
         "byCriterion": {
             k: {"passed": v[0], "tests": v[1]} for k, v in sorted(by_criterion.items())
         },
@@ -1224,6 +1308,26 @@ ROWS: list[Row] = [
         lambda r: _get(r, "requirements.hidden.criteriaFullyPassed"),
         1,
     ),
+    (
+        "Pruebas ocultas deducibles sin especificación pasadas",
+        lambda r: _get(r, "requirements.hidden.deducibility.deducible.passed"),
+        0,
+    ),
+    (
+        "Pruebas ocultas deducibles sin especificación (total)",
+        lambda r: _get(r, "requirements.hidden.deducibility.deducible.total"),
+        0,
+    ),
+    (
+        "Pruebas ocultas solo con especificación pasadas",
+        lambda r: _get(r, "requirements.hidden.deducibility.especificacion.passed"),
+        0,
+    ),
+    (
+        "Pruebas ocultas solo con especificación (total)",
+        lambda r: _get(r, "requirements.hidden.deducibility.especificacion.total"),
+        0,
+    ),
     ("Criterios dados en el prompt", lambda r: _get(r, "requirements.prompt.criteriaGiven"), 0),
     ("Archivos cambiados", lambda r: _get(r, "change.files"), 0),
     ("Archivos fuera del alcance", lambda r: _get(r, "change.outOfScopeFiles"), -1),
@@ -1418,6 +1522,21 @@ PRACTICE_ROWS: list[Row] = [
 ]
 
 
+# A9: the five primary metrics, declared before the campaign (T3). Same getters and directions as
+# the rows they name; only these feed the for/against tally. Every other row is exploratory.
+PRIMARY_LABELS = (
+    "Archivos fuera del alcance",
+    "Ruff: hallazgos nuevos en fuente",
+    "Pruebas: pruebas negativas con `raises` (nuevas)",
+    "Cobertura de líneas fuente cambiadas",
+    "Fuente: complejidad máxima (final)",
+)
+_ALL_ROWS = {row[0]: row for row in ROWS + PRACTICE_ROWS}
+PRIMARY: list[Row] = [_ALL_ROWS[label] for label in PRIMARY_LABELS]
+EXPLORATORY_ROWS: list[Row] = [r for r in ROWS if r[0] not in PRIMARY_LABELS]
+EXPLORATORY_PRACTICE_ROWS: list[Row] = [r for r in PRACTICE_ROWS if r[0] not in PRIMARY_LABELS]
+
+
 def _get(record: dict[str, Any], dotted: str) -> Any:
     value: Any = record
     for part in dotted.split("."):
@@ -1559,9 +1678,11 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
         "modelos). Métricas declaradas en la enmienda del 2026-11-11 de",
         "`evaluation/campaign/PREREGISTRO.md`. «—» indica que la métrica no aplica o no está disponible.",
         "Los prompts pobres y casuales van primero (comparación principal); el prompt completo después",
-        "(secundaria). «A favor de» sigue solo la dirección declarada de cada métrica (más es mejor o",
-        "menos es mejor); las métricas sin dirección declarada se listan sin lado. Los conteos de",
-        "prácticas son lo que el cambio añadió (final menos base) y crecen con el tamaño del cambio.",
+        "(secundaria). Las cinco métricas primarias (`PRIMARY`) van primero y solo sobre ellas se cuenta",
+        "a favor y en contra; el resto es exploratorio y se lista sin entrar en el recuento. «A favor",
+        "de» sigue solo la dirección declarada de cada métrica (más es mejor o menos es mejor); las",
+        "métricas sin dirección declarada se listan sin lado. Los conteos de prácticas son lo que el",
+        "cambio añadió (final menos base) y crecen con el tamaño del cambio.",
         "",
     ]
     section = None
@@ -1587,8 +1708,17 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                 ),
                 "",
             ]
-        out += ["#### Resultado, cambio y requisitos", "", *_table(runs, ROWS)]
-        out += ["#### Buenas y malas prácticas", "", *_table(runs, PRACTICE_ROWS)]
+        out += ["#### Métricas primarias", "", *_table(runs, PRIMARY)]
+        out += [
+            "#### Resultado, cambio y requisitos (exploratorias)",
+            "",
+            *_table(runs, EXPLORATORY_ROWS),
+        ]
+        out += [
+            "#### Buenas y malas prácticas (exploratorias)",
+            "",
+            *_table(runs, EXPLORATORY_PRACTICE_ROWS),
+        ]
         out += ["#### Diferencias", ""]
         if direct is None:
             out += ["Sin par `direct`.", ""]
@@ -1604,13 +1734,18 @@ def comparison_markdown(records: list[dict[str, Any]], skipped: list[str]) -> st
                     "",
                 ]
                 continue
-            lines, tally = differences(direct, other, ROWS + PRACTICE_ROWS)
+            lines, tally = differences(direct, other, PRIMARY)
+            extra, _ = differences(direct, other, EXPLORATORY_ROWS + EXPLORATORY_PRACTICE_ROWS)
             out += [
-                f"**`{name}` frente a `direct`**: {tally[name]} métricas a favor de `{name}`, "
-                f"{tally['direct']} a favor de `direct`, {tally['neutral']} distintas sin dirección "
-                "declarada.",
+                f"**`{name}` frente a `direct`**: {tally[name]} de las 5 métricas primarias a "
+                f"favor de `{name}`, {tally['direct']} a favor de `direct`, {tally['neutral']} "
+                "distintas sin dirección declarada.",
                 "",
-                *(lines or [f"- `{name}` y `direct` coinciden en todas las métricas."]),
+                *(lines or [f"- `{name}` y `direct` coinciden en las métricas primarias."]),
+                "",
+                "Exploratorias (no entran en el recuento):",
+                "",
+                *(extra or [f"- `{name}` y `direct` coinciden en las exploratorias."]),
                 "",
             ]
         out += [
