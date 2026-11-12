@@ -234,13 +234,17 @@ class StopLine:
                 except OSError:
                     data = None
                 if data is not None and sha256_bytes(data) == item.after_digest:
+                    # Stored as written (F4): run continue puts back exactly these bytes, which
+                    # a redaction would change; the workspace held them already.
                     entry["contentRef"] = self.results.s.artifacts.put(
                         data,
                         metadata={
                             "kind": "quarantined-content",
                             "executionId": execution.execution_id,
                             "path": item.path,
+                            "unredacted": True,
                         },
+                        redact=False,
                     ).uri
             captured[item.path] = entry
         return captured

@@ -17,6 +17,10 @@ _WINDOWS_REPLACE_ATTEMPTS = 8
 _WINDOWS_REPLACE_BACKOFF_SECONDS = 0.01
 
 
+CODE_MEDIA_TYPES = frozenset({"text/x-diff"})
+"""Artifacts that hold source code: redacted with the code rules (quoted secrets only)."""
+
+
 @dataclass(frozen=True)
 class ArtifactRef:
     uri: str
@@ -47,7 +51,8 @@ class LocalArtifactStore:
         redact: bool = True,
         secret_literals: tuple[bytes, ...] = (),
     ) -> ArtifactRef:
-        redaction = self.redactor.redact(data, secret_literals) if redact else None
+        code = media_type in CODE_MEDIA_TYPES
+        redaction = self.redactor.redact(data, secret_literals, code=code) if redact else None
         stored = redaction.data if redaction else data
         rule_ids = redaction.rule_ids if redaction and redaction.redacted else ()
         return self._store(stored, media_type, metadata, rule_ids)
@@ -196,9 +201,7 @@ class LocalArtifactStore:
             path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             if path.exists():
                 return
-            descriptor, temporary_name = tempfile.mkstemp(
-                prefix=f".{path.name}.", dir=path.parent
-            )
+            descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         except OSError as error:
             _raise_if_path_too_long(path, error)
             raise

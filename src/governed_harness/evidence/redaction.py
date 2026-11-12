@@ -12,21 +12,6 @@ PRIVATE_KEY = re.compile(
 )
 PRIVATE_KEY_MARK = b"<REDACTED_PRIVATE_KEY>"
 
-_NAME = rb"[A-Za-z_][A-Za-z0-9_]*"
-_TYPE_WORDS = (
-    rb"bytes|bytearray|bool|boolean|float|double|string|number|object|none|null|true|false|"
-    rb"undefined|optional|dict|list|tuple|char|buffer|uint8array"
-)
-_CODE_VALUE = (
-    rb"(?:" + _NAME + rb"(?:\." + _NAME + rb")*[(\[]"
-    rb"|(?:" + _TYPE_WORDS + rb")(?=[\s,;)\]\}=|]|\Z))"
-)
-"""An unquoted value of ``generic_secret_assignment`` that is code, not a secret: a call or a
-subscript written right after the name (``serializer.dumps(payload)``, ``os.environ["X"]``), or
-a type or constant word (the annotation ``token: bytes)``). Redacting them corrupted stored code
-(F4). A quoted value is always redacted; other unquoted values (``password=hunter22`` in a log
-or a ``.env``) still are."""
-
 
 @dataclass(frozen=True)
 class RedactionResult:
@@ -54,7 +39,7 @@ class SecretRedactor:
             re.compile(
                 rb"(?i)\b(api[_-]?key|token|secret|password|passwd|access[_-]?token)\b"
                 rb"(\s*[:=]\s*)"
-                rb"((?!" + _CODE_VALUE + rb")[^\s,;\}\]\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
+                rb"([^\s,;\}\]\"']{4,}|\"[^\"]{4,}\"|'[^']{4,}')"
             ),
             rb"\1\2<REDACTED>",
         ),
@@ -88,10 +73,18 @@ class SecretRedactor:
         """Whether redaction beyond the 1.0.0 rules is configured."""
         return bool(self.literals) or self.extended
 
-    def redact(self, data: bytes, extra_literals: Iterable[bytes] = ()) -> RedactionResult:
+    def redact(
+        self, data: bytes, extra_literals: Iterable[bytes] = (), *, code: bool = False
+    ) -> RedactionResult:
+        """``code``: ``data`` is source code (a diff), where an unquoted value after ``token``,
+        ``password`` or ``secret`` is an annotation or an expression (``password: str``,
+        ``token = self._token``), not a secret; only a quoted literal is redacted there (F4).
+        Everywhere else (tool output, logs, ``.env`` text) unquoted values still are."""
         result = data
         applied: list[str] = []
         for rule_id, pattern, replacement in self._RULES:
+            if code and rule_id == "generic_secret_assignment":
+                pattern = QUOTED_SECRET_ASSIGNMENT
             result, count = pattern.subn(replacement, result)
             if count:
                 applied.append(rule_id)
@@ -163,6 +156,13 @@ class SecretRedactor:
                     applied.append(rule_id)
         return data, applied
 
+
+QUOTED_SECRET_ASSIGNMENT = re.compile(
+    rb"(?i)\b(api[_-]?key|token|secret|password|passwd|access[_-]?token)\b"
+    rb"(\s*[:=]\s*)"
+    rb"(\"[^\"]{4,}\"|'[^']{4,}')"
+)
+"""``generic_secret_assignment`` in code: the quoted values only."""
 
 MIN_LITERAL_BYTES = 8
 """Environment values shorter than this are not redacted as literals."""
