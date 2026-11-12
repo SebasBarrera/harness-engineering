@@ -3393,6 +3393,10 @@ class RunEngine:
             )
             return PhaseOutcome(ResultStatus.BLOCKED, f"Closure commit not created: {error}")
         record = commit.as_dict() | {"changeSetDigest": change_set.digest}
+        if commit.author:
+            # The author and the subject come from the repository: they pass the same redaction
+            # of secrets as any recorded text (a name or a subject can carry a token).
+            record, _ = self.s.artifacts.redactor.redact_json(record)
         ref = self.s.artifacts.put_json(
             record, metadata={"kind": "closure-commit", "executionId": execution.execution_id}
         )

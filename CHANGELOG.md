@@ -56,6 +56,14 @@
 - On Windows the process runner also passes `USERPROFILE`, `HOMEDRIVE` and `HOMEPATH` (when set) to
   the commands it starts, besides `HOME`. An agent provider started without `HOME` failed with
   `RuntimeError: Could not determine home directory` from `Path.home()`. POSIX is unchanged.
+- `harness init` on Windows no longer writes the POSIX-only `runtime.sandboxWritePaths` entries (`/tmp`,
+  `/var/folders`, `~/Library/Caches`); the entries under the home directory stay and POSIX is unchanged.
+  `docs/architecture/trust-model.md` now states what the excluded-path guard fingerprints (size,
+  modification time and the first 8 KB).
+- `delivery.recordCommitAuthor: true` (written by `harness init`): the `delivery.commit.created`
+  event, and the closure-commit record it carries, also hold the commit's `author` (`Name <email>`
+  as Git shows it) and its `subject`, after the redaction of secrets, so a bundle answers who wrote
+  the commit and with what message. Without the key the event is as before.
 - The evaluation's agent can check its own change, the same way in every condition (amendment of
   2026-11-11 in `evaluation/campaign/PREREGISTRO.md`, before any campaign result). In the 2.0.0
   pilots Claude Code denied the implement agent's `cd "<workspace>" && ...`, `python -m ruff check`
