@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -150,3 +151,43 @@ def test_sandbox_prefix_does_not_authorize_the_command(tmp_path: Path) -> None:
     )
     with pytest.raises(CapabilityDenied):
         runner.run(command_spec, actor=actor, grants=grants)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows resolves bare names through PATH")
+def test_a_bare_name_never_resolves_to_the_working_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # F12: shutil.which looks in the current directory first on Windows, so a python.bat the
+    # agent wrote in the workspace ran in VERIFICATION instead of Python.
+    from governed_harness.runtime.process_runner import find_executable, resolve_executable
+
+    (tmp_path / "python.bat").write_text("@echo PLANTED\r\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("NoDefaultCurrentDirectoryInExePath", raising=False)
+    monkeypatch.setenv(
+        "PATH", os.pathsep.join([".", str(tmp_path), str(Path(sys.executable).parent)])
+    )
+    resolved = resolve_executable("python")
+    assert Path(resolved).is_absolute()
+    assert Path(resolved).parent == Path(sys.executable).parent
+    assert find_executable("python") == resolved
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(FileNotFoundError):
+        resolve_executable("python")
+    assert find_executable("python") is None
+    actor = Actor(actor_type=ActorType.TOOL, actor_id="tool.process")
+    grants = grants_from_rules(
+        "run_1",
+        actor,
+        (CapabilityRule(capability="process.execute", scope=("python",)),),
+        lifetime=timedelta(minutes=1),
+    )
+    monkeypatch.setenv("PATH", os.pathsep.join([str(tmp_path), str(Path(sys.executable).parent)]))
+    result = SafeProcessRunner(tmp_path).run(
+        CommandSpec(argv=("python", "-c", "print('real')"), cwd=tmp_path, timeout_seconds=30),
+        actor=actor,
+        grants=grants,
+    )
+    assert result.stdout.strip() == b"real"
+    assert result.executable is not None
+    assert Path(result.executable).parent == Path(sys.executable).parent
