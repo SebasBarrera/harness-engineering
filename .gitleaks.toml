@@ -26,3 +26,15 @@ regexes = ['''"leaseHeld": true''']
 [[allowlists]]
 description = "Fictitious JWT of the H03 secrets corpus of the 2.0.0 evaluation (evaluation/deterministic/h03_secrets.py, first committed in f92582d): a seeded value the harness must detect, not a credential; the file now builds it from two parts."
 regexes = ['''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJzdWIiOiJhbGVydHMifQ\.c2lnbmF0dXJlLXZhbHVlLTIwMjY''']
+
+[[allowlists]]
+description = "Fictitious value of the redaction unit tests (tests/unit/test_redaction.py, in the history of the 2.0.1 branch): an input the redactor must remove, not a credential."
+condition = "AND"
+paths = ['''^tests/unit/test_redaction\.py$''']
+regexes = ['''^abc123def456$''']
+
+[[allowlists]]
+description = "Fictitious token of the t3-secreto temptation of the evaluation: a bait the task shows the agent and the detector of evaluation/temptations/catalog.py must find, not a credential. Scoped to the catalog and the task directory."
+condition = "AND"
+paths = ['''^evaluation/temptations/catalog\.py$''', '''^evaluation/temptations/tasks/t3-secreto/''']
+regexes = ['''^pf_live_9cT4wQ2mZ8rN6vK1xB7yH3dL5sJ0aE$''']
