@@ -39,11 +39,11 @@ Cada versión publica en [GitHub Releases](https://github.com/SebasBarrera/harne
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl"
+pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.0/governed_agent_harness-2.0.0-py3-none-any.whl"
 harness --version
 ```
 
-Cambia `v1.0.0` y `1.0.0` por la versión que quieras. Para verificar el archivo antes de instalarlo, ver [Instalación avanzada](instalacion-avanzada.md#verificar-las-sumas-y-la-atestacion).
+Cambia `v2.0.0` y `2.0.0` por la versión que quieras. Para verificar el archivo antes de instalarlo, ver [Instalación avanzada](instalacion-avanzada.md#verificar-las-sumas-y-la-atestacion).
 
 ## Con Docker
 

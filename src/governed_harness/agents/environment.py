@@ -1,4 +1,4 @@
-"""The environment an agent provider receives (``passEnv`` and ``env``, since 1.1).
+"""The environment an agent provider receives (``passEnv`` and ``env``, since 2.0).
 
 The process runner gives every command only ``PATH``, ``HOME``, ``SYSTEMROOT``, ``TMPDIR``,
 ``TEMP``, ``LANG`` and ``LC_ALL``: an agent CLI did not receive its API key, a proxy or a

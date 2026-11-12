@@ -1,4 +1,4 @@
-"""Provenance per component and the agent's self-report (``provenance``, since 1.1).
+"""Provenance per component and the agent's self-report (``provenance``, since 2.0).
 
 ``provenance.agentSnapshots``: before and after every agent invocation the harness records the
 state of the ChangeSet scope as a manifest of digests (only the files that differ from the

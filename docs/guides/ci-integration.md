@@ -51,7 +51,7 @@ jobs:
           python-version: "3.12"
       - name: Install the harness and the project's test dependencies
         run: |
-          python -m pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v1.0.0/governed_agent_harness-1.0.0-py3-none-any.whl"
+          python -m pip install "governed-agent-harness @ https://github.com/SebasBarrera/harness-engineering/releases/download/v2.0.0/governed_agent_harness-2.0.0-py3-none-any.whl"
           python -m pip install -e ".[test]"
       - name: Run the governed task
         id: run
@@ -90,7 +90,7 @@ jobs:
 ## Approval valid for what gets merged
 
 A decision binds the digest of the ChangeSet in the workspace where the run happened; what a team
-merges is a pull request. Since 1.1 three pieces connect them:
+merges is a pull request. Since 2.0 three pieces connect them:
 
 1. **The closure commit** (`delivery.closureCommit`, written by `harness init` as `branch`): at
    `CLOSURE` the approved ChangeSet becomes one commit on `harness/<run id>` with the trailers

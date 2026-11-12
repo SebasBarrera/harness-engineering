@@ -1,7 +1,7 @@
 # Verification ladder
 
 A passing test suite says that the tests pass, not that each acceptance criterion holds the way
-a person needs it to. Since 1.1 (issue #55) each criterion can declare the rung of evidence it
+a person needs it to. Since 2.0 (issue #55) each criterion can declare the rung of evidence it
 requires, and the harness certifies the ChangeSet against it from recorded evidence only:
 
 | Rung | Means | Reached by |

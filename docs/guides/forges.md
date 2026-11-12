@@ -1,6 +1,6 @@
 # Forges and CI templates
 
-Since 1.1 (#56) the harness proposes and reports a governed change on GitHub, GitLab, Bitbucket,
+Since 2.0 (#56) the harness proposes and reports a governed change on GitHub, GitLab, Bitbucket,
 Azure DevOps and Gitea (or Forgejo) through one interface. Nothing is decided on a forge: the
 comment, the quality report and the commit status inform the reviewers, and the approval is the
 run's digest-bound decision, which `harness verify-approval` checks in CI.

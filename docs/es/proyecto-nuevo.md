@@ -1,6 +1,6 @@
 # Proyecto nuevo (desde cero)
 
-Esta guía parte de un directorio vacío y llega a un primer cambio aprobado. Los comandos se probaron con el harness 1.0.0 y el proveedor `simulated`. La guía en inglés [Greenfield](../guides/greenfield.md) muestra la misma historia con todas las salidas.
+Esta guía parte de un directorio vacío y llega a un primer cambio aprobado. Los comandos se probaron con el harness 1.0.0 (el código de la ola 11, cuyo paquete aún declaraba la versión 1.0.0 antes de la release 2.0.0) y el proveedor `simulated`. La guía en inglés [Greenfield](../guides/greenfield.md) muestra la misma historia con todas las salidas.
 
 ## 1. Crea el proyecto y su commit base
 

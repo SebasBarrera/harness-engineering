@@ -39,10 +39,10 @@ class CommandAgentConfiguration:
     sandbox_prefix: tuple[str, ...] = ()
     """Write-confinement wrapper (``runtime.agentSandbox: enforce``); empty runs unconfined."""
     environment: ProviderEnvironment | None = None
-    """``passEnv`` and ``env`` of the provider (since 1.1); ``None`` passes only the runner's
+    """``passEnv`` and ``env`` of the provider (since 2.0); ``None`` passes only the runner's
     minimal environment, as in 1.0.0."""
     self_report: bool = False
-    """``provenance.selfReport``: ask for and read the agent's self-report (since 1.1)."""
+    """``provenance.selfReport``: ask for and read the agent's self-report (since 2.0)."""
     extra_args: tuple[str, ...] = ()
     """``args`` of a built-in adapter."""
 
@@ -59,7 +59,7 @@ class ProviderAnswer:
     self_report: Any = None
     result: Any = None
     """The structured ``result`` of a ``clarify``, ``acceptance``, ``plan`` or ``review``
-    answer (since 1.1)."""
+    answer (since 2.0)."""
 
 
 class CommandAgentProvider:

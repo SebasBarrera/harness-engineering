@@ -3,7 +3,7 @@
 In the 2.0.0 pilot two of four governed Haiku runs never left INTENT: every answered revision
 got a new review that raised new questions (10, 8 and 8 in three rounds). These tests reproduce
 that with a fixture agent that keeps asking (and with the questions the pilot's Haiku review
-actually asked), show that the review of 1.1 (``ambiguityReview: agent``) still never converges,
+actually asked), show that the single-round review (``ambiguityReview: agent``) still never converges,
 and that the object form converges: the request carries the questions already asked and their
 answers, repeated questions are dropped, a round is bounded, and after the last round the open
 points become explicit assumptions (``assume``) or keep INTENT blocked (``block``)."""

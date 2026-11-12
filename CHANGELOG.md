@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 2.0.0 - 2026-11-11
 
 - Two block messages now carry their cause and next step (found by the H44 smoke, #157). An
   INTENT blocked by clarification questions names the rules that asked
@@ -403,7 +403,7 @@
   new task revision (`metadata.assumptions`, shown in the operational contract, the gate
   contract and the decision brief) and the run continues (`assume`), or INTENT stays blocked
   (`block`, the default of the object form); both record `intent.ambiguity.exhausted`. The bare
-  `agent` keeps the 1.1 review and its configuration digest. Tested with a fixture agent that
+  `agent` keeps the single-round review and its configuration digest. Tested with a fixture agent that
   keeps asking and with the questions of the pilot's Haiku review on the pilot's task
   (`tests/integration/test_ambiguity_convergence.py`).
 - Tiered routing anchored at the invoking model (#85). `agentRouting.mode: anchored`, which
