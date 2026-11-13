@@ -50,6 +50,7 @@ runtime:
   contractRetry:
     mode: once                  # once, or off
     fallbackProvider: second    # optional: an agentProviders entry (or simulated)
+    explainProblem: true        # optional (2.1): tell the second attempt why the first failed
 ```
 
 An answer breaks its contract when it is a protocol error (no JSON object, no `result` object)
@@ -67,6 +68,16 @@ attempt that writes again blocks the phase, with a finding for each attempt. A
 `fallbackProvider` that is not `simulated` or an entry of `agentProviders` is a configuration
 error. Without the key the first broken answer blocks, as before. Transient failures of a command
 provider keep their own retries (`runtime.providerRetries`).
+
+`explainProblem: true`, which `harness init` writes since 2.1, makes the second request differ
+from the first: its instructions end with the reason the first answer was rejected (the
+validation error, cut at 2000 characters) and ask the agent to correct it and answer the complete
+object again. In the Haiku greenfield campaign an architecture advice came back without an
+option's `supports` and INTENT stopped on `architecture.malformed`; sending the same request again
+gives the agent no hint of what it missed. The retry evidence and event then carry
+`problemSentToAgent: true`. Two broken answers still block, with one finding. Without the key (or
+with `false`) the second request is the first one again and the configuration digest does not
+change.
 
 A built-in adapter (`kind: claude-code`, `codex`, `gemini-cli`, `aider`) sends a read-only
 request as a prompt (the instructions, then the request as JSON) and reads the `result` object
@@ -540,7 +551,7 @@ same model once.
 | Request kinds, `intake.ambiguityReview`, `intake.validateAnswers` | `tests/integration/test_agent_clarify_review.py` |
 | `intake.ambiguityReview.depth` | `tests/unit/test_intake_depth.py`, `tests/integration/test_intake_depth_flow.py` |
 | The converging review and its assumptions (#79) | `tests/integration/test_ambiguity_convergence.py`, `tests/unit/test_intent_convergence.py` |
-| `runtime.contractRetry` (#80) | `tests/integration/test_contract_retry.py` |
+| `runtime.contractRetry` (#80), `explainProblem` (2.1) | `tests/integration/test_contract_retry.py`, `tests/integration/test_architecture_retry.py`, `tests/unit/test_contract_retry_explain.py` |
 | `verification.*` checks, risk factors, change requests, `differential` | `tests/integration/test_verification_checks.py`, `tests/integration/test_verification_checks_more.py`, `tests/unit/test_run_outcome.py`, `tests/unit/test_checks_structure.py`, `tests/unit/test_checks_diff_quality.py` |
 | `verification.acceptanceTests` | `tests/integration/test_acceptance_tests.py` |
 | `verification.acceptanceTests.protect`, `disputes` (#94) | `tests/integration/test_acceptance_dispute.py` |

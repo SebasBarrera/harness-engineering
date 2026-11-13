@@ -175,6 +175,8 @@ Una respuesta válida de una llamada que alcanzó un límite:
   como evidencia.
 - Si el proyecto tiene `runtime.contractRetry`, la llamada se envía una vez más (otra iteración,
   que cuenta contra el tope). Sin esa clave, la primera respuesta rota bloquea la fase, como antes.
+  Con `explainProblem: true` (desde 2.1, lo escribe `harness init`) las instrucciones del segundo
+  intento terminan con el motivo del rechazo del primero y piden corregirlo.
 - El resumen demasiado largo no es una violación: se corta al límite `limits.summaryChars` y el
   registro de la llamada indica `summaryTruncated`.
 - Un contrato de solicitud inválido falla cerrado: una llamada de solo lectura se bloquea con

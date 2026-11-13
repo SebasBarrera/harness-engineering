@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- A malformed answer of a read-only call is retried with the reason it was rejected. In the Haiku
+  greenfield campaign an architecture advice came back with an option that had no `supports`, and
+  INTENT stopped on `architecture.malformed`. `runtime.contractRetry` sends such a call once
+  more, but with the same request, so nothing tells the agent what to fix. The new
+  `runtime.contractRetry.explainProblem: true`, which `harness init` now writes, ends the second
+  request's instructions with the validation error and asks the agent to correct it; the
+  `agent-contract-retry` evidence and the `agent.call.contract-retry` event carry
+  `problemSentToAgent: true`. Two broken answers still block, with one finding. Without the key the
+  second request and the configuration digest stay as they were.
+
 ## 2.0.1 - 2026-11-12
 
 Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
