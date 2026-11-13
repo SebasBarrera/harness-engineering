@@ -130,8 +130,9 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
             "providerRetryDelaySeconds": 60,
             "extendedRedaction": True,
             "gateContract": True,
-            # #80: a read-only answer that breaks its contract gets a second attempt.
-            "contractRetry": {"mode": "once"},
+            # #80: a read-only answer that breaks its contract gets a second attempt; 2.1: the
+            # second attempt is told why the first was rejected.
+            "contractRetry": {"mode": "once", "explainProblem": True},
             "reproduceFirst": True,
             "stateDir": "auto",
         },

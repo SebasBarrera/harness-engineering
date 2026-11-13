@@ -66,10 +66,11 @@ def test_init_writes_every_agent_results_setting(python_workspace: Path) -> None
         "maxIterations": 5,
         "budgetProfile": "by-kind",
     }
-    # #80: a broken read-only answer gets a second attempt.
-    assert config["runtime"]["contractRetry"] == {"mode": "once"}
+    # #80: a broken read-only answer gets a second attempt; 2.1: told why the first failed.
+    retry = {"mode": "once", "explainProblem": True}
+    assert config["runtime"]["contractRetry"] == retry
     summary = HarnessApplication().validate_config(python_workspace)["agentResults"]
-    assert summary["contractRetry"] == {"mode": "once"}
+    assert summary["contractRetry"] == retry
     assert summary["agentReview"] == "enforce"
     assert summary["checks"]["differential"] is True
 
