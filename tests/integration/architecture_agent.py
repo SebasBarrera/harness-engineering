@@ -1,7 +1,8 @@
 """A fixture agent for the architecture catalogue and the reverse engineering documents (#97).
 
 It is a Python script (no model) that logs every request and answers the ``architecture`` calls
-in all their modes; a variant file next to the log makes it answer a malformed result."""
+in all their modes; a variant file next to the log makes it answer a malformed result
+(``no-supports-once``: only its first advice is malformed)."""
 
 from __future__ import annotations
 
@@ -50,7 +51,8 @@ if kind == "architecture":
             "costs": ["coupling"], "recommended": False, "fit": "A small team.",
             "supports": ["one deployable unit"], "layers": [], "allow": {},
         }
-        if variant == "no-supports":
+        advised = [item for item in calls if item.get("mode") == "advise"]
+        if variant == "no-supports" or (variant == "no-supports-once" and len(advised) == 1):
             del option["supports"]
         answer({"options": [option, other]})
     if mode == "organize":
