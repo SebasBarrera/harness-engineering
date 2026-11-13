@@ -1,0 +1,71 @@
+```yaml
+answers:
+  Q-3: |
+    El año actual sale del reloj virtual: `now().year`. El límite máximo es `now().year + 1` y cambia si el reloj cruza el 31 de diciembre (se evalúa en el momento de la llamada a add_vehicle).
+    `year` y `seats` deben ser int que no sea bool (X7): `True`, `'4'` y `4.0` lanzan `ValueError`.
+    La placa distingue mayúsculas y minúsculas y no se normaliza (X7): `abc123` es inválida (`ValueError`); la unicidad se compara tal cual.
+    Marca y modelo se recortan (strip) antes de validar y se guardan recortados; uno hecho solo de espacios es `ValueError`.
+  Q-4: |
+    `location` debe ser una tupla de exactamente dos floats (latitud, longitud), latitud en [-90, 90] y longitud en [-180, 180], extremos incluidos. Se rechazan con `ValueError`: ints, listas, `bool`, NaN, infinito, valores fuera de rango y tuplas de otra longitud. Justificación: los cálculos haversine usan floats y una validación estricta evita estados ambiguos.
+    La ubicación se guarda y se devuelve tal como se dio, sin redondear (como tupla nueva, X5).
+    En go_online y update_location la ubicación se valida con el mismo helper compartido.
+  Q-5: |
+    `go_online` con una cuenta que no es conductor ni repartidor (pasajero, administrador, restaurante) lanza `ValueError` (es una regla incumplida, no un tema de propiedad). Un id de cuenta desconocido lanza `KeyError`.
+    Un conductor que omite `vehicle_id` (None) recibe `ValueError`.
+    Precedencia X8: primero `KeyError` (cuenta o vehículo desconocidos), luego `PermissionError` (vehículo de otro conductor), luego `ValueError` (cuenta no `active`, licencia vencida, ubicación inválida, etc.). Por tanto un vehículo ajeno lanza `PermissionError` aunque la cuenta no esté activa o la licencia haya vencido.
+    Un repartidor que da un `vehicle_id` recibe `ValueError`, salvo que el id no exista: en ese caso `KeyError` (el desconocido va primero).
+  Q-6: |
+    `add_vehicle` solo lo puede llamar el propio conductor, identificado por `driver_id`. Un id desconocido lanza `KeyError`. Si el id pertenece a una cuenta que no es conductor (pasajero, repartidor, restaurante, administrador) lanza `ValueError`, porque el primer argumento es el id de un conductor y no hay otro actor contra el cual medir permisos. Justificación: la firma no recibe un actor distinto del conductor.
+    Un conductor `pending` puede agregar vehículos (B2 lo necesita). Un conductor `suspended` lanza `ValueError` (X8: cuenta no activa donde se exige activa; aquí se permite solo `pending` o `active`). Justificación: un suspendido no debe modificar su flota.
+    Los vehículos de un `under_review` se permiten (la cuenta sigue siendo `active`).
+  Q-7: |
+    `go_offline` sobre un trabajador que ya está `offline` es un no-op silencioso: no lanza error y no cambia nada. Justificación: es idempotente y no incumple ninguna regla.
+    "Activo" significa que el trabajador tiene estado `busy`, es decir, un viaje (`driver_assigned`, `arrived`, `in_progress`) o pedido no entregado asignado. En esta tarea `go_offline` lanza `ValueError` cuando el estado es `busy`. Cuando existan viajes y pedidos (secciones F, G, L, M) el estado `busy` los reflejará, así que no hace falta otra verificación.
+    La API pública de esta tarea no puede poner a un trabajador en `busy`; las pruebas de ese caso pertenecen a las tareas posteriores y aquí solo se prueba que `go_offline` desde `available` funciona y desde `offline` es no-op. La implementación debe consultar el estado `busy` (no un contador separado) para que la regla funcione cuando lleguen esas tareas.
+    Cuenta desconocida: `KeyError`. Cuenta que no es conductor ni repartidor: `ValueError`.
+  Q-8: |
+    Después de `go_offline` o de una suspensión forzada, `worker_status` devuelve `status='offline'`, `location=None` y `vehicle_id=None` (se limpia el vehículo al desconectarse). Justificación: B5 solo define ubicación vacía offline, y devolver el último vehículo filtraría un estado obsoleto; el vehículo se da de nuevo en cada `go_online`.
+    Al reactivar a un trabajador suspendido, este sigue `offline`; debe llamar a `go_online`.
+    `worker_status` con un id desconocido lanza `KeyError`; con una cuenta que no es conductor ni repartidor lanza `ValueError`.
+    Puede consultarlo cualquier llamador: el método no recibe actor y solo devuelve estado operativo sin datos personales (sin teléfono ni email). Los trabajadores empiezan `offline` con `vehicle_id=None`.
+  Q-9: |
+    `go_online` sobre un trabajador que ya está `available` o `busy` lanza `ValueError` (ya está conectado). Para cambiar de ubicación se usa `update_location`; para cambiar de vehículo hay que hacer `go_offline` y `go_online` otra vez. Justificación: mantiene una sola transición offline→available y evita cambiar de vehículo con una oferta o viaje en curso.
+    Precedencia: `KeyError` y `PermissionError` primero, luego este `ValueError`.
+  Q-10: |
+    `approve` sobre un conductor exige, además de ser administrador, al menos un vehículo y una licencia válida; si falla alguna (o ambas) es `ValueError`. Un conductor ya `active` o `suspended` hace que `approve` lance `ValueError`: `approve` solo transiciona `pending` → `active`; para un suspendido existe `reactivate`. Justificación: A5 define `approve` como la salida de `pending` y evita saltarse la suspensión. Esto aplica a todos los roles que pasan por approve.
+    La licencia es válida mientras `now().date() < license_expires`, con la misma comprobación en `approve` y en `go_online` (A6: vence en esa fecha, así que ese día ya no es válida).
+    Precedencia X8 en `approve`: `KeyError` por id desconocido, `PermissionError` si el llamador no es administrador, luego `ValueError`.
+replaceCriteria:
+  - criterionId: ac_a09db71e04a543f98cee66bde3692f68
+    text: |
+      Cada requisito B1 a B5 se cumple con las decisiones de esta aclaración, y los errores siguen la precedencia KeyError, PermissionError, ValueError (X8).
+addCriteria:
+  - |
+    add_vehicle: con now().year == 2026, el año 2012 y el 2027 se aceptan y 2011 y 2028 lanzan ValueError; tras advance() hasta el 1 de enero de 2027, el año 2028 se acepta y 2029 lanza ValueError. Año o asientos `True`, `'4'` o `4.0` lanzan ValueError.
+  - |
+    add_vehicle: la placa `ABC123` se acepta; `abc123`, `AB1234`, `ABCD12` y `ABC12` lanzan ValueError; repetir `ABC123` (incluso de otro conductor) lanza ValueError y no consume un id VEH-; el primer vehículo válido es VEH-000001.
+  - |
+    add_vehicle asientos y año: moto con 1 asiento se acepta y con 2 lanza ValueError; economy y comfort aceptan 4 y 6 y rechazan 3 y 7; xl acepta 6 y 8 y rechaza 5 y 9; comfort de 2018 se acepta y de 2017 lanza ValueError; categoría `luxury` lanza ValueError; marca o modelo de solo espacios lanzan ValueError.
+  - |
+    add_vehicle: un id desconocido lanza KeyError; el id de un pasajero, repartidor, restaurante o administrador lanza ValueError; un conductor `pending` puede agregar vehículos y uno `suspended` lanza ValueError.
+  - |
+    approve de un conductor sin vehículo, o con licencia que vence hoy (now().date() == license_expires), lanza ValueError y el estado sigue `pending`; con un vehículo y licencia que vence mañana pasa a `active`. Llamar approve sobre una cuenta ya `active` o `suspended` lanza ValueError.
+  - |
+    go_online conductor `active` con vehículo propio y licencia válida: worker_status devuelve status `available`, la ubicación dada y ese vehicle_id. Sin vehicle_id lanza ValueError; vehículo desconocido lanza KeyError; vehículo de otro conductor lanza PermissionError, incluso si el conductor no está `active` o su licencia venció; conductor `pending` o `suspended` lanza ValueError; licencia vencida en el momento actual (tras advance hasta license_expires) lanza ValueError.
+  - |
+    go_online repartidor `active` sin vehicle_id queda `available` con vehicle_id None; con cualquier vehicle_id existente lanza ValueError; con uno desconocido lanza KeyError. Una cuenta de pasajero, administrador o restaurante lanza ValueError; un id desconocido lanza KeyError.
+  - |
+    go_online con ubicación inválida (lista, ints, bool, NaN, inf, latitud 90.1 o -90.1, longitud 180.1 o -180.1, tupla de 3) lanza ValueError y no cambia nada; las ubicaciones (90.0, 180.0) y (-90.0, -180.0) se aceptan y se devuelven sin cambios. Un segundo go_online sobre un trabajador ya `available` lanza ValueError.
+  - |
+    go_offline desde `available` deja status `offline`, location None y vehicle_id None; desde `offline` no lanza error ni cambia nada. update_location sobre un trabajador `available` cambia la ubicación devuelta por worker_status; sobre uno `offline` lanza ValueError y con ubicación inválida lanza ValueError.
+  - |
+    Todo trabajador recién registrado (conductor o repartidor) tiene worker_status con status `offline`, location None y vehicle_id None. worker_status de un id desconocido lanza KeyError y de un pasajero, administrador o restaurante lanza ValueError. Tras suspend de un trabajador `available`, su estado es `offline` con vehicle_id None y, tras reactivate, sigue `offline`.
+  - |
+    La lista o dict devuelto por worker_status es un objeto nuevo en cada llamada: modificar la ubicación devuelta no cambia el estado de la plataforma (X5).
+addRequirements:
+  - |
+    La validación de ubicaciones (tupla de dos floats, latitud [-90, 90], longitud [-180, 180], sin bool, NaN ni infinito) vive en un helper compartido y se aplica en go_online y update_location.
+  - |
+    Fuera del alcance de esta tarea: poner a un trabajador en `busy` mediante viajes o pedidos (secciones F, G, L, M); aquí solo se deja la regla de que go_offline lanza ValueError cuando el estado es `busy`.
+</parameter>
+</invoke>

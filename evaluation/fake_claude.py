@@ -444,6 +444,11 @@ def main(argv: list[str]) -> int:
         text = _host(prompt, cwd, _arg(argv, "--mcp-config") or "{}")
         return _print(text, model, session)
     text = _product_owner(prompt)
+    replies = cwd.parent / "fake-po-replies"
+    if text is not None and replies.is_dir() and (queued := sorted(replies.glob("*.txt"))):
+        # A recorded reply of the product owner, given as is and once (tests of the parser).
+        text = queued[0].read_text(encoding="utf-8")
+        queued[0].unlink()
     if text is None and prompt.startswith("Antes de implementar la tarea de abajo puedes"):
         # direct-po's questions turn (direct_po.QUESTIONS_PROMPT): one question.
         text = "```yaml\nquestions:\n  - |\n    ¿Qué pasa con una entrada inválida?\n```"

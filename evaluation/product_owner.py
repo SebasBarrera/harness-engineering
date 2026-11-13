@@ -17,6 +17,12 @@ behavior, edge cases, security and privacy, a one-line rationale for a choice th
 dictate, scope stated explicitly), and its model is fixed for every cell: ``DEFAULT_PO_MODEL`` unless a
 runner's ``--po-model`` says otherwise, whatever the model of the run. The YAML keys and the decisions
 (UPHOLD, REVISE) stay as they are, so the parsers below are unchanged.
+
+Since 2026-11-13 (an amendment after the aborted run r2 of rides super harness) a reply that does not
+parse is sanitized before it is retried: tool-call markup the model leaked at the start of a line
+(``</parameter>``, ``</invoke>``) is removed and an unclosed ```yaml fence is closed
+(``sanitize_reply``). What was removed is recorded in the round (``sanitizedOutput``). A reply that
+still does not parse is asked again with the parse error, at most ``PARSE_RETRIES`` times.
 """
 
 from __future__ import annotations
@@ -33,6 +39,8 @@ PO_TIMEOUT_SECONDS = 1800
 PO_BUDGET_USD = "20"
 # The product owner's model in every cell and condition (amendment of 2026-11-11).
 DEFAULT_PO_MODEL = "claude-sonnet-5-5"
+# Requests again after a reply that does not parse, even sanitized (amendment of 2026-11-13; it was 1).
+PARSE_RETRIES = 2
 
 NO_PRODUCT_OWNER_ACTOR = "human.product-owner-none"
 NO_PRODUCT_OWNER_ANSWER = (
@@ -191,6 +199,30 @@ def _scrub(value: Any, names: set[str]) -> Any:
 _YAML_BLOCK = re.compile(r"```ya?ml\s*\n(.*?)```", re.DOTALL)
 
 
+# A line that is only tool-call markup: what run r2 of rides super harness got after the YAML
+# (S02, 2026-11-13). At the start of a line it ends any YAML block scalar, so it is never content.
+_TOOL_MARKUP = re.compile(
+    r"^</?(?:parameter|invoke|function_calls|function_results)\b[^>\n]*>[ \t]*(?:\n|$)",
+    re.MULTILINE,
+)
+_YAML_OPEN = re.compile(r"```ya?ml\s*\n")
+
+
+def sanitize_reply(text: str) -> tuple[str, list[str]]:
+    """``text`` without leaked tool-call markup lines and with an unclosed ```yaml fence closed,
+    and a note per change (none when nothing changed)."""
+    notes: list[str] = []
+    removed = [m.group().strip() for m in _TOOL_MARKUP.finditer(text)]
+    if removed:
+        text = _TOOL_MARKUP.sub("", text)
+        notes.append("removed tool-call markup lines: " + ", ".join(removed))
+    opening = _YAML_OPEN.search(text)
+    if opening and not _YAML_BLOCK.search(text):
+        text = text.rstrip() + "\n```"
+        notes.append("closed an unclosed ```yaml fence")
+    return text, notes
+
+
 def parse_answers(text: str, question_ids: list[str]) -> dict[str, Any]:
     """The answers file in the product owner's reply, restricted to the fields harness accepts."""
     match = _YAML_BLOCK.search(text)
@@ -241,6 +273,8 @@ class ProductOwner:
         self.scratch = run_dir / "po-scratch"
         self.rounds: list[dict[str, Any]] = []
         self._scrubbed: list[str] = []
+        self._sanitized: list[str] = []
+        self._last_call = ""
 
     def __call__(self, task: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
         self.calls.mkdir(parents=True, exist_ok=True)
@@ -252,37 +286,8 @@ class ProductOwner:
             knowledge=self.knowledge,
         )
         ids = [q["questionId"] for q in questions]
-        record = run_claude(
-            prompt,
-            self.scratch,
-            self.model,
-            allocate_call(self.calls),
-            timeout_seconds=PO_TIMEOUT_SECONDS,
-            max_budget_usd=PO_BUDGET_USD,
-            resumable=True,
-            max_turns=0,
-        )
-        try:
-            answers = parse_answers(record.get("resultText", ""), ids)
-        except (ValueError, yaml.YAMLError) as error:
-            # One retry with the parse error, as a person would be asked to fix a malformed file.
-            retry = (
-                prompt
-                + "\n\nTu respuesta anterior no se pudo leer como el archivo de respuestas ("
-                + str(error)[:300]
-                + "). Responde de nuevo con un solo bloque ```yaml válido, con cada texto como un bloque |."
-            )
-            record = run_claude(
-                retry,
-                self.scratch,
-                self.model,
-                allocate_call(self.calls),
-                timeout_seconds=PO_TIMEOUT_SECONDS,
-                max_budget_usd=PO_BUDGET_USD,
-                resumable=True,
-                max_turns=0,
-            )
-            answers = parse_answers(record.get("resultText", ""), ids)
+        self._sanitized = []
+        record, answers = self._answers(prompt, ids, self._ask(prompt))
         answers = self._without_document_names(prompt, ids, answers)
         # A rewrite of a criterion the task does not have becomes a new criterion instead of an error.
         known = {c.get("criterionId") for c in task.get("acceptanceCriteria", [])}
@@ -309,10 +314,46 @@ class ProductOwner:
                 "questions": questions,
                 "answers": answers,
                 **({"scrubbedDocuments": self._scrubbed} if self._scrubbed else {}),
+                **({"sanitizedOutput": self._sanitized} if self._sanitized else {}),
             },
             record,
         )
         return answers
+
+    def _parse(self, parser: Any, record: dict[str, Any], *args: Any) -> Any:
+        """``parser`` on the reply of ``record``; a reply that does not parse is sanitized
+        (``sanitize_reply``) and parsed again, and what was removed is kept in ``_sanitized``."""
+        text = record.get("resultText", "")
+        try:
+            return parser(text, *args)
+        except (ValueError, yaml.YAMLError):
+            cleaned, notes = sanitize_reply(text)
+            if not notes:
+                raise
+            value = parser(cleaned, *args)
+            self._sanitized += [f"{self._last_call}: {note}" for note in notes]
+            return value
+
+    def _answers(
+        self, prompt: str, ids: list[str], record: dict[str, Any]
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        """The answers in ``record``; a reply that does not parse, even sanitized, is asked again
+        with the parse error, as a person would be asked to fix a malformed file (at most
+        ``PARSE_RETRIES`` times; the last error is raised)."""
+        for retry in range(PARSE_RETRIES + 1):
+            try:
+                return record, self._parse(parse_answers, record, ids)
+            except (ValueError, yaml.YAMLError) as error:
+                if retry == PARSE_RETRIES:
+                    raise
+                record = self._ask(
+                    prompt
+                    + "\n\nTu respuesta anterior no se pudo leer como el archivo de respuestas ("
+                    + str(error)[:300]
+                    + "). Responde de nuevo con un solo bloque ```yaml válido, con cada texto como"
+                    + " un bloque |, y nada fuera de ese bloque."
+                )
+        raise AssertionError("unreachable")
 
     def _cited(self, answers: dict[str, Any]) -> set[str]:
         """The documents ``answers`` cite that the workspace (``<run>/ws``) does not hold."""
@@ -351,7 +392,7 @@ class ProductOwner:
         )
         record = self._ask(retry)
         try:
-            again = parse_answers(record.get("resultText", ""), ids)
+            again = self._parse(parse_answers, record, ids)
         except (ValueError, yaml.YAMLError):
             again = answers
         cited = self._cited(again)
@@ -367,11 +408,13 @@ class ProductOwner:
     def _ask(self, prompt: str) -> dict[str, Any]:
         self.calls.mkdir(parents=True, exist_ok=True)
         self.scratch.mkdir(parents=True, exist_ok=True)
+        call = allocate_call(self.calls)
+        self._last_call = Path(call).name
         return run_claude(
             prompt,
             self.scratch,
             self.model,
-            allocate_call(self.calls),
+            call,
             timeout_seconds=PO_TIMEOUT_SECONDS,
             max_budget_usd=PO_BUDGET_USD,
             resumable=True,
@@ -392,9 +435,10 @@ class ProductOwner:
             ),
             knowledge=self.knowledge,
         )
+        self._sanitized = []
         record = self._ask(prompt)
         try:
-            verdict = parse_dispute(record.get("resultText", ""))
+            verdict = self._parse(parse_dispute, record)
         except (ValueError, yaml.YAMLError) as error:
             record = self._ask(
                 prompt
@@ -402,8 +446,14 @@ class ProductOwner:
                 + str(error)[:300]
                 + "). Responde de nuevo con un solo bloque ```yaml válido con decision y reason."
             )
-            verdict = parse_dispute(record.get("resultText", ""))
+            verdict = self._parse(parse_dispute, record)
         self._record(
-            {"kind": "acceptance-dispute", "disputed": dispute.get("disputed"), **verdict}, record
+            {
+                "kind": "acceptance-dispute",
+                "disputed": dispute.get("disputed"),
+                **verdict,
+                **({"sanitizedOutput": self._sanitized} if self._sanitized else {}),
+            },
+            record,
         )
         return verdict
