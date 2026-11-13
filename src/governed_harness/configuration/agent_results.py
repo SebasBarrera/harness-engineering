@@ -138,10 +138,16 @@ class ContractRetryConfig(_Section):
     or, since #92, a call that changed the workspace) is sent once more before the phase
     blocks (``mode: once``), to
     ``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same
-    provider. Both attempts are recorded. Absent: the first broken answer blocks, as before."""
+    provider. Both attempts are recorded. Absent: the first broken answer blocks, as before.
+
+    ``explainProblem: true`` (2.1) tells the second attempt why the first was rejected: its
+    instructions end with the validation error and ask the agent to correct it, so an agent that
+    misread the result format is not sent the same request twice. Absent or false: the second
+    attempt is the same request, as before (and the configuration digest does not change)."""
 
     mode: ContractRetryMode = "once"
     fallback_provider: str | None = Field(default=None, alias="fallbackProvider", min_length=1)
+    explain_problem: bool | None = Field(default=None, alias="explainProblem")
 
     @field_validator("mode", mode="before")
     @classmethod

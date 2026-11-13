@@ -1222,8 +1222,20 @@
     },
     "ContractRetryConfig": {
       "additionalProperties": false,
-      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects\nor, since #92, a call that changed the workspace) is sent once more before the phase\nblocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as before.",
+      "description": "A read-only call (clarify, plan, acceptance, locate, architecture, review) whose answer\nbreaks its contract (no valid JSON, no ``result`` object, a ``result`` its phase rejects\nor, since #92, a call that changed the workspace) is sent once more before the phase\nblocks (``mode: once``), to\n``fallbackProvider`` when it names an entry of ``agentProviders``, else to the same\nprovider. Both attempts are recorded. Absent: the first broken answer blocks, as before.\n\n``explainProblem: true`` (2.1) tells the second attempt why the first was rejected: its\ninstructions end with the validation error and ask the agent to correct it, so an agent that\nmisread the result format is not sent the same request twice. Absent or false: the second\nattempt is the same request, as before (and the configuration digest does not change).",
       "properties": {
+        "explainProblem": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Explainproblem"
+        },
         "fallbackProvider": {
           "anyOf": [
             {

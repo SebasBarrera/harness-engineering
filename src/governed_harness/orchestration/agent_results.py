@@ -655,7 +655,9 @@ class AgentResults:
         ``ERROR``. Under ``runtime.contractRetry`` (#80) an answer that breaks its contract (a
         protocol error, a ``result`` that ``validate`` rejects with ``ValueError`` or, since
         #92, a call that changed the workspace) is sent once more, to the fallback provider
-        when one is configured, and both attempts are recorded."""
+        when one is configured, and both attempts are recorded. Under
+        ``contractRetry.explainProblem`` the second attempt's instructions end with why the first
+        was rejected (:func:`retry_suffix`)."""
         provider_id = self.provider_for(execution, kind)
         first = self._call_once(
             execution,
@@ -672,7 +674,10 @@ class AgentResults:
         if retry is None or not retry.enabled or problem is None:
             return first
         fallback = retry.fallback_provider or provider_id
-        self._record_contract_retry(execution, phase, kind, first, problem, provider_id, fallback)
+        explain = bool(retry.explain_problem)
+        self._record_contract_retry(
+            execution, phase, kind, first, problem, provider_id, fallback, explained=explain
+        )
         second = self._call_once(
             execution,
             phase,
@@ -681,7 +686,9 @@ class AgentResults:
             task=task,
             provider_id=fallback,
             instruction_values=instruction_values,
-            instructions_suffix=instructions_suffix,
+            instructions_suffix=retry_suffix(instructions_suffix, problem)
+            if explain
+            else instructions_suffix,
         )
         return AgentCallOutcome(
             status=second.status,
@@ -701,18 +708,22 @@ class AgentResults:
         problem: str,
         provider_id: str,
         fallback: str,
+        *,
+        explained: bool = False,
     ) -> None:
         """The first attempt of a read-only call broke its contract: say why and where the
-        second goes."""
-        record = {
+        second goes (and, under ``explainProblem``, that the second is told why)."""
+        record: dict[str, Any] = {
             "callKind": kind,
             "attempt": 1,
             "provider": provider_id,
             "retryProvider": fallback,
-            "problem": problem[:2000],
+            "problem": problem[:PROBLEM_LIMIT],
             "invocationId": first.invocation_id,
             "evidenceRefs": list(first.evidence_refs),
         }
+        if explained:
+            record["problemSentToAgent"] = True
         ref = self.record_json(
             execution,
             phase.phase_id,
@@ -1385,6 +1396,21 @@ def protocol_error(result: AgentExecutionResult) -> str | None:
     if result.status is not ResultStatus.ERROR or error is None:
         return None
     return error.message if error.kind is ErrorKind.PROTOCOL_ERROR else None
+
+
+PROBLEM_LIMIT = 2000
+"""Characters of a contract problem kept in the retry record and sent back to the agent."""
+
+
+def retry_suffix(instructions_suffix: str, problem: str) -> str:
+    """The instructions suffix of a second attempt under ``contractRetry.explainProblem``: the
+    original suffix, then why the first answer was rejected and a request to correct it."""
+    correction = (
+        "Your previous answer to this request was rejected because it broke the result "
+        f"contract: {problem[:PROBLEM_LIMIT]}. Correct that problem and answer again with the "
+        "complete JSON object, every required field present."
+    )
+    return f"{instructions_suffix} {correction}" if instructions_suffix else correction
 
 
 def contract_problem(
