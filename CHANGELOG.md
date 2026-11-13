@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- `secrets.declared-value` no longer takes field names, exception names and environment
+  variable names for secrets the task declares: `verification.secretsDeclared: explicit`, which
+  `harness init` now writes, counts a value as declared only when the task assigns it to a secret
+  name (`DB_PASSWORD="…"`, `password: …`) or states it as the secret ("the password is …", «la
+  contraseña es …»), skips identifiers, exception and class names, environment variable names,
+  single lowercase words, URLs and dummy values (also with accents, such as `pässword`), and
+  matches it as a whole token instead of a substring. In the security scenario of the 2.0.1
+  campaign the criteria of the product owner (`Con ALERTS_PASSWORD="pw": evento
+  {"severity":...,"message":...}`) made `severity`, `message`, `source`, `ValueError` and
+  `RuntimeError` declared secrets, and the 7 harness runs that stopped in VERIFICATION stopped
+  on these CRITICAL findings; re-applied to their ChangeSets, `explicit` reports none. A secret
+  the task does declare and the code writes stays CRITICAL. Without the key (`nearby`) the
+  findings and the configuration digest stay as in 2.0.1.
+
 ## 2.0.1 - 2026-11-12
 
 Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
