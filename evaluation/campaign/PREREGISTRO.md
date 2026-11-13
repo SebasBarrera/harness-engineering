@@ -3117,3 +3117,59 @@ no entran en las medianas ni en los conteos de la celda repetida. Las celdas de 
 todas las de Sonnet (bloque B) y de T1, T2, T6 y rides se corren una sola vez, ya con el arreglo. El
 producto sigue siendo el wheel de 2.0.1; el aparato (`evaluation/`) sale del commit de esa rama, que
 `environment.json` registra en `code`/`codeDigest` y la bitácora con su SHA.
+
+## Enmienda 2026-11-13: la r2 de rides super `harness` se detiene, se corrige el product owner y se repite
+
+Se añade el 2026-11-13, **con siete corridas de rides ya registradas** (Sonnet: `direct` y `harness`
+× `one_line` r1 y r2, `direct` × `super` r1 y r2, `harness` × `super` r1) y **antes de la corrida
+que falta** (`harness` × `super` r2). No cambia hipótesis, métricas ni criterios de éxito; corrige una
+falla del aparato y declara qué se repite y qué se excluye.
+
+**Qué pasó.** La r2 de `harness` × `super` empezó el 2026-11-13 a las 17:11 UTC
+(`rides-super-harness-claude-sonnet-5-5-r2-20261113T171141Z`). Sus tres primeros pasos se
+detuvieron en INTENT sin entregar nada:
+
+- S01 y S03: la llamada `clarify` del agente devolvió JSON truncado (falta la llave final); el
+  harness falla cerrado («Agent review of the task did not answer (FAILED)») y no hubo preguntas que
+  el product owner pudiera responder. Es comportamiento del producto 2.0.1.
+- S02: el harness preguntó (8 preguntas de tarea y 2 de P1) y el product owner simulado respondió dos
+  veces con un YAML válido seguido de marcas de herramienta (`</parameter>`, `</invoke>`; la primera
+  sin cerrar la valla ```yaml, la segunda dentro de ella). `parse_answers` lanzó `ScannerError` en
+  los dos intentos y la persona simulada registró `product-owner-failed`. Es una **falla del
+  aparato**: el producto pidió y nadie le respondió.
+
+Sin S01 a S03 (cuentas, vehículos y geografía) los pasos siguientes corrían sobre un espacio de trabajo
+sin su base, así que el dueño decidió detener la corrida a mano (se mató el árbol de procesos durante
+S04), corregir el aparato y repetirla.
+
+**Política ante «Agent review ... did not answer».** El aparato **no** reintenta ni hace
+`run continue` cuando el harness queda BLOCKED en INTENT porque su propia llamada `clarify` no dio un
+objeto de resultado: es una parada del producto evaluado y cuenta como tal (Tabla A). La r1 recibió el
+mismo trato: su S02 se detuvo igual (evento 1066 del almacén de la r1, «Agent review of the task did
+not answer (FAILED)») y quedó registrada como parada. Cambiarlo ahora haría que la r2 no fuera
+comparable con la r1.
+
+**Arreglo.** `evaluation/product_owner.py` (rama `fix/eval-po-no-doc-refs`): (1) una respuesta que no se
+puede leer se sanea antes de reintentar: se quitan las líneas que son solo marcas de llamada a
+herramienta (`</parameter>`, `</invoke>`, `<function_calls>` y sus cierres) al inicio de línea, donde
+nunca son contenido de un bloque YAML, y se cierra una valla ```yaml abierta; lo quitado queda en la
+ronda del product owner (`sanitizedOutput`, con el archivo de la llamada); (2) si aún no se lee, se le
+vuelve a pedir con el error hasta **2** veces (antes, 1), diciéndole que no escriba nada fuera del
+bloque. Lo mismo vale para el juicio de una disputa de pruebas. Prueba:
+`tests/unit/test_evaluation_po_sanitize.py`, con las dos respuestas de S02 copiadas tal cual
+(`tests/fixtures/rides-r2-s02-po-call-1.txt` y `-2.txt`) y `fake_claude.py` entregándolas
+(`fake-po-replies`). Una respuesta válida no cambia, así que los registros ya hechos se habrían leído
+igual.
+
+**Qué se repite y qué se excluye.** La r2 de `harness` × `super` se repite **completa** (S01 a S16)
+con el aparato corregido, el mismo wheel de 2.0.1, el mismo modelo y sin tope de turnos. La r2
+abortada se conserva sin borrar nada (su directorio lleva el sufijo `-aborted` y un `record.json` con
+`invalid`) y su registro va a `rides.invalid.jsonl`, nunca a `rides.jsonl`: no entra en ninguna tabla
+ni mediana. Causa declarada: detenida a mano por decisión del dueño tras una falla del aparato (S02,
+`product-owner-failed` por marcas de herramienta en el YAML).
+
+**Hallazgo al escribir esta enmienda.** La r1 de `harness` × `super`, ya registrada, tuvo la misma
+falla en S14 (`ScannerError` en `</parameter>`, línea 52, en `harness.clarification`): ese paso se
+detuvo por el aparato, no por el producto. Las demás corridas registradas no la tienen. Esta enmienda
+**no** cambia el registro de la r1; si S14 de la r1 se reporta como falla del aparato, se repite o se
+deja como está lo decide el mantenedor, y se declarará al reportar rides.
