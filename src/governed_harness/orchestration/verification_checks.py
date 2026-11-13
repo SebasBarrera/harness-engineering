@@ -915,7 +915,14 @@ def _planned_diff_checks(
             (
                 SECRETS_ID,
                 "enforce",
-                lambda: (scan_secrets(diff, task_text=_task_text(task)), "secrets in context"),
+                lambda: (
+                    scan_secrets(
+                        diff,
+                        task_text=_task_text(task),
+                        declared_secrets=config.secrets_declared or "nearby",
+                    ),
+                    "secrets in context",
+                ),
             )
         )
     return planned

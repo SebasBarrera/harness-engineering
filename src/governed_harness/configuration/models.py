@@ -617,6 +617,15 @@ class VerificationConfig(ConfigModel):
     secrets: Literal["context", "pattern"] | None = None
     """``context``: the secret check of the independent review weighs where a literal is
     (tests, environment assignments, values the task declares) and detects evasion."""
+    secrets_declared: Literal["nearby", "explicit"] | None = Field(
+        default=None, alias="secretsDeclared"
+    )
+    """Since 2.1: how the task text declares a secret for ``secrets: context``. ``explicit``
+    takes only a value assigned to a secret name (``DB_PASSWORD="…"``) or stated as the secret
+    ("the password is …"), skips identifiers, exception names, environment variable names,
+    single lowercase words and dummy values, and matches it as a whole token. Absent or
+    ``nearby`` keeps 2.0.1: any quoted string shortly after secret wording, matched as a
+    substring."""
     sarif: tuple[SarifInput, ...] | None = None
     risk_factors: dict[str, RiskAction] | None = Field(default=None, alias="riskFactors")
     acceptance_tests: AcceptanceTestsConfig | None = Field(default=None, alias="acceptanceTests")

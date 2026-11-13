@@ -51,6 +51,7 @@ AGENT_RESULTS_KEYS: dict[str, tuple[str, ...]] = {
         "weakenedControls",
         "testQuality",
         "secrets",
+        "secretsDeclared",
         "sarif",
         "riskFactors",
         "acceptanceTests",

@@ -5338,6 +5338,22 @@
           "default": null,
           "title": "Secrets"
         },
+        "secretsDeclared": {
+          "anyOf": [
+            {
+              "enum": [
+                "nearby",
+                "explicit"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Secretsdeclared"
+        },
         "securityPatterns": {
           "anyOf": [
             {

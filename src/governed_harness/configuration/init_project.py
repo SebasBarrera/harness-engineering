@@ -183,6 +183,8 @@ def initialize_project(path: Path, *, force: bool = False) -> Path:
                 "severity": "MEDIUM",
             },
             "secrets": "context",
+            # 2.1: only a value assigned to a secret name is a declared secret.
+            "secretsDeclared": "explicit",
             "riskFactors": dict(DEFAULT_RISK_ACTIONS),
             # #94: the frozen files are write-protected and a disputed test waits for a
             # person.

@@ -10,7 +10,9 @@ The value itself is never reported: messages show its first two characters and i
 from __future__ import annotations
 
 import re
+import unicodedata
 from collections.abc import Iterator, Sequence
+from typing import Literal
 
 from governed_harness.domain.enums import FindingSeverity
 
@@ -127,6 +129,82 @@ def _declared_values(task_text: str) -> set[str]:
         if len(value) >= _MIN_SECRET_LENGTH and not (value.isalpha() and value.islower()):
             values.add(value)
     return values
+
+
+DeclaredSecrets = Literal["nearby", "explicit"]
+"""How the task text declares a secret: ``nearby`` (1.0.0 to 2.0.1) takes any quoted string
+shortly after secret wording and matches it as a substring; ``explicit`` takes only a value
+assigned to a secret name or stated as the secret, and matches it as a whole token."""
+
+_EXPLICIT_VALUE = (
+    r"(?:\"(?P<dq>[^\"\n]+)\"|'(?P<sq>[^'\n]+)'|`(?P<bq>[^`\n]+)`|“(?P<cq>[^”\n]+)”"
+    r"|(?P<bare>[^\s\"'`“”,;]+))"
+)
+_EXPLICIT_NAMED = re.compile(
+    r"(?<![\w.-])[\"'`]?(?P<name>[A-Za-z_][\w-]*)[\"'`]?\s*(?:=|:)\s*" + _EXPLICIT_VALUE
+)
+_EXPLICIT_WORDED = re.compile(
+    r"(?<![\w-])(?:password|passwd|passphrase|secret|token|api[ _-]?key|key|credential"
+    r"|contrase(?:ñ|n)a|clave|secreto|credencial)s?"
+    r"(?:\s+(?:is|es|was|era)\s+|\s*[:=]\s*)" + _EXPLICIT_VALUE,
+    re.IGNORECASE,
+)
+_NOT_A_DECLARED_VALUE = re.compile(
+    r"[a-z]+"  # a single lowercase word: "severity", "message", "critical", "secreto"
+    r"|[a-z_][a-z0-9_]*|[a-z]+(?:[A-Z][a-z0-9]*)+"  # snake_case and camelCase identifiers
+    r"|[A-Z][A-Za-z0-9]*(?:Error|Exception|Warning)"  # exception names
+    r"|[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)*"  # environment variable and constant names
+    r"|[A-Z][a-z]+(?:[A-Z][a-z0-9]*)*"  # class names: "Request", "Authorization"
+)
+
+
+def _explicit_values(task_text: str) -> set[str]:
+    """Values the task assigns to a secret name (``DB_PASSWORD="…"``, ``token: …``) or states
+    as the secret ("the password is …", «la contraseña es …»).
+
+    Identifiers, exception and class names, environment variable names, single lowercase words,
+    URLs, paths and obvious dummy values are not secrets: a criterion that names a field or an
+    exception next to ``ALERTS_PASSWORD`` declares nothing."""
+    values: set[str] = set()
+    for match in _EXPLICIT_NAMED.finditer(task_text):
+        if _secret_name(match.group("name")):
+            values.add(_explicit_value(match))
+    for match in _EXPLICIT_WORDED.finditer(task_text):
+        values.add(_explicit_value(match))
+    return {value for value in values if _declarable(value)}
+
+
+def _explicit_value(match: re.Match[str]) -> str:
+    quoted = next(
+        (match.group(group) for group in ("dq", "sq", "bq", "cq") if match.group(group)), None
+    )
+    if quoted is not None:
+        return quoted.strip()
+    return match.group("bare").rstrip(".)]:")
+
+
+def _declarable(value: str) -> bool:
+    """Whether an explicitly declared value can be a secret. Accents are folded first, so a
+    dummy word written with diacritics (``pässword``, used to test UTF-8 handling) stays a
+    dummy."""
+    folded = "".join(
+        char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char)
+    )
+    return (
+        len(value) >= _MIN_SECRET_LENGTH
+        and _NOT_A_DECLARED_VALUE.fullmatch(folded) is None
+        and not is_dummy_value(folded)
+        and not _not_a_value(value)
+    )
+
+
+def _declared_pattern(value: str, declared_secrets: DeclaredSecrets) -> re.Pattern[str]:
+    """``nearby`` matches a declared value anywhere in a line; ``explicit`` only as a whole token,
+    so a declared ``s3cret-9`` does not match inside ``xs3cret-90``."""
+    escaped = re.escape(value)
+    if declared_secrets == "explicit":
+        escaped = rf"(?<![\w]){escaped}(?![\w])"
+    return re.compile(escaped)
 
 
 # ----- line patterns -------------------------------------------------------------------------
@@ -305,9 +383,19 @@ def _graded(
         collector.add(test_rule, FindingSeverity.MEDIUM, message, path, line, _TEST_RECOMMENDATION)
 
 
-def scan_secrets(diff: Sequence[DiffFile], *, task_text: str = "") -> list[Issue]:
-    """Secret issues on the added lines of ``diff``, in diff and line order."""
-    declared = _declared_values(task_text)
+def scan_secrets(
+    diff: Sequence[DiffFile], *, task_text: str = "", declared_secrets: DeclaredSecrets = "nearby"
+) -> list[Issue]:
+    """Secret issues on the added lines of ``diff``, in diff and line order.
+
+    ``declared_secrets`` chooses how the task text declares a secret (see
+    :data:`DeclaredSecrets`); the default keeps the behaviour of 1.0.0 to 2.0.1."""
+    values = (
+        _explicit_values(task_text)
+        if declared_secrets == "explicit"
+        else _declared_values(task_text)
+    )
+    declared = [(value, _declared_pattern(value, declared_secrets)) for value in sorted(values)]
     collector = _Collector()
     for file in diff:
         if file.is_deleted:
@@ -321,7 +409,7 @@ def scan_secrets(diff: Sequence[DiffFile], *, task_text: str = "") -> list[Issue
 
 def _scan_line(
     collector: _Collector,
-    declared: set[str],
+    declared: Sequence[tuple[str, re.Pattern[str]]],
     text: str,
     path: str,
     number: int,
@@ -353,11 +441,15 @@ def _scan_line(
 
 
 def _declared_value(
-    collector: _Collector, declared: set[str], text: str, path: str, number: int
+    collector: _Collector,
+    declared: Sequence[tuple[str, re.Pattern[str]]],
+    text: str,
+    path: str,
+    number: int,
 ) -> None:
     """Record the first value the task discloses as a secret that the line contains."""
-    for value in sorted(declared):
-        if value in text:
+    for value, pattern in declared:
+        if pattern.search(text):
             collector.add(
                 "secrets.declared-value",
                 FindingSeverity.CRITICAL,
