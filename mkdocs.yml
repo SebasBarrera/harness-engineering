@@ -89,6 +89,7 @@ nav:
       - Proyecto existente: es/proyecto-existente.md
       - Estructura generada: es/estructura-generada.md
       - Seguimiento de una ejecución: es/seguimiento.md
+      - Comandos por fase: es/comandos-por-fase.md
       - Contrato entre agentes: es/contrato-de-agentes.md
       - Límites de iteraciones, tokens y tiempo: es/limites-de-agentes.md
       - Perfiles de gobierno por riesgo: es/perfiles-de-gobierno.md

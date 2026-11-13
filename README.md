@@ -245,6 +245,8 @@ every option:
 
 Every command accepts `--help`; the project commands take `--path` (default: the current directory).
 
+Spanish: [commands by phase](docs/es/comandos-por-fase.md) lists each command with the phase it is used in.
+
 ## Exit codes
 
 | Code | Meaning |
