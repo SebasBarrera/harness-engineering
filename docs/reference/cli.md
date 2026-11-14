@@ -615,7 +615,8 @@ harness run cleanup [OPTIONS]
 Keep the changes of a run that stopped without approval as a quarantined patch and
 restore the workspace to its baseline (`governance.stopTheLine`). This releases a line
 blocked by `stopTheLine: block`. A run that is closed or still open for a decision is
-refused (exit 5).
+refused (exit 5). When the baseline content of a changed path was not recorded, nothing is
+restored (`restoreStatus: refused`, exit 6): restore the paths by hand and run it again.
 
 ```text
 harness run quarantine [OPTIONS]

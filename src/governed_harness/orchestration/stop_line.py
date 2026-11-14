@@ -6,8 +6,10 @@ deliverable contained seven such steps. Under ``governance.stopTheLine``:
 
 * ``restore``: the changes since DISCOVERY are kept as a quarantined patch (an artifact on the
   run's chain, with the list of paths and the content of every restored path) and the workspace
-  is restored to the baseline; a file whose baseline content was not recorded as text cannot be
-  restored and the line is blocked instead. A run that stopped after IMPLEMENTATION and is
+  is restored to the baseline. The restore is all or nothing: when a file's baseline content
+  was not recorded as text (a redacted snapshot, #178) nothing is restored, the workspace keeps
+  the run's changes as a whole (``restoreStatus: refused`` with the ``unrestorablePaths``) and
+  the line is blocked until a person restores them by hand and runs ``harness run quarantine``. A run that stopped after IMPLEMENTATION and is
   continued gets its quarantined changes back before it is evaluated again, unless a new
   attempt was written over a restored path (the quarantine is then superseded): the recorded
   content must match its digest, otherwise nothing is written and the run is BLOCKED;
@@ -91,6 +93,19 @@ class StopLine:
         if self.mode == "off":
             return
         stopped = self.results.flag_json(self._flag(project_id))
+        if (
+            isinstance(stopped, dict)
+            and stopped.get("executionId")
+            and stopped.get("unrestorablePaths")
+        ):
+            raise PolicyViolationError(
+                f"run {stopped['executionId']} stopped without approval ({stopped.get('reason')}) "
+                "and the harness refused to restore its changes, because the baseline content "
+                f"of {', '.join(stopped['unrestorablePaths'][:10])} was not recorded: restore "
+                "the changed paths of the run by hand (for example with git), then release the "
+                f"line with harness run quarantine --run {stopped['executionId']} "
+                "(governance.stopTheLine)"
+            )
         if isinstance(stopped, dict) and stopped.get("executionId"):
             raise PolicyViolationError(
                 f"run {stopped['executionId']} stopped without approval ({stopped.get('reason')}) "
@@ -128,11 +143,14 @@ class StopLine:
         ``harness run quarantine``)."""
         record = self._record(execution, reason, restore=True)
         stopped = self.results.flag_json(self._flag(execution.project_id))
-        unrestorable = bool(record and record["unrestorablePaths"])
-        if unrestorable:
+        if record and record["unrestorablePaths"]:
             self.results.set_flag_json(
                 self._flag(execution.project_id),
-                {"executionId": execution.execution_id, "reason": reason + " (unrestorable)"},
+                {
+                    "executionId": execution.execution_id,
+                    "reason": reason + " (unrestorable)",
+                    "unrestorablePaths": record["unrestorablePaths"],
+                },
             )
         elif isinstance(stopped, dict) and stopped.get("executionId") == execution.execution_id:
             self.results.s.state.set_flag(self._flag(execution.project_id), "")
@@ -195,6 +213,8 @@ class StopLine:
             "phase": execution.current_phase.value,
         }
         if restore:
+            # All or nothing (restore_changes): ``refused`` means nothing was written.
+            record["restoreStatus"] = "refused" if unrestorable else "restored"
             record["quarantinedContents"] = [
                 captured[path] for path in restored if path in captured
             ]
@@ -207,7 +227,14 @@ class StopLine:
             kind="workspace-quarantine",
             summary=(
                 f"Stop the line ({reason}): {len(diff.changes)} changed path(s) "
-                + (f"quarantined, {len(restored)} restored" if restore else "kept; line blocked")
+                + (
+                    "kept; line blocked"
+                    if not restore
+                    else f"restore refused, {len(unrestorable)} without recorded content; "
+                    "nothing restored, line blocked"
+                    if unrestorable
+                    else f"quarantined, {len(restored)} restored"
+                )
             ),
         )
         results.s.events.append(

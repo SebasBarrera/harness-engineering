@@ -304,7 +304,8 @@ def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -
     """Quarantine the changes of a run that stopped without approval and restore the baseline.
 
     Refused for a run that passed, that waits in DECISION (a person decides there) or whose
-    project does not set ``governance.stopTheLine``."""
+    project does not set ``governance.stopTheLine``. When a changed path has no recorded
+    baseline content nothing is restored (``restoreStatus: refused``)."""
     from governed_harness.orchestration.engine import RunEngine
 
     require_human_actor(actor_id, "quarantine a run's changes")
@@ -324,11 +325,28 @@ def quarantine_run(services: EngineServices, execution_id: str, actor_id: str) -
     services.events.append(execution_id, "workspace.quarantine.requested", {}, actor=actor)
     record = engine.results.stop_line.quarantine(execution, f"quarantined by {actor_id}")
     engine.anchor_chain(execution_id)
-    return {
+    refused = record is not None and record.get("restoreStatus") == "refused"
+    result: dict[str, Any] = {
         "executionId": execution_id,
-        "quarantined": record is not None,
+        "quarantined": record is not None and not refused,
         "record": record,
     }
+    if refused and record is not None:
+        # Fail closed: nothing was restored, the workspace keeps the run's changes as a whole.
+        result["restoreStatus"] = "refused"
+        result["unrestorablePaths"] = record["unrestorablePaths"]
+        result["hint"] = refused_restore_hint(execution_id, record["unrestorablePaths"])
+    return result
+
+
+def refused_restore_hint(execution_id: str, unrestorable: list[str]) -> str:
+    """What a person does when the harness refused to restore a run's changes."""
+    return (
+        f"the changes of run {execution_id} were not restored, because the baseline content of "
+        f"{', '.join(unrestorable[:10])} was not recorded (governance.stopTheLine); nothing was "
+        "written, the workspace keeps the run's changes. Restore the changed paths by hand "
+        f"(for example with git), then run harness run quarantine --run {execution_id}"
+    )
 
 
 def _off_or_value(value: Any) -> Any:

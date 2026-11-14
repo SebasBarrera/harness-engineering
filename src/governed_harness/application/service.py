@@ -97,6 +97,7 @@ from .agent_results import (
     plan_state,
     quarantine_run,
     raise_budget,
+    refused_restore_hint,
     routing_calibration,
 )
 from .clarification_loader import load_clarification_file
@@ -701,7 +702,7 @@ class HarnessApplication(ReviewCodeCommands):
                         if lease is not None:
                             lease.bind(execution.execution_id)
                         result = RunEngine(isolated).continue_execution(execution.execution_id)
-                        return self._after(isolated, result)
+                        return self._reported(isolated, result)
                 finally:
                     isolated.close()
         with self._services(path) as services, self._leased(services, "run start") as lease:
@@ -710,7 +711,7 @@ class HarnessApplication(ReviewCodeCommands):
             execution = engine.create_execution(task, provider=provider)
             if lease is not None:
                 lease.bind(execution.execution_id)
-            return self._after(services, engine.continue_execution(execution.execution_id))
+            return self._reported(services, engine.continue_execution(execution.execution_id))
 
     def continue_run(self, path: Path, execution_id: str) -> Execution:
         with self._run_services(path, execution_id) as (services, execution_id):
@@ -729,18 +730,20 @@ class HarnessApplication(ReviewCodeCommands):
                         if lease is not None:
                             lease.bind(execution_id)
                         result = RunEngine(isolated).continue_execution(execution_id)
-                        return self._after(isolated, result)
+                        return self._reported(isolated, result)
                 finally:
                     isolated.close()
             with self._leased(services, "run continue") as lease:
                 if lease is not None:
                     lease.bind(execution_id)
-                return self._after(services, RunEngine(services).continue_execution(execution_id))
+                return self._reported(
+                    services, RunEngine(services).continue_execution(execution_id)
+                )
 
     def cancel_run(self, path: Path, execution_id: str, actor_id: str | None = None) -> Execution:
         with self._run_services(path, execution_id) as (services, execution_id):
             decider = self._decider(services, actor_id)[0]
-            return self._after(services, RunEngine(services).cancel(execution_id, decider))
+            return self._reported(services, RunEngine(services).cancel(execution_id, decider))
 
     def cleanup_run(self, path: Path, execution_id: str) -> dict[str, Any]:
         """Remove the worktree of a finished isolated run (never its branch, #55)."""
@@ -778,7 +781,7 @@ class HarnessApplication(ReviewCodeCommands):
                 )
                 result: dict[str, Any] = {"decision": decision}
                 if continue_after:
-                    execution = self._after(
+                    execution = self._reported(
                         services, RunEngine(services).continue_execution(execution_id)
                     )
                     result["execution"] = execution.model_dump(mode="json", by_alias=True)
@@ -1077,6 +1080,22 @@ class HarnessApplication(ReviewCodeCommands):
             decider = self._decider(services, actor_id)[0]
             return quarantine_run(services, execution_id, decider)
 
+    def _reported(self, services: EngineServices, execution: Execution) -> Execution:
+        """``_after``, and a notice while the harness refused to restore the run's changes
+        (``governance.stopTheLine``, all or nothing): the person restores them by hand."""
+        execution = self._after(services, execution)
+        raw = services.state.get_flag(f"stopline:{execution.project_id}")
+        stopped = json.loads(raw) if raw else None
+        if (
+            isinstance(stopped, dict)
+            and stopped.get("executionId") == execution.execution_id
+            and stopped.get("unrestorablePaths")
+        ):
+            self.notices.append(
+                refused_restore_hint(execution.execution_id, stopped["unrestorablePaths"])
+            )
+        return execution
+
     @classmethod
     def _after(cls, services: EngineServices, execution: Execution) -> Execution:
         """Side effects of reaching a state a person cares about: the webhooks of
@@ -1183,7 +1202,9 @@ class HarnessApplication(ReviewCodeCommands):
                         identity_source=self._identity_source(services),
                         with_contract=True,
                     )
-                execution = self._after(services, engine.continue_execution(execution.execution_id))
+                execution = self._reported(
+                    services, engine.continue_execution(execution.execution_id)
+                )
             return {
                 "task": task.model_dump(mode="json", by_alias=True),
                 "execution": execution.model_dump(mode="json", by_alias=True),
@@ -1391,7 +1412,7 @@ class HarnessApplication(ReviewCodeCommands):
                 and decision in {DecisionKind.APPROVE, DecisionKind.APPROVE_EXCEPTION}
                 else engine.get_execution(execution_id)
             )
-            return record, self._after(services, execution)
+            return record, self._reported(services, execution)
 
     def decision_summary(self, path: Path, execution_id: str) -> dict[str, Any]:
         """What a person is about to decide on: the phase, the gate result and the ChangeSet the

@@ -1074,8 +1074,12 @@ def run_quarantine(
     """Keep the changes of a run that stopped without approval as a quarantined patch and
     restore the workspace to its baseline (`governance.stopTheLine`). This releases a line
     blocked by `stopTheLine: block`. A run that is closed or still open for a decision is
-    refused (exit 5)."""
-    _emit(_call(lambda: _acting().quarantine_run(path, run, actor)), kind="quarantine")
+    refused (exit 5). When the baseline content of a changed path was not recorded, nothing is
+    restored (`restoreStatus: refused`, exit 6): restore the paths by hand and run it again."""
+    result = _call(lambda: _acting().quarantine_run(path, run, actor))
+    _emit(result, kind="quarantine")
+    if result.get("restoreStatus") == "refused":
+        raise typer.Exit(code=6)
 
 
 @run_app.command("list")

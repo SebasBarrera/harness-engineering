@@ -361,3 +361,80 @@ def test_continue_blocks_when_the_quarantined_content_is_not_intact(
     # Writing the quarantined change again by hand lets the run continue.
     pricing.write_text(GOOD, encoding="utf-8", newline="\n")
     assert application.continue_run(python_workspace, run).current_phase is PhaseId.DECISION
+
+
+SECRET_BASELINE = 'token = "abcd-1234"\n'
+"""A baseline file whose recorded text is redacted (#178): its content cannot be given back."""
+
+
+def wiring_task() -> str:
+    """A change with a new file and a modified file that imports it."""
+    return yaml.safe_dump(
+        {
+            "taskId": "task_wiring",
+            "title": "Wire the settings",
+            "intent": "Read the token from the new wiring module.",
+            "acceptanceCriteria": [
+                {"criterionId": "AC-1", "text": "apply_discount(100, 100, 0.1) returns 90."}
+            ],
+            "implementation": {
+                "mode": "patch",
+                "patches": [
+                    {"path": "src/sample/pricing.py", "operation": "replace", "content": GOOD},
+                    {
+                        "path": "src/sample/wiring.py",
+                        "operation": "create",
+                        "content": "TOKEN = 'from-wiring'\n",
+                    },
+                    {
+                        "path": "src/sample/settings.py",
+                        "operation": "replace",
+                        "content": "from sample.wiring import TOKEN\n\ntoken = TOKEN\n",
+                    },
+                ],
+            },
+        },
+        sort_keys=False,
+    )
+
+
+def test_reject_refuses_a_partial_restore(python_workspace: Path, tmp_path: Path) -> None:
+    set_keys(python_workspace, governance={"stopTheLine": "restore"})
+    source = python_workspace / "src" / "sample"
+    (source / "settings.py").write_text(SECRET_BASELINE, encoding="utf-8", newline="\n")
+    application = HarnessApplication()
+    run = start(application, python_workspace, tmp_path, wiring_task())
+    digest = application.status(python_workspace, run)["execution"]["changeSetDigest"]
+    rejected = {name: (source / name).read_text() for name in ("pricing.py", "settings.py")}
+    application.decide_gate(
+        python_workspace,
+        execution_id=run,
+        decision=DecisionKind.REJECT,
+        change_set_digest=digest,
+        actor_id="human.reviewer",
+        rationale="Not now",
+    )
+    # Nothing was restored: the new module is still there for the file that imports it.
+    assert (source / "wiring.py").read_text() == "TOKEN = 'from-wiring'\n"
+    assert {name: (source / name).read_text() for name in rejected} == rejected
+    [quarantined] = events(application, python_workspace, run, "workspace.quarantined")
+    assert quarantined.payload["restoreStatus"] == "refused"
+    assert quarantined.payload["restoredPaths"] == []
+    assert quarantined.payload["unrestorablePaths"] == ["src/sample/settings.py"]
+    assert quarantined.payload["quarantinedContents"] == []
+    assert any("Restore the changed paths by hand" in item for item in application.notices)
+    # The line stays blocked until a person restores the paths by hand.
+    with pytest.raises(PolicyViolationError, match="by hand"):
+        start(application, python_workspace, tmp_path, patch_task(GOOD, "task_next"))
+    refused = application.quarantine_run(python_workspace, run, "human.reviewer")
+    assert refused["restoreStatus"] == "refused"
+    assert refused["quarantined"] is False
+    (source / "pricing.py").write_text(ORIGINAL, encoding="utf-8", newline="\n")
+    (source / "settings.py").write_text(SECRET_BASELINE, encoding="utf-8", newline="\n")
+    (source / "wiring.py").unlink()
+    released = application.quarantine_run(python_workspace, run, "human.reviewer")
+    assert "restoreStatus" not in released
+    again = start(application, python_workspace, tmp_path, patch_task(GOOD, "task_next"))
+    assert application.status(python_workspace, again)["execution"]["currentPhase"] == (
+        PhaseId.DECISION
+    )
