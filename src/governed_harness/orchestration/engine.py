@@ -30,7 +30,6 @@ from governed_harness.agents.environment import (
 from governed_harness.agents.native import native_provider
 from governed_harness.agents.session import SESSION_PROVIDER, SessionAgentProvider
 from governed_harness.capabilities import grants_from_rules
-from governed_harness.capabilities.authorizer import contained_path
 from governed_harness.capabilities.phase import CommandRefused, PhasePolicy, phase_scope
 from governed_harness.capabilities.repository import (
     DestructiveActionDenied,
@@ -131,6 +130,7 @@ from governed_harness.orchestration.ladder import VerificationLadder
 from governed_harness.orchestration.provenance import ProvenanceRecorder
 from governed_harness.orchestration.state_machine import NormativeStateMachine
 from governed_harness.orchestration.workflow import WorkflowGraph, validator_batches
+from governed_harness.orchestration.workspace_ops import Contents, restore_changes
 from governed_harness.profiles import detect_profiles
 from governed_harness.retrospective import RetrospectiveEngine
 from governed_harness.retrospective.causes import CauseAnalysis
@@ -2609,7 +2609,8 @@ class RunEngine:
                 update={
                     "status": ResultStatus.BLOCKED,
                     "terminal_reason": (
-                        "An interrupted IMPLEMENTATION left files the harness cannot restore: "
+                        "An interrupted IMPLEMENTATION left files the harness cannot restore, so "
+                        "none of its changes were restored; restore them by hand: "
                         + ", ".join(unrestorable[:10])
                     ),
                     "updated_at": utc_now(),
@@ -2654,22 +2655,16 @@ class RunEngine:
         stored = self.snapshots.load(start["snapshotRef"])
         before = stored.snapshot
         diff = self.snapshots.diff(stored, self.snapshots.take())
-        restored: list[str] = []
-        unrestorable: list[str] = []
-        for change in diff.changes:
-            target = contained_path(self.s.paths.workspace, Path(change.path))
-            previous = before.files.get(change.path)
-            content = self.snapshots.content(stored, change.path) if previous else None
-            if previous is None:
-                target.unlink(missing_ok=True)
-                restored.append(change.path)
-            elif content is not None:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(content)
-                restored.append(change.path)
-            else:
-                unrestorable.append(change.path)
-        return restored, unrestorable
+        # All or nothing (restore_changes): a file whose content was not recorded leaves
+        # every change of the interrupted phase in place, never a half-restored workspace.
+        return restore_changes(
+            self.s.paths.workspace,
+            Contents(
+                lambda path: path in before.files,
+                lambda path: self.snapshots.content(stored, path),
+            ),
+            diff,
+        )
 
     # ----- excluded paths (governance.protectExcludedPaths) ---------------------------
     def _protects_excluded_paths(self) -> bool:
