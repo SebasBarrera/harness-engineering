@@ -10,7 +10,8 @@
 The recorded content comes from a ``Contents`` callback, so the same code serves a snapshot with
 the text of every file (1.0.0 baselines, in-memory snapshots) and a manifest baseline whose
 content Git gives back (``workspace.baseline: manifest``). A file whose recorded content cannot be
-given back is reported, never guessed."""
+given back is reported, never guessed, and a restore that cannot give back every path writes
+none of them."""
 
 from __future__ import annotations
 
@@ -61,23 +62,44 @@ def restore_changes(
     workspace: Path, recorded: Contents, diff: WorkspaceDiff
 ) -> tuple[list[str], list[str]]:
     """Write back the recorded content of every path in ``diff`` (delete what was added).
-    Returns the restored paths and the ones that could not be restored."""
-    restored: list[str] = []
+    Returns the restored paths and the ones that could not be restored.
+
+    All or nothing (fail closed): when the recorded content of any path cannot be given back
+    (a redacted snapshot, #178), nothing is written, so the workspace keeps the state it had
+    as a whole instead of a mix of restored and unrestored files; the restored list is then
+    empty. A write that fails puts back what was already written and raises."""
+    planned: list[tuple[str, Path, bytes | None]] = []
     unrestorable: list[str] = []
     for change in diff.changes:
         target = contained_path(workspace, Path(change.path))
         if not recorded.existed(change.path):
-            target.unlink(missing_ok=True)
-            restored.append(change.path)
+            planned.append((change.path, target, None))
             continue
         data = recorded.content(change.path)
         if data is None:
             unrestorable.append(change.path)
             continue
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(data)
-        restored.append(change.path)
-    return restored, unrestorable
+        planned.append((change.path, target, data))
+    if unrestorable:
+        return [], unrestorable
+    written: list[tuple[Path, bytes | None]] = []
+    try:
+        for _path, target, data in planned:
+            written.append((target, target.read_bytes() if target.is_file() else None))
+            if data is None:
+                target.unlink(missing_ok=True)
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+    except OSError:
+        for target, previous in reversed(written):
+            with contextlib.suppress(OSError):
+                if previous is None:
+                    target.unlink(missing_ok=True)
+                else:
+                    target.write_bytes(previous)
+        raise
+    return [path for path, _target, _data in planned], []
 
 
 def changes_since(workspace: Path, before: WorkspaceSnapshot) -> WorkspaceDiff:
