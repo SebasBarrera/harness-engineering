@@ -14,7 +14,8 @@
   `run cancel` and `gate decide` print a warning saying so, and `harness run quarantine` returns
   `restoreStatus: refused` and exits with 6 until the paths are restored by hand (it then
   releases the line). The same all-or-nothing restore applies to a read-only agent or review
-  call that wrote to the workspace.
+  call that wrote to the workspace and to the recovery of an interrupted IMPLEMENTATION (the run
+  is `BLOCKED` and its reason says that nothing was restored).
 
 ## 2.0.1 - 2026-11-12
 
