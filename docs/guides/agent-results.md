@@ -402,6 +402,15 @@ be continued (failed in IMPLEMENTATION or VERIFICATION) stay in the workspace wh
 restored (`keptPaths` in the quarantine record, #81); those of a rejected or cancelled run are
 restored with the rest.
 
+The restore is all or nothing. When the baseline content of a changed path was not recorded as
+text (its snapshot was redacted, #178), nothing is restored: the workspace keeps the run's
+changes as a whole rather than a mix of restored and rejected files, `workspace.quarantined`
+records `restoreStatus: refused` with the `unrestorablePaths` (`restored` when the restore was
+applied), and the line is blocked. The command that stopped the run prints a warning; restore the
+changed paths by hand (for example with Git), then run `harness run quarantine --run <runId>`,
+which exits with 6 and `restoreStatus: refused` while a path still cannot be restored and
+releases the line once the workspace holds the baseline.
+
 Under `restore` the quarantine record also keeps the content of every restored path
 (`quarantinedContents`, each with its digest) and the phase the run stopped in. When
 `harness run continue` resumes a run quarantined in VERIFICATION or a later phase (for example

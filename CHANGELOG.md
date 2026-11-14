@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+- Restoring a run's changes fails closed instead of restoring part of them. A rejected run
+  under `governance.stopTheLine: restore` deleted the files it had added and wrote back the ones
+  whose baseline text was recorded, but left the files whose baseline only exists in a redacted
+  snapshot (#178) with the rejected content, so a rejected module kept importing a module that
+  had just been deleted and the tests no longer collected. `restore_changes` now writes nothing
+  when any changed path cannot be given back (and puts back what it wrote when a write fails):
+  the workspace keeps the rejected state as a whole, `workspace.quarantined` records
+  `restoreStatus: refused` with the `unrestorablePaths` (`restored` otherwise), new runs are
+  refused with a message that asks to restore the paths by hand, `run start`, `run continue`,
+  `run cancel` and `gate decide` print a warning saying so, and `harness run quarantine` returns
+  `restoreStatus: refused` and exits with 6 until the paths are restored by hand (it then
+  releases the line). The same all-or-nothing restore applies to a read-only agent or review
+  call that wrote to the workspace.
+
 ## 2.0.1 - 2026-11-12
 
 Wave 12 groups the work after 2.0.0: the expert council's fixes to the product and to the
