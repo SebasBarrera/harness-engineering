@@ -26,10 +26,14 @@ gh repo clone SebasBarrera/harness-engineering-respaldo respaldo
 | `worktrees-sin-commit/` | Archivos que estaban sin confirmar en algún worktree. | — |
 | Ramas `ramas/*` | Copia de todas las ramas locales, incluidas las que nunca se subieron aquí. | `git push respaldo 'refs/heads/*:refs/heads/ramas/*'` |
 
-## Cómo retomar
+## Cómo retomar (tres comandos)
 
-1. Clonar este repositorio y el respaldo.
-2. Seguir `PLAN-CONTINUACION.md`, sección «Paso a paso para un computador nuevo».
-3. Copiar `respaldo/local/` a `harness-engineering/.local/` (la carpeta sigue fuera de Git; ver `.github/privacy-denylist.txt`).
+```bash
+gh auth login
+gh repo clone SebasBarrera/harness-engineering-respaldo respaldo
+cd respaldo && claude      # su CLAUDE.md le dice al agente qué leer y cómo seguir
+```
+
+En el respaldo, `restaurar.ps1` (Windows) o `restaurar.sh` (macOS/Linux) clona este repositorio al lado, copia `local/` a `.local/` (fuera de Git; ver `.github/privacy-denylist.txt`), instala la memoria de Claude Code y crea el `.venv`. Con `-Corridas` / `--corridas` también reconstruye las corridas crudas. El detalle está en `PLAN-CONTINUACION.md`.
 
 El respaldo no contiene llaves, tokens ni contraseñas: se escaneó antes de subirlo. Las credenciales (sesión de Claude Code, `gh`, variables como `HARNESS_API_TOKEN`) se configuran de nuevo en el computador nuevo, nunca en un repositorio.
